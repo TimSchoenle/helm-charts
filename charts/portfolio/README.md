@@ -1,6 +1,6 @@
 # portfolio
 
-![Version: 1.0.14](https://img.shields.io/badge/Version-1.0.14-informational?style=flat-square) ![AppVersion: v1.9.1](https://img.shields.io/badge/AppVersion-v1.9.1-informational?style=flat-square)
+![Version: 1.1.0](https://img.shields.io/badge/Version-1.1.0-informational?style=flat-square) ![AppVersion: v1.10.0](https://img.shields.io/badge/AppVersion-v1.10.0-informational?style=flat-square)
 
 Personal portfolio built with Next.js.
 
@@ -48,6 +48,7 @@ The following table lists the configurable parameters of the chart and their def
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | affinity | object | `{}` | Affinity rules for pod assignment |
+| application.cloudflareWebAnalyticsToken | string | `""` | Cloudflare Web Analytics token for tracking website traffic. If provided, the application will send analytics data to Cloudflare. |
 | application.github | object | `{"secretName":""}` | GitHub configuration for the Portfolio application. The GITHUB_TOKEN is required for the application to function correctly. |
 | application.github.secretName | string | `""` | Name of an existing Kubernetes Secret containing the GitHub token. The secret must include a `GITHUB_TOKEN` field. If not provided, a secret will be created from the `token` field below. |
 | application.healthCheck | object | `{"liveness":{"failureThreshold":3,"initialDelaySeconds":1,"periodSeconds":10,"successThreshold":1,"timeoutSeconds":5},"path":"/api/health","readiness":{"failureThreshold":3,"initialDelaySeconds":1,"periodSeconds":5,"successThreshold":1,"timeoutSeconds":3},"startup":{"failureThreshold":12,"initialDelaySeconds":1,"periodSeconds":5,"successThreshold":1,"timeoutSeconds":3}}` | Health check probe configuration. Next.js Portfolio application exposes health checks on /api/health. |
@@ -73,7 +74,7 @@ The following table lists the configurable parameters of the chart and their def
 | application.port | int | `3000` | Port number the Next.js application listens on. Next.js standalone server defaults to 3000. |
 | image.pullPolicy | string | `"IfNotPresent"` | Kubernetes image pull policy. Determines when the image should be pulled from the registry. |
 | image.repository | string | `"timschoenle/portfolio"` | Container image repository where the Portfolio application image is stored. Points to Docker Hub timschoenle/portfolio. |
-| image.tag | string | `"v1.9.1@sha256:9ecc2c20dad7e8d5c38af84fc0246887219bc7d321dff0441eec5a27ad5224c2"` | Container image tag to deploy. |
+| image.tag | string | `"v1.10.0@sha256:6e643a3fda9c02df6c46f4cfebcf668d10e27026b49ed351b3ecf3a55cb99113"` | Container image tag to deploy. |
 | imagePullSecrets | list | `[]` | Optional image pull secrets for private registries |
 | ingress.annotations | object | `{}` | Custom annotations for the Ingress resource. Useful for configuring ingress controllers (e.g., cert-manager, rate limits). Example: ```yaml annotations:   cert-manager.io/cluster-issuer: "letsencrypt-prod"   nginx.ingress.kubernetes.io/ssl-redirect: "true" ``` |
 | ingress.enabled | bool | `false` | Enable or disable Kubernetes Ingress resource creation. Set to `true` to expose the service externally via Ingress. |

@@ -68,6 +68,25 @@ tests:
                 key: GITHUB_TOKEN
                 name: RELEASE-NAME-portfolio
 
+  - it: should set NEXT_PUBLIC_CLOUDFLARE_WEB_ANALYTICS_TOKEN if not empty
+    set:
+      application.cloudflareWebAnalyticsToken: test-token
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: NEXT_PUBLIC_CLOUDFLARE_WEB_ANALYTICS_TOKEN
+            value: test-token
+
+  - it: should not set NEXT_PUBLIC_CLOUDFLARE_WEB_ANALYTICS_TOKEN if empty
+    set:
+      application.cloudflareWebAnalyticsToken: ""
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: NEXT_PUBLIC_CLOUDFLARE_WEB_ANALYTICS_TOKEN
+
   - it: should mount required volumes
     asserts:
       - contains:

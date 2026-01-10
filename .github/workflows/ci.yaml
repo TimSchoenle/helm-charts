@@ -8,17 +8,16 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-permissions:
-  contents: read
+permissions: {}
 
 jobs:
   docs:
     name: Documentation
     runs-on: ubuntu-latest
     permissions:
-      contents: write
-      pull-requests: write
-      issues: write
+      contents: write # to commit documentation changes
+      pull-requests: write # to comment on PRs
+      issues: write # to comment on PRs
     outputs:
       changes_detected: ${{ steps.auto-commit.outputs.changes_detected }}
     steps:
@@ -90,6 +89,8 @@ jobs:
     needs: docs
     if: needs.docs.outputs.changes_detected != 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read # to checkout code
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@20cf305ff2072d973412fa9b1e3a4f227bda3c76 # v2.14.0
@@ -123,6 +124,8 @@ jobs:
     needs: docs
     if: needs.docs.outputs.changes_detected != 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read # to checkout code
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@20cf305ff2072d973412fa9b1e3a4f227bda3c76 # v2.14.0
@@ -162,6 +165,8 @@ jobs:
     needs: [docs, lint]
     if: needs.docs.outputs.changes_detected != 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read # to checkout code
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@20cf305ff2072d973412fa9b1e3a4f227bda3c76 # v2.14.0
@@ -204,6 +209,8 @@ jobs:
   renovate-validate:
     name: Validate Renovate Config
     runs-on: ubuntu-latest
+    permissions:
+      contents: read # to checkout code
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@20cf305ff2072d973412fa9b1e3a4f227bda3c76 # v2.14.0

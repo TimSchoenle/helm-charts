@@ -22,12 +22,28 @@ jobs:
         with:
           egress-policy: audit
 
+      - name: Generate Bot Token
+        id: generate_token
+        uses: actions/create-github-app-token@29824e69f54612133e76f7eaac726eef6c875baf # v2.2.1
+        with:
+          app-id: ${{ secrets.ACTIONS_MAINTENANCE_APP_ID }}
+          private-key: ${{ secrets.ACTIONS_MAINTENANCE_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Get Bot User Info
+        id: get-bot-info
+        uses: TimSchoenle/actions/actions/common/get-app-git-identity@26754381479003bd81b51fffecc97f1faa20a9bf # actions-common-get-app-git-identity-v1.1.0
+        with:
+          app-slug: ${{ steps.generate_token.outputs.app-slug }}
+          token: ${{ steps.generate_token.outputs.token }}
+
       - name: Checkout
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6
         with:
           ref: ${{ github.head_ref }}
-          # Need to run this with a custom token to re-trigger workflows after commit.
-          token: ${{ secrets.PAT_TOKEN }}
+          token: ${{ steps.app-token.outputs.token }}
+          persist-credentials: false
 
       - name: Setup Helm Environment
         uses: ./.github/actions/setup-helm
@@ -38,28 +54,24 @@ jobs:
       - name: Generate schemas
         run: helm schema
 
-      - name: Install helm-docs
-        run: |
-          cd /tmp
-          HELM_DOCS_VERSION=$(curl -s https://api.github.com/repos/norwoodj/helm-docs/releases/latest | grep '"tag_name"' | sed -E 's/.*"v([^"]+)".*/\1/')
-          wget https://github.com/norwoodj/helm-docs/releases/download/v${HELM_DOCS_VERSION}/helm-docs_${HELM_DOCS_VERSION}_Linux_x86_64.tar.gz
-          tar -xzf helm-docs_${HELM_DOCS_VERSION}_Linux_x86_64.tar.gz
-          sudo mv helm-docs /usr/local/bin/
-          helm-docs --version
-
-      - name: Generate docs
-        run: helm-docs --chart-search-root=charts --template-files=README.md.gotmpl
+      - name: Run helm-docs
+        uses: losisin/helm-docs-github-action@v1
+        with:
+          chart-search-root: charts
+          template-files: README.md.gotmpl
 
       - name: Commit documentation changes
         uses: stefanzweifel/git-auto-commit-action@04702edda442b2e678b25b537cec683a1493fcb9 # v7
         id: auto-commit
         with:
           commit_message: "docs: update Helm chart documentation and schemas"
+          commit_author: '${{ steps.get-bot-info.outputs.bot-name }} <${{ steps.get-bot-info.outputs.bot-email }}>'
 
       - name: Comment on PR
         if: steps.auto-commit.outputs.changes_detected == 'true'
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         with:
+          github-token: ${{ steps.generate_token.outputs.token }}
           script: |
             github.rest.issues.createComment({
               issue_number: context.issue.number,

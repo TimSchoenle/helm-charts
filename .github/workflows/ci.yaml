@@ -35,13 +35,6 @@ jobs:
           permission-contents: write
           permission-pull-requests: write
 
-      - name: Get Bot User Info
-        id: get-bot-info
-        uses: TimSchoenle/actions/actions/common/get-app-git-identity@26754381479003bd81b51fffecc97f1faa20a9bf # actions-common-get-app-git-identity-v1.1.0
-        with:
-          app-slug: ${{ steps.generate_token.outputs.app-slug }}
-          token: ${{ steps.generate_token.outputs.token }}
-
       - name: Checkout
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6
         with:
@@ -65,11 +58,11 @@ jobs:
           template-files: README.md.gotmpl
 
       - name: Commit documentation changes
-        uses: stefanzweifel/git-auto-commit-action@04702edda442b2e678b25b537cec683a1493fcb9 # v7
         id: auto-commit
+        uses: TimSchoenle/actions/actions/common/commit-changes@85df1583f874da24a2de30e19280e031c25a09c5 # actions-common-commit-changes-v1.1.1
         with:
           commit_message: "docs: update Helm chart documentation and schemas"
-          commit_author: '${{ steps.get-bot-info.outputs.bot-name }} <${{ steps.get-bot-info.outputs.bot-email }}>'
+          token: ${{ steps.generate_token.outputs.token }}
 
       - name: Comment on PR
         if: steps.auto-commit.outputs.changes_detected == 'true'

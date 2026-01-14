@@ -1,0 +1,20 @@
+name: Renovate Auto Approve
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  auto-approve-renovate:
+    name: Auto Approve Renovate
+    uses: TimSchoenle/actions/.github/workflows/maintenance-auto-approve-renovate.yaml@892e486cfea875ad402fb7a0ae8a33d059ce1883 # workflows-maintenance-auto-approve-renovate-v1.2.2
+    permissions:
+      pull-requests: write # To approve PRs
+    secrets:
+      token: ${{ secrets.GITHUB_TOKEN }}

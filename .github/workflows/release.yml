@@ -23,16 +23,25 @@ jobs:
         with:
           egress-policy: audit
 
+      - name: Generate Bot Token
+        id: generate_token
+        uses: actions/create-github-app-token@29824e69f54612133e76f7eaac726eef6c875baf # v2.2.1
+        with:
+          app-id: ${{ secrets.RELEASE_BOT_APP_ID }}
+          private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+
       - name: Checkout
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6
         with:
           fetch-depth: 0
           persist-credentials: true
+          token: ${{ steps.generate_token.outputs.token }}
 
       - name: Configure Git
-        run: |
-          git config user.name "$GITHUB_ACTOR"
-          git config user.email "$GITHUB_ACTOR@users.noreply.github.com"
+        uses: TimSchoenle/actions/actions/common/setup-app-git-identity@5e76fd2889fa615725953e0a4a06d5bb5f893e86 # actions-common-setup-app-git-identity-v1.1.0
+        with:
+          app-slug: ${{ steps.generate_token.outputs.app-slug }}
+          token: ${{ steps.generate_token.outputs.token }}
 
       - name: Import GPG key
         uses: crazy-max/ghaction-import-gpg@e89d40939c28e39f97cf32126055eeae86ba74ec # v6.3.0
@@ -51,4 +60,4 @@ jobs:
         with:
           config: ./.github/configs/cr.yaml
         env:
-          CR_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+          CR_TOKEN: ${{ steps.generate_token.outputs.token }}

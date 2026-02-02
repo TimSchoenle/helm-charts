@@ -3,6 +3,16 @@ description: 'Builds dependencies for all charts'
 runs:
   using: "composite"
   steps:
+    - name: Copy Schema Definitions
+      shell: bash
+      run: |
+        for chart_dir in charts/*/; do
+          if [ -d "$chart_dir" ]; then
+            echo "Copying definitions to $chart_dir"
+            cp -r definitions "$chart_dir/"
+          fi
+        done
+
     - name: Build Helm dependencies
       shell: bash
       run: |

@@ -199,6 +199,12 @@ metrics:
     # @schema
     # type: string
     # @schema
+    # -- Namespace where monitoring tools are running
+    namespace: monitoring
+
+    # @schema
+    # type: string
+    # @schema
     # -- Timeout for metrics scraping (e.g., 30s).
     scrapeTimeout: 30s
 
@@ -227,3 +233,156 @@ resources:
     # @schema
     # -- Minimum guaranteed memory allocation.
     memory: 15Mi
+
+# @schema
+# additionalProperties: true
+# @schema
+# -- Network policy configuration
+networkPolicy:
+  # @schema
+  # type: boolean
+  # @schema
+  # -- Enable network policies
+  enabled: false
+
+  # @schema
+  # additionalProperties: true
+  # @schema
+  # -- Ingress configuration
+  ingress:
+    # @schema
+    # type: boolean
+    # @schema
+    # -- Enable ingress rules
+    enabled: true
+
+    # @schema
+    # additionalProperties: true
+    # @schema
+    # -- Monitoring configuration for ingress
+    monitoring:
+      # @schema
+      # type: boolean
+      # @schema
+      # -- Allow ingress from monitoring namespace
+      enabled: true
+
+      # @schema
+      # type: string
+      # @schema
+      # -- Namespace where monitoring tools are running
+      namespace: monitoring
+
+    # @schema
+    # additionalProperties: true
+    # @schema
+    # -- Ingress Controller configuration
+    controller:
+      # @schema
+      # type: boolean
+      # @schema
+      # -- Allow ingress from Ingress Controller
+      enabled: true
+
+      # @schema
+      # type: string
+      # @schema
+      # -- Namespace where Ingress Controller is running (default: traefik)
+      namespace: traefik
+
+      # @schema
+      # type: object
+      # @schema
+      # -- Pod selector for Ingress Controller (default: Traefik label)
+      selector:
+        app.kubernetes.io/name: traefik
+
+    # @schema
+    # type: array
+    # items:
+    #   type: object
+    #   properties:
+    #     ports:
+    #       type: array
+    #       items:
+    #         $ref: "../../definitions/networkPolicy.json#/definitions/networkPolicyPort"
+    #     from:
+    #       type: array
+    #       items:
+    #         $ref: "../../definitions/networkPolicy.json#/definitions/networkPolicyPeer"
+    # @schema
+    # -- Custom ingress rules
+    customRules: []
+
+  # @schema
+  # additionalProperties: true
+  # @schema
+  # -- Egress configuration
+  egress:
+    # @schema
+    # type: boolean
+    # @schema
+    # -- Enable egress rules
+    enabled: true
+
+    # @schema
+    # additionalProperties: true
+    # @schema
+    # -- DNS configuration for egress
+    dns:
+      # @schema
+      # type: boolean
+      # @schema
+      # -- Allow egress to DNS
+      enabled: true
+
+    # @schema
+    # additionalProperties: true
+    # @schema
+    # -- HTTP configuration for egress
+    http:
+      # @schema
+      # type: boolean
+      # @schema
+      # -- Allow egress to HTTP (TCP/80)
+      enabled: false
+
+    # @schema
+    # additionalProperties: true
+    # @schema
+    # -- HTTPS configuration for egress
+    https:
+      # @schema
+      # type: boolean
+      # @schema
+      # -- Allow egress to HTTPS (TCP/443)
+      enabled: true
+
+    # @schema
+    # additionalProperties: true
+    # @schema
+    # -- Sentry configuration for egress
+    sentry:
+      # @schema
+      # type: boolean
+      # @schema
+      # -- Allow egress to Sentry (HTTPS)
+      enabled: false
+
+    # @schema
+    # type: array
+    # items:
+    #   type: object
+    #   properties:
+    #     ports:
+    #       type: array
+    #       items:
+    #         $ref: "../../definitions/networkPolicy.json#/definitions/networkPolicyPort"
+    #     to:
+    #       type: array
+    #       items:
+    #         $ref: "../../definitions/networkPolicy.json#/definitions/networkPolicyPeer"
+    # @schema
+    # -- Custom egress rules
+    customRules: []
+

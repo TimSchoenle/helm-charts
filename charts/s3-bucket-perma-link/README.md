@@ -1,6 +1,6 @@
 # s3-bucket-perma-link
 
-![Version: 1.1.1](https://img.shields.io/badge/Version-1.1.1-informational?style=flat-square) ![AppVersion: v0.3.2](https://img.shields.io/badge/AppVersion-v0.3.2-informational?style=flat-square)
+![Version: 1.1.2](https://img.shields.io/badge/Version-1.1.2-informational?style=flat-square) ![AppVersion: v0.3.2](https://img.shields.io/badge/AppVersion-v0.3.2-informational?style=flat-square)
 
 This chart deploys a simple web server that provides permanent links to specific S3 bucket resources. It allows you to define static URL paths that always point to specific files in your S3 buckets.
 

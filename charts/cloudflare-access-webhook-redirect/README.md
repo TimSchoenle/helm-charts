@@ -1,6 +1,6 @@
 # cloudflare-access-webhook-redirect
 
-![Version: 2.0.10](https://img.shields.io/badge/Version-2.0.10-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: v0.3.11](https://img.shields.io/badge/AppVersion-v0.3.11-informational?style=flat-square)
+![Version: 2.1.0](https://img.shields.io/badge/Version-2.1.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: v0.3.11](https://img.shields.io/badge/AppVersion-v0.3.11-informational?style=flat-square)
 
 A Helm chart for deploying the Cloudflare Access Webhook Redirect service. This service acts as an authentication proxy that validates requests using Cloudflare Access Service Auth tokens before forwarding them to target backend services.
 
@@ -85,10 +85,29 @@ The following table lists the configurable parameters of the chart and their def
 | livenessProbe.periodSeconds | int | `10` | Probe frequency |
 | livenessProbe.timeoutSeconds | int | `5` | Probe timeout |
 | nameOverride | string | `""` | Override the chart name |
-| networkPolicy.egress | list | `[]` | Egress rules |
-| networkPolicy.enabled | bool | `false` | Enable Kubernetes NetworkPolicy |
-| networkPolicy.ingress | list | `[]` | Ingress rules |
-| networkPolicy.policyTypes | list | `["Ingress","Egress"]` | Policy types (Ingress/Egress) |
+| networkPolicy | object | `{"egress":{"customRules":[],"dns":{"enabled":true},"enabled":true,"http":{"enabled":false},"https":{"enabled":false},"sentry":{"enabled":true}},"enabled":false,"ingress":{"controller":{"enabled":true,"namespace":"traefik","selector":{"app.kubernetes.io/name":"traefik"}},"customRules":[],"enabled":true,"monitoring":{"enabled":true,"namespace":"monitoring"}}}` | Network policy configuration |
+| networkPolicy.egress | object | `{"customRules":[],"dns":{"enabled":true},"enabled":true,"http":{"enabled":false},"https":{"enabled":false},"sentry":{"enabled":true}}` | Egress configuration |
+| networkPolicy.egress.customRules | list | `[]` | Custom egress rules |
+| networkPolicy.egress.dns | object | `{"enabled":true}` | DNS configuration for egress |
+| networkPolicy.egress.dns.enabled | bool | `true` | Allow egress to DNS |
+| networkPolicy.egress.enabled | bool | `true` | Enable egress rules |
+| networkPolicy.egress.http | object | `{"enabled":false}` | HTTP configuration for egress |
+| networkPolicy.egress.http.enabled | bool | `false` | Allow egress to HTTP (TCP/80) |
+| networkPolicy.egress.https | object | `{"enabled":false}` | HTTPS configuration for egress |
+| networkPolicy.egress.https.enabled | bool | `false` | Allow egress to HTTPS (TCP/443) |
+| networkPolicy.egress.sentry | object | `{"enabled":true}` | Sentry configuration for egress |
+| networkPolicy.egress.sentry.enabled | bool | `true` | Allow egress to Sentry (HTTPS) |
+| networkPolicy.enabled | bool | `false` | Enable network policies |
+| networkPolicy.ingress | object | `{"controller":{"enabled":true,"namespace":"traefik","selector":{"app.kubernetes.io/name":"traefik"}},"customRules":[],"enabled":true,"monitoring":{"enabled":true,"namespace":"monitoring"}}` | Ingress configuration |
+| networkPolicy.ingress.controller | object | `{"enabled":true,"namespace":"traefik","selector":{"app.kubernetes.io/name":"traefik"}}` | Ingress Controller configuration |
+| networkPolicy.ingress.controller.enabled | bool | `true` | Allow ingress from Ingress Controller |
+| networkPolicy.ingress.controller.namespace | string | `"traefik"` | Namespace where Ingress Controller is running (default: traefik) |
+| networkPolicy.ingress.controller.selector | object | `{"app.kubernetes.io/name":"traefik"}` | Pod selector for Ingress Controller (default: Traefik label) |
+| networkPolicy.ingress.customRules | list | `[]` | Custom ingress rules |
+| networkPolicy.ingress.enabled | bool | `true` | Enable ingress rules |
+| networkPolicy.ingress.monitoring | object | `{"enabled":true,"namespace":"monitoring"}` | Monitoring configuration for ingress |
+| networkPolicy.ingress.monitoring.enabled | bool | `true` | Allow ingress from monitoring namespace |
+| networkPolicy.ingress.monitoring.namespace | string | `"monitoring"` | Namespace where monitoring tools are running |
 | nodeSelector | object | `{}` | Node selector labels for scheduling |
 | podAnnotations | object | `{}` | Additional annotations for the Pod metadata |
 | podDisruptionBudget.enabled | bool | `false` | Enable PodDisruptionBudget |

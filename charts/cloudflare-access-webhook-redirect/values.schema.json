@@ -322,50 +322,221 @@
     },
     "networkPolicy": {
       "additionalProperties": true,
+      "description": "Network policy configuration",
       "properties": {
         "egress": {
-          "description": "Egress rules",
-          "items": {
-            "required": []
+          "additionalProperties": true,
+          "description": "Egress configuration",
+          "properties": {
+            "customRules": {
+              "description": "Example: Allow access to a generic app\n- ports:\n    - port: 8080\n      protocol: TCP\n  to:\n    - podSelector:\n        matchLabels:\n          app: my-generic-app\nCustom egress rules",
+              "items": {
+                "properties": {
+                  "ports": {
+                    "items": {
+                      "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.35.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyPort",
+                      "required": []
+                    },
+                    "required": [],
+                    "type": "array"
+                  },
+                  "to": {
+                    "items": {
+                      "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.35.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyPeer",
+                      "required": []
+                    },
+                    "required": [],
+                    "type": "array"
+                  }
+                },
+                "required": [],
+                "type": "object"
+              },
+              "required": [],
+              "title": "customRules",
+              "type": "array"
+            },
+            "dns": {
+              "additionalProperties": true,
+              "description": "DNS configuration for egress",
+              "properties": {
+                "enabled": {
+                  "default": true,
+                  "description": "Allow egress to DNS",
+                  "required": [],
+                  "title": "enabled",
+                  "type": "boolean"
+                }
+              },
+              "required": [],
+              "title": "dns"
+            },
+            "enabled": {
+              "default": true,
+              "description": "Enable egress rules",
+              "required": [],
+              "title": "enabled",
+              "type": "boolean"
+            },
+            "http": {
+              "additionalProperties": true,
+              "description": "HTTP configuration for egress",
+              "properties": {
+                "enabled": {
+                  "default": false,
+                  "description": "Allow egress to HTTP (TCP/80)",
+                  "required": [],
+                  "title": "enabled",
+                  "type": "boolean"
+                }
+              },
+              "required": [],
+              "title": "http"
+            },
+            "https": {
+              "additionalProperties": true,
+              "description": "HTTPS configuration for egress",
+              "properties": {
+                "enabled": {
+                  "default": false,
+                  "description": "Allow egress to HTTPS (TCP/443)",
+                  "required": [],
+                  "title": "enabled",
+                  "type": "boolean"
+                }
+              },
+              "required": [],
+              "title": "https"
+            },
+            "sentry": {
+              "additionalProperties": true,
+              "description": "Sentry configuration for egress",
+              "properties": {
+                "enabled": {
+                  "default": true,
+                  "description": "Allow egress to Sentry (HTTPS)",
+                  "required": [],
+                  "title": "enabled",
+                  "type": "boolean"
+                }
+              },
+              "required": [],
+              "title": "sentry"
+            }
           },
           "required": [],
-          "title": "egress",
-          "type": "array"
+          "title": "egress"
         },
         "enabled": {
           "default": false,
-          "description": "Enable Kubernetes NetworkPolicy",
+          "description": "Enable network policies",
           "required": [],
           "title": "enabled",
           "type": "boolean"
         },
         "ingress": {
-          "description": "Ingress rules",
-          "items": {
-            "required": []
-          },
-          "required": [],
-          "title": "ingress",
-          "type": "array"
-        },
-        "policyTypes": {
-          "description": "Policy types (Ingress/Egress)",
-          "items": {
-            "anyOf": [
-              {
-                "required": [],
-                "type": "string"
+          "additionalProperties": true,
+          "description": "Ingress configuration",
+          "properties": {
+            "controller": {
+              "additionalProperties": true,
+              "description": "Ingress Controller configuration",
+              "properties": {
+                "enabled": {
+                  "default": true,
+                  "description": "Allow ingress from Ingress Controller",
+                  "required": [],
+                  "title": "enabled",
+                  "type": "boolean"
+                },
+                "namespace": {
+                  "default": "traefik",
+                  "description": "Namespace where Ingress Controller is running (default: traefik)",
+                  "required": [],
+                  "title": "namespace",
+                  "type": "string"
+                },
+                "selector": {
+                  "additionalProperties": false,
+                  "description": "Pod selector for Ingress Controller (default: Traefik label)",
+                  "properties": {
+                    "app.kubernetes.io/name": {
+                      "default": "traefik",
+                      "required": [],
+                      "title": "app.kubernetes.io/name",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "app.kubernetes.io/name"
+                  ],
+                  "title": "selector",
+                  "type": "object"
+                }
               },
-              {
+              "required": [],
+              "title": "controller"
+            },
+            "customRules": {
+              "description": "Custom ingress rules",
+              "items": {
+                "properties": {
+                  "from": {
+                    "items": {
+                      "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.35.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyPeer",
+                      "required": []
+                    },
+                    "required": [],
+                    "type": "array"
+                  },
+                  "ports": {
+                    "items": {
+                      "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.35.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyPort",
+                      "required": []
+                    },
+                    "required": [],
+                    "type": "array"
+                  }
+                },
                 "required": [],
-                "type": "string"
-              }
-            ],
-            "required": []
+                "type": "object"
+              },
+              "required": [],
+              "title": "customRules",
+              "type": "array"
+            },
+            "enabled": {
+              "default": true,
+              "description": "Enable ingress rules",
+              "required": [],
+              "title": "enabled",
+              "type": "boolean"
+            },
+            "monitoring": {
+              "additionalProperties": true,
+              "description": "Monitoring configuration for ingress",
+              "properties": {
+                "enabled": {
+                  "default": true,
+                  "description": "Allow ingress from monitoring namespace",
+                  "required": [],
+                  "title": "enabled",
+                  "type": "boolean"
+                },
+                "namespace": {
+                  "default": "monitoring",
+                  "description": "Namespace where monitoring tools are running",
+                  "required": [],
+                  "title": "namespace",
+                  "type": "string"
+                }
+              },
+              "required": [],
+              "title": "monitoring"
+            }
           },
           "required": [],
-          "title": "policyTypes",
-          "type": "array"
+          "title": "ingress"
         }
       },
       "required": [],

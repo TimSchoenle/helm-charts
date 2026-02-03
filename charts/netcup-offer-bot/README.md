@@ -1,6 +1,6 @@
 # netcup-offer-bot
 
-![Version: 2.0.5](https://img.shields.io/badge/Version-2.0.5-informational?style=flat-square) ![AppVersion: v1.5.1](https://img.shields.io/badge/AppVersion-v1.5.1-informational?style=flat-square)
+![Version: 2.0.6](https://img.shields.io/badge/Version-2.0.6-informational?style=flat-square) ![AppVersion: v1.6.0](https://img.shields.io/badge/AppVersion-v1.6.0-informational?style=flat-square)
 
 This chart deploys the Netcup Offer Bot, which monitors https://www.netcup-sonderangebote.de/ RSS feed and sends notifications to Discord webhooks when new offers are available.
 
@@ -57,9 +57,33 @@ The following table lists the configurable parameters of the chart and their def
 | imagePullSecrets | list | `[]` | Optional image pull secrets for private registries |
 | metrics.enabled | bool | `false` | Enable Prometheus metrics endpoint. |
 | metrics.port | int | `9184` | Port to expose metrics on. |
-| metrics.serviceMonitor | object | `{"interval":"1m","scrapeTimeout":"30s"}` | ServiceMonitor configuration for Prometheus Operator integration. |
+| metrics.serviceMonitor | object | `{"interval":"1m","namespace":"monitoring","scrapeTimeout":"30s"}` | ServiceMonitor configuration for Prometheus Operator integration. |
 | metrics.serviceMonitor.interval | string | `"1m"` | Metrics scrape interval (e.g., 1m, 30s). |
+| metrics.serviceMonitor.namespace | string | `"monitoring"` | Namespace where monitoring tools are running |
 | metrics.serviceMonitor.scrapeTimeout | string | `"30s"` | Timeout for metrics scraping (e.g., 30s). |
+| networkPolicy | object | `{"egress":{"customRules":[],"dns":{"enabled":true},"enabled":true,"http":{"enabled":false},"https":{"enabled":true},"sentry":{"enabled":false}},"enabled":false,"ingress":{"controller":{"enabled":true,"namespace":"traefik","selector":{"app.kubernetes.io/name":"traefik"}},"customRules":[],"enabled":true,"monitoring":{"enabled":true,"namespace":"monitoring"}}}` | Network policy configuration |
+| networkPolicy.egress | object | `{"customRules":[],"dns":{"enabled":true},"enabled":true,"http":{"enabled":false},"https":{"enabled":true},"sentry":{"enabled":false}}` | Egress configuration |
+| networkPolicy.egress.customRules | list | `[]` | Custom egress rules |
+| networkPolicy.egress.dns | object | `{"enabled":true}` | DNS configuration for egress |
+| networkPolicy.egress.dns.enabled | bool | `true` | Allow egress to DNS |
+| networkPolicy.egress.enabled | bool | `true` | Enable egress rules |
+| networkPolicy.egress.http | object | `{"enabled":false}` | HTTP configuration for egress |
+| networkPolicy.egress.http.enabled | bool | `false` | Allow egress to HTTP (TCP/80) |
+| networkPolicy.egress.https | object | `{"enabled":true}` | HTTPS configuration for egress |
+| networkPolicy.egress.https.enabled | bool | `true` | Allow egress to HTTPS (TCP/443) |
+| networkPolicy.egress.sentry | object | `{"enabled":false}` | Sentry configuration for egress |
+| networkPolicy.egress.sentry.enabled | bool | `false` | Allow egress to Sentry (HTTPS) |
+| networkPolicy.enabled | bool | `false` | Enable network policies |
+| networkPolicy.ingress | object | `{"controller":{"enabled":true,"namespace":"traefik","selector":{"app.kubernetes.io/name":"traefik"}},"customRules":[],"enabled":true,"monitoring":{"enabled":true,"namespace":"monitoring"}}` | Ingress configuration |
+| networkPolicy.ingress.controller | object | `{"enabled":true,"namespace":"traefik","selector":{"app.kubernetes.io/name":"traefik"}}` | Ingress Controller configuration |
+| networkPolicy.ingress.controller.enabled | bool | `true` | Allow ingress from Ingress Controller |
+| networkPolicy.ingress.controller.namespace | string | `"traefik"` | Namespace where Ingress Controller is running (default: traefik) |
+| networkPolicy.ingress.controller.selector | object | `{"app.kubernetes.io/name":"traefik"}` | Pod selector for Ingress Controller (default: Traefik label) |
+| networkPolicy.ingress.customRules | list | `[]` | Custom ingress rules |
+| networkPolicy.ingress.enabled | bool | `true` | Enable ingress rules |
+| networkPolicy.ingress.monitoring | object | `{"enabled":true,"namespace":"monitoring"}` | Monitoring configuration for ingress |
+| networkPolicy.ingress.monitoring.enabled | bool | `true` | Allow ingress from monitoring namespace |
+| networkPolicy.ingress.monitoring.namespace | string | `"monitoring"` | Namespace where monitoring tools are running |
 | persistence.data | object | `{"accessMode":"ReadWriteOnce","size":"10Mi"}` | Configuration for persistent data storage. |
 | persistence.data.accessMode | string | `"ReadWriteOnce"` | The access mode for the persistent volume. |
 | persistence.data.size | string | `"10Mi"` | The storage size requested for the volume. |

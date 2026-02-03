@@ -1,0 +1,140 @@
+suite: test portfolio network policy
+templates:
+  - networkpolicy.yaml
+tests:
+  - it: "should not create NetworkPolicy by default (enabled: false)"
+    template: networkpolicy.yaml
+    set:
+      networkPolicy.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: "should create Ingress NetworkPolicy when enabled"
+    template: networkpolicy.yaml
+    documentIndex: 0
+    set:
+      networkPolicy.enabled: true
+    asserts:
+      - isKind:
+          of: NetworkPolicy
+      - matchRegex:
+          path: metadata.name
+          pattern: -ingress$
+      - equal:
+          path: spec.policyTypes[0]
+          value: Ingress
+
+  - it: "should create Egress NetworkPolicy when enabled"
+    template: networkpolicy.yaml
+    documentIndex: 1
+    set:
+      networkPolicy.enabled: true
+    asserts:
+      - isKind:
+          of: NetworkPolicy
+      - matchRegex:
+          path: metadata.name
+          pattern: -egress$
+      - equal:
+          path: spec.policyTypes[0]
+          value: Egress
+
+  - it: "should have DNS egress in Egress policy"
+    template: networkpolicy.yaml
+    documentIndex: 1
+    set:
+      networkPolicy.enabled: true
+      networkPolicy.egress.enabled: true
+      networkPolicy.egress.dns.enabled: true
+    asserts:
+      - isSubset:
+          path: spec.egress[0].ports[0]
+          content:
+            port: 53
+            protocol: UDP
+
+  - it: "should have Sentry egress (HTTPS) when enabled"
+    template: networkpolicy.yaml
+    documentIndex: 1
+    set:
+      networkPolicy.enabled: true
+      networkPolicy.egress.enabled: true
+      networkPolicy.egress.sentry.enabled: true
+    asserts:
+      - isSubset:
+          path: spec.egress[1].ports[0]
+          content:
+            port: 443
+            protocol: TCP
+
+  - it: "should allow monitoring ingress in Ingress policy"
+    template: networkpolicy.yaml
+    documentIndex: 0
+    set:
+      networkPolicy.enabled: true
+      networkPolicy.ingress.enabled: true
+      networkPolicy.ingress.monitoring.enabled: true
+      networkPolicy.ingress.monitoring.namespace: custom-monitoring
+    asserts:
+      - isSubset:
+          path: spec.ingress[0]
+          content:
+            from:
+              - namespaceSelector:
+                  matchLabels:
+                    name: custom-monitoring
+
+  - it: "should allow ingress controller in Ingress policy"
+    template: networkpolicy.yaml
+    documentIndex: 0
+    set:
+      networkPolicy.enabled: true
+      networkPolicy.ingress.enabled: true
+      networkPolicy.ingress.monitoring.enabled: false
+      networkPolicy.ingress.controller.enabled: true
+    asserts:
+      - isSubset:
+          path: spec.ingress[0]
+          content:
+            from:
+              - namespaceSelector:
+                  matchLabels:
+                    kubernetes.io/metadata.name: traefik
+                podSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: traefik
+
+  - it: "should have HTTP egress (TCP/80) when enabled"
+    template: networkpolicy.yaml
+    documentIndex: 1
+    set:
+      networkPolicy.enabled: true
+      networkPolicy.egress.enabled: true
+      networkPolicy.egress.dns.enabled: false
+      networkPolicy.egress.https.enabled: false
+      networkPolicy.egress.sentry.enabled: false
+      networkPolicy.egress.http.enabled: true
+    asserts:
+      - isSubset:
+          path: spec.egress[0].ports[0]
+          content:
+            port: 80
+            protocol: TCP
+
+  - it: "should have HTTPS egress (TCP/443) when enabled"
+    template: networkpolicy.yaml
+    documentIndex: 1
+    set:
+      networkPolicy.enabled: true
+      networkPolicy.egress.enabled: true
+      networkPolicy.egress.dns.enabled: false
+      networkPolicy.egress.http.enabled: false
+      networkPolicy.egress.sentry.enabled: false
+      networkPolicy.egress.https.enabled: true
+    asserts:
+      - isSubset:
+          path: spec.egress[0].ports[0]
+          content:
+            port: 443
+            protocol: TCP

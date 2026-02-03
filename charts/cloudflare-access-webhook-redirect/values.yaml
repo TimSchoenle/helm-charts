@@ -592,29 +592,159 @@ podDisruptionBudget:
 # @schema
 # additionalProperties: true
 # @schema
+# -- Network policy configuration
 networkPolicy:
   # @schema
   # type: boolean
   # @schema
-  # -- Enable Kubernetes NetworkPolicy
+  # -- Enable network policies
   enabled: false
 
   # @schema
-  # type: array
+  # additionalProperties: true
   # @schema
-  # -- Policy types (Ingress/Egress)
-  policyTypes:
-    - Ingress
-    - Egress
+  # -- Ingress configuration
+  ingress:
+    # @schema
+    # type: boolean
+    # @schema
+    # -- Enable ingress rules
+    enabled: true
+
+    # @schema
+    # additionalProperties: true
+    # @schema
+    # -- Monitoring configuration for ingress
+    monitoring:
+      # @schema
+      # type: boolean
+      # @schema
+      # -- Allow ingress from monitoring namespace
+      enabled: true
+      
+      # @schema
+      # type: string
+      # @schema
+      # -- Namespace where monitoring tools are running
+      namespace: monitoring
+
+    # @schema
+    # additionalProperties: true
+    # @schema
+    # -- Ingress Controller configuration
+    controller:
+      # @schema
+      # type: boolean
+      # @schema
+      # -- Allow ingress from Ingress Controller
+      enabled: true
+
+      # @schema
+      # type: string
+      # @schema
+      # -- Namespace where Ingress Controller is running (default: traefik)
+      namespace: traefik
+
+      # @schema
+      # type: object
+      # @schema
+      # -- Pod selector for Ingress Controller (default: Traefik label)
+      selector:
+        app.kubernetes.io/name: traefik
+
+    # @schema
+    # type: array
+    # items:
+    #   type: object
+    #   properties:
+    #     ports:
+    #       type: array
+    #       items:
+    #         $ref: "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.35.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyPort"
+    #     from:
+    #       type: array
+    #       items:
+    #         $ref: "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.35.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyPeer"
+    # @schema
+    # -- Custom ingress rules
+    customRules: []
 
   # @schema
-  # type: array
+  # additionalProperties: true
   # @schema
-  # -- Ingress rules
-  ingress: []
+  # -- Egress configuration
+  egress:
+    # @schema
+    # type: boolean
+    # @schema
+    # -- Enable egress rules
+    enabled: true
 
-  # @schema
-  # type: array
-  # @schema
-  # -- Egress rules
-  egress: []
+    # @schema
+    # additionalProperties: true
+    # @schema
+    # -- DNS configuration for egress
+    dns:
+      # @schema
+      # type: boolean
+      # @schema
+      # -- Allow egress to DNS
+      enabled: true
+
+    # @schema
+    # additionalProperties: true
+    # @schema
+    # -- HTTP configuration for egress
+    http:
+      # @schema
+      # type: boolean
+      # @schema
+      # -- Allow egress to HTTP (TCP/80)
+      enabled: false
+
+    # @schema
+    # additionalProperties: true
+    # @schema
+    # -- HTTPS configuration for egress
+    https:
+      # @schema
+      # type: boolean
+      # @schema
+      # -- Allow egress to HTTPS (TCP/443)
+      enabled: false
+
+    # @schema
+    # additionalProperties: true
+    # @schema
+    # -- Sentry configuration for egress
+    sentry:
+      # @schema
+      # type: boolean
+      # @schema
+      # -- Allow egress to Sentry (HTTPS)
+      enabled: true
+
+    # @schema
+    # type: array
+    # items:
+    #   type: object
+    #   properties:
+    #     ports:
+    #       type: array
+    #       items:
+    #         $ref: "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.35.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyPort"
+    #     to:
+    #       type: array
+    #       items:
+    #         $ref: "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.35.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyPeer"
+    # @schema
+    # Example: Allow access to a generic app
+    # - ports:
+    #     - port: 8080
+    #       protocol: TCP
+    #   to:
+    #     - podSelector:
+    #         matchLabels:
+    #           app: my-generic-app
+    # -- Custom egress rules
+    customRules: []

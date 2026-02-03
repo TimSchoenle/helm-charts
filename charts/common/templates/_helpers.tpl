@@ -364,3 +364,112 @@ podAntiAffinity:
   {{- end }}
 {{- end }}
 {{- end }}
+
+{{/*
+Create NetworkPolicy
+*/}}
+{{/*
+Create NetworkPolicy Ingress
+*/}}
+{{- define "common.networkPolicy.ingress" -}}
+{{- if .Values.networkPolicy.enabled }}
+kind: NetworkPolicy
+apiVersion: {{ include "common.capabilities.networkPolicy.apiVersion" . }}
+metadata:
+  name: {{ include "common.fullname" . | trunc 54 | trimSuffix "-" }}-ingress
+  labels:
+    {{- include "common.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "common.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress:
+    {{- if and .Values.networkPolicy.ingress .Values.networkPolicy.ingress.enabled }}
+    {{- if and .Values.networkPolicy.ingress.monitoring .Values.networkPolicy.ingress.monitoring.enabled }}
+    - from:
+      - namespaceSelector:
+          matchLabels:
+            name: {{ .Values.networkPolicy.ingress.monitoring.namespace }}
+    {{- end }}
+    {{- if and .Values.networkPolicy.ingress.controller .Values.networkPolicy.ingress.controller.enabled }}
+    - from:
+      - namespaceSelector:
+          matchLabels:
+            kubernetes.io/metadata.name: {{ .Values.networkPolicy.ingress.controller.namespace }}
+        podSelector:
+          matchLabels:
+            {{- toYaml .Values.networkPolicy.ingress.controller.selector | nindent 12 }}
+    {{- end }}
+    {{- range .Values.networkPolicy.ingress.customRules }}
+    - {{ toYaml . | nindent 6 }}
+    {{- end }}
+    {{- if .Values.networkPolicy.extraIngress }}
+    {{- toYaml .Values.networkPolicy.extraIngress | nindent 4 }}
+    {{- end }}
+    {{- end }}
+{{- end }}
+{{- end }}
+
+{{/*
+Create NetworkPolicy Egress
+*/}}
+{{- define "common.networkPolicy.egress" -}}
+{{- if .Values.networkPolicy.enabled }}
+kind: NetworkPolicy
+apiVersion: {{ include "common.capabilities.networkPolicy.apiVersion" . }}
+metadata:
+  name: {{ include "common.fullname" . | trunc 55 | trimSuffix "-" }}-egress
+  labels:
+    {{- include "common.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "common.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Egress
+  egress:
+    {{- if and .Values.networkPolicy.egress .Values.networkPolicy.egress.enabled }}
+    {{- if and .Values.networkPolicy.egress.dns .Values.networkPolicy.egress.dns.enabled }}
+    - ports:
+      - port: 53
+        protocol: UDP
+      - port: 53
+        protocol: TCP
+    {{- end }}
+    {{- if and .Values.networkPolicy.egress.http .Values.networkPolicy.egress.http.enabled }}
+    - ports:
+      - port: 80
+        protocol: TCP
+    {{- end }}
+    {{- if and .Values.networkPolicy.egress.https .Values.networkPolicy.egress.https.enabled }}
+    - ports:
+      - port: 443
+        protocol: TCP
+    {{- end }}
+    {{- if and .Values.networkPolicy.egress.sentry .Values.networkPolicy.egress.sentry.enabled }}
+    - ports:
+      - port: 443
+        protocol: TCP
+    {{- end }}
+    {{- range .Values.networkPolicy.egress.customRules }}
+    - {{ toYaml . | nindent 6 }}
+    {{- end }}
+    {{- if .Values.networkPolicy.extraEgress }}
+    {{- toYaml .Values.networkPolicy.extraEgress | nindent 4 }}
+    {{- end }}
+    {{- end }}
+{{- end }}
+{{- end }}
+
+{{/*
+Create NetworkPolicy Wrapper
+*/}}
+{{- define "common.networkPolicy" -}}
+{{- if .Values.networkPolicy.enabled }}
+{{- include "common.networkPolicy.ingress" . }}
+---
+{{- include "common.networkPolicy.egress" . }}
+{{- end }}
+{{- end }}

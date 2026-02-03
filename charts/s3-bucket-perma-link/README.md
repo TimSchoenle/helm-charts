@@ -1,6 +1,6 @@
 # s3-bucket-perma-link
 
-![Version: 1.1.0](https://img.shields.io/badge/Version-1.1.0-informational?style=flat-square) ![AppVersion: v0.2.2](https://img.shields.io/badge/AppVersion-v0.2.2-informational?style=flat-square)
+![Version: 1.0.7](https://img.shields.io/badge/Version-1.0.7-informational?style=flat-square) ![AppVersion: v0.3.1](https://img.shields.io/badge/AppVersion-v0.3.1-informational?style=flat-square)
 
 This chart deploys a simple web server that provides permanent links to specific S3 bucket resources. It allows you to define static URL paths that always point to specific files in your S3 buckets.
 
@@ -79,35 +79,12 @@ The following table lists the configurable parameters of the chart and their def
 | application.server.port | int | `8080` | Port number the server listens on. |
 | image.pullPolicy | string | `"IfNotPresent"` | Kubernetes image pull policy. Determines when the image should be pulled from the registry. |
 | image.repository | string | `"timmi6790/s3-bucket-perma-link"` | Container image repository where the application image is stored. Usually points to Docker Hub or a private registry. Example: ghcr.io/your-org/s3-bucket-perma-link |
-| image.tag | string | `"v0.2.2@sha256:242b6ae9e2b6856c8b60ddbab2b7dc747741ff400a0e0c279106a2174bd31101"` | Container image tag to deploy. Pin to a version for predictable deployments rather than using "latest". |
+| image.tag | string | `"v0.3.1@sha256:34996fe40beebbfeb57b88ef510625c72e8101d8bfaec7243840acaf0a003985"` | Container image tag to deploy. Pin to a version for predictable deployments rather than using "latest". |
 | ingress.annotations | object | `{}` | Custom annotations for the Ingress resource. Useful for configuring ingress controllers (e.g., cert-manager, rate limits). |
 | ingress.enabled | bool | `false` | Enable or disable Kubernetes Ingress resource creation. Set to `true` to expose the service externally via Ingress. |
 | ingress.hosts | list | `[]` | List of host configurations for the Ingress. Each host defines rules for routing external traffic. Example: ```yaml hosts:   - host: s3.example.com     paths:       - path: /         pathType: Prefix ``` |
 | ingress.ingressClassName | string | `"nginx"` | Ingress class to use (e.g., "nginx", "traefik"). Should match your cluster’s ingress controller configuration. |
 | ingress.tls | list | `[]` | TLS configuration for securing ingress connections. Example: ```yaml tls:   - secretName: s3-cert     hosts:       - s3.example.com ``` |
-| networkPolicy | object | `{"egress":{"customRules":[],"dns":{"enabled":true},"enabled":true,"http":{"enabled":false},"https":{"enabled":false},"sentry":{"enabled":true}},"enabled":false,"ingress":{"controller":{"enabled":true,"namespace":"traefik","selector":{"app.kubernetes.io/name":"traefik"}},"customRules":[],"enabled":true,"monitoring":{"enabled":true,"namespace":"monitoring"}}}` | Network policy configuration |
-| networkPolicy.egress | object | `{"customRules":[],"dns":{"enabled":true},"enabled":true,"http":{"enabled":false},"https":{"enabled":false},"sentry":{"enabled":true}}` | Egress configuration |
-| networkPolicy.egress.customRules | list | `[]` | Custom egress rules |
-| networkPolicy.egress.dns | object | `{"enabled":true}` | DNS configuration for egress |
-| networkPolicy.egress.dns.enabled | bool | `true` | Allow egress to DNS |
-| networkPolicy.egress.enabled | bool | `true` | Enable egress rules |
-| networkPolicy.egress.http | object | `{"enabled":false}` | HTTP configuration for egress |
-| networkPolicy.egress.http.enabled | bool | `false` | Allow egress to HTTP (TCP/80) |
-| networkPolicy.egress.https | object | `{"enabled":false}` | HTTPS configuration for egress |
-| networkPolicy.egress.https.enabled | bool | `false` | Allow egress to HTTPS (TCP/443) |
-| networkPolicy.egress.sentry | object | `{"enabled":true}` | Sentry configuration for egress |
-| networkPolicy.egress.sentry.enabled | bool | `true` | Allow egress to Sentry (HTTPS) |
-| networkPolicy.enabled | bool | `false` | Enable network policies |
-| networkPolicy.ingress | object | `{"controller":{"enabled":true,"namespace":"traefik","selector":{"app.kubernetes.io/name":"traefik"}},"customRules":[],"enabled":true,"monitoring":{"enabled":true,"namespace":"monitoring"}}` | Ingress configuration |
-| networkPolicy.ingress.controller | object | `{"enabled":true,"namespace":"traefik","selector":{"app.kubernetes.io/name":"traefik"}}` | Ingress Controller configuration |
-| networkPolicy.ingress.controller.enabled | bool | `true` | Allow ingress from Ingress Controller |
-| networkPolicy.ingress.controller.namespace | string | `"traefik"` | Namespace where Ingress Controller is running (default: traefik) |
-| networkPolicy.ingress.controller.selector | object | `{"app.kubernetes.io/name":"traefik"}` | Pod selector for Ingress Controller (default: Traefik label) |
-| networkPolicy.ingress.customRules | list | `[]` | Custom ingress rules |
-| networkPolicy.ingress.enabled | bool | `true` | Enable ingress rules |
-| networkPolicy.ingress.monitoring | object | `{"enabled":true,"namespace":"monitoring"}` | Monitoring configuration for ingress |
-| networkPolicy.ingress.monitoring.enabled | bool | `true` | Allow ingress from monitoring namespace |
-| networkPolicy.ingress.monitoring.namespace | string | `"monitoring"` | Namespace where monitoring tools are running |
 | podSecurityContext.fsGroup | int | `1000` | Group ID for file system access |
 | podSecurityContext.runAsNonRoot | bool | `true` | Run pod as non-root user |
 | podSecurityContext.runAsUser | int | `1000` | User ID to run as |

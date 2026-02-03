@@ -135,68 +135,161 @@ application:
     path: /health
 
     # @schema
-    # $ref: "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.35.0/_definitions.json#/definitions/io.k8s.api.core.v1.Probe"
+    # additionalProperties: true
     # @schema
     # -- Startup probe configuration.
     # Protects slow starting containers from being killed by liveness probe.
     startup:
+      # @schema
+      # type: integer
+      # @schema
+      # -- Number of seconds after the container has started before startup probe is initiated.
       initialDelaySeconds: 1
+
+      # @schema
+      # type: integer
+      # @schema
+      # -- How often (in seconds) to perform the probe.
       periodSeconds: 5
+
+      # @schema
+      # type: integer
+      # @schema
+      # -- Number of seconds after which the probe times out.
       timeoutSeconds: 3
+
+      # @schema
+      # type: integer
+      # @schema
+      # -- Minimum consecutive successes for the probe to be considered successful.
       successThreshold: 1
+
+      # @schema
+      # type: integer
+      # @schema
+      # -- Minimum consecutive failures for the probe to be considered failed.
       failureThreshold: 12
 
     # @schema
-    # $ref: "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.35.0/_definitions.json#/definitions/io.k8s.api.core.v1.Probe"
+    # additionalProperties: true
     # @schema
     # -- Liveness probe configuration.
     # Detects if the container needs to be restarted.
     liveness:
+      # @schema
+      # type: integer
+      # @schema
+      # -- Number of seconds after the container has started before liveness probe is initiated.
       initialDelaySeconds: 1
+
+      # @schema
+      # type: integer
+      # @schema
+      # -- How often (in seconds) to perform the probe.
       periodSeconds: 10
+
+      # @schema
+      # type: integer
+      # @schema
+      # -- Number of seconds after which the probe times out.
       timeoutSeconds: 5
+
+      # @schema
+      # type: integer
+      # @schema
+      # -- Minimum consecutive successes for the probe to be considered successful.
       successThreshold: 1
+
+      # @schema
+      # type: integer
+      # @schema
+      # -- Minimum consecutive failures for the probe to be considered failed.
       failureThreshold: 3
 
     # @schema
-    # $ref: "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.35.0/_definitions.json#/definitions/io.k8s.api.core.v1.Probe"
+    # additionalProperties: true
     # @schema
     # -- Readiness probe configuration.
     # Detects if the container is ready to serve traffic.
     readiness:
+      # @schema
+      # type: integer
+      # @schema
+      # -- Number of seconds after the container has started before readiness probe is initiated.
       initialDelaySeconds: 1
+
+      # @schema
+      # type: integer
+      # @schema
+      # -- How often (in seconds) to perform the probe.
       periodSeconds: 5
+
+      # @schema
+      # type: integer
+      # @schema
+      # -- Number of seconds after which the probe times out.
       timeoutSeconds: 3
+
+      # @schema
+      # type: integer
+      # @schema
+      # -- Minimum consecutive successes for the probe to be considered successful.
       successThreshold: 1
+
+      # @schema
+      # type: integer
+      # @schema
+      # -- Minimum consecutive failures for the probe to be considered failed.
       failureThreshold: 3
 
 # @schema
-# $ref: "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.35.0/_definitions.json#/definitions/io.k8s.api.core.v1.SecurityContext"
+# additionalProperties: true
 # @schema
 securityContext:
+  # @schema
+  # type: boolean
+  # @schema
   # -- Allow privilege escalation
   allowPrivilegeEscalation: false
 
+  # @schema
+  # additionalProperties: true
+  # @schema
   capabilities:
+    # @schema
+    # type: array
+    # @schema
     # -- Linux capabilities to drop
     drop:
       - ALL
 
+  # @schema
+  # type: boolean
+  # @schema
   # -- Mount root filesystem as read-only.
   # Next.js ISR requires write access to update prerender cache.
   # Set to true only if your app doesn't use ISR.
   readOnlyRootFilesystem: true
 
 # @schema
-# $ref: "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.35.0/_definitions.json#/definitions/io.k8s.api.core.v1.PodSecurityContext"
+# additionalProperties: true
 # @schema
 podSecurityContext:
+  # @schema
+  # type: boolean
+  # @schema
   # -- Run pod as non-root user
   runAsNonRoot: true
 
+  # @schema
+  # type: integer
+  # @schema
   # -- User ID to run as
   runAsUser: 1000
 
+  # @schema
+  # type: integer
+  # @schema
   # -- Group ID for file system access
   fsGroup: 1000
 
@@ -287,8 +380,6 @@ ingress:
 
   # @schema
   # type: array
-  # items:
-  #   $ref: "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.35.0/_definitions.json#/definitions/io.k8s.api.networking.v1.IngressTLS"
   # @schema
   # -- TLS configuration for securing ingress connections.
   # Example:
@@ -301,16 +392,28 @@ ingress:
   tls: []
 
 # @schema
-# $ref: "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.35.0/_definitions.json#/definitions/io.k8s.api.core.v1.ResourceRequirements"
+# additionalProperties: true
 # @schema
 resources:
+  # @schema
+  # additionalProperties: true
+  # @schema
   # -- Resource limits define the maximum resources the container can use.
   limits:
+    # @schema
+    # type: string
+    # @schema
     # -- Maximum memory allocation for the container.
     memory: 20Mi
 
+  # @schema
+  # additionalProperties: true
+  # @schema
   # -- Resource requests define the guaranteed resources reserved for the container.
   requests:
+    # @schema
+    # type: string
+    # @schema
     # -- Minimum memory requested by the container.
     memory: 15Mi
 
@@ -384,12 +487,10 @@ networkPolicy:
     #   properties:
     #     ports:
     #       type: array
-    #       items:
-    #         $ref: "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.35.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyPort"
+    #       items: { type: object }
     #     from:
     #       type: array
-    #       items:
-    #         $ref: "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.35.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyPeer"
+    #       items: { type: object }
     # @schema
     # -- Custom ingress rules
     customRules: []
@@ -456,12 +557,10 @@ networkPolicy:
     #   properties:
     #     ports:
     #       type: array
-    #       items:
-    #         $ref: "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.35.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyPort"
+    #       items: { type: object }
     #     to:
     #       type: array
-    #       items:
-    #         $ref: "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.35.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyPeer"
+    #       items: { type: object }
     # @schema
     # Example: Allow access to internal S3
     # - ports:

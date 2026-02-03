@@ -160,16 +160,16 @@
                 "properties": {
                   "ports": {
                     "items": {
-                      "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.35.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyPort",
-                      "required": []
+                      "required": [],
+                      "type": "object"
                     },
                     "required": [],
                     "type": "array"
                   },
                   "to": {
                     "items": {
-                      "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.35.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyPeer",
-                      "required": []
+                      "required": [],
+                      "type": "object"
                     },
                     "required": [],
                     "type": "array"
@@ -309,16 +309,16 @@
                 "properties": {
                   "from": {
                     "items": {
-                      "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.35.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyPeer",
-                      "required": []
+                      "required": [],
+                      "type": "object"
                     },
                     "required": [],
                     "type": "array"
                   },
                   "ports": {
                     "items": {
-                      "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.35.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyPort",
-                      "required": []
+                      "required": [],
+                      "type": "object"
                     },
                     "required": [],
                     "type": "array"
@@ -402,8 +402,32 @@
       "title": "persistence"
     },
     "podSecurityContext": {
-      "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.35.0/_definitions.json#/definitions/io.k8s.api.core.v1.PodSecurityContext",
-      "required": []
+      "additionalProperties": true,
+      "properties": {
+        "fsGroup": {
+          "default": 1000,
+          "description": "Group ID for file system access",
+          "required": [],
+          "title": "fsGroup",
+          "type": "integer"
+        },
+        "runAsNonRoot": {
+          "default": true,
+          "description": "Run pod as non-root user",
+          "required": [],
+          "title": "runAsNonRoot",
+          "type": "boolean"
+        },
+        "runAsUser": {
+          "default": 1000,
+          "description": "User ID to run as",
+          "required": [],
+          "title": "runAsUser",
+          "type": "integer"
+        }
+      },
+      "required": [],
+      "title": "podSecurityContext"
     },
     "priorityClassName": {
       "default": "",
@@ -413,12 +437,84 @@
       "type": "string"
     },
     "resources": {
-      "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.35.0/_definitions.json#/definitions/io.k8s.api.core.v1.ResourceRequirements",
-      "required": []
+      "additionalProperties": true,
+      "properties": {
+        "limits": {
+          "additionalProperties": true,
+          "description": "Resource limits for the container.",
+          "properties": {
+            "memory": {
+              "default": "20Mi",
+              "description": "Maximum allowed memory usage.",
+              "required": [],
+              "title": "memory",
+              "type": "string"
+            }
+          },
+          "required": [],
+          "title": "limits"
+        },
+        "requests": {
+          "additionalProperties": true,
+          "description": "Resource requests for the container.",
+          "properties": {
+            "memory": {
+              "default": "15Mi",
+              "description": "Minimum guaranteed memory allocation.",
+              "required": [],
+              "title": "memory",
+              "type": "string"
+            }
+          },
+          "required": [],
+          "title": "requests"
+        }
+      },
+      "required": [],
+      "title": "resources"
     },
     "securityContext": {
-      "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.35.0/_definitions.json#/definitions/io.k8s.api.core.v1.SecurityContext",
-      "required": []
+      "additionalProperties": true,
+      "properties": {
+        "allowPrivilegeEscalation": {
+          "default": false,
+          "description": "Allow privilege escalation",
+          "required": [],
+          "title": "allowPrivilegeEscalation",
+          "type": "boolean"
+        },
+        "capabilities": {
+          "additionalProperties": true,
+          "properties": {
+            "drop": {
+              "description": "Linux capabilities to drop",
+              "items": {
+                "anyOf": [
+                  {
+                    "required": [],
+                    "type": "string"
+                  }
+                ],
+                "required": []
+              },
+              "required": [],
+              "title": "drop",
+              "type": "array"
+            }
+          },
+          "required": [],
+          "title": "capabilities"
+        },
+        "readOnlyRootFilesystem": {
+          "default": true,
+          "description": "Mount root filesystem as read-only",
+          "required": [],
+          "title": "readOnlyRootFilesystem",
+          "type": "boolean"
+        }
+      },
+      "required": [],
+      "title": "securityContext"
     },
     "serviceAccount": {
       "additionalProperties": true,
@@ -458,7 +554,6 @@
     "topologySpreadConstraints": {
       "description": "Pod topology spread constraints for availability",
       "items": {
-        "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.35.0/_definitions.json#/definitions/io.k8s.api.core.v1.TopologySpreadConstraint",
         "required": []
       },
       "required": [],

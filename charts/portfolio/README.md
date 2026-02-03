@@ -1,6 +1,6 @@
 # portfolio
 
-![Version: 1.4.1](https://img.shields.io/badge/Version-1.4.1-informational?style=flat-square) ![AppVersion: v1.15.0](https://img.shields.io/badge/AppVersion-v1.15.0-informational?style=flat-square)
+![Version: 1.4.2](https://img.shields.io/badge/Version-1.4.2-informational?style=flat-square) ![AppVersion: v1.15.0](https://img.shields.io/badge/AppVersion-v1.15.0-informational?style=flat-square)
 
 Personal portfolio built with Next.js.
 
@@ -52,9 +52,24 @@ The following table lists the configurable parameters of the chart and their def
 | application.github.secretName | string | `""` | Name of an existing Kubernetes Secret containing the GitHub token. The secret must include a `GITHUB_TOKEN` field. If not provided, a secret will be created from the `token` field below. |
 | application.healthCheck | object | `{"liveness":{"failureThreshold":3,"initialDelaySeconds":1,"periodSeconds":10,"successThreshold":1,"timeoutSeconds":5},"path":"/api/health","readiness":{"failureThreshold":3,"initialDelaySeconds":1,"periodSeconds":5,"successThreshold":1,"timeoutSeconds":3},"startup":{"failureThreshold":12,"initialDelaySeconds":1,"periodSeconds":5,"successThreshold":1,"timeoutSeconds":3}}` | Health check probe configuration. Next.js Portfolio application exposes health checks on /api/health. |
 | application.healthCheck.liveness | object | `{"failureThreshold":3,"initialDelaySeconds":1,"periodSeconds":10,"successThreshold":1,"timeoutSeconds":5}` | Liveness probe configuration. Detects if the container needs to be restarted. |
+| application.healthCheck.liveness.failureThreshold | int | `3` | Minimum consecutive failures for the probe to be considered failed. |
+| application.healthCheck.liveness.initialDelaySeconds | int | `1` | Number of seconds after the container has started before liveness probe is initiated. |
+| application.healthCheck.liveness.periodSeconds | int | `10` | How often (in seconds) to perform the probe. |
+| application.healthCheck.liveness.successThreshold | int | `1` | Minimum consecutive successes for the probe to be considered successful. |
+| application.healthCheck.liveness.timeoutSeconds | int | `5` | Number of seconds after which the probe times out. |
 | application.healthCheck.path | string | `"/api/health"` | Path for health check endpoint. |
 | application.healthCheck.readiness | object | `{"failureThreshold":3,"initialDelaySeconds":1,"periodSeconds":5,"successThreshold":1,"timeoutSeconds":3}` | Readiness probe configuration. Detects if the container is ready to serve traffic. |
+| application.healthCheck.readiness.failureThreshold | int | `3` | Minimum consecutive failures for the probe to be considered failed. |
+| application.healthCheck.readiness.initialDelaySeconds | int | `1` | Number of seconds after the container has started before readiness probe is initiated. |
+| application.healthCheck.readiness.periodSeconds | int | `5` | How often (in seconds) to perform the probe. |
+| application.healthCheck.readiness.successThreshold | int | `1` | Minimum consecutive successes for the probe to be considered successful. |
+| application.healthCheck.readiness.timeoutSeconds | int | `3` | Number of seconds after which the probe times out. |
 | application.healthCheck.startup | object | `{"failureThreshold":12,"initialDelaySeconds":1,"periodSeconds":5,"successThreshold":1,"timeoutSeconds":3}` | Startup probe configuration. Protects slow starting containers from being killed by liveness probe. |
+| application.healthCheck.startup.failureThreshold | int | `12` | Minimum consecutive failures for the probe to be considered failed. |
+| application.healthCheck.startup.initialDelaySeconds | int | `1` | Number of seconds after the container has started before startup probe is initiated. |
+| application.healthCheck.startup.periodSeconds | int | `5` | How often (in seconds) to perform the probe. |
+| application.healthCheck.startup.successThreshold | int | `1` | Minimum consecutive successes for the probe to be considered successful. |
+| application.healthCheck.startup.timeoutSeconds | int | `3` | Number of seconds after which the probe times out. |
 | application.port | int | `3000` | Port number the Next.js application listens on. Next.js standalone server defaults to 3000. |
 | image.pullPolicy | string | `"IfNotPresent"` | Kubernetes image pull policy. Determines when the image should be pulled from the registry. |
 | image.repository | string | `"timschoenle/portfolio"` | Container image repository where the Portfolio application image is stored. Points to Docker Hub timschoenle/portfolio. |

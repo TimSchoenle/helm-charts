@@ -3,8 +3,11 @@
   "additionalProperties": false,
   "properties": {
     "affinity": {
-      "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.35.0/_definitions.json#/definitions/io.k8s.api.core.v1.Affinity",
-      "required": []
+      "additionalProperties": true,
+      "description": "Pod affinity rules",
+      "required": [],
+      "title": "affinity",
+      "type": "object"
     },
     "application": {
       "additionalProperties": true,
@@ -237,7 +240,6 @@
         "tls": {
           "description": "TLS configuration for ingress\nExample:\n  - secretName: example-tls\n    hosts:\n      - example.local",
           "items": {
-            "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.35.0/_definitions.json#/definitions/io.k8s.api.networking.v1.IngressTLS",
             "required": []
           },
           "required": [],
@@ -249,22 +251,7 @@
       "title": "ingress"
     },
     "livenessProbe": {
-      "additionalProperties": false,
-      "allOf": [
-        {
-          "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.35.0/_definitions.json#/definitions/io.k8s.api.core.v1.Probe",
-          "required": []
-        },
-        {
-          "properties": {
-            "enabled": {
-              "required": [],
-              "type": "boolean"
-            }
-          },
-          "required": []
-        }
-      ],
+      "additionalProperties": true,
       "properties": {
         "enabled": {
           "default": true,
@@ -281,7 +268,7 @@
           "type": "integer"
         },
         "httpGet": {
-          "additionalProperties": false,
+          "additionalProperties": true,
           "properties": {
             "path": {
               "default": "/health",
@@ -298,12 +285,8 @@
               "type": "string"
             }
           },
-          "required": [
-            "path",
-            "port"
-          ],
-          "title": "httpGet",
-          "type": "object"
+          "required": [],
+          "title": "httpGet"
         },
         "initialDelaySeconds": {
           "default": 10,
@@ -327,14 +310,7 @@
           "type": "integer"
         }
       },
-      "required": [
-        "enabled",
-        "httpGet",
-        "initialDelaySeconds",
-        "periodSeconds",
-        "timeoutSeconds",
-        "failureThreshold"
-      ],
+      "required": [],
       "title": "livenessProbe"
     },
     "nameOverride": {
@@ -358,16 +334,16 @@
                 "properties": {
                   "ports": {
                     "items": {
-                      "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.35.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyPort",
-                      "required": []
+                      "required": [],
+                      "type": "object"
                     },
                     "required": [],
                     "type": "array"
                   },
                   "to": {
                     "items": {
-                      "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.35.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyPeer",
-                      "required": []
+                      "required": [],
+                      "type": "object"
                     },
                     "required": [],
                     "type": "array"
@@ -507,16 +483,16 @@
                 "properties": {
                   "from": {
                     "items": {
-                      "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.35.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyPeer",
-                      "required": []
+                      "required": [],
+                      "type": "object"
                     },
                     "required": [],
                     "type": "array"
                   },
                   "ports": {
                     "items": {
-                      "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.35.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyPort",
-                      "required": []
+                      "required": [],
+                      "type": "object"
                     },
                     "required": [],
                     "type": "array"
@@ -622,8 +598,32 @@
       "type": "object"
     },
     "podSecurityContext": {
-      "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.35.0/_definitions.json#/definitions/io.k8s.api.core.v1.PodSecurityContext",
-      "required": []
+      "additionalProperties": true,
+      "properties": {
+        "fsGroup": {
+          "default": 10001,
+          "description": "Group ID for file system access",
+          "required": [],
+          "title": "fsGroup",
+          "type": "integer"
+        },
+        "runAsNonRoot": {
+          "default": true,
+          "description": "Run pod as non-root user",
+          "required": [],
+          "title": "runAsNonRoot",
+          "type": "boolean"
+        },
+        "runAsUser": {
+          "default": 10001,
+          "description": "User ID to run as",
+          "required": [],
+          "title": "runAsUser",
+          "type": "integer"
+        }
+      },
+      "required": [],
+      "title": "podSecurityContext"
     },
     "priorityClassName": {
       "default": "",
@@ -633,22 +633,7 @@
       "type": "string"
     },
     "readinessProbe": {
-      "additionalProperties": false,
-      "allOf": [
-        {
-          "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.35.0/_definitions.json#/definitions/io.k8s.api.core.v1.Probe",
-          "required": []
-        },
-        {
-          "properties": {
-            "enabled": {
-              "required": [],
-              "type": "boolean"
-            }
-          },
-          "required": []
-        }
-      ],
+      "additionalProperties": true,
       "properties": {
         "enabled": {
           "default": true,
@@ -665,7 +650,7 @@
           "type": "integer"
         },
         "httpGet": {
-          "additionalProperties": false,
+          "additionalProperties": true,
           "properties": {
             "path": {
               "default": "/health",
@@ -682,12 +667,8 @@
               "type": "string"
             }
           },
-          "required": [
-            "path",
-            "port"
-          ],
-          "title": "httpGet",
-          "type": "object"
+          "required": [],
+          "title": "httpGet"
         },
         "initialDelaySeconds": {
           "default": 5,
@@ -711,14 +692,7 @@
           "type": "integer"
         }
       },
-      "required": [
-        "enabled",
-        "httpGet",
-        "initialDelaySeconds",
-        "periodSeconds",
-        "timeoutSeconds",
-        "failureThreshold"
-      ],
+      "required": [],
       "title": "readinessProbe"
     },
     "replicaCount": {
@@ -730,12 +704,96 @@
       "type": "integer"
     },
     "resources": {
-      "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.35.0/_definitions.json#/definitions/io.k8s.api.core.v1.ResourceRequirements",
-      "required": []
+      "additionalProperties": true,
+      "properties": {
+        "limits": {
+          "additionalProperties": true,
+          "properties": {
+            "cpu": {
+              "default": "100m",
+              "description": "Maximum CPU usage (e.g. 100m = 0.1 core)",
+              "required": [],
+              "title": "cpu",
+              "type": "string"
+            },
+            "memory": {
+              "default": "50Mi",
+              "description": "Maximum memory usage (e.g. 64Mi)",
+              "required": [],
+              "title": "memory",
+              "type": "string"
+            }
+          },
+          "required": [],
+          "title": "limits"
+        },
+        "requests": {
+          "additionalProperties": true,
+          "properties": {
+            "cpu": {
+              "default": "10m",
+              "description": "Guaranteed CPU request",
+              "required": [],
+              "title": "cpu",
+              "type": "string"
+            },
+            "memory": {
+              "default": "35Mi",
+              "description": "Guaranteed memory request",
+              "required": [],
+              "title": "memory",
+              "type": "string"
+            }
+          },
+          "required": [],
+          "title": "requests"
+        }
+      },
+      "required": [],
+      "title": "resources"
     },
     "securityContext": {
-      "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.35.0/_definitions.json#/definitions/io.k8s.api.core.v1.SecurityContext",
-      "required": []
+      "additionalProperties": true,
+      "properties": {
+        "allowPrivilegeEscalation": {
+          "default": false,
+          "description": "Allow privilege escalation",
+          "required": [],
+          "title": "allowPrivilegeEscalation",
+          "type": "boolean"
+        },
+        "capabilities": {
+          "additionalProperties": true,
+          "properties": {
+            "drop": {
+              "description": "Linux capabilities to drop",
+              "items": {
+                "anyOf": [
+                  {
+                    "required": [],
+                    "type": "string"
+                  }
+                ],
+                "required": []
+              },
+              "required": [],
+              "title": "drop",
+              "type": "array"
+            }
+          },
+          "required": [],
+          "title": "capabilities"
+        },
+        "readOnlyRootFilesystem": {
+          "default": false,
+          "description": "Mount root filesystem as read-only",
+          "required": [],
+          "title": "readOnlyRootFilesystem",
+          "type": "boolean"
+        }
+      },
+      "required": [],
+      "title": "securityContext"
     },
     "service": {
       "additionalProperties": true,
@@ -805,22 +863,7 @@
       "title": "serviceAccount"
     },
     "startupProbe": {
-      "additionalProperties": false,
-      "allOf": [
-        {
-          "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.35.0/_definitions.json#/definitions/io.k8s.api.core.v1.Probe",
-          "required": []
-        },
-        {
-          "properties": {
-            "enabled": {
-              "required": [],
-              "type": "boolean"
-            }
-          },
-          "required": []
-        }
-      ],
+      "additionalProperties": true,
       "properties": {
         "enabled": {
           "default": true,
@@ -837,7 +880,7 @@
           "type": "integer"
         },
         "httpGet": {
-          "additionalProperties": false,
+          "additionalProperties": true,
           "properties": {
             "path": {
               "default": "/health",
@@ -854,12 +897,8 @@
               "type": "string"
             }
           },
-          "required": [
-            "path",
-            "port"
-          ],
-          "title": "httpGet",
-          "type": "object"
+          "required": [],
+          "title": "httpGet"
         },
         "initialDelaySeconds": {
           "default": 2,
@@ -890,21 +929,12 @@
           "type": "integer"
         }
       },
-      "required": [
-        "enabled",
-        "httpGet",
-        "initialDelaySeconds",
-        "periodSeconds",
-        "timeoutSeconds",
-        "failureThreshold",
-        "successThreshold"
-      ],
+      "required": [],
       "title": "startupProbe"
     },
     "tolerations": {
       "description": "Tolerations for taints",
       "items": {
-        "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.35.0/_definitions.json#/definitions/io.k8s.api.core.v1.Toleration",
         "required": []
       },
       "required": [],
@@ -914,7 +944,6 @@
     "topologySpreadConstraints": {
       "description": "Pod topology spread constraints for availability",
       "items": {
-        "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.35.0/_definitions.json#/definitions/io.k8s.api.core.v1.TopologySpreadConstraint",
         "required": []
       },
       "required": [],
@@ -924,7 +953,6 @@
     "volumeMounts": {
       "description": "Additional volume mounts (e.g., /cache)",
       "items": {
-        "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.35.0/_definitions.json#/definitions/io.k8s.api.core.v1.VolumeMount",
         "required": []
       },
       "required": [],
@@ -934,7 +962,6 @@
     "volumes": {
       "description": "Additional volumes (e.g., cache, tmp)",
       "items": {
-        "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.35.0/_definitions.json#/definitions/io.k8s.api.core.v1.Volume",
         "required": []
       },
       "required": [],

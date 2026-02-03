@@ -1,0 +1,12 @@
+{{- $host := include "common.fullname" . -}}
+{{- $port := include "common.servicePort" . -}}
+{{- $selfTarget := printf "%s:%s" $host $port -}}
+
+{{- $tests := list 
+  (dict "target" $selfTarget "expect" "success")
+  (dict "target" "google.com:80" "expect" "failure")
+-}}
+
+{{- $newValues := merge (dict "tests" (dict "connectivity" $tests)) .Values -}}
+{{- $ctx := merge (dict "Values" $newValues) . -}}
+{{- include "common.test.start_pod" $ctx -}}

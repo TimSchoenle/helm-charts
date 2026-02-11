@@ -1,6 +1,6 @@
 # cloudflare-access-webhook-redirect
 
-![Version: 2.1.2](https://img.shields.io/badge/Version-2.1.2-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: v0.3.11](https://img.shields.io/badge/AppVersion-v0.3.11-informational?style=flat-square)
+![Version: 2.1.3](https://img.shields.io/badge/Version-2.1.3-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: v0.3.12](https://img.shields.io/badge/AppVersion-v0.3.12-informational?style=flat-square)
 
 A Helm chart for deploying the Cloudflare Access Webhook Redirect service. This service acts as an authentication proxy that validates requests using Cloudflare Access Service Auth tokens before forwarding them to target backend services.
 
@@ -70,7 +70,7 @@ The following table lists the configurable parameters of the chart and their def
 | fullnameOverride | string | `""` | Override the full release name |
 | image.pullPolicy | string | `"IfNotPresent"` | Image pull policy |
 | image.repository | string | `"timmi6790/cloudflare-access-webhook-redirect"` | Container image repository (e.g. docker.io/user/image) |
-| image.tag | string | `"v0.3.11@sha256:d3df58915085a59e6fa4a503f092d1d18df4d0c481a0db0013183456f8b0aa9a"` | Container image tag (version) |
+| image.tag | string | `"v0.3.12@sha256:c2c8c69d00ddc11455353a811f33b26373d1de2b56f81d66339062992fdc49d8"` | Container image tag (version) |
 | imagePullSecrets | list | `[]` | Optional image pull secrets for private registries |
 | ingress.annotations | object | `{}` | Additional ingress annotations Example:   cert-manager.io/cluster-issuer: letsencrypt-prod   nginx.ingress.kubernetes.io/rate-limit: "100" |
 | ingress.enabled | bool | `false` | Enable ingress resource |

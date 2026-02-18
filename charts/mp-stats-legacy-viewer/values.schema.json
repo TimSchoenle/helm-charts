@@ -1,0 +1,661 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "properties": {
+    "application": {
+      "additionalProperties": true,
+      "properties": {
+        "healthCheck": {
+          "additionalProperties": true,
+          "description": "Health check probe configuration.\nApplication exposes health check on /health.",
+          "properties": {
+            "liveness": {
+              "additionalProperties": true,
+              "description": "Liveness probe configuration.\nDetects if the container needs to be restarted.",
+              "properties": {
+                "failureThreshold": {
+                  "default": 3,
+                  "description": "Minimum consecutive failures for the probe to be considered failed.",
+                  "required": [],
+                  "title": "failureThreshold",
+                  "type": "integer"
+                },
+                "initialDelaySeconds": {
+                  "default": 1,
+                  "description": "Number of seconds after the container has started before liveness probe is initiated.",
+                  "required": [],
+                  "title": "initialDelaySeconds",
+                  "type": "integer"
+                },
+                "periodSeconds": {
+                  "default": 10,
+                  "description": "How often (in seconds) to perform the probe.",
+                  "required": [],
+                  "title": "periodSeconds",
+                  "type": "integer"
+                },
+                "successThreshold": {
+                  "default": 1,
+                  "description": "Minimum consecutive successes for the probe to be considered successful.",
+                  "required": [],
+                  "title": "successThreshold",
+                  "type": "integer"
+                },
+                "timeoutSeconds": {
+                  "default": 5,
+                  "description": "Number of seconds after which the probe times out.",
+                  "required": [],
+                  "title": "timeoutSeconds",
+                  "type": "integer"
+                }
+              },
+              "required": [],
+              "title": "liveness"
+            },
+            "path": {
+              "default": "/health",
+              "description": "Path for health check endpoint.",
+              "required": [],
+              "title": "path",
+              "type": "string"
+            },
+            "readiness": {
+              "additionalProperties": true,
+              "description": "Readiness probe configuration.\nDetects if the container is ready to serve traffic.",
+              "properties": {
+                "failureThreshold": {
+                  "default": 3,
+                  "description": "Minimum consecutive failures for the probe to be considered failed.",
+                  "required": [],
+                  "title": "failureThreshold",
+                  "type": "integer"
+                },
+                "initialDelaySeconds": {
+                  "default": 1,
+                  "description": "Number of seconds after the container has started before readiness probe is initiated.",
+                  "required": [],
+                  "title": "initialDelaySeconds",
+                  "type": "integer"
+                },
+                "periodSeconds": {
+                  "default": 5,
+                  "description": "How often (in seconds) to perform the probe.",
+                  "required": [],
+                  "title": "periodSeconds",
+                  "type": "integer"
+                },
+                "successThreshold": {
+                  "default": 1,
+                  "description": "Minimum consecutive successes for the probe to be considered successful.",
+                  "required": [],
+                  "title": "successThreshold",
+                  "type": "integer"
+                },
+                "timeoutSeconds": {
+                  "default": 3,
+                  "description": "Number of seconds after which the probe times out.",
+                  "required": [],
+                  "title": "timeoutSeconds",
+                  "type": "integer"
+                }
+              },
+              "required": [],
+              "title": "readiness"
+            },
+            "startup": {
+              "additionalProperties": true,
+              "description": "Startup probe configuration.\nProtects slow starting containers from being killed by liveness probe.",
+              "properties": {
+                "failureThreshold": {
+                  "default": 12,
+                  "description": "Minimum consecutive failures for the probe to be considered failed.",
+                  "required": [],
+                  "title": "failureThreshold",
+                  "type": "integer"
+                },
+                "initialDelaySeconds": {
+                  "default": 1,
+                  "description": "Number of seconds after the container has started before startup probe is initiated.",
+                  "required": [],
+                  "title": "initialDelaySeconds",
+                  "type": "integer"
+                },
+                "periodSeconds": {
+                  "default": 5,
+                  "description": "How often (in seconds) to perform the probe.",
+                  "required": [],
+                  "title": "periodSeconds",
+                  "type": "integer"
+                },
+                "successThreshold": {
+                  "default": 1,
+                  "description": "Minimum consecutive successes for the probe to be considered successful.",
+                  "required": [],
+                  "title": "successThreshold",
+                  "type": "integer"
+                },
+                "timeoutSeconds": {
+                  "default": 3,
+                  "description": "Number of seconds after which the probe times out.",
+                  "required": [],
+                  "title": "timeoutSeconds",
+                  "type": "integer"
+                }
+              },
+              "required": [],
+              "title": "startup"
+            }
+          },
+          "required": [],
+          "title": "healthCheck"
+        },
+        "server": {
+          "additionalProperties": true,
+          "description": "HTTP server configuration.\nDefines where the application listens for incoming connections.",
+          "properties": {
+            "host": {
+              "default": "0.0.0.0",
+              "description": "Host address to bind the HTTP server.\nTypically `0.0.0.0` to listen on all network interfaces.",
+              "required": [],
+              "title": "host",
+              "type": "string"
+            },
+            "port": {
+              "default": 8080,
+              "description": "Port number the server listens on.",
+              "required": [],
+              "title": "port",
+              "type": "integer"
+            }
+          },
+          "required": [],
+          "title": "server"
+        }
+      },
+      "required": [],
+      "title": "application"
+    },
+    "common": {
+      "description": "Common helper templates for all charts",
+      "required": [],
+      "title": "common",
+      "type": "object"
+    },
+    "global": {
+      "description": "Global values are values that can be accessed from any chart or subchart by exactly the same name.",
+      "required": [],
+      "title": "global",
+      "type": "object"
+    },
+    "image": {
+      "additionalProperties": true,
+      "properties": {
+        "pullPolicy": {
+          "default": "IfNotPresent",
+          "description": "Kubernetes image pull policy.\nDetermines when the image should be pulled from the registry.",
+          "enum": [
+            "Always",
+            "IfNotPresent",
+            "Never"
+          ],
+          "required": [],
+          "title": "pullPolicy"
+        },
+        "repository": {
+          "default": "timschoenle/mp-stats-legacy-viewer",
+          "description": "Container image repository where the application image is stored.\nUsually points to Docker Hub or a private registry.\nExample: ghcr.io/your-org/s3-bucket-perma-link",
+          "required": [],
+          "title": "repository",
+          "type": "string"
+        },
+        "tag": {
+          "default": "v0.2.1@sha256:3e72119d7276bc93beff0caadca09d801f39d176927d50958f0ce98b3c268f14",
+          "description": "Container image tag to deploy.\nPin to a version for predictable deployments rather than using \"latest\".",
+          "required": [],
+          "title": "tag",
+          "type": "string"
+        }
+      },
+      "required": [],
+      "title": "image"
+    },
+    "ingress": {
+      "additionalProperties": true,
+      "properties": {
+        "annotations": {
+          "additionalProperties": false,
+          "description": "Custom annotations for the Ingress resource.\nUseful for configuring ingress controllers (e.g., cert-manager, rate limits).",
+          "required": [],
+          "title": "annotations",
+          "type": "object"
+        },
+        "enabled": {
+          "default": false,
+          "description": "Enable or disable Kubernetes Ingress resource creation.\nSet to `true` to expose the service externally via Ingress.",
+          "required": [],
+          "title": "enabled",
+          "type": "boolean"
+        },
+        "hosts": {
+          "description": "List of host configurations for the Ingress.\nEach host defines rules for routing external traffic.\nExample:\n```yaml\nhosts:\n  - host: s3.example.com\n    paths:\n      - path: /\n        pathType: Prefix\n```",
+          "items": {
+            "required": []
+          },
+          "required": [],
+          "title": "hosts",
+          "type": "array"
+        },
+        "ingressClassName": {
+          "default": "nginx",
+          "description": "Ingress class to use (e.g., \"nginx\", \"traefik\").\nShould match your cluster’s ingress controller configuration.",
+          "required": [],
+          "title": "ingressClassName",
+          "type": "string"
+        },
+        "tls": {
+          "description": "TLS configuration for securing ingress connections.\nExample:\n```yaml\ntls:\n  - secretName: s3-cert\n    hosts:\n      - s3.example.com\n```",
+          "items": {
+            "required": []
+          },
+          "required": [],
+          "title": "tls",
+          "type": "array"
+        }
+      },
+      "required": [],
+      "title": "ingress"
+    },
+    "networkPolicy": {
+      "additionalProperties": true,
+      "description": "Network policy configuration",
+      "properties": {
+        "egress": {
+          "additionalProperties": true,
+          "description": "Egress configuration",
+          "properties": {
+            "customRules": {
+              "description": "Example: Allow access to internal S3\n- ports:\n    - port: 9000\n      protocol: TCP\n  to:\n    - podSelector:\n        matchLabels:\n          app.kubernetes.io/name: minio\n      namespaceSelector:\n        matchLabels:\n            kubernetes.io/metadata.name: storage\nCustom egress rules",
+              "items": {
+                "properties": {
+                  "ports": {
+                    "items": {
+                      "required": [],
+                      "type": "object"
+                    },
+                    "required": [],
+                    "type": "array"
+                  },
+                  "to": {
+                    "items": {
+                      "required": [],
+                      "type": "object"
+                    },
+                    "required": [],
+                    "type": "array"
+                  }
+                },
+                "required": [],
+                "type": "object"
+              },
+              "required": [],
+              "title": "customRules",
+              "type": "array"
+            },
+            "dns": {
+              "additionalProperties": true,
+              "description": "DNS configuration for egress",
+              "properties": {
+                "enabled": {
+                  "default": true,
+                  "description": "Allow egress to DNS",
+                  "required": [],
+                  "title": "enabled",
+                  "type": "boolean"
+                }
+              },
+              "required": [],
+              "title": "dns"
+            },
+            "enabled": {
+              "default": true,
+              "description": "Enable egress rules",
+              "required": [],
+              "title": "enabled",
+              "type": "boolean"
+            },
+            "http": {
+              "additionalProperties": true,
+              "description": "HTTP configuration for egress",
+              "properties": {
+                "enabled": {
+                  "default": false,
+                  "description": "Allow egress to HTTP (TCP/80)",
+                  "required": [],
+                  "title": "enabled",
+                  "type": "boolean"
+                }
+              },
+              "required": [],
+              "title": "http"
+            },
+            "https": {
+              "additionalProperties": true,
+              "description": "HTTPS configuration for egress",
+              "properties": {
+                "enabled": {
+                  "default": false,
+                  "description": "Allow egress to HTTPS (TCP/443)",
+                  "required": [],
+                  "title": "enabled",
+                  "type": "boolean"
+                }
+              },
+              "required": [],
+              "title": "https"
+            },
+            "sentry": {
+              "additionalProperties": true,
+              "description": "Sentry configuration for egress",
+              "properties": {
+                "enabled": {
+                  "default": true,
+                  "description": "Allow egress to Sentry (HTTPS)",
+                  "required": [],
+                  "title": "enabled",
+                  "type": "boolean"
+                }
+              },
+              "required": [],
+              "title": "sentry"
+            }
+          },
+          "required": [],
+          "title": "egress"
+        },
+        "enabled": {
+          "default": false,
+          "description": "Enable network policies",
+          "required": [],
+          "title": "enabled",
+          "type": "boolean"
+        },
+        "ingress": {
+          "additionalProperties": true,
+          "description": "Ingress configuration",
+          "properties": {
+            "controller": {
+              "additionalProperties": true,
+              "description": "Ingress Controller configuration",
+              "properties": {
+                "enabled": {
+                  "default": true,
+                  "description": "Allow ingress from Ingress Controller",
+                  "required": [],
+                  "title": "enabled",
+                  "type": "boolean"
+                },
+                "namespace": {
+                  "default": "traefik",
+                  "description": "Namespace where Ingress Controller is running (default: traefik)",
+                  "required": [],
+                  "title": "namespace",
+                  "type": "string"
+                },
+                "selector": {
+                  "additionalProperties": false,
+                  "description": "Pod selector for Ingress Controller (default: Traefik label)",
+                  "properties": {
+                    "app.kubernetes.io/name": {
+                      "default": "traefik",
+                      "required": [],
+                      "title": "app.kubernetes.io/name",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "app.kubernetes.io/name"
+                  ],
+                  "title": "selector",
+                  "type": "object"
+                }
+              },
+              "required": [],
+              "title": "controller"
+            },
+            "customRules": {
+              "description": "Custom ingress rules",
+              "items": {
+                "properties": {
+                  "from": {
+                    "items": {
+                      "required": [],
+                      "type": "object"
+                    },
+                    "required": [],
+                    "type": "array"
+                  },
+                  "ports": {
+                    "items": {
+                      "required": [],
+                      "type": "object"
+                    },
+                    "required": [],
+                    "type": "array"
+                  }
+                },
+                "required": [],
+                "type": "object"
+              },
+              "required": [],
+              "title": "customRules",
+              "type": "array"
+            },
+            "enabled": {
+              "default": true,
+              "description": "Enable ingress rules",
+              "required": [],
+              "title": "enabled",
+              "type": "boolean"
+            },
+            "monitoring": {
+              "additionalProperties": true,
+              "description": "Monitoring configuration for ingress",
+              "properties": {
+                "enabled": {
+                  "default": true,
+                  "description": "Allow ingress from monitoring namespace",
+                  "required": [],
+                  "title": "enabled",
+                  "type": "boolean"
+                },
+                "namespace": {
+                  "default": "monitoring",
+                  "description": "Namespace where monitoring tools are running",
+                  "required": [],
+                  "title": "namespace",
+                  "type": "string"
+                }
+              },
+              "required": [],
+              "title": "monitoring"
+            }
+          },
+          "required": [],
+          "title": "ingress"
+        }
+      },
+      "required": [],
+      "title": "networkPolicy"
+    },
+    "podSecurityContext": {
+      "additionalProperties": true,
+      "properties": {
+        "fsGroup": {
+          "default": 1000,
+          "description": "Group ID for file system access",
+          "required": [],
+          "title": "fsGroup",
+          "type": "integer"
+        },
+        "runAsNonRoot": {
+          "default": true,
+          "description": "Run pod as non-root user",
+          "required": [],
+          "title": "runAsNonRoot",
+          "type": "boolean"
+        },
+        "runAsUser": {
+          "default": 1000,
+          "description": "User ID to run as",
+          "required": [],
+          "title": "runAsUser",
+          "type": "integer"
+        }
+      },
+      "required": [],
+      "title": "podSecurityContext"
+    },
+    "resources": {
+      "additionalProperties": true,
+      "properties": {
+        "limits": {
+          "additionalProperties": true,
+          "description": "Resource limits define the maximum resources the container can use.",
+          "properties": {
+            "memory": {
+              "default": "100Mi",
+              "description": "Maximum memory allocation for the container.",
+              "required": [],
+              "title": "memory",
+              "type": "string"
+            }
+          },
+          "required": [],
+          "title": "limits"
+        },
+        "requests": {
+          "additionalProperties": true,
+          "description": "Resource requests define the guaranteed resources reserved for the container.",
+          "properties": {
+            "memory": {
+              "default": "100Mi",
+              "description": "Minimum memory requested by the container.",
+              "required": [],
+              "title": "memory",
+              "type": "string"
+            }
+          },
+          "required": [],
+          "title": "requests"
+        }
+      },
+      "required": [],
+      "title": "resources"
+    },
+    "securityContext": {
+      "additionalProperties": true,
+      "properties": {
+        "allowPrivilegeEscalation": {
+          "default": false,
+          "description": "Allow privilege escalation",
+          "required": [],
+          "title": "allowPrivilegeEscalation",
+          "type": "boolean"
+        },
+        "capabilities": {
+          "additionalProperties": true,
+          "properties": {
+            "drop": {
+              "description": "Linux capabilities to drop",
+              "items": {
+                "anyOf": [
+                  {
+                    "required": [],
+                    "type": "string"
+                  }
+                ],
+                "required": []
+              },
+              "required": [],
+              "title": "drop",
+              "type": "array"
+            }
+          },
+          "required": [],
+          "title": "capabilities"
+        },
+        "readOnlyRootFilesystem": {
+          "default": false,
+          "description": "Mount root filesystem as read-only.",
+          "required": [],
+          "title": "readOnlyRootFilesystem",
+          "type": "boolean"
+        }
+      },
+      "required": [],
+      "title": "securityContext"
+    },
+    "service": {
+      "additionalProperties": true,
+      "properties": {
+        "port": {
+          "default": 80,
+          "description": "Port that the Kubernetes Service will expose.\nTypically maps to `application.server.port`.",
+          "required": [],
+          "title": "port",
+          "type": "integer"
+        },
+        "type": {
+          "default": "ClusterIP",
+          "description": "Kubernetes Service type that exposes the application.",
+          "enum": [
+            "ClusterIP",
+            "NodePort",
+            "LoadBalancer"
+          ],
+          "required": [],
+          "title": "type"
+        }
+      },
+      "required": [],
+      "title": "service"
+    },
+    "serviceAccount": {
+      "additionalProperties": true,
+      "properties": {
+        "annotations": {
+          "additionalProperties": false,
+          "description": "Additional annotations for the service account",
+          "required": [],
+          "title": "annotations",
+          "type": "object"
+        },
+        "automountToken": {
+          "default": false,
+          "description": "Whether to automount the service account token",
+          "required": [],
+          "title": "automountToken",
+          "type": "boolean"
+        },
+        "create": {
+          "default": true,
+          "description": "Whether to create a dedicated service account",
+          "required": [],
+          "title": "create",
+          "type": "boolean"
+        },
+        "name": {
+          "default": "",
+          "description": "Custom service account name (auto-generated if empty)",
+          "required": [],
+          "title": "name",
+          "type": "string"
+        }
+      },
+      "required": [],
+      "title": "serviceAccount"
+    }
+  },
+  "required": [],
+  "type": "object"
+}

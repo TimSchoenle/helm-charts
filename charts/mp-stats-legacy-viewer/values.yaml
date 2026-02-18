@@ -1,0 +1,503 @@
+# vim: set ft=yaml:
+# yaml-language-server: $schema=values.schema.json
+
+# @schema
+# additionalProperties: true
+# @schema
+image:
+  # @schema
+  # type: string
+  # @schema
+  # -- Container image repository where the application image is stored.
+  # Usually points to Docker Hub or a private registry.
+  # Example: ghcr.io/your-org/s3-bucket-perma-link
+  repository: timschoenle/mp-stats-legacy-viewer
+
+  # @schema
+  # type: string
+  # @schema
+  # -- Container image tag to deploy.
+  # Pin to a version for predictable deployments rather than using "latest".
+  tag: v0.2.1@sha256:3e72119d7276bc93beff0caadca09d801f39d176927d50958f0ce98b3c268f14
+
+  # @schema
+  # enum: [Always, IfNotPresent, Never]
+  # @schema
+  # -- Kubernetes image pull policy.
+  # Determines when the image should be pulled from the registry.
+  pullPolicy: IfNotPresent
+
+# @schema
+# additionalProperties: true
+# @schema
+application:
+  # @schema
+  # additionalProperties: true
+  # @schema
+  # -- HTTP server configuration.
+  # Defines where the application listens for incoming connections.
+  server:
+    # @schema
+    # type: integer
+    # @schema
+    # -- Port number the server listens on.
+    port: 8080
+
+    # @schema
+    # type: string
+    # @schema
+    # -- Host address to bind the HTTP server.
+    # Typically `0.0.0.0` to listen on all network interfaces.
+    host: 0.0.0.0
+
+  # @schema
+  # additionalProperties: true
+  # @schema
+  # -- Health check probe configuration.
+  # Application exposes health check on /health.
+  healthCheck:
+    # @schema
+    # type: string
+    # @schema
+    # -- Path for health check endpoint.
+    path: /health
+
+    # @schema
+    # additionalProperties: true
+    # @schema
+    # -- Startup probe configuration.
+    # Protects slow starting containers from being killed by liveness probe.
+    startup:
+      # @schema
+      # type: integer
+      # @schema
+      # -- Number of seconds after the container has started before startup probe is initiated.
+      initialDelaySeconds: 1
+
+      # @schema
+      # type: integer
+      # @schema
+      # -- How often (in seconds) to perform the probe.
+      periodSeconds: 5
+
+      # @schema
+      # type: integer
+      # @schema
+      # -- Number of seconds after which the probe times out.
+      timeoutSeconds: 3
+
+      # @schema
+      # type: integer
+      # @schema
+      # -- Minimum consecutive successes for the probe to be considered successful.
+      successThreshold: 1
+
+      # @schema
+      # type: integer
+      # @schema
+      # -- Minimum consecutive failures for the probe to be considered failed.
+      failureThreshold: 12
+
+    # @schema
+    # additionalProperties: true
+    # @schema
+    # -- Liveness probe configuration.
+    # Detects if the container needs to be restarted.
+    liveness:
+      # @schema
+      # type: integer
+      # @schema
+      # -- Number of seconds after the container has started before liveness probe is initiated.
+      initialDelaySeconds: 1
+
+      # @schema
+      # type: integer
+      # @schema
+      # -- How often (in seconds) to perform the probe.
+      periodSeconds: 10
+
+      # @schema
+      # type: integer
+      # @schema
+      # -- Number of seconds after which the probe times out.
+      timeoutSeconds: 5
+
+      # @schema
+      # type: integer
+      # @schema
+      # -- Minimum consecutive successes for the probe to be considered successful.
+      successThreshold: 1
+
+      # @schema
+      # type: integer
+      # @schema
+      # -- Minimum consecutive failures for the probe to be considered failed.
+      failureThreshold: 3
+
+    # @schema
+    # additionalProperties: true
+    # @schema
+    # -- Readiness probe configuration.
+    # Detects if the container is ready to serve traffic.
+    readiness:
+      # @schema
+      # type: integer
+      # @schema
+      # -- Number of seconds after the container has started before readiness probe is initiated.
+      initialDelaySeconds: 1
+
+      # @schema
+      # type: integer
+      # @schema
+      # -- How often (in seconds) to perform the probe.
+      periodSeconds: 5
+
+      # @schema
+      # type: integer
+      # @schema
+      # -- Number of seconds after which the probe times out.
+      timeoutSeconds: 3
+
+      # @schema
+      # type: integer
+      # @schema
+      # -- Minimum consecutive successes for the probe to be considered successful.
+      successThreshold: 1
+
+      # @schema
+      # type: integer
+      # @schema
+      # -- Minimum consecutive failures for the probe to be considered failed.
+      failureThreshold: 3
+
+# @schema
+# additionalProperties: true
+# @schema
+securityContext:
+  # @schema
+  # type: boolean
+  # @schema
+  # -- Allow privilege escalation
+  allowPrivilegeEscalation: false
+
+  # @schema
+  # additionalProperties: true
+  # @schema
+  capabilities:
+    # @schema
+    # type: array
+    # @schema
+    # -- Linux capabilities to drop
+    drop:
+      - ALL
+
+  # @schema
+  # type: boolean
+  # @schema
+  # -- Mount root filesystem as read-only.
+  readOnlyRootFilesystem: false
+
+# @schema
+# additionalProperties: true
+# @schema
+podSecurityContext:
+  # @schema
+  # type: boolean
+  # @schema
+  # -- Run pod as non-root user
+  runAsNonRoot: true
+
+  # @schema
+  # type: integer
+  # @schema
+  # -- User ID to run as
+  runAsUser: 1000
+
+  # @schema
+  # type: integer
+  # @schema
+  # -- Group ID for file system access
+  fsGroup: 1000
+
+# @schema
+# additionalProperties: true
+# @schema
+serviceAccount:
+  # @schema
+  # type: boolean
+  # @schema
+  # -- Whether to create a dedicated service account
+  create: true
+
+  # @schema
+  # type: object
+  # @schema
+  # -- Additional annotations for the service account
+  annotations: {}
+
+  # @schema
+  # type: string
+  # @schema
+  # -- Custom service account name (auto-generated if empty)
+  name: ""
+
+  # @schema
+  # type: boolean
+  # @schema
+  # -- Whether to automount the service account token
+  automountToken: false
+
+# @schema
+# additionalProperties: true
+# @schema
+service:
+  # @schema
+  # enum: [ClusterIP, NodePort, LoadBalancer]
+  # @schema
+  # -- Kubernetes Service type that exposes the application.
+  type: ClusterIP
+
+  # @schema
+  # type: integer
+  # @schema
+  # -- Port that the Kubernetes Service will expose.
+  # Typically maps to `application.server.port`.
+  port: 80
+
+# @schema
+# additionalProperties: true
+# @schema
+ingress:
+  # @schema
+  # type: boolean
+  # @schema
+  # -- Enable or disable Kubernetes Ingress resource creation.
+  # Set to `true` to expose the service externally via Ingress.
+  enabled: false
+
+  # @schema
+  # type: string
+  # @schema
+  # -- Ingress class to use (e.g., "nginx", "traefik").
+  # Should match your cluster’s ingress controller configuration.
+  ingressClassName: "nginx"
+
+  # @schema
+  # type: object
+  # @schema
+  # -- Custom annotations for the Ingress resource.
+  # Useful for configuring ingress controllers (e.g., cert-manager, rate limits).
+  annotations: {}
+
+  # @schema
+  # type: array
+  # @schema
+  # -- List of host configurations for the Ingress.
+  # Each host defines rules for routing external traffic.
+  # Example:
+  # ```yaml
+  # hosts:
+  #   - host: s3.example.com
+  #     paths:
+  #       - path: /
+  #         pathType: Prefix
+  # ```
+  hosts: []
+
+  # @schema
+  # type: array
+  # @schema
+  # -- TLS configuration for securing ingress connections.
+  # Example:
+  # ```yaml
+  # tls:
+  #   - secretName: s3-cert
+  #     hosts:
+  #       - s3.example.com
+  # ```
+  tls: []
+
+# @schema
+# additionalProperties: true
+# @schema
+resources:
+  # @schema
+  # additionalProperties: true
+  # @schema
+  # -- Resource limits define the maximum resources the container can use.
+  limits:
+    # @schema
+    # type: string
+    # @schema
+    # -- Maximum memory allocation for the container.
+    memory: 100Mi
+
+  # @schema
+  # additionalProperties: true
+  # @schema
+  # -- Resource requests define the guaranteed resources reserved for the container.
+  requests:
+    # @schema
+    # type: string
+    # @schema
+    # -- Minimum memory requested by the container.
+    memory: 100Mi
+
+# @schema
+# additionalProperties: true
+# @schema
+# -- Network policy configuration
+networkPolicy:
+  # @schema
+  # type: boolean
+  # @schema
+  # -- Enable network policies
+  enabled: false
+
+  # @schema
+  # additionalProperties: true
+  # @schema
+  # -- Ingress configuration
+  ingress:
+    # @schema
+    # type: boolean
+    # @schema
+    # -- Enable ingress rules
+    enabled: true
+
+    # @schema
+    # additionalProperties: true
+    # @schema
+    # -- Monitoring configuration for ingress
+    monitoring:
+      # @schema
+      # type: boolean
+      # @schema
+      # -- Allow ingress from monitoring namespace
+      enabled: true
+      
+      # @schema
+      # type: string
+      # @schema
+      # -- Namespace where monitoring tools are running
+      namespace: monitoring
+
+    # @schema
+    # additionalProperties: true
+    # @schema
+    # -- Ingress Controller configuration
+    controller:
+      # @schema
+      # type: boolean
+      # @schema
+      # -- Allow ingress from Ingress Controller
+      enabled: true
+
+      # @schema
+      # type: string
+      # @schema
+      # -- Namespace where Ingress Controller is running (default: traefik)
+      namespace: traefik
+
+      # @schema
+      # type: object
+      # @schema
+      # -- Pod selector for Ingress Controller (default: Traefik label)
+      selector:
+        app.kubernetes.io/name: traefik
+
+    # @schema
+    # type: array
+    # items:
+    #   type: object
+    #   properties:
+    #     ports:
+    #       type: array
+    #       items: { type: object }
+    #     from:
+    #       type: array
+    #       items: { type: object }
+    # @schema
+    # -- Custom ingress rules
+    customRules: []
+
+  # @schema
+  # additionalProperties: true
+  # @schema
+  # -- Egress configuration
+  egress:
+    # @schema
+    # type: boolean
+    # @schema
+    # -- Enable egress rules
+    enabled: true
+
+    # @schema
+    # additionalProperties: true
+    # @schema
+    # -- DNS configuration for egress
+    dns:
+      # @schema
+      # type: boolean
+      # @schema
+      # -- Allow egress to DNS
+      enabled: true
+
+    # @schema
+    # additionalProperties: true
+    # @schema
+    # -- HTTP configuration for egress
+    http:
+      # @schema
+      # type: boolean
+      # @schema
+      # -- Allow egress to HTTP (TCP/80)
+      enabled: false
+
+    # @schema
+    # additionalProperties: true
+    # @schema
+    # -- HTTPS configuration for egress
+    https:
+      # @schema
+      # type: boolean
+      # @schema
+      # -- Allow egress to HTTPS (TCP/443)
+      enabled: false
+
+    # @schema
+    # additionalProperties: true
+    # @schema
+    # -- Sentry configuration for egress
+    sentry:
+      # @schema
+      # type: boolean
+      # @schema
+      # -- Allow egress to Sentry (HTTPS)
+      enabled: true
+
+    # @schema
+    # type: array
+    # items:
+    #   type: object
+    #   properties:
+    #     ports:
+    #       type: array
+    #       items: { type: object }
+    #     to:
+    #       type: array
+    #       items: { type: object }
+    # @schema
+    # Example: Allow access to internal S3
+    # - ports:
+    #     - port: 9000
+    #       protocol: TCP
+    #   to:
+    #     - podSelector:
+    #         matchLabels:
+    #           app.kubernetes.io/name: minio
+    #       namespaceSelector:
+    #         matchLabels:
+    #             kubernetes.io/metadata.name: storage
+    # -- Custom egress rules
+    customRules: []

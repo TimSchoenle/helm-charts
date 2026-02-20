@@ -49,6 +49,33 @@ spec:
             - name: port
               containerPort: {{ .Values.application.server.port }}
               protocol: TCP
+          startupProbe:
+            httpGet:
+              path: {{ .Values.application.healthCheck.startup.path }}
+              port: port
+            initialDelaySeconds: {{ .Values.application.healthCheck.startup.initialDelaySeconds }}
+            periodSeconds: {{ .Values.application.healthCheck.startup.periodSeconds }}
+            timeoutSeconds: {{ .Values.application.healthCheck.startup.timeoutSeconds }}
+            successThreshold: {{ .Values.application.healthCheck.startup.successThreshold }}
+            failureThreshold: {{ .Values.application.healthCheck.startup.failureThreshold }}
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.application.healthCheck.liveness.path }}
+              port: port
+            initialDelaySeconds: {{ .Values.application.healthCheck.liveness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.application.healthCheck.liveness.periodSeconds }}
+            timeoutSeconds: {{ .Values.application.healthCheck.liveness.timeoutSeconds }}
+            successThreshold: {{ .Values.application.healthCheck.liveness.successThreshold }}
+            failureThreshold: {{ .Values.application.healthCheck.liveness.failureThreshold }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.application.healthCheck.readiness.path }}
+              port: port
+            initialDelaySeconds: {{ .Values.application.healthCheck.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.application.healthCheck.readiness.periodSeconds }}
+            timeoutSeconds: {{ .Values.application.healthCheck.readiness.timeoutSeconds }}
+            successThreshold: {{ .Values.application.healthCheck.readiness.successThreshold }}
+            failureThreshold: {{ .Values.application.healthCheck.readiness.failureThreshold }}
           resources:
             {{- with .Values.resources.requests }}
             requests:

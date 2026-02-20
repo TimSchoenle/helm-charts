@@ -110,7 +110,7 @@ The following table lists the configurable parameters of the chart and their def
 | resources.requests.memory | string | `"100Mi"` | Minimum memory requested by the container. |
 | securityContext.allowPrivilegeEscalation | bool | `false` | Allow privilege escalation |
 | securityContext.capabilities.drop | list | `["ALL"]` | Linux capabilities to drop |
-| securityContext.readOnlyRootFilesystem | bool | `false` | Mount root filesystem as read-only. |
+| securityContext.readOnlyRootFilesystem | bool | `true` | Mount root filesystem as read-only. |
 | service.port | int | `80` | Port that the Kubernetes Service will expose. Typically maps to `application.server.port`. |
 | service.type | string | `"ClusterIP"` | Kubernetes Service type that exposes the application. |
 | serviceAccount.annotations | object | `{}` | Additional annotations for the service account |

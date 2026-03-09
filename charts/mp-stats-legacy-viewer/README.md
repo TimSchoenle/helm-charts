@@ -1,6 +1,6 @@
 # mp-stats-legacy-viewer
 
-![Version: 0.0.13](https://img.shields.io/badge/Version-0.0.13-informational?style=flat-square) ![AppVersion: v0.11.1](https://img.shields.io/badge/AppVersion-v0.11.1-informational?style=flat-square)
+![Version: 0.0.14](https://img.shields.io/badge/Version-0.0.14-informational?style=flat-square) ![AppVersion: v0.11.2](https://img.shields.io/badge/AppVersion-v0.11.2-informational?style=flat-square)
 
 MP Stats Legacy Viewer
 
@@ -72,7 +72,7 @@ The following table lists the configurable parameters of the chart and their def
 | application.server.port | int | `8080` | Port number the server listens on. |
 | image.pullPolicy | string | `"IfNotPresent"` | Kubernetes image pull policy. Determines when the image should be pulled from the registry. |
 | image.repository | string | `"timschoenle/mp-stats-legacy-viewer"` | Container image repository where the application image is stored. Usually points to Docker Hub or a private registry. Example: ghcr.io/your-org/s3-bucket-perma-link |
-| image.tag | string | `"v0.11.1@sha256:9eacda5bfd9cfda0c418b409583c8522de950f2e362fbf4c9ce435e57c88b3a4"` | Container image tag to deploy. Pin to a version for predictable deployments rather than using "latest". |
+| image.tag | string | `"v0.11.2@sha256:febf50d376892356fc7b3cacfd08c2c47c43e08dff94c147a4e77a1ca83f54b8"` | Container image tag to deploy. Pin to a version for predictable deployments rather than using "latest". |
 | ingress.annotations | object | `{}` | Custom annotations for the Ingress resource. Useful for configuring ingress controllers (e.g., cert-manager, rate limits). |
 | ingress.enabled | bool | `false` | Enable or disable Kubernetes Ingress resource creation. Set to `true` to expose the service externally via Ingress. |
 | ingress.hosts | list | `[]` | List of host configurations for the Ingress. Each host defines rules for routing external traffic. Example: ```yaml hosts:   - host: s3.example.com     paths:       - path: /         pathType: Prefix ``` |

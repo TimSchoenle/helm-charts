@@ -1,6 +1,6 @@
 # portfolio
 
-![Version: 1.4.9](https://img.shields.io/badge/Version-1.4.9-informational?style=flat-square) ![AppVersion: v1.16.1](https://img.shields.io/badge/AppVersion-v1.16.1-informational?style=flat-square)
+![Version: 1.4.10](https://img.shields.io/badge/Version-1.4.10-informational?style=flat-square) ![AppVersion: v1.16.2](https://img.shields.io/badge/AppVersion-v1.16.2-informational?style=flat-square)
 
 Personal portfolio built with Next.js.
 
@@ -73,7 +73,7 @@ The following table lists the configurable parameters of the chart and their def
 | application.port | int | `3000` | Port number the Next.js application listens on. Next.js standalone server defaults to 3000. |
 | image.pullPolicy | string | `"IfNotPresent"` | Kubernetes image pull policy. Determines when the image should be pulled from the registry. |
 | image.repository | string | `"timschoenle/portfolio"` | Container image repository where the Portfolio application image is stored. Points to Docker Hub timschoenle/portfolio. |
-| image.tag | string | `"v1.16.1@sha256:da5da2c0c823902540fdab92e78ba8ce3e10df139993366c648a90e21b2ff4bf"` | Container image tag to deploy. |
+| image.tag | string | `"v1.16.2@sha256:aa9daaf26aeb6a9e9ef04f775f069fa2733c5685cfd6acba633358d8252b7b0d"` | Container image tag to deploy. |
 | imagePullSecrets | list | `[]` | Optional image pull secrets for private registries |
 | ingress.annotations | object | `{}` | Custom annotations for the Ingress resource. Useful for configuring ingress controllers (e.g., cert-manager, rate limits). Example: ```yaml annotations:   cert-manager.io/cluster-issuer: "letsencrypt-prod"   nginx.ingress.kubernetes.io/ssl-redirect: "true" ``` |
 | ingress.enabled | bool | `false` | Enable or disable Kubernetes Ingress resource creation. Set to `true` to expose the service externally via Ingress. |

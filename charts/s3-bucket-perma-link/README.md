@@ -1,6 +1,6 @@
 # s3-bucket-perma-link
 
-![Version: 1.1.17](https://img.shields.io/badge/Version-1.1.17-informational?style=flat-square) ![AppVersion: v0.3.18](https://img.shields.io/badge/AppVersion-v0.3.18-informational?style=flat-square)
+![Version: 1.1.18](https://img.shields.io/badge/Version-1.1.18-informational?style=flat-square) ![AppVersion: v0.3.19](https://img.shields.io/badge/AppVersion-v0.3.19-informational?style=flat-square)
 
 This chart deploys a simple web server that provides permanent links to specific S3 bucket resources. It allows you to define static URL paths that always point to specific files in your S3 buckets.
 
@@ -79,7 +79,7 @@ The following table lists the configurable parameters of the chart and their def
 | application.server.port | int | `8080` | Port number the server listens on. |
 | image.pullPolicy | string | `"IfNotPresent"` | Kubernetes image pull policy. Determines when the image should be pulled from the registry. |
 | image.repository | string | `"timmi6790/s3-bucket-perma-link"` | Container image repository where the application image is stored. Usually points to Docker Hub or a private registry. Example: ghcr.io/your-org/s3-bucket-perma-link |
-| image.tag | string | `"v0.3.18@sha256:62a98426d8e96d580aa72ab948089e98c0255c03d81a03e0704e875d18caefff"` | Container image tag to deploy. Pin to a version for predictable deployments rather than using "latest". |
+| image.tag | string | `"v0.3.19@sha256:03963e95c4bfc3e5be402d9bb5ebfcb1b718d3e5ffb64684ebdf4cd54ef84bfc"` | Container image tag to deploy. Pin to a version for predictable deployments rather than using "latest". |
 | ingress.annotations | object | `{}` | Custom annotations for the Ingress resource. Useful for configuring ingress controllers (e.g., cert-manager, rate limits). |
 | ingress.enabled | bool | `false` | Enable or disable Kubernetes Ingress resource creation. Set to `true` to expose the service externally via Ingress. |
 | ingress.hosts | list | `[]` | List of host configurations for the Ingress. Each host defines rules for routing external traffic. Example: ```yaml hosts:   - host: s3.example.com     paths:       - path: /         pathType: Prefix ``` |

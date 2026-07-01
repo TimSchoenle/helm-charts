@@ -1,14 +1,13 @@
 # portfolio
 
-![Version: 1.4.24](https://img.shields.io/badge/Version-1.4.24-informational?style=flat-square) ![AppVersion: v1.17.12](https://img.shields.io/badge/AppVersion-v1.17.12-informational?style=flat-square)
+![Version: 2.0.0](https://img.shields.io/badge/Version-2.0.0-informational?style=flat-square) ![AppVersion: v2.0.0](https://img.shields.io/badge/AppVersion-v2.0.0-informational?style=flat-square)
 
-Personal portfolio built with Next.js.
+Personal portfolio built with Rust (Yew frontend, Axum server).
 
 ## Prerequisites
 
 - Kubernetes 1.19+
 - Helm 3.0+
-- GitHub Personal Access Token
 
 ## Get Repository Info
 
@@ -22,8 +21,7 @@ helm repo update
 ```shell
 helm install [RELEASE_NAME] timschoenle/portfolio \
   --namespace [NAMESPACE] \
-  --create-namespace \
-  --set application.github.token="your-github-token"
+  --create-namespace
 ```
 
 ## Upgrade Chart
@@ -48,9 +46,7 @@ The following table lists the configurable parameters of the chart and their def
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | affinity | object | `{}` | Affinity rules for pod assignment |
-| application.github | object | `{"secretName":""}` | GitHub configuration for the Portfolio application. The GITHUB_TOKEN is required for the application to function correctly. |
-| application.github.secretName | string | `""` | Name of an existing Kubernetes Secret containing the GitHub token. The secret must include a `GITHUB_TOKEN` field. If not provided, a secret will be created from the `token` field below. |
-| application.healthCheck | object | `{"liveness":{"failureThreshold":3,"initialDelaySeconds":1,"periodSeconds":10,"successThreshold":1,"timeoutSeconds":5},"path":"/api/health","readiness":{"failureThreshold":3,"initialDelaySeconds":1,"periodSeconds":5,"successThreshold":1,"timeoutSeconds":3},"startup":{"failureThreshold":12,"initialDelaySeconds":1,"periodSeconds":5,"successThreshold":1,"timeoutSeconds":3}}` | Health check probe configuration. Next.js Portfolio application exposes health checks on /api/health. |
+| application.healthCheck | object | `{"liveness":{"failureThreshold":3,"initialDelaySeconds":1,"periodSeconds":10,"successThreshold":1,"timeoutSeconds":5},"path":"/api/health","readiness":{"failureThreshold":3,"initialDelaySeconds":1,"periodSeconds":5,"successThreshold":1,"timeoutSeconds":3},"startup":{"failureThreshold":12,"initialDelaySeconds":1,"periodSeconds":5,"successThreshold":1,"timeoutSeconds":3}}` | Health check probe configuration. The Portfolio application exposes a health check on /api/health. |
 | application.healthCheck.liveness | object | `{"failureThreshold":3,"initialDelaySeconds":1,"periodSeconds":10,"successThreshold":1,"timeoutSeconds":5}` | Liveness probe configuration. Detects if the container needs to be restarted. |
 | application.healthCheck.liveness.failureThreshold | int | `3` | Minimum consecutive failures for the probe to be considered failed. |
 | application.healthCheck.liveness.initialDelaySeconds | int | `1` | Number of seconds after the container has started before liveness probe is initiated. |
@@ -70,18 +66,19 @@ The following table lists the configurable parameters of the chart and their def
 | application.healthCheck.startup.periodSeconds | int | `5` | How often (in seconds) to perform the probe. |
 | application.healthCheck.startup.successThreshold | int | `1` | Minimum consecutive successes for the probe to be considered successful. |
 | application.healthCheck.startup.timeoutSeconds | int | `3` | Number of seconds after which the probe times out. |
-| application.port | int | `3000` | Port number the Next.js application listens on. Next.js standalone server defaults to 3000. |
+| application.logLevel | string | `"info"` | Log verbosity passed to the application as `RUST_LOG`. Accepts standard tracing/env_logger directives (e.g. `info`, `debug`, `warn`). |
+| application.port | int | `8080` | Port number the application listens on (exposed to the container as `PORT`). The Axum server binds to 0.0.0.0 on this port. |
 | image.pullPolicy | string | `"IfNotPresent"` | Kubernetes image pull policy. Determines when the image should be pulled from the registry. |
 | image.repository | string | `"timschoenle/portfolio"` | Container image repository where the Portfolio application image is stored. Points to Docker Hub timschoenle/portfolio. |
-| image.tag | string | `"v1.17.12@sha256:7f8f786f316abadcb02ba31570a67102f75cc026da75b3a69848f635fbbe5f48"` | Container image tag to deploy. |
+| image.tag | string | `"v2.0.0"` | Container image tag to deploy. The digest is pinned by Renovate once the v2.0.0 image is published. |
 | imagePullSecrets | list | `[]` | Optional image pull secrets for private registries |
 | ingress.annotations | object | `{}` | Custom annotations for the Ingress resource. Useful for configuring ingress controllers (e.g., cert-manager, rate limits). Example: ```yaml annotations:   cert-manager.io/cluster-issuer: "letsencrypt-prod"   nginx.ingress.kubernetes.io/ssl-redirect: "true" ``` |
 | ingress.enabled | bool | `false` | Enable or disable Kubernetes Ingress resource creation. Set to `true` to expose the service externally via Ingress. |
 | ingress.hosts | list | `[]` | List of host configurations for the Ingress. Each host defines rules for routing external traffic. Example: ```yaml hosts:   - host: portfolio.example.com     paths:       - path: /         pathType: Prefix ``` |
 | ingress.ingressClassName | string | `"nginx"` | Ingress class to use (e.g., "nginx", "traefik"). Should match your cluster's ingress controller configuration. |
 | ingress.tls | list | `[]` | TLS configuration for securing ingress connections. Example: ```yaml tls:   - secretName: portfolio-tls     hosts:       - portfolio.example.com ``` |
-| networkPolicy | object | `{"egress":{"customRules":[],"dns":{"enabled":true},"enabled":true,"http":{"enabled":false},"https":{"enabled":true},"sentry":{"enabled":true}},"enabled":false,"ingress":{"controller":{"enabled":true,"namespace":"traefik","selector":{"app.kubernetes.io/name":"traefik"}},"customRules":[],"enabled":true,"monitoring":{"enabled":true,"namespace":"monitoring"}}}` | Network policy configuration |
-| networkPolicy.egress | object | `{"customRules":[],"dns":{"enabled":true},"enabled":true,"http":{"enabled":false},"https":{"enabled":true},"sentry":{"enabled":true}}` | Egress configuration |
+| networkPolicy | object | `{"egress":{"customRules":[],"dns":{"enabled":true},"enabled":true,"http":{"enabled":false},"https":{"enabled":true}},"enabled":false,"ingress":{"controller":{"enabled":true,"namespace":"traefik","selector":{"app.kubernetes.io/name":"traefik"}},"customRules":[],"enabled":true,"monitoring":{"enabled":true,"namespace":"monitoring"}}}` | Network policy configuration |
+| networkPolicy.egress | object | `{"customRules":[],"dns":{"enabled":true},"enabled":true,"http":{"enabled":false},"https":{"enabled":true}}` | Egress configuration |
 | networkPolicy.egress.customRules | list | `[]` | Custom egress rules |
 | networkPolicy.egress.dns | object | `{"enabled":true}` | DNS configuration for egress |
 | networkPolicy.egress.dns.enabled | bool | `true` | Allow egress to DNS |
@@ -90,8 +87,6 @@ The following table lists the configurable parameters of the chart and their def
 | networkPolicy.egress.http.enabled | bool | `false` | Allow egress to HTTP (TCP/80) |
 | networkPolicy.egress.https | object | `{"enabled":true}` | HTTPS configuration for egress |
 | networkPolicy.egress.https.enabled | bool | `true` | Allow egress to HTTPS (TCP/443) |
-| networkPolicy.egress.sentry | object | `{"enabled":true}` | Sentry configuration for egress |
-| networkPolicy.egress.sentry.enabled | bool | `true` | Allow egress to Sentry (HTTPS) |
 | networkPolicy.enabled | bool | `false` | Enable network policies |
 | networkPolicy.ingress | object | `{"controller":{"enabled":true,"namespace":"traefik","selector":{"app.kubernetes.io/name":"traefik"}},"customRules":[],"enabled":true,"monitoring":{"enabled":true,"namespace":"monitoring"}}` | Ingress configuration |
 | networkPolicy.ingress.controller | object | `{"enabled":true,"namespace":"traefik","selector":{"app.kubernetes.io/name":"traefik"}}` | Ingress Controller configuration |
@@ -106,22 +101,22 @@ The following table lists the configurable parameters of the chart and their def
 | nodeSelector | object | `{}` | Node selector for pod assignment |
 | podAnnotations | object | `{}` | Additional annotations to add to the pod |
 | podLabels | object | `{}` | Additional labels to add to the pod |
-| podSecurityContext.fsGroup | int | `65532` | Group ID for file system access |
+| podSecurityContext.fsGroup | int | `1001` | Group ID for file system access |
 | podSecurityContext.fsGroupChangePolicy | string | `"OnRootMismatch"` | Change the fsGroup of the pod for Security Context Constraints. |
-| podSecurityContext.runAsGroup | int | `65532` | Group ID for file system access |
+| podSecurityContext.runAsGroup | int | `1001` | Group ID for file system access |
 | podSecurityContext.runAsNonRoot | bool | `true` | Run pod as non-root user |
-| podSecurityContext.runAsUser | int | `65532` | User ID to run as. |
+| podSecurityContext.runAsUser | int | `1001` | User ID to run as. Matches the non-root user baked into the container image (USER 1001:1001). |
 | priorityClassName | string | `""` | Optional Kubernetes PriorityClass name |
-| resources.limits | object | `{"cpu":"500m","memory":"256Mi"}` | Resource limits define the maximum resources the container can use. Next.js applications typically require more memory than simple web servers. |
-| resources.limits.cpu | string | `"500m"` | Maximum CPU allocation for the container. |
-| resources.limits.memory | string | `"256Mi"` | Maximum memory allocation for the container. |
-| resources.requests | object | `{"cpu":"100m","memory":"128Mi"}` | Resource requests define the guaranteed resources reserved for the container. |
-| resources.requests.cpu | string | `"100m"` | Minimum CPU requested by the container. |
-| resources.requests.memory | string | `"128Mi"` | Minimum memory requested by the container. |
+| resources.limits | object | `{"cpu":"250m","memory":"128Mi"}` | Resource limits define the maximum resources the container can use. The Rust server has a small footprint; these limits leave generous headroom. |
+| resources.limits.cpu | string | `"250m"` | Maximum CPU allocation for the container. |
+| resources.limits.memory | string | `"128Mi"` | Maximum memory allocation for the container. |
+| resources.requests | object | `{"cpu":"25m","memory":"32Mi"}` | Resource requests define the guaranteed resources reserved for the container. |
+| resources.requests.cpu | string | `"25m"` | Minimum CPU requested by the container. |
+| resources.requests.memory | string | `"32Mi"` | Minimum memory requested by the container. |
 | securityContext.allowPrivilegeEscalation | bool | `false` | Allow privilege escalation |
 | securityContext.capabilities.drop | list | `["ALL"]` | Linux capabilities to drop |
-| securityContext.readOnlyRootFilesystem | bool | `false` | Mount root filesystem as read-only. Next.js ISR requires write access to update prerender cache. Set to true only if your app doesn't use ISR. |
-| service.port | int | `80` | Port that the Kubernetes Service will expose. This port is mapped to the application container port (3000). |
+| securityContext.readOnlyRootFilesystem | bool | `true` | Mount root filesystem as read-only. The application is a statically linked binary on a scratch image that serves pre-built assets and needs no writable root filesystem. A writable /tmp is still provided via an emptyDir volume. |
+| service.port | int | `80` | Port that the Kubernetes Service will expose. This port is mapped to the application container port (8080). |
 | service.type | string | `"ClusterIP"` | Kubernetes Service type that exposes the application. |
 | serviceAccount.annotations | object | `{}` | Additional annotations for the service account |
 | serviceAccount.automountToken | bool | `false` | Whether to automount the service account token |
@@ -130,57 +125,24 @@ The following table lists the configurable parameters of the chart and their def
 | tolerations | list | `[]` | Tolerations for pod assignment |
 | topologySpreadConstraints | list | `[]` | Pod topology spread constraints for availability |
 
-## GitHub Token Configuration
-
-The Portfolio application requires a GitHub token to function correctly. You can provide this in two ways:
-
-### Option 1: Create a Kubernetes Secret (Recommended)
-
-Create a secret manually before installing the chart:
-
-```bash
-kubectl create secret generic portfolio-github \
-  --namespace [NAMESPACE] \
-  --from-literal=GITHUB_TOKEN='your-github-token'
-```
-
-Then reference it in your values:
-
-```yaml
-application:
-  github:
-    secretName: "portfolio-github"
-```
-
-### Option 2: Provide Token Inline
-
-```yaml
-application:
-  github:
-    token: "your-github-token"
-```
-
-> [!WARNING]
-> This creates the secret automatically but the token will be visible in your values file.
-> Use Option 1 for production deployments.
+> [!NOTE]
+> The v2 application is a self-contained Rust binary that serves pre-built assets.
+> GitHub data is fetched at build time, so no GitHub token is required at runtime.
 
 ## Examples
 
 ### Minimal Configuration
 
-```yaml
-application:
-  github:
-    secretName: "portfolio-github"
+The chart runs with sensible defaults and requires no mandatory configuration:
+
+```shell
+helm install [RELEASE_NAME] timschoenle/portfolio \
+  --namespace [NAMESPACE] --create-namespace
 ```
 
 ### With Ingress and TLS
 
 ```yaml
-application:
-  github:
-    secretName: "portfolio-github"
-
 ingress:
   enabled: true
   ingressClassName: "nginx"
@@ -202,10 +164,7 @@ ingress:
 
 ```yaml
 application:
-  github:
-    secretName: "portfolio-github"
   logLevel: info
-  sentryDsn: "https://your-sentry-dsn@sentry.io/project"
 
 resources:
   limits:
@@ -231,20 +190,11 @@ ingress:
     - secretName: portfolio-tls
       hosts:
         - portfolio.example.com
-
-podAnnotations:
-  prometheus.io/scrape: "true"
-  prometheus.io/port: "3000"
-  prometheus.io/path: "/api/metrics"
 ```
 
 ### High Availability Configuration
 
 ```yaml
-application:
-  github:
-    secretName: "portfolio-github"
-
 resources:
   limits:
     cpu: 1000m
@@ -304,34 +254,34 @@ application:
 
 The chart follows security best practices:
 
-- Runs as non-root user (UID 1000)
-- Read-only root filesystem
+- Runs as non-root user (UID 1001)
+- Read-only root filesystem (enabled by default)
 - No privilege escalation
 - Service account token not automounted by default
 - Drop all capabilities
 
 Writable volumes are provided only where necessary:
 - `/tmp` - Temporary files
-- `/app/.next/cache` - Next.js build cache
 
 ## Resource Recommendations
 
-Based on the Next.js application characteristics:
+Based on the Rust application characteristics:
 
 | Environment | CPU Request | CPU Limit | Memory Request | Memory Limit |
 |-------------|-------------|-----------|----------------|--------------|
-| Development | 100m        | 500m      | 128Mi          | 256Mi        |
-| Production  | 200m        | 1000m     | 256Mi          | 512Mi        |
-| High Traffic| 500m        | 2000m     | 512Mi          | 1Gi          |
+| Development | 25m         | 250m      | 32Mi           | 128Mi        |
+| Production  | 50m         | 500m      | 64Mi           | 256Mi        |
+| High Traffic| 100m        | 1000m     | 128Mi          | 512Mi        |
 
 ## Troubleshooting
 
 ### Pod not starting
 
-Check if the GitHub token is correctly configured:
+Inspect the pod events and logs:
 
 ```bash
-kubectl get secret [SECRET_NAME] -n [NAMESPACE] -o jsonpath='{.data.GITHUB_TOKEN}' | base64 -d
+kubectl describe pod -n [NAMESPACE] -l app.kubernetes.io/name=portfolio
+kubectl logs -n [NAMESPACE] -l app.kubernetes.io/name=portfolio
 ```
 
 ### Health check failures

@@ -12,24 +12,9 @@
     "application": {
       "additionalProperties": true,
       "properties": {
-        "github": {
-          "additionalProperties": true,
-          "description": "GitHub configuration for the Portfolio application.\nThe GITHUB_TOKEN is required for the application to function correctly.",
-          "properties": {
-            "secretName": {
-              "default": "",
-              "description": "Name of an existing Kubernetes Secret containing the GitHub token.\nThe secret must include a `GITHUB_TOKEN` field.\nIf not provided, a secret will be created from the `token` field below.",
-              "required": [],
-              "title": "secretName",
-              "type": "string"
-            }
-          },
-          "required": [],
-          "title": "github"
-        },
         "healthCheck": {
           "additionalProperties": true,
-          "description": "Health check probe configuration.\nNext.js Portfolio application exposes health checks on /api/health.",
+          "description": "Health check probe configuration.\nThe Portfolio application exposes a health check on /api/health.",
           "properties": {
             "liveness": {
               "additionalProperties": true,
@@ -171,9 +156,16 @@
           "required": [],
           "title": "healthCheck"
         },
+        "logLevel": {
+          "default": "info",
+          "description": "Log verbosity passed to the application as `RUST_LOG`.\nAccepts standard tracing/env_logger directives (e.g. `info`, `debug`, `warn`).",
+          "required": [],
+          "title": "logLevel",
+          "type": "string"
+        },
         "port": {
-          "default": 3000,
-          "description": "Port number the Next.js application listens on.\nNext.js standalone server defaults to 3000.",
+          "default": 8080,
+          "description": "Port number the application listens on (exposed to the container as `PORT`).\nThe Axum server binds to 0.0.0.0 on this port.",
           "required": [],
           "title": "port",
           "type": "integer"
@@ -216,8 +208,8 @@
           "type": "string"
         },
         "tag": {
-          "default": "v1.17.12@sha256:7f8f786f316abadcb02ba31570a67102f75cc026da75b3a69848f635fbbe5f48",
-          "description": "Container image tag to deploy.",
+          "default": "v2.0.0",
+          "description": "Container image tag to deploy.\nThe digest is pinned by Renovate once the v2.0.0 image is published.",
           "required": [],
           "title": "tag",
           "type": "string"
@@ -368,21 +360,6 @@
               },
               "required": [],
               "title": "https"
-            },
-            "sentry": {
-              "additionalProperties": true,
-              "description": "Sentry configuration for egress",
-              "properties": {
-                "enabled": {
-                  "default": true,
-                  "description": "Allow egress to Sentry (HTTPS)",
-                  "required": [],
-                  "title": "enabled",
-                  "type": "boolean"
-                }
-              },
-              "required": [],
-              "title": "sentry"
             }
           },
           "required": [],
@@ -528,7 +505,7 @@
       "additionalProperties": true,
       "properties": {
         "fsGroup": {
-          "default": 65532,
+          "default": 1001,
           "description": "Group ID for file system access",
           "required": [],
           "title": "fsGroup",
@@ -542,7 +519,7 @@
           "type": "string"
         },
         "runAsGroup": {
-          "default": 65532,
+          "default": 1001,
           "description": "Group ID for file system access",
           "required": [],
           "title": "runAsGroup",
@@ -556,8 +533,8 @@
           "type": "boolean"
         },
         "runAsUser": {
-          "default": 65532,
-          "description": "User ID to run as.",
+          "default": 1001,
+          "description": "User ID to run as.\nMatches the non-root user baked into the container image (USER 1001:1001).",
           "required": [],
           "title": "runAsUser",
           "type": "integer"
@@ -578,17 +555,17 @@
       "properties": {
         "limits": {
           "additionalProperties": true,
-          "description": "Resource limits define the maximum resources the container can use.\nNext.js applications typically require more memory than simple web servers.",
+          "description": "Resource limits define the maximum resources the container can use.\nThe Rust server has a small footprint; these limits leave generous headroom.",
           "properties": {
             "cpu": {
-              "default": "500m",
+              "default": "250m",
               "description": "Maximum CPU allocation for the container.",
               "required": [],
               "title": "cpu",
               "type": "string"
             },
             "memory": {
-              "default": "256Mi",
+              "default": "128Mi",
               "description": "Maximum memory allocation for the container.",
               "required": [],
               "title": "memory",
@@ -603,14 +580,14 @@
           "description": "Resource requests define the guaranteed resources reserved for the container.",
           "properties": {
             "cpu": {
-              "default": "100m",
+              "default": "25m",
               "description": "Minimum CPU requested by the container.",
               "required": [],
               "title": "cpu",
               "type": "string"
             },
             "memory": {
-              "default": "128Mi",
+              "default": "32Mi",
               "description": "Minimum memory requested by the container.",
               "required": [],
               "title": "memory",
@@ -657,8 +634,8 @@
           "title": "capabilities"
         },
         "readOnlyRootFilesystem": {
-          "default": false,
-          "description": "Mount root filesystem as read-only.\nNext.js ISR requires write access to update prerender cache.\nSet to true only if your app doesn't use ISR.",
+          "default": true,
+          "description": "Mount root filesystem as read-only.\nThe application is a statically linked binary on a scratch image that serves pre-built assets and needs no writable root filesystem. A writable /tmp is still provided via an emptyDir volume.",
           "required": [],
           "title": "readOnlyRootFilesystem",
           "type": "boolean"
@@ -672,7 +649,7 @@
       "properties": {
         "port": {
           "default": 80,
-          "description": "Port that the Kubernetes Service will expose.\nThis port is mapped to the application container port (3000).",
+          "description": "Port that the Kubernetes Service will expose.\nThis port is mapped to the application container port (8080).",
           "required": [],
           "title": "port",
           "type": "integer"

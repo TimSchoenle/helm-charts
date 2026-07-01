@@ -14,10 +14,18 @@ tests:
     asserts:
       - equal:
           path: data.PORT
-          value: "3000"
+          value: "8080"
 
-  - it: should set NODE_ENV to production
+  - it: should set RUST_LOG from logLevel
     asserts:
       - equal:
-          path: data.NODE_ENV
-          value: production
+          path: data.RUST_LOG
+          value: info
+
+  - it: should override RUST_LOG when logLevel is set
+    set:
+      application.logLevel: debug
+    asserts:
+      - equal:
+          path: data.RUST_LOG
+          value: debug

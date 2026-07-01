@@ -12,12 +12,12 @@ tests:
 
   - it: should set correct image
     set:
-      image.repository: timmi6790/portfolio
-      image.tag: v1.2.0
+      image.repository: timschoenle/portfolio
+      image.tag: v2.0.0
     asserts:
       - equal:
           path: spec.template.spec.containers[0].image
-          value: timmi6790/portfolio:v1.2.0
+          value: timschoenle/portfolio:v2.0.0
 
   - it: should configure health checks correctly
     asserts:
@@ -38,54 +38,35 @@ tests:
           value: true
       - equal:
           path: spec.template.spec.securityContext.runAsUser
-          value: 65532
+          value: 1001
       - equal:
           path: spec.template.spec.securityContext.runAsGroup
-          value: 65532
+          value: 1001
       - equal:
           path: spec.template.spec.securityContext.fsGroup
-          value: 65532
+          value: 1001
       - equal:
           path: spec.template.spec.containers[0].securityContext.allowPrivilegeEscalation
           value: false
       - equal:
           path: spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem
-          value: false
+          value: true
       - contains:
           path: spec.template.spec.containers[0].securityContext.capabilities.drop
           content: ALL
 
-  - it: should inject GITHUB_TOKEN from secret
-    set:
-      application.github.token: test-token
+  - it: should load configuration from the ConfigMap
     asserts:
       - contains:
-          path: spec.template.spec.containers[0].env
+          path: spec.template.spec.containers[0].envFrom
           content:
-            name: GITHUB_TOKEN
-            valueFrom:
-              secretKeyRef:
-                key: GITHUB_TOKEN
-                name: RELEASE-NAME-portfolio
+            configMapRef:
+              name: RELEASE-NAME-portfolio
 
-  - it: should set NEXT_PUBLIC_CLOUDFLARE_WEB_ANALYTICS_TOKEN if not empty
-    set:
-      application.cloudflareWebAnalyticsToken: test-token
+  - it: should not inject a GITHUB_TOKEN at runtime
     asserts:
-      - contains:
+      - notExists:
           path: spec.template.spec.containers[0].env
-          content:
-            name: NEXT_PUBLIC_CLOUDFLARE_WEB_ANALYTICS_TOKEN
-            value: test-token
-
-  - it: should not set NEXT_PUBLIC_CLOUDFLARE_WEB_ANALYTICS_TOKEN if empty
-    set:
-      application.cloudflareWebAnalyticsToken: ""
-    asserts:
-      - notContains:
-          path: spec.template.spec.containers[0].env
-          content:
-            name: NEXT_PUBLIC_CLOUDFLARE_WEB_ANALYTICS_TOKEN
 
   - it: should mount required volumes
     asserts:
@@ -99,16 +80,16 @@ tests:
     asserts:
       - equal:
           path: spec.template.spec.containers[0].resources.limits.cpu
-          value: 500m
+          value: 250m
       - equal:
           path: spec.template.spec.containers[0].resources.limits.memory
-          value: 256Mi
+          value: 128Mi
       - equal:
           path: spec.template.spec.containers[0].resources.requests.cpu
-          value: 100m
+          value: 25m
       - equal:
           path: spec.template.spec.containers[0].resources.requests.memory
-          value: 128Mi
+          value: 32Mi
 
   - it: should use custom resources when set
     set:

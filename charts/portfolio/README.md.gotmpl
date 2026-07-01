@@ -10,7 +10,6 @@
 
 - Kubernetes 1.19+
 - Helm 3.0+
-- GitHub Personal Access Token
 
 ## Get Repository Info
 
@@ -24,8 +23,7 @@ helm repo update
 ```shell
 helm install [RELEASE_NAME] timschoenle/{{ template "chart.name" . }} \
   --namespace [NAMESPACE] \
-  --create-namespace \
-  --set application.github.token="your-github-token"
+  --create-namespace
 ```
 
 ## Upgrade Chart
@@ -47,57 +45,24 @@ The following table lists the configurable parameters of the chart and their def
 
 {{ template "chart.valuesSection" . }}
 
-## GitHub Token Configuration
-
-The Portfolio application requires a GitHub token to function correctly. You can provide this in two ways:
-
-### Option 1: Create a Kubernetes Secret (Recommended)
-
-Create a secret manually before installing the chart:
-
-```bash
-kubectl create secret generic portfolio-github \
-  --namespace [NAMESPACE] \
-  --from-literal=GITHUB_TOKEN='your-github-token'
-```
-
-Then reference it in your values:
-
-```yaml
-application:
-  github:
-    secretName: "portfolio-github"
-```
-
-### Option 2: Provide Token Inline
-
-```yaml
-application:
-  github:
-    token: "your-github-token"
-```
-
-> [!WARNING]
-> This creates the secret automatically but the token will be visible in your values file.
-> Use Option 1 for production deployments.
+> [!NOTE]
+> The v2 application is a self-contained Rust binary that serves pre-built assets.
+> GitHub data is fetched at build time, so no GitHub token is required at runtime.
 
 ## Examples
 
 ### Minimal Configuration
 
-```yaml
-application:
-  github:
-    secretName: "portfolio-github"
+The chart runs with sensible defaults and requires no mandatory configuration:
+
+```shell
+helm install [RELEASE_NAME] timschoenle/{{ template "chart.name" . }} \
+  --namespace [NAMESPACE] --create-namespace
 ```
 
 ### With Ingress and TLS
 
 ```yaml
-application:
-  github:
-    secretName: "portfolio-github"
-
 ingress:
   enabled: true
   ingressClassName: "nginx"
@@ -119,10 +84,7 @@ ingress:
 
 ```yaml
 application:
-  github:
-    secretName: "portfolio-github"
   logLevel: info
-  sentryDsn: "https://your-sentry-dsn@sentry.io/project"
 
 resources:
   limits:
@@ -148,20 +110,11 @@ ingress:
     - secretName: portfolio-tls
       hosts:
         - portfolio.example.com
-
-podAnnotations:
-  prometheus.io/scrape: "true"
-  prometheus.io/port: "3000"
-  prometheus.io/path: "/api/metrics"
 ```
 
 ### High Availability Configuration
 
 ```yaml
-application:
-  github:
-    secretName: "portfolio-github"
-
 resources:
   limits:
     cpu: 1000m
@@ -221,34 +174,34 @@ application:
 
 The chart follows security best practices:
 
-- Runs as non-root user (UID 1000)
-- Read-only root filesystem
+- Runs as non-root user (UID 1001)
+- Read-only root filesystem (enabled by default)
 - No privilege escalation
 - Service account token not automounted by default
 - Drop all capabilities
 
 Writable volumes are provided only where necessary:
 - `/tmp` - Temporary files
-- `/app/.next/cache` - Next.js build cache
 
 ## Resource Recommendations
 
-Based on the Next.js application characteristics:
+Based on the Rust application characteristics:
 
 | Environment | CPU Request | CPU Limit | Memory Request | Memory Limit |
 |-------------|-------------|-----------|----------------|--------------|
-| Development | 100m        | 500m      | 128Mi          | 256Mi        |
-| Production  | 200m        | 1000m     | 256Mi          | 512Mi        |
-| High Traffic| 500m        | 2000m     | 512Mi          | 1Gi          |
+| Development | 25m         | 250m      | 32Mi           | 128Mi        |
+| Production  | 50m         | 500m      | 64Mi           | 256Mi        |
+| High Traffic| 100m        | 1000m     | 128Mi          | 512Mi        |
 
 ## Troubleshooting
 
 ### Pod not starting
 
-Check if the GitHub token is correctly configured:
+Inspect the pod events and logs:
 
 ```bash
-kubectl get secret [SECRET_NAME] -n [NAMESPACE] -o jsonpath='{.data.GITHUB_TOKEN}' | base64 -d
+kubectl describe pod -n [NAMESPACE] -l app.kubernetes.io/name=portfolio
+kubectl logs -n [NAMESPACE] -l app.kubernetes.io/name=portfolio
 ```
 
 ### Health check failures

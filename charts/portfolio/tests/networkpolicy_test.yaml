@@ -54,20 +54,6 @@ tests:
             port: 53
             protocol: UDP
 
-  - it: "should have Sentry egress (HTTPS) when enabled"
-    template: networkpolicy.yaml
-    documentIndex: 1
-    set:
-      networkPolicy.enabled: true
-      networkPolicy.egress.enabled: true
-      networkPolicy.egress.sentry.enabled: true
-    asserts:
-      - isSubset:
-          path: spec.egress[1].ports[0]
-          content:
-            port: 443
-            protocol: TCP
-
   - it: "should allow monitoring ingress in Ingress policy"
     template: networkpolicy.yaml
     documentIndex: 0
@@ -113,7 +99,6 @@ tests:
       networkPolicy.egress.enabled: true
       networkPolicy.egress.dns.enabled: false
       networkPolicy.egress.https.enabled: false
-      networkPolicy.egress.sentry.enabled: false
       networkPolicy.egress.http.enabled: true
     asserts:
       - isSubset:
@@ -130,7 +115,6 @@ tests:
       networkPolicy.egress.enabled: true
       networkPolicy.egress.dns.enabled: false
       networkPolicy.egress.http.enabled: false
-      networkPolicy.egress.sentry.enabled: false
       networkPolicy.egress.https.enabled: true
     asserts:
       - isSubset:

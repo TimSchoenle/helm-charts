@@ -16,7 +16,7 @@ image:
   # type: string
   # @schema
   # -- Container image tag to deploy.
-  tag: v1.17.12@sha256:7f8f786f316abadcb02ba31570a67102f75cc026da75b3a69848f635fbbe5f48
+  tag: v2.1.0@sha256:debafe2d29a793ecd0494a8b42e221a4cf8258f95d8a24d1aa668b2a38e190be
 
   # @schema
   # enum: [Always, IfNotPresent, Never]
@@ -38,37 +38,22 @@ application:
   # @schema
   # type: integer
   # @schema
-  # -- Port number the Next.js application listens on.
-  # Next.js standalone server defaults to 3000.
-  port: 3000
+  # -- Port number the application listens on (exposed to the container as `PORT`).
+  # The Axum server binds to 0.0.0.0 on this port.
+  port: 8080
 
   # @schema
-  # additionalProperties: true
+  # type: string
   # @schema
-  # -- GitHub configuration for the Portfolio application.
-  # The GITHUB_TOKEN is required for the application to function correctly.
-  github:
-    # @schema
-    # type: string
-    # @schema
-    # -- Name of an existing Kubernetes Secret containing the GitHub token.
-    # The secret must include a `GITHUB_TOKEN` field.
-    # If not provided, a secret will be created from the `token` field below.
-    secretName: ""
-
-    # @schema
-    # type: [string, "null"]
-    # @schema
-    # -- GitHub personal access token (alternative to secretName).
-    # Only used if secretName is not provided.
-    # This will create a Kubernetes Secret automatically.
-    # token: ""
+  # -- Log verbosity passed to the application as `RUST_LOG`.
+  # Accepts standard tracing/env_logger directives (e.g. `info`, `debug`, `warn`).
+  logLevel: info
 
   # @schema
   # additionalProperties: true
   # @schema
   # -- Health check probe configuration.
-  # Next.js Portfolio application exposes health checks on /api/health.
+  # The Portfolio application exposes a health check on /api/health.
   healthCheck:
     # @schema
     # type: string
@@ -198,19 +183,20 @@ podSecurityContext:
   # type: integer
   # @schema
   # -- User ID to run as.
-  runAsUser: 65532
+  # Matches the non-root user baked into the container image (USER 1001:1001).
+  runAsUser: 1001
 
   # @schema
   # type: integer
   # @schema
   # -- Group ID for file system access
-  runAsGroup: 65532
+  runAsGroup: 1001
 
   # @schema
   # type: integer
   # @schema
   # -- Group ID for file system access
-  fsGroup: 65532
+  fsGroup: 1001
 
   # @schema
   # type: string
@@ -243,9 +229,10 @@ securityContext:
   # type: boolean
   # @schema
   # -- Mount root filesystem as read-only.
-  # Next.js ISR requires write access to update prerender cache.
-  # Set to true only if your app doesn't use ISR.
-  readOnlyRootFilesystem: false
+  # The application is a statically linked binary on a scratch image that serves
+  # pre-built assets and needs no writable root filesystem. A writable /tmp is
+  # still provided via an emptyDir volume.
+  readOnlyRootFilesystem: true
 
 # @schema
 # additionalProperties: true
@@ -303,7 +290,7 @@ service:
   # type: integer
   # @schema
   # -- Port that the Kubernetes Service will expose.
-  # This port is mapped to the application container port (3000).
+  # This port is mapped to the application container port (8080).
   port: 80
 
 # @schema
@@ -374,19 +361,19 @@ resources:
   # additionalProperties: true
   # @schema
   # -- Resource limits define the maximum resources the container can use.
-  # Next.js applications typically require more memory than simple web servers.
+  # The Rust server has a small footprint; these limits leave generous headroom.
   limits:
     # @schema
     # type: string
     # @schema
     # -- Maximum CPU allocation for the container.
-    cpu: 500m
+    cpu: 250m
 
     # @schema
     # type: string
     # @schema
     # -- Maximum memory allocation for the container.
-    memory: 256Mi
+    memory: 128Mi
 
   # @schema
   # additionalProperties: true
@@ -397,13 +384,13 @@ resources:
     # type: string
     # @schema
     # -- Minimum CPU requested by the container.
-    cpu: 100m
+    cpu: 25m
 
     # @schema
     # type: string
     # @schema
     # -- Minimum memory requested by the container.
-    memory: 128Mi
+    memory: 32Mi
 
 # @schema
 # type: array
@@ -555,17 +542,6 @@ networkPolicy:
       # type: boolean
       # @schema
       # -- Allow egress to HTTPS (TCP/443)
-      enabled: true
-
-    # @schema
-    # additionalProperties: true
-    # @schema
-    # -- Sentry configuration for egress
-    sentry:
-      # @schema
-      # type: boolean
-      # @schema
-      # -- Allow egress to Sentry (HTTPS)
       enabled: true
 
     # @schema

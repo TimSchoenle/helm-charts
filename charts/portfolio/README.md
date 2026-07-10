@@ -1,6 +1,6 @@
 # portfolio
 
-![Version: 2.0.1](https://img.shields.io/badge/Version-2.0.1-informational?style=flat-square) ![AppVersion: v2.1.1](https://img.shields.io/badge/AppVersion-v2.1.1-informational?style=flat-square)
+![Version: 2.0.2](https://img.shields.io/badge/Version-2.0.2-informational?style=flat-square) ![AppVersion: v2.1.2](https://img.shields.io/badge/AppVersion-v2.1.2-informational?style=flat-square)
 
 Personal portfolio built with Rust (Yew frontend, Axum server).
 
@@ -70,7 +70,7 @@ The following table lists the configurable parameters of the chart and their def
 | application.port | int | `8080` | Port number the application listens on (exposed to the container as `PORT`). The Axum server binds to 0.0.0.0 on this port. |
 | image.pullPolicy | string | `"IfNotPresent"` | Kubernetes image pull policy. Determines when the image should be pulled from the registry. |
 | image.repository | string | `"timschoenle/portfolio"` | Container image repository where the Portfolio application image is stored. Points to Docker Hub timschoenle/portfolio. |
-| image.tag | string | `"v2.1.1@sha256:f92ea84780fb8a37093fcd26a164474fe5cd09b49745896a1210329989d2d2e6"` | Container image tag to deploy. |
+| image.tag | string | `"v2.1.2@sha256:489b8cf888498132f819c738d2a5dd870e00ab8ab5bcfced12c377563ea58a2c"` | Container image tag to deploy. |
 | imagePullSecrets | list | `[]` | Optional image pull secrets for private registries |
 | ingress.annotations | object | `{}` | Custom annotations for the Ingress resource. Useful for configuring ingress controllers (e.g., cert-manager, rate limits). Example: ```yaml annotations:   cert-manager.io/cluster-issuer: "letsencrypt-prod"   nginx.ingress.kubernetes.io/ssl-redirect: "true" ``` |
 | ingress.enabled | bool | `false` | Enable or disable Kubernetes Ingress resource creation. Set to `true` to expose the service externally via Ingress. |

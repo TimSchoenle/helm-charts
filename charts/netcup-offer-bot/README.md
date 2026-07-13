@@ -1,6 +1,6 @@
 # netcup-offer-bot
 
-![Version: 2.0.24](https://img.shields.io/badge/Version-2.0.24-informational?style=flat-square) ![AppVersion: v1.5.19](https://img.shields.io/badge/AppVersion-v1.5.19-informational?style=flat-square)
+![Version: 2.0.25](https://img.shields.io/badge/Version-2.0.25-informational?style=flat-square) ![AppVersion: v1.5.20](https://img.shields.io/badge/AppVersion-v1.5.20-informational?style=flat-square)
 
 This chart deploys the Netcup Offer Bot, which monitors https://www.netcup-sonderangebote.de/ RSS feed and sends notifications to Discord webhooks when new offers are available.
 
@@ -53,7 +53,7 @@ The following table lists the configurable parameters of the chart and their def
 | env.webHook | string | `""` | Webhook URL to send updates or notifications. |
 | image.pullPolicy | string | `"IfNotPresent"` | The image pull policy. |
 | image.repository | string | `"timmi6790/netcup-offer-bot"` | The container image repository. |
-| image.tag | string | `"v1.5.19@sha256:c6794a187fe5a08ff56142a46784d4ba519fc7c7613c03619ac1c12e3174d37c"` | The container image tag. |
+| image.tag | string | `"v1.5.20@sha256:1ed68092e29576a454b760bcea49d7ecadc5a2f153ebae59a3d299b35cd1decf"` | The container image tag. |
 | imagePullSecrets | list | `[]` | Optional image pull secrets for private registries |
 | metrics.enabled | bool | `false` | Enable Prometheus metrics endpoint. |
 | metrics.port | int | `9184` | Port to expose metrics on. |

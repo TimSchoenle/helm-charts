@@ -24,21 +24,28 @@ runs:
       with:
         version: ${{ inputs.helm-version }}
 
-    - name: Install helm-unittest
+    - name: Install Helm plugins
       shell: bash
       env:
         UNITTEST_VERSION: ${{ inputs.unittest-version }}
-      run: |
-        helm plugin install https://github.com/helm-unittest/helm-unittest \
-          --version "${UNITTEST_VERSION}" --verify=false
-
-    - name: Install helm-schema
-      shell: bash
-      env:
         SCHEMA_VERSION: ${{ inputs.schema-version }}
       run: |
+        set -euo pipefail
+
+        # Helm 4 verifies plugin signatures on install by default and neither plugin publishes
+        # a provenance file, so verification has to be disabled there. Helm 3 does not know the
+        # flag at all and aborts with "unknown flag: --verify". Probe for the flag rather than
+        # branching on the version, so this survives the whole version matrix.
+        verify_args=()
+        if helm plugin install --help | grep -q -- '--verify'; then
+          verify_args=(--verify=false)
+        fi
+
+        helm plugin install https://github.com/helm-unittest/helm-unittest \
+          --version "${UNITTEST_VERSION}" ${verify_args[@]+"${verify_args[@]}"}
+
         helm plugin install https://github.com/dadav/helm-schema \
-          --version "${SCHEMA_VERSION}" --verify=false
+          --version "${SCHEMA_VERSION}" ${verify_args[@]+"${verify_args[@]}"}
 
     - name: Report installed versions
       shell: bash

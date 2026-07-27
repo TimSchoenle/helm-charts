@@ -1,21 +1,33 @@
-{{- if .Values.metrics.enabled }}
+{{- if and .Values.metrics.enabled .Values.metrics.podMonitor.enabled }}
 apiVersion: monitoring.coreos.com/v1
 kind: PodMonitor
 metadata:
   name: {{ include "common.fullname" . }}
+  namespace: {{ include "common.namespace" . }}
   labels:
     {{- include "common.labels" . | nindent 4 }}
+    {{- with .Values.metrics.podMonitor.labels }}
+    {{- include "common.tplvalues.render" (dict "value" . "context" $) | nindent 4 }}
+    {{- end }}
+  {{- with (include "common.annotations" .) }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
 spec:
   selector:
     matchLabels:
-      app: {{ .Release.Name }}
+      {{- /*
+        Must match the pod template labels. The previous `app: {{ .Release.Name }}` selector
+        matched no pods at all, so nothing was ever scraped.
+      */}}
+      {{- include "common.selectorLabels" . | nindent 6 }}
   podMetricsEndpoints:
     - port: metrics
       path: /metrics
-      {{- with .Values.metrics.serviceMonitor.interval }}
+      {{- with .Values.metrics.podMonitor.interval }}
       interval: {{ . }}
       {{- end }}
-      {{- with .Values.metrics.serviceMonitor.scrapeTimeout }}
+      {{- with .Values.metrics.podMonitor.scrapeTimeout }}
       scrapeTimeout: {{ . }}
       {{- end }}
 {{- end }}

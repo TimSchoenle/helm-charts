@@ -1,0 +1,63 @@
+# Enforces the restricted Pod Security Standard baseline that the charts in this repository
+# claim, so a later change cannot quietly regress it.
+#
+# Run locally with:
+#   .github/scripts/render-charts.sh rendered
+#   kube-linter lint --config .github/configs/kube-linter.yaml rendered
+#
+# Note on what is deliberately *not* enforced here:
+#   - Liveness/readiness probes. Not every workload in this repository serves traffic
+#     (netcup-offer-bot is a polling bot with no HTTP listener), so a repo-wide probe
+#     requirement would be wrong. The charts that do serve traffic assert their probes in
+#     their own helm-unittest suites.
+#   - seccompProfile. kube-linter ships no template for it; the shared `security_test.yaml`
+#     suite asserts `RuntimeDefault` on every chart instead.
+checks:
+  # The default set carries opinions unrelated to this baseline; enumerate explicitly.
+  doNotAutoAddDefaults: true
+
+  include:
+    # --- Pod Security Standards: restricted ------------------------------------------
+    - run-as-non-root
+    - no-read-only-root-fs
+    - privilege-escalation-container
+    - privileged-container
+    - drop-net-raw-capability
+    - sensitive-host-mounts
+    - host-network
+    - host-ipc
+    - host-pid
+
+    # --- Credentials and blast radius --------------------------------------------------
+    - non-existent-service-account
+    - access-to-secrets
+    - access-to-create-pods
+    - cluster-admin-role-binding
+    - ssh-port
+
+    # --- Reliability --------------------------------------------------------------------
+    - latest-tag
+    - dangling-service
+    - mismatching-selector
+
+    # --- Custom checks defined below -----------------------------------------------------
+    - unset-cpu-request
+    - unset-memory-requirements
+
+customChecks:
+  # Only the *request* is required. A CPU limit does not protect the node the way a memory
+  # limit does — it just throttles this workload once it is hit — so the charts set CPU
+  # requests and leave limits opt-in.
+  - name: unset-cpu-request
+    description: >-
+      Containers must declare a CPU request. Without one the pod is BestEffort and is the
+      first thing the kubelet evicts under node pressure.
+    remediation: >-
+      Set resources.requests.cpu, or pick a resourcesPreset, which supplies one.
+    template: cpu-requirements
+    params:
+      requirementsType: request
+      # The bounds describe the values to *flag*, not the values to require: 0..0 matches a
+      # container whose CPU request is unset.
+      lowerBoundMillis: 0
+      upperBoundMillis: 0

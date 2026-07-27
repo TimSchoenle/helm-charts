@@ -8,24 +8,33 @@ image:
   # @schema
   # type: string
   # @schema
-  # -- Container image repository where the application image is stored.
-  # Usually points to Docker Hub or a private registry.
-  # Example: ghcr.io/your-org/s3-bucket-perma-link
+  # -- Registry host. Empty means Docker Hub.
+  registry: ""
+
+  # @schema
+  # type: string
+  # @schema
+  # -- The container image repository.
   repository: timmi6790/s3-bucket-perma-link
 
   # @schema
   # type: string
   # @schema
-  # -- Container image tag to deploy.
-  # Pin to a version for predictable deployments rather than using "latest".
-  tag: v0.3.22@sha256:99638220674a86fe194c4aeccfe2d8ad50a62f56bad4661892ed2959e76a9660
+  # -- The container image tag. Defaults to the chart's `appVersion` when empty.
+  tag: v0.3.22
 
   # @schema
-  # enum: [Always, IfNotPresent, Never]
+  # type: string
   # @schema
-  # -- Kubernetes image pull policy.
-  # Determines when the image should be pulled from the registry.
-  pullPolicy: IfNotPresent
+  # -- Image digest (`sha256:...`). Combined with `tag` rather than replacing it: the digest
+  # pins the pull, while `tag` stays on as the readable version marker.
+  digest: sha256:99638220674a86fe194c4aeccfe2d8ad50a62f56bad4661892ed2959e76a9660
+
+  # @schema
+  # enum: ["", Always, IfNotPresent, Never]
+  # @schema
+  # -- The image pull policy. Empty resolves automatically from the tag/digest.
+  pullPolicy: ""
 
 # @schema
 # additionalProperties: true
@@ -65,6 +74,7 @@ application:
 
   # @schema
   # type: object
+  # additionalProperties: true
   # @schema
   handler:
     # @schema
@@ -122,177 +132,6 @@ application:
     # Used for authenticating with region-specific endpoints.
     region: "eu-central-1"
 
-  # @schema
-  # additionalProperties: true
-  # @schema
-  # -- Health check probe configuration.
-  # Application exposes health check on /health.
-  healthCheck:
-    # @schema
-    # type: string
-    # @schema
-    # -- Path for health check endpoint.
-    path: /health
-
-    # @schema
-    # additionalProperties: true
-    # @schema
-    # -- Startup probe configuration.
-    # Protects slow starting containers from being killed by liveness probe.
-    startup:
-      # @schema
-      # type: integer
-      # @schema
-      # -- Number of seconds after the container has started before startup probe is initiated.
-      initialDelaySeconds: 1
-
-      # @schema
-      # type: integer
-      # @schema
-      # -- How often (in seconds) to perform the probe.
-      periodSeconds: 5
-
-      # @schema
-      # type: integer
-      # @schema
-      # -- Number of seconds after which the probe times out.
-      timeoutSeconds: 3
-
-      # @schema
-      # type: integer
-      # @schema
-      # -- Minimum consecutive successes for the probe to be considered successful.
-      successThreshold: 1
-
-      # @schema
-      # type: integer
-      # @schema
-      # -- Minimum consecutive failures for the probe to be considered failed.
-      failureThreshold: 12
-
-    # @schema
-    # additionalProperties: true
-    # @schema
-    # -- Liveness probe configuration.
-    # Detects if the container needs to be restarted.
-    liveness:
-      # @schema
-      # type: integer
-      # @schema
-      # -- Number of seconds after the container has started before liveness probe is initiated.
-      initialDelaySeconds: 1
-
-      # @schema
-      # type: integer
-      # @schema
-      # -- How often (in seconds) to perform the probe.
-      periodSeconds: 10
-
-      # @schema
-      # type: integer
-      # @schema
-      # -- Number of seconds after which the probe times out.
-      timeoutSeconds: 5
-
-      # @schema
-      # type: integer
-      # @schema
-      # -- Minimum consecutive successes for the probe to be considered successful.
-      successThreshold: 1
-
-      # @schema
-      # type: integer
-      # @schema
-      # -- Minimum consecutive failures for the probe to be considered failed.
-      failureThreshold: 3
-
-    # @schema
-    # additionalProperties: true
-    # @schema
-    # -- Readiness probe configuration.
-    # Detects if the container is ready to serve traffic.
-    readiness:
-      # @schema
-      # type: integer
-      # @schema
-      # -- Number of seconds after the container has started before readiness probe is initiated.
-      initialDelaySeconds: 1
-
-      # @schema
-      # type: integer
-      # @schema
-      # -- How often (in seconds) to perform the probe.
-      periodSeconds: 5
-
-      # @schema
-      # type: integer
-      # @schema
-      # -- Number of seconds after which the probe times out.
-      timeoutSeconds: 3
-
-      # @schema
-      # type: integer
-      # @schema
-      # -- Minimum consecutive successes for the probe to be considered successful.
-      successThreshold: 1
-
-      # @schema
-      # type: integer
-      # @schema
-      # -- Minimum consecutive failures for the probe to be considered failed.
-      failureThreshold: 3
-
-# @schema
-# additionalProperties: true
-# @schema
-securityContext:
-  # @schema
-  # type: boolean
-  # @schema
-  # -- Allow privilege escalation
-  allowPrivilegeEscalation: false
-
-  # @schema
-  # additionalProperties: true
-  # @schema
-  capabilities:
-    # @schema
-    # type: array
-    # @schema
-    # -- Linux capabilities to drop
-    drop:
-      - ALL
-
-  # @schema
-  # type: boolean
-  # @schema
-  # -- Mount root filesystem as read-only.
-  # Next.js ISR requires write access to update prerender cache.
-  # Set to true only if your app doesn't use ISR.
-  readOnlyRootFilesystem: true
-
-# @schema
-# additionalProperties: true
-# @schema
-podSecurityContext:
-  # @schema
-  # type: boolean
-  # @schema
-  # -- Run pod as non-root user
-  runAsNonRoot: true
-
-  # @schema
-  # type: integer
-  # @schema
-  # -- User ID to run as
-  runAsUser: 1000
-
-  # @schema
-  # type: integer
-  # @schema
-  # -- Group ID for file system access
-  fsGroup: 1000
-
 # @schema
 # additionalProperties: true
 # @schema
@@ -305,6 +144,7 @@ serviceAccount:
 
   # @schema
   # type: object
+  # additionalProperties: true
   # @schema
   # -- Additional annotations for the service account
   annotations: {}
@@ -358,6 +198,7 @@ ingress:
 
   # @schema
   # type: object
+  # additionalProperties: true
   # @schema
   # -- Custom annotations for the Ingress resource.
   # Useful for configuring ingress controllers (e.g., cert-manager, rate limits).
@@ -411,6 +252,15 @@ resources:
   # @schema
   # -- Resource requests define the guaranteed resources reserved for the container.
   requests:
+    # @schema
+    # type: string
+    # @schema
+    # -- Minimum CPU requested by the container.
+    # The service proxies small objects and is mostly IO-bound.
+    # Without a CPU request the pod is BestEffort and is the first thing evicted
+    # under node pressure.
+    cpu: 10m
+
     # @schema
     # type: string
     # @schema
@@ -475,6 +325,7 @@ networkPolicy:
 
       # @schema
       # type: object
+      # additionalProperties: true
       # @schema
       # -- Pod selector for Ingress Controller (default: Traefik label)
       selector:
@@ -517,6 +368,22 @@ networkPolicy:
       # -- Allow egress to DNS
       enabled: true
 
+      # @schema
+      # type: object
+      # additionalProperties: true
+      # @schema
+      # -- Namespace selector for the DNS service
+      namespaceSelector:
+        kubernetes.io/metadata.name: kube-system
+
+      # @schema
+      # type: object
+      # additionalProperties: true
+      # @schema
+      # -- Pod selector for the DNS service
+      podSelector:
+        k8s-app: kube-dns
+
     # @schema
     # additionalProperties: true
     # @schema
@@ -537,18 +404,25 @@ networkPolicy:
       # type: boolean
       # @schema
       # -- Allow egress to HTTPS (TCP/443)
-      enabled: false
+      enabled: true
 
     # @schema
-    # additionalProperties: true
+    # type: string
     # @schema
-    # -- Sentry configuration for egress
-    sentry:
-      # @schema
-      # type: boolean
-      # @schema
-      # -- Allow egress to Sentry (HTTPS)
-      enabled: true
+    # -- Destination CIDR for the HTTP/HTTPS rules
+    cidr: 0.0.0.0/0
+
+    # @schema
+    # type: array
+    # @schema
+    # -- CIDRs carved out of `cidr`. Defaults exclude RFC1918 private space and link-local
+    # 169.254.0.0/16, which covers the cloud instance metadata endpoint.
+    except:
+      - 10.0.0.0/8
+      - 172.16.0.0/12
+      - 192.168.0.0/16
+      - 169.254.0.0/16
+
 
     # @schema
     # type: array
@@ -575,3 +449,367 @@ networkPolicy:
     #             kubernetes.io/metadata.name: storage
     # -- Custom egress rules
     customRules: []
+
+# @schema
+# enum: [restricted, none]
+# @schema
+# -- Pod security context baseline. `restricted` applies the Pod Security Standards
+# restricted profile (`runAsNonRoot`, `seccompProfile: RuntimeDefault`,
+# `fsGroupChangePolicy: OnRootMismatch`) on top of the identity fields below.
+podSecurityContextPreset: restricted
+
+# @schema
+# additionalProperties: true
+# @schema
+# -- Pod security context, merged over the preset.
+podSecurityContext:
+  # @schema
+  # type: integer
+  # @schema
+  # -- User ID to run as
+  runAsUser: 1000
+
+  # @schema
+  # type: integer
+  # @schema
+  # -- Primary group ID to run as
+  runAsGroup: 1000
+
+  # @schema
+  # type: integer
+  # @schema
+  # -- Group ID for file system access
+  fsGroup: 1000
+
+# @schema
+# enum: [restricted, none]
+# @schema
+# -- Container security context baseline. `restricted` drops all Linux capabilities and
+# forbids privilege escalation, running as root and a writable root filesystem.
+securityContextPreset: restricted
+
+# @schema
+# type: object
+# additionalProperties: true
+# @schema
+# -- Container security context, merged over the preset.
+# A writable /tmp is provided automatically via an emptyDir volume.
+securityContext: {}
+
+# @schema
+# additionalProperties: true
+# @schema
+# -- Startup probe. Protects a slow-starting container from the liveness probe.
+startupProbe:
+  # @schema
+  # type: boolean
+  # @schema
+  # -- Enable the startup probe.
+  enabled: true
+
+  # @schema
+  # additionalProperties: true
+  # @schema
+  # -- HTTP handler for the probe.
+  httpGet:
+    # @schema
+    # type: string
+    # @schema
+    # -- Health check path.
+    path: /health
+
+    # @schema
+    # type: string
+    # @schema
+    # -- Named container port to probe.
+    port: http
+
+  # @schema
+  # type: integer
+  # @schema
+  # -- Delay before the first probe.
+  initialDelaySeconds: 1
+
+  # @schema
+  # type: integer
+  # @schema
+  # -- Probe interval.
+  periodSeconds: 5
+
+  # @schema
+  # type: integer
+  # @schema
+  # -- Probe timeout.
+  timeoutSeconds: 3
+
+  # @schema
+  # type: integer
+  # @schema
+  # -- Consecutive failures before the probe is considered failed.
+  failureThreshold: 12
+
+# @schema
+# additionalProperties: true
+# @schema
+# -- Liveness probe. Restarts the container when it stops responding.
+livenessProbe:
+  # @schema
+  # type: boolean
+  # @schema
+  # -- Enable the liveness probe.
+  enabled: true
+
+  # @schema
+  # additionalProperties: true
+  # @schema
+  # -- HTTP handler for the probe.
+  httpGet:
+    # @schema
+    # type: string
+    # @schema
+    # -- Health check path.
+    path: /health
+
+    # @schema
+    # type: string
+    # @schema
+    # -- Named container port to probe.
+    port: http
+
+  # @schema
+  # type: integer
+  # @schema
+  # -- Delay before the first probe.
+  initialDelaySeconds: 1
+
+  # @schema
+  # type: integer
+  # @schema
+  # -- Probe interval.
+  periodSeconds: 10
+
+  # @schema
+  # type: integer
+  # @schema
+  # -- Probe timeout.
+  timeoutSeconds: 5
+
+  # @schema
+  # type: integer
+  # @schema
+  # -- Consecutive failures before the probe is considered failed.
+  failureThreshold: 3
+
+# @schema
+# additionalProperties: true
+# @schema
+# -- Readiness probe. Removes the pod from the Service while it cannot serve traffic.
+readinessProbe:
+  # @schema
+  # type: boolean
+  # @schema
+  # -- Enable the readiness probe.
+  enabled: true
+
+  # @schema
+  # additionalProperties: true
+  # @schema
+  # -- HTTP handler for the probe.
+  httpGet:
+    # @schema
+    # type: string
+    # @schema
+    # -- Health check path.
+    path: /health
+
+    # @schema
+    # type: string
+    # @schema
+    # -- Named container port to probe.
+    port: http
+
+  # @schema
+  # type: integer
+  # @schema
+  # -- Delay before the first probe.
+  initialDelaySeconds: 1
+
+  # @schema
+  # type: integer
+  # @schema
+  # -- Probe interval.
+  periodSeconds: 5
+
+  # @schema
+  # type: integer
+  # @schema
+  # -- Probe timeout.
+  timeoutSeconds: 3
+
+  # @schema
+  # type: integer
+  # @schema
+  # -- Consecutive successes before the pod is considered ready.
+  successThreshold: 1
+
+  # @schema
+  # type: integer
+  # @schema
+  # -- Consecutive failures before the probe is considered failed.
+  failureThreshold: 3
+
+# @schema
+# type: integer
+# minimum: 0
+# @schema
+# -- Number of application replicas.
+replicaCount: 1
+
+# @schema
+# type: string
+# @schema
+# -- Override the chart name used in resource names and labels.
+nameOverride: ""
+
+# @schema
+# type: string
+# @schema
+# -- Override the full generated resource name.
+fullnameOverride: ""
+
+# @schema
+# type: string
+# @schema
+# -- Deploy into a namespace other than the release namespace.
+namespaceOverride: ""
+
+# @schema
+# type: array
+# @schema
+# -- Optional image pull secrets for private registries.
+imagePullSecrets: []
+
+# @schema
+# type: object
+# additionalProperties: true
+# @schema
+# -- Additional annotations to add to the pod.
+podAnnotations: {}
+
+# @schema
+# type: object
+# additionalProperties: true
+# @schema
+# -- Additional labels to add to the pod.
+podLabels: {}
+
+# @schema
+# type: string
+# @schema
+# -- Optional Kubernetes PriorityClass name.
+priorityClassName: ""
+
+# @schema
+# type: object
+# additionalProperties: true
+# @schema
+# -- Node selector for pod assignment.
+nodeSelector: {}
+
+# @schema
+# type: array
+# @schema
+# -- Tolerations for pod assignment.
+tolerations: []
+
+# @schema
+# type: object
+# additionalProperties: true
+# @schema
+# -- Explicit affinity rules. Wins over `podAntiAffinity`.
+affinity: {}
+
+# @schema
+# type: array
+# @schema
+# -- Pod topology spread constraints for availability.
+topologySpreadConstraints: []
+
+# @schema
+# type: array
+# @schema
+# -- Additional volumes added to the pod.
+extraVolumes: []
+
+# @schema
+# type: array
+# @schema
+# -- Additional volume mounts added to the application container.
+extraVolumeMounts: []
+
+# @schema
+# type: integer
+# @schema
+# -- Number of old ReplicaSets retained for rollback.
+revisionHistoryLimit: 3
+
+# @schema
+# type: object
+# additionalProperties: true
+# @schema
+# -- Deployment update strategy. Empty uses the Kubernetes default rolling update.
+strategy: {}
+
+# @schema
+# type: integer
+# @schema
+# -- Grace period for pod shutdown.
+terminationGracePeriodSeconds: 30
+
+# @schema
+# type: boolean
+# @schema
+# -- Mount the ServiceAccount API token into the pod.
+# Set on the pod itself, which is what actually keeps the token out of the container: the
+# ServiceAccount-level setting is ignored as soon as a pod names a different account.
+automountServiceAccountToken: false
+
+# @schema
+# type: object
+# additionalProperties: true
+# @schema
+# -- Labels added to every object this chart creates.
+commonLabels: {}
+
+# @schema
+# type: object
+# additionalProperties: true
+# @schema
+# -- Annotations added to every object this chart creates.
+commonAnnotations: {}
+
+# @schema
+# enum: ["", nano, micro, small, medium, large]
+# @schema
+# -- Named resource sizing. Ignored when `resources` is set.
+resourcesPreset: ""
+
+# @schema
+# enum: ["", soft, hard]
+# @schema
+# -- Shorthand for spreading replicas across nodes. `soft` prefers, `hard` requires.
+# Ignored when `affinity` is set.
+podAntiAffinity: ""
+
+# @schema
+# type: array
+# @schema
+# -- Additional environment variables for the application container.
+extraEnv: []
+
+# @schema
+# type: string
+# @schema
+# -- Kubernetes version to target when branching on API availability.
+# Lets `helm template` render for a specific cluster version without a live connection.
+kubeVersionOverride: ""

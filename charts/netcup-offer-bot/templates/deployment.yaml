@@ -2,88 +2,49 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: {{ include "common.fullname" . }}
+  namespace: {{ include "common.namespace" . }}
   labels:
     {{- include "common.labels" . | nindent 4 }}
+  {{- with (include "common.annotations" .) }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
 spec:
-  replicas: 1
+  replicas: {{ .Values.replicaCount }}
+  revisionHistoryLimit: {{ .Values.revisionHistoryLimit }}
+  {{- /*
+    A ReadWriteOnce claim cannot be attached to the replacement pod while the outgoing pod
+    still holds it, so a rolling update deadlocks. Fall back to Recreate.
+  */}}
+  {{- $rwo := and .Values.persistence.data.enabled (eq .Values.persistence.data.accessMode "ReadWriteOnce") }}
+  {{- with (include "common.updateStrategy" (dict "ctx" . "rwo" $rwo)) }}
+  strategy:
+    {{- . | nindent 4 }}
+  {{- end }}
   selector:
     matchLabels:
       {{- include "common.selectorLabels" . | nindent 6 }}
   template:
     metadata:
+      {{- with (include "common.podAnnotations" (dict "ctx" $ "templates" (list "configmap.yaml" "secret.yaml"))) }}
       annotations:
-        {{- with .Values.podAnnotations }}
-        {{- toYaml . | nindent 8 }}
-        {{- end }}
+        {{- . | nindent 8 }}
+      {{- end }}
       labels:
-        {{- include "common.labels" . | nindent 8 }}
-        {{- with .Values.podLabels }}
-        {{- toYaml . | nindent 8 }}
-        {{- end }}
+        {{- include "common.podLabels" . | nindent 8 }}
     spec:
-      {{- if .Values.priorityClassName }}
-      priorityClassName: {{ .Values.priorityClassName }}
-      {{- end }}
-      {{- with .Values.topologySpreadConstraints }}
-      topologySpreadConstraints:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
-      {{- with .Values.imagePullSecrets }}
-      imagePullSecrets:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
-      serviceAccountName: {{ include "common.serviceAccountName" . }}
-      {{- with .Values.podSecurityContext }}
-      securityContext:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
+      {{- include "common.podSpec.common" . | nindent 6 }}
       containers:
-        - name: {{ .Chart.Name }}
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
-          imagePullPolicy: {{ .Values.image.pullPolicy }}
-        {{- with .Values.securityContext }}
-          securityContext:
-          {{- toYaml . | nindent 12 }}
+        {{- $ports := list }}
+        {{- if and .Values.metrics.enabled .Values.metrics.port }}
+        {{- $ports = list (dict "name" "metrics" "containerPort" (int .Values.metrics.port) "protocol" "TCP") }}
         {{- end }}
-          {{- if .Values.metrics.enabled }}
-          {{- with .Values.metrics.port }}
-          ports:
-            - name: metrics
-              containerPort: {{ . }}
-          {{- end}}
-          {{- end}}
-          resources:
-            {{- with .Values.resources.requests }}
-            requests:
-              {{- with .cpu}}
-              cpu: {{ . | quote }}
-              {{- end }}
-              {{- with .memory}}
-              memory: {{ . | quote }}
-              {{- end }}
-            {{- end }}
-            {{- with .Values.resources.limits }}
-            limits:
-              {{- with .cpu}}
-              cpu: {{ . | quote }}
-                {{- end }}
-                {{- with .memory}}
-              memory: {{ . | quote }}
-                {{- end }}
-            {{- end }}
-          envFrom:
-            - configMapRef:
-                name: {{ include "common.fullname" . }}
-          env:
-            - name: WEB_HOOK
-              valueFrom:
-                secretKeyRef:
-                  key: webHook
-                  name: {{ include "common.fullname" . }}
-          volumeMounts:
-            - mountPath: /app/data
-              name: {{ include "common.fullname" . }}
+        {{- include "common.container" (dict
+              "ctx" $
+              "ports" $ports
+              "envFrom" (list (dict "configMapRef" (dict "name" (include "common.fullname" .))))
+              "env" (list (dict "name" "WEB_HOOK" "valueFrom" (dict "secretKeyRef" (dict "name" (include "common.secretName" .) "key" "webHook"))))
+              "volumeMounts" (list (dict "name" "data" "mountPath" "/app/data"))
+            ) | nindent 8 }}
       volumes:
-        - name: {{ include "common.fullname" . }}
-          persistentVolumeClaim:
-            claimName: {{ include "common.fullname" . }}
+        {{- include "common.volumes" (dict "ctx" $ "volumes" (list (include "netcup-offer-bot.dataVolume" . | fromYaml))) | nindent 8 }}

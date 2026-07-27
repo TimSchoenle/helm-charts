@@ -1,0 +1,54 @@
+suite: deployment
+templates:
+  - deployment.yaml
+tests:
+  - it: creates a Deployment named after the release
+    asserts:
+      - isKind:
+          of: Deployment
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-mp-stats-legacy-viewer
+
+  # The Service targets this port by number, and the probes address it by name.
+  - it: exposes the server port as http
+    set:
+      application.server.port: 9090
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].ports
+          value:
+            - containerPort: 9090
+              name: http
+              protocol: TCP
+      - equal:
+          path: spec.template.spec.containers[0].startupProbe.httpGet.port
+          value: http
+
+  - it: probes the three distinct health endpoints
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].startupProbe.httpGet.path
+          value: /health/startup
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe.httpGet.path
+          value: /health/live
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.httpGet.path
+          value: /health/ready
+
+  # This chart mounts no configuration, so there is nothing to checksum.
+  - it: injects no configuration or secrets
+    asserts:
+      - notExists:
+          path: spec.template.spec.containers[0].envFrom
+      - notExists:
+          path: spec.template.spec.containers[0].env
+
+  - it: scales to the requested replica count
+    set:
+      replicaCount: 2
+    asserts:
+      - equal:
+          path: spec.replicas
+          value: 2

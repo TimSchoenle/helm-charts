@@ -1,0 +1,62 @@
+suite: persistent volume claim
+templates:
+  - claim-persistentvolumeclaim.yaml
+tests:
+  - it: creates a claim by default
+    asserts:
+      - isKind:
+          of: PersistentVolumeClaim
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-netcup-offer-bot
+      - equal:
+          path: spec.accessModes
+          value: [ReadWriteOnce]
+      - equal:
+          path: spec.resources.requests.storage
+          value: 10Mi
+
+  - it: creates nothing when persistence is disabled
+    set:
+      persistence.data.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: creates nothing when an existing claim is supplied
+    set:
+      persistence.data.existingClaim: my-state
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: leaves the storage class to the cluster default by default
+    asserts:
+      - notExists:
+          path: spec.storageClassName
+
+  - it: honours an explicit storage class
+    set:
+      persistence.data.storageClassName: fast-ssd
+    asserts:
+      - equal:
+          path: spec.storageClassName
+          value: fast-ssd
+
+  # "-" is the documented Helm convention for "do not provision dynamically".
+  - it: disables dynamic provisioning for "-"
+    set:
+      persistence.data.storageClassName: "-"
+    asserts:
+      - equal:
+          path: spec.storageClassName
+          value: ""
+
+  - it: carries retention annotations
+    set:
+      persistence.data.annotations:
+        helm.sh/resource-policy: keep
+    asserts:
+      - equal:
+          path: metadata.annotations["helm.sh/resource-policy"]
+          value: keep

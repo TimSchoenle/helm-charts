@@ -1,0 +1,238 @@
+matches the committed Deployment snapshot:
+  1: |
+    apiVersion: v1
+    data:
+      CHECK_INTERVAL: "180"
+      LOG_LEVEL: info
+      METRIC_PORT: "9184"
+    kind: ConfigMap
+    metadata:
+      labels:
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: netcup-offer-bot
+        app.kubernetes.io/version: v1.5.21
+        helm.sh/chart: netcup-offer-bot-3.0.0
+      name: RELEASE-NAME-netcup-offer-bot
+      namespace: NAMESPACE
+  2: |
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      labels:
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: netcup-offer-bot
+        app.kubernetes.io/version: v1.5.21
+        helm.sh/chart: netcup-offer-bot-3.0.0
+      name: RELEASE-NAME-netcup-offer-bot
+      namespace: NAMESPACE
+    spec:
+      replicas: 1
+      revisionHistoryLimit: 3
+      selector:
+        matchLabels:
+          app.kubernetes.io/instance: RELEASE-NAME
+          app.kubernetes.io/name: netcup-offer-bot
+      strategy:
+        type: Recreate
+      template:
+        metadata:
+          annotations:
+            checksum/configmap: f1554be1426471b88ae7097db5d823109398eae8a835b9472a3344aaa7697515
+            checksum/secret: 61d6ee818dcbf9d9fc090e9cdfc3fd832612413709f397300ab02523059e7cd7
+          labels:
+            app.kubernetes.io/instance: RELEASE-NAME
+            app.kubernetes.io/managed-by: Helm
+            app.kubernetes.io/name: netcup-offer-bot
+            app.kubernetes.io/version: v1.5.21
+        spec:
+          automountServiceAccountToken: false
+          containers:
+            - env:
+                - name: WEB_HOOK
+                  valueFrom:
+                    secretKeyRef:
+                      key: webHook
+                      name: RELEASE-NAME-netcup-offer-bot
+              envFrom:
+                - configMapRef:
+                    name: RELEASE-NAME-netcup-offer-bot
+              image: timmi6790/netcup-offer-bot:v1.5.21@sha256:29ca3ed4dfa9b3c6b03089fa3079b73cfac8eab3e2f25d736c4e730e5119919a
+              imagePullPolicy: IfNotPresent
+              name: netcup-offer-bot
+              resources:
+                limits:
+                  memory: 20Mi
+                requests:
+                  cpu: 10m
+                  memory: 15Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
+                privileged: false
+                readOnlyRootFilesystem: true
+                runAsNonRoot: true
+              volumeMounts:
+                - mountPath: /tmp
+                  name: tmp
+                - mountPath: /app/data
+                  name: data
+          securityContext:
+            fsGroup: 1000
+            fsGroupChangePolicy: OnRootMismatch
+            runAsGroup: 1000
+            runAsNonRoot: true
+            runAsUser: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          serviceAccountName: RELEASE-NAME-netcup-offer-bot
+          terminationGracePeriodSeconds: 30
+          volumes:
+            - emptyDir: {}
+              name: tmp
+            - name: data
+              persistentVolumeClaim:
+                claimName: RELEASE-NAME-netcup-offer-bot
+  3: |
+    apiVersion: v1
+    kind: Secret
+    metadata:
+      labels:
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: netcup-offer-bot
+        app.kubernetes.io/version: v1.5.21
+        helm.sh/chart: netcup-offer-bot-3.0.0
+      name: RELEASE-NAME-netcup-offer-bot
+      namespace: NAMESPACE
+    stringData:
+      webHook: https://example.invalid/hook
+    type: Opaque
+matches the committed Deployment snapshot with network policies and probes on:
+  1: |
+    apiVersion: v1
+    data:
+      CHECK_INTERVAL: "180"
+      LOG_LEVEL: info
+      METRIC_PORT: "9184"
+    kind: ConfigMap
+    metadata:
+      labels:
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: netcup-offer-bot
+        app.kubernetes.io/version: v1.5.21
+        helm.sh/chart: netcup-offer-bot-3.0.0
+      name: RELEASE-NAME-netcup-offer-bot
+      namespace: NAMESPACE
+  2: |
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      labels:
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: netcup-offer-bot
+        app.kubernetes.io/version: v1.5.21
+        helm.sh/chart: netcup-offer-bot-3.0.0
+      name: RELEASE-NAME-netcup-offer-bot
+      namespace: NAMESPACE
+    spec:
+      replicas: 1
+      revisionHistoryLimit: 3
+      selector:
+        matchLabels:
+          app.kubernetes.io/instance: RELEASE-NAME
+          app.kubernetes.io/name: netcup-offer-bot
+      strategy:
+        type: Recreate
+      template:
+        metadata:
+          annotations:
+            checksum/configmap: f1554be1426471b88ae7097db5d823109398eae8a835b9472a3344aaa7697515
+            checksum/secret: 61d6ee818dcbf9d9fc090e9cdfc3fd832612413709f397300ab02523059e7cd7
+          labels:
+            app.kubernetes.io/instance: RELEASE-NAME
+            app.kubernetes.io/managed-by: Helm
+            app.kubernetes.io/name: netcup-offer-bot
+            app.kubernetes.io/version: v1.5.21
+        spec:
+          affinity:
+            podAntiAffinity:
+              preferredDuringSchedulingIgnoredDuringExecution:
+                - podAffinityTerm:
+                    labelSelector:
+                      matchLabels:
+                        app.kubernetes.io/instance: RELEASE-NAME
+                        app.kubernetes.io/name: netcup-offer-bot
+                    topologyKey: kubernetes.io/hostname
+                  weight: 100
+          automountServiceAccountToken: false
+          containers:
+            - env:
+                - name: WEB_HOOK
+                  valueFrom:
+                    secretKeyRef:
+                      key: webHook
+                      name: RELEASE-NAME-netcup-offer-bot
+              envFrom:
+                - configMapRef:
+                    name: RELEASE-NAME-netcup-offer-bot
+              image: timmi6790/netcup-offer-bot:v1.5.21@sha256:29ca3ed4dfa9b3c6b03089fa3079b73cfac8eab3e2f25d736c4e730e5119919a
+              imagePullPolicy: IfNotPresent
+              name: netcup-offer-bot
+              resources:
+                limits:
+                  memory: 20Mi
+                requests:
+                  cpu: 10m
+                  memory: 15Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
+                privileged: false
+                readOnlyRootFilesystem: true
+                runAsNonRoot: true
+              volumeMounts:
+                - mountPath: /tmp
+                  name: tmp
+                - mountPath: /app/data
+                  name: data
+          nodeSelector:
+            kubernetes.io/os: linux
+          securityContext:
+            fsGroup: 1000
+            fsGroupChangePolicy: OnRootMismatch
+            runAsGroup: 1000
+            runAsNonRoot: true
+            runAsUser: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          serviceAccountName: RELEASE-NAME-netcup-offer-bot
+          terminationGracePeriodSeconds: 30
+          volumes:
+            - emptyDir: {}
+              name: tmp
+            - name: data
+              persistentVolumeClaim:
+                claimName: RELEASE-NAME-netcup-offer-bot
+  3: |
+    apiVersion: v1
+    kind: Secret
+    metadata:
+      labels:
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: netcup-offer-bot
+        app.kubernetes.io/version: v1.5.21
+        helm.sh/chart: netcup-offer-bot-3.0.0
+      name: RELEASE-NAME-netcup-offer-bot
+      namespace: NAMESPACE
+    stringData:
+      webHook: https://example.invalid/hook
+    type: Opaque

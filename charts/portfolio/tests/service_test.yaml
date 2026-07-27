@@ -1,45 +1,85 @@
-suite: test service
+suite: service and service account
 templates:
   - service.yaml
+  - serviceaccount.yaml
 tests:
-  - it: should create a Service
+  - it: creates a ClusterIP Service on the configured port
+    template: service.yaml
     asserts:
       - isKind:
           of: Service
       - equal:
           path: metadata.name
           value: RELEASE-NAME-portfolio
-
-  - it: should use ClusterIP by default
-    asserts:
       - equal:
           path: spec.type
           value: ClusterIP
-
-  - it: should expose port 80
-    asserts:
       - equal:
           path: spec.ports[0].port
           value: 80
-      - equal:
-          path: spec.ports[0].targetPort
-          value: http
-      - equal:
-          path: spec.ports[0].protocol
-          value: TCP
 
-  - it: should use custom service type
+  - it: selects only the pods of this release
+    template: service.yaml
+    asserts:
+      - equal:
+          path: spec.selector
+          value:
+            app.kubernetes.io/name: portfolio
+            app.kubernetes.io/instance: RELEASE-NAME
+
+  - it: honours the configured Service type and port
+    template: service.yaml
     set:
-      service.type: LoadBalancer
+      service.type: NodePort
+      service.port: 8081
     asserts:
       - equal:
           path: spec.type
-          value: LoadBalancer
-
-  - it: should use custom port
-    set:
-      service.port: 8080
-    asserts:
+          value: NodePort
       - equal:
           path: spec.ports[0].port
-          value: 8080
+          value: 8081
+
+  - it: creates a ServiceAccount by default
+    template: serviceaccount.yaml
+    asserts:
+      - isKind:
+          of: ServiceAccount
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-portfolio
+      - equal:
+          path: automountServiceAccountToken
+          value: false
+
+  - it: creates no ServiceAccount when disabled
+    template: serviceaccount.yaml
+    set:
+      serviceAccount.create: false
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: carries annotations for workload identity
+    template: serviceaccount.yaml
+    set:
+      serviceAccount.annotations:
+        eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/example
+    asserts:
+      - equal:
+          path: metadata.annotations["eks.amazonaws.com/role-arn"]
+          value: arn:aws:iam::123456789012:role/example
+
+  - it: applies commonAnnotations and commonLabels everywhere
+    set:
+      commonAnnotations:
+        owner: platform
+      commonLabels:
+        tier: backend
+    asserts:
+      - equal:
+          path: metadata.annotations.owner
+          value: platform
+      - equal:
+          path: metadata.labels.tier
+          value: backend

@@ -2,10 +2,709 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "additionalProperties": false,
   "properties": {
+    "affinity": {
+      "additionalProperties": true,
+      "description": "Explicit affinity rules. Wins over `podAntiAffinity`.",
+      "required": [],
+      "title": "affinity",
+      "type": "object"
+    },
+    "automountServiceAccountToken": {
+      "default": false,
+      "description": "Mount the ServiceAccount API token into the pod.\nSet on the pod itself, which is what actually keeps the token out of the container: the\nServiceAccount-level setting is ignored as soon as a pod names a different account.",
+      "required": [],
+      "title": "automountServiceAccountToken",
+      "type": "boolean"
+    },
     "common": {
-      "description": "Common helper templates for all charts",
+      "description": "Shared template partials for the TimSchoenle Helm charts",
+      "properties": {
+        "affinity": {
+          "additionalProperties": true,
+          "description": "Explicit affinity rules. Wins over `podAntiAffinity`.",
+          "required": [],
+          "title": "affinity",
+          "type": "object"
+        },
+        "automountServiceAccountToken": {
+          "default": false,
+          "description": "Mount the ServiceAccount API token into the pod.\nSet on the pod itself, which is what actually keeps the token out of the container: the\nServiceAccount-level setting is ignored as soon as a pod names a different account.",
+          "required": [],
+          "title": "automountServiceAccountToken",
+          "type": "boolean"
+        },
+        "commonAnnotations": {
+          "additionalProperties": true,
+          "description": "Annotations added to every object the chart creates. Values may contain Go templates.",
+          "required": [],
+          "title": "commonAnnotations",
+          "type": "object"
+        },
+        "commonLabels": {
+          "additionalProperties": true,
+          "description": "Labels added to every object the chart creates. Values may contain Go templates.",
+          "required": [],
+          "title": "commonLabels",
+          "type": "object"
+        },
+        "component": {
+          "default": "",
+          "description": "Value for the `app.kubernetes.io/component` label.",
+          "required": [],
+          "title": "component",
+          "type": "string"
+        },
+        "dnsConfig": {
+          "additionalProperties": true,
+          "description": "Pod DNS configuration.",
+          "required": [],
+          "title": "dnsConfig",
+          "type": "object"
+        },
+        "dnsPolicy": {
+          "default": "",
+          "description": "Pod DNS policy.",
+          "required": [],
+          "title": "dnsPolicy",
+          "type": "string"
+        },
+        "extraEnv": {
+          "description": "Additional environment variables appended to the application container.",
+          "items": {
+            "required": []
+          },
+          "required": [],
+          "title": "extraEnv",
+          "type": "array"
+        },
+        "extraVolumeMounts": {
+          "description": "Additional volume mounts added to the application container.",
+          "items": {
+            "required": []
+          },
+          "required": [],
+          "title": "extraVolumeMounts",
+          "type": "array"
+        },
+        "extraVolumes": {
+          "description": "Additional volumes added to the pod.",
+          "items": {
+            "required": []
+          },
+          "required": [],
+          "title": "extraVolumes",
+          "type": "array"
+        },
+        "fullnameOverride": {
+          "default": "",
+          "description": "Override the full generated resource name.",
+          "required": [],
+          "title": "fullnameOverride",
+          "type": "string"
+        },
+        "global": {
+          "description": "Global values are values that can be accessed from any chart or subchart by exactly the same name.",
+          "required": [],
+          "title": "global",
+          "type": "object"
+        },
+        "hostAliases": {
+          "description": "Host aliases injected into the pod's /etc/hosts.",
+          "items": {
+            "required": []
+          },
+          "required": [],
+          "title": "hostAliases",
+          "type": "array"
+        },
+        "image": {
+          "additionalProperties": true,
+          "properties": {
+            "digest": {
+              "default": "",
+              "description": "Image digest (`sha256:...`). Combined with `tag` rather than replacing it: the digest\npins the pull, while `tag` stays on as the readable version marker.",
+              "required": [],
+              "title": "digest",
+              "type": "string"
+            },
+            "pullPolicy": {
+              "default": "",
+              "description": "Image pull policy. Left empty, resolves to `Always` for the `latest` tag and\n`IfNotPresent` for anything pinned.",
+              "enum": [
+                "",
+                "Always",
+                "IfNotPresent",
+                "Never"
+              ],
+              "required": [],
+              "title": "pullPolicy"
+            },
+            "registry": {
+              "default": "",
+              "description": "Registry host. Left empty, the repository is used as-is (Docker Hub).",
+              "required": [],
+              "title": "registry",
+              "type": "string"
+            },
+            "repository": {
+              "default": "",
+              "description": "Image repository. Required.",
+              "required": [],
+              "title": "repository",
+              "type": "string"
+            },
+            "tag": {
+              "default": "",
+              "description": "Image tag. Defaults to the chart's `appVersion`.",
+              "required": [],
+              "title": "tag",
+              "type": "string"
+            }
+          },
+          "required": [],
+          "title": "image"
+        },
+        "imagePullSecrets": {
+          "description": "Pull secrets for private registries. Accepts `- name: regcred` or the shorthand `- regcred`.",
+          "items": {
+            "required": []
+          },
+          "required": [],
+          "title": "imagePullSecrets",
+          "type": "array"
+        },
+        "kubeVersionOverride": {
+          "default": "",
+          "description": "Kubernetes version to target when branching on API availability.\nLets `helm template` render for a specific cluster version without a live connection.\nLeave empty to detect from the cluster.",
+          "required": [],
+          "title": "kubeVersionOverride",
+          "type": "string"
+        },
+        "livenessProbe": {
+          "additionalProperties": true,
+          "description": "Liveness probe. See `startupProbe` for the accepted shape.",
+          "properties": {
+            "enabled": {
+              "default": false,
+              "description": "Enable the liveness probe.",
+              "required": [],
+              "title": "enabled",
+              "type": "boolean"
+            }
+          },
+          "required": [],
+          "title": "livenessProbe"
+        },
+        "nameOverride": {
+          "default": "",
+          "description": "Override the chart name used in resource names and labels.",
+          "required": [],
+          "title": "nameOverride",
+          "type": "string"
+        },
+        "namespaceOverride": {
+          "default": "",
+          "description": "Deploy into a namespace other than the release namespace.",
+          "required": [],
+          "title": "namespaceOverride",
+          "type": "string"
+        },
+        "networkPolicy": {
+          "additionalProperties": true,
+          "description": "Network policy configuration.\n\nEvery generated egress rule is scoped by a `to:` selector. An egress rule that lists only\nports is not a restriction — the NetworkPolicy API reads a missing `to` as \"any\ndestination\", so such a policy permits traffic to every in-cluster service and to the\ncloud metadata endpoint.",
+          "properties": {
+            "egress": {
+              "additionalProperties": true,
+              "description": "Egress rules.",
+              "properties": {
+                "cidr": {
+                  "default": "0.0.0.0/0",
+                  "description": "Destination CIDR for the HTTP/HTTPS rules.",
+                  "required": [],
+                  "title": "cidr",
+                  "type": "string"
+                },
+                "customRules": {
+                  "description": "Additional egress rules, appended verbatim. Each must carry its own `to:` selector.",
+                  "items": {
+                    "required": []
+                  },
+                  "required": [],
+                  "title": "customRules",
+                  "type": "array"
+                },
+                "dns": {
+                  "additionalProperties": true,
+                  "description": "Allow DNS resolution.",
+                  "properties": {
+                    "enabled": {
+                      "default": true,
+                      "description": "Allow egress to the cluster DNS service.",
+                      "required": [],
+                      "title": "enabled",
+                      "type": "boolean"
+                    },
+                    "namespaceSelector": {
+                      "additionalProperties": true,
+                      "description": "Namespace selector for the DNS service.",
+                      "properties": {
+                        "kubernetes.io/metadata.name": {
+                          "default": "kube-system",
+                          "required": [],
+                          "title": "kubernetes.io/metadata.name",
+                          "type": "string"
+                        }
+                      },
+                      "required": [],
+                      "title": "namespaceSelector",
+                      "type": "object"
+                    },
+                    "podSelector": {
+                      "additionalProperties": true,
+                      "description": "Pod selector for the DNS service.",
+                      "properties": {
+                        "k8s-app": {
+                          "default": "kube-dns",
+                          "required": [],
+                          "title": "k8s-app",
+                          "type": "string"
+                        }
+                      },
+                      "required": [],
+                      "title": "podSelector",
+                      "type": "object"
+                    }
+                  },
+                  "required": [],
+                  "title": "dns"
+                },
+                "enabled": {
+                  "default": true,
+                  "description": "Add egress rules. Disabled means default-deny for outbound traffic.",
+                  "required": [],
+                  "title": "enabled",
+                  "type": "boolean"
+                },
+                "except": {
+                  "description": "CIDRs carved out of `cidr`. Defaults exclude RFC1918 private space and link-local\n169.254.0.0/16, which covers the cloud instance metadata endpoint.",
+                  "items": {
+                    "anyOf": [
+                      {
+                        "required": [],
+                        "type": "string"
+                      },
+                      {
+                        "required": [],
+                        "type": "string"
+                      },
+                      {
+                        "required": [],
+                        "type": "string"
+                      },
+                      {
+                        "required": [],
+                        "type": "string"
+                      }
+                    ],
+                    "required": []
+                  },
+                  "required": [],
+                  "title": "except",
+                  "type": "array"
+                },
+                "http": {
+                  "additionalProperties": true,
+                  "description": "Allow outbound HTTP.",
+                  "properties": {
+                    "enabled": {
+                      "default": false,
+                      "description": "Allow egress to TCP/80 on the destinations described by `cidr`/`except`.",
+                      "required": [],
+                      "title": "enabled",
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [],
+                  "title": "http"
+                },
+                "https": {
+                  "additionalProperties": true,
+                  "description": "Allow outbound HTTPS.",
+                  "properties": {
+                    "enabled": {
+                      "default": true,
+                      "description": "Allow egress to TCP/443 on the destinations described by `cidr`/`except`.",
+                      "required": [],
+                      "title": "enabled",
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [],
+                  "title": "https"
+                }
+              },
+              "required": [],
+              "title": "egress"
+            },
+            "enabled": {
+              "default": false,
+              "description": "Create the NetworkPolicies. When enabled with no rules configured, the result is a\ndefault-deny policy, which is intentional.",
+              "required": [],
+              "title": "enabled",
+              "type": "boolean"
+            },
+            "extraEgress": {
+              "description": "Extra egress rules appended regardless of `egress.enabled`.",
+              "items": {
+                "required": []
+              },
+              "required": [],
+              "title": "extraEgress",
+              "type": "array"
+            },
+            "extraIngress": {
+              "description": "Extra ingress rules appended regardless of `ingress.enabled`.",
+              "items": {
+                "required": []
+              },
+              "required": [],
+              "title": "extraIngress",
+              "type": "array"
+            },
+            "ingress": {
+              "additionalProperties": true,
+              "description": "Ingress rules.",
+              "properties": {
+                "controller": {
+                  "additionalProperties": true,
+                  "description": "Allow traffic from the ingress controller.",
+                  "properties": {
+                    "enabled": {
+                      "default": true,
+                      "description": "Allow ingress from the ingress controller.",
+                      "required": [],
+                      "title": "enabled",
+                      "type": "boolean"
+                    },
+                    "namespace": {
+                      "default": "traefik",
+                      "description": "Namespace the ingress controller runs in.",
+                      "required": [],
+                      "title": "namespace",
+                      "type": "string"
+                    },
+                    "ports": {
+                      "description": "Restrict the rule to specific ports. Empty means all ports.",
+                      "items": {
+                        "required": []
+                      },
+                      "required": [],
+                      "title": "ports",
+                      "type": "array"
+                    },
+                    "selector": {
+                      "additionalProperties": true,
+                      "description": "Pod selector matching the ingress controller.",
+                      "properties": {
+                        "app.kubernetes.io/name": {
+                          "default": "traefik",
+                          "required": [],
+                          "title": "app.kubernetes.io/name",
+                          "type": "string"
+                        }
+                      },
+                      "required": [],
+                      "title": "selector",
+                      "type": "object"
+                    }
+                  },
+                  "required": [],
+                  "title": "controller"
+                },
+                "customRules": {
+                  "description": "Additional ingress rules, appended verbatim.",
+                  "items": {
+                    "required": []
+                  },
+                  "required": [],
+                  "title": "customRules",
+                  "type": "array"
+                },
+                "enabled": {
+                  "default": true,
+                  "description": "Add ingress rules. Disabled means default-deny for inbound traffic.",
+                  "required": [],
+                  "title": "enabled",
+                  "type": "boolean"
+                },
+                "monitoring": {
+                  "additionalProperties": true,
+                  "description": "Allow scraping from a monitoring namespace.",
+                  "properties": {
+                    "enabled": {
+                      "default": true,
+                      "description": "Allow ingress from the monitoring namespace.",
+                      "required": [],
+                      "title": "enabled",
+                      "type": "boolean"
+                    },
+                    "namespace": {
+                      "default": "monitoring",
+                      "description": "Monitoring namespace, matched on `kubernetes.io/metadata.name`.",
+                      "required": [],
+                      "title": "namespace",
+                      "type": "string"
+                    },
+                    "namespaceSelector": {
+                      "additionalProperties": true,
+                      "description": "Override the namespace selector entirely.",
+                      "required": [],
+                      "title": "namespaceSelector",
+                      "type": "object"
+                    },
+                    "ports": {
+                      "description": "Restrict the rule to specific ports. Empty means all ports.",
+                      "items": {
+                        "required": []
+                      },
+                      "required": [],
+                      "title": "ports",
+                      "type": "array"
+                    }
+                  },
+                  "required": [],
+                  "title": "monitoring"
+                }
+              },
+              "required": [],
+              "title": "ingress"
+            }
+          },
+          "required": [],
+          "title": "networkPolicy"
+        },
+        "nodeSelector": {
+          "additionalProperties": true,
+          "description": "Node selector for pod assignment.",
+          "required": [],
+          "title": "nodeSelector",
+          "type": "object"
+        },
+        "partOf": {
+          "default": "",
+          "description": "Value for the `app.kubernetes.io/part-of` label.",
+          "required": [],
+          "title": "partOf",
+          "type": "string"
+        },
+        "podAnnotations": {
+          "additionalProperties": true,
+          "description": "Annotations added to the pod template.",
+          "required": [],
+          "title": "podAnnotations",
+          "type": "object"
+        },
+        "podAntiAffinity": {
+          "default": "",
+          "description": "Shorthand for spreading replicas across nodes. `soft` prefers, `hard` requires.",
+          "enum": [
+            "",
+            "soft",
+            "hard"
+          ],
+          "required": [],
+          "title": "podAntiAffinity"
+        },
+        "podLabels": {
+          "additionalProperties": true,
+          "description": "Labels added to the pod template.",
+          "required": [],
+          "title": "podLabels",
+          "type": "object"
+        },
+        "podSecurityContext": {
+          "additionalProperties": true,
+          "description": "Pod security context, merged over the preset.",
+          "required": [],
+          "title": "podSecurityContext",
+          "type": "object"
+        },
+        "podSecurityContextPreset": {
+          "default": "restricted",
+          "description": "Baseline for the pod security context. `restricted` applies the Pod Security Standards\nrestricted profile (`runAsNonRoot`, `seccompProfile: RuntimeDefault`,\n`fsGroupChangePolicy: OnRootMismatch`); `none` applies nothing. Identity fields\n(`runAsUser`, `runAsGroup`, `fsGroup`) are always left to the chart, since they must match\nthe UID baked into the image.",
+          "enum": [
+            "restricted",
+            "none"
+          ],
+          "required": [],
+          "title": "podSecurityContextPreset"
+        },
+        "priorityClassName": {
+          "default": "",
+          "description": "PriorityClass for the pod.",
+          "required": [],
+          "title": "priorityClassName",
+          "type": "string"
+        },
+        "readinessProbe": {
+          "additionalProperties": true,
+          "description": "Readiness probe. See `startupProbe` for the accepted shape.",
+          "properties": {
+            "enabled": {
+              "default": false,
+              "description": "Enable the readiness probe.",
+              "required": [],
+              "title": "enabled",
+              "type": "boolean"
+            }
+          },
+          "required": [],
+          "title": "readinessProbe"
+        },
+        "resources": {
+          "additionalProperties": true,
+          "description": "Explicit resource requests and limits. Wins over `resourcesPreset`.",
+          "required": [],
+          "title": "resources",
+          "type": "object"
+        },
+        "resourcesPreset": {
+          "default": "",
+          "description": "Named resource sizing. Ignored when `resources` is set.\nPresets set a memory limit and CPU/memory requests but no CPU limit: a CPU limit does not\nprotect the node the way a memory limit does, it only throttles this workload.",
+          "enum": [
+            "",
+            "nano",
+            "micro",
+            "small",
+            "medium",
+            "large"
+          ],
+          "required": [],
+          "title": "resourcesPreset"
+        },
+        "revisionHistoryLimit": {
+          "default": 3,
+          "description": "Number of old ReplicaSets to retain for rollback.",
+          "required": [],
+          "title": "revisionHistoryLimit",
+          "type": "integer"
+        },
+        "securityContext": {
+          "additionalProperties": true,
+          "description": "Container security context, merged over the preset.",
+          "required": [],
+          "title": "securityContext",
+          "type": "object"
+        },
+        "securityContextPreset": {
+          "default": "restricted",
+          "description": "Baseline for the container security context. `restricted` drops all capabilities and\nforbids privilege escalation, a writable root filesystem and running as root.",
+          "enum": [
+            "restricted",
+            "none"
+          ],
+          "required": [],
+          "title": "securityContextPreset"
+        },
+        "serviceAccount": {
+          "additionalProperties": true,
+          "properties": {
+            "annotations": {
+              "additionalProperties": true,
+              "description": "Annotations for the ServiceAccount.",
+              "required": [],
+              "title": "annotations",
+              "type": "object"
+            },
+            "automountToken": {
+              "default": false,
+              "description": "Mount the API token into pods that default to this ServiceAccount.",
+              "required": [],
+              "title": "automountToken",
+              "type": "boolean"
+            },
+            "create": {
+              "default": true,
+              "description": "Create a dedicated ServiceAccount.",
+              "required": [],
+              "title": "create",
+              "type": "boolean"
+            },
+            "name": {
+              "default": "",
+              "description": "Name of the ServiceAccount. Generated when empty.",
+              "required": [],
+              "title": "name",
+              "type": "string"
+            }
+          },
+          "required": [],
+          "title": "serviceAccount"
+        },
+        "startupProbe": {
+          "additionalProperties": true,
+          "description": "Startup probe. Set `enabled` and exactly one handler (`httpGet`, `tcpSocket`, `exec`\nor `grpc`); unset timing fields fall back to the Kubernetes defaults.",
+          "properties": {
+            "enabled": {
+              "default": false,
+              "description": "Enable the startup probe.",
+              "required": [],
+              "title": "enabled",
+              "type": "boolean"
+            }
+          },
+          "required": [],
+          "title": "startupProbe"
+        },
+        "strategy": {
+          "additionalProperties": true,
+          "description": "Deployment update strategy. Defaults to the Kubernetes default, except for workloads\nwith a ReadWriteOnce volume, which fall back to `Recreate` to avoid a wedged rollout.",
+          "required": [],
+          "title": "strategy",
+          "type": "object"
+        },
+        "terminationGracePeriodSeconds": {
+          "default": 30,
+          "description": "Grace period for pod shutdown.",
+          "required": [],
+          "title": "terminationGracePeriodSeconds",
+          "type": "integer"
+        },
+        "tolerations": {
+          "description": "Tolerations for pod assignment.",
+          "items": {
+            "required": []
+          },
+          "required": [],
+          "title": "tolerations",
+          "type": "array"
+        },
+        "topologySpreadConstraints": {
+          "description": "Topology spread constraints.",
+          "items": {
+            "required": []
+          },
+          "required": [],
+          "title": "topologySpreadConstraints",
+          "type": "array"
+        }
+      },
       "required": [],
       "title": "common",
+      "type": "object"
+    },
+    "commonAnnotations": {
+      "additionalProperties": true,
+      "description": "Annotations added to every object this chart creates.",
+      "required": [],
+      "title": "commonAnnotations",
+      "type": "object"
+    },
+    "commonLabels": {
+      "additionalProperties": true,
+      "description": "Labels added to every object this chart creates.",
+      "required": [],
+      "title": "commonLabels",
       "type": "object"
     },
     "env": {
@@ -40,7 +739,7 @@
         },
         "webHook": {
           "default": "",
-          "description": "Webhook URL to send updates or notifications.",
+          "description": "Webhook URL to send updates or notifications.\nRequired unless `existingSecret` is set.",
           "required": [],
           "title": "webHook",
           "type": "string"
@@ -48,6 +747,47 @@
       },
       "required": [],
       "title": "env"
+    },
+    "existingSecret": {
+      "default": "",
+      "description": "Name of an existing Secret holding the `webHook` key.\nWhen set, the chart does not create a Secret and `env.webHook` is ignored — which keeps\nthe webhook URL out of `values.yaml` and out of the Helm release object.",
+      "required": [],
+      "title": "existingSecret",
+      "type": "string"
+    },
+    "extraEnv": {
+      "description": "Additional environment variables for the application container.",
+      "items": {
+        "required": []
+      },
+      "required": [],
+      "title": "extraEnv",
+      "type": "array"
+    },
+    "extraVolumeMounts": {
+      "description": "Additional volume mounts added to the application container.",
+      "items": {
+        "required": []
+      },
+      "required": [],
+      "title": "extraVolumeMounts",
+      "type": "array"
+    },
+    "extraVolumes": {
+      "description": "Additional volumes added to the pod.",
+      "items": {
+        "required": []
+      },
+      "required": [],
+      "title": "extraVolumes",
+      "type": "array"
+    },
+    "fullnameOverride": {
+      "default": "",
+      "description": "Override the full generated resource name.",
+      "required": [],
+      "title": "fullnameOverride",
+      "type": "string"
     },
     "global": {
       "description": "Global values are values that can be accessed from any chart or subchart by exactly the same name.",
@@ -58,16 +798,31 @@
     "image": {
       "additionalProperties": true,
       "properties": {
+        "digest": {
+          "default": "sha256:29ca3ed4dfa9b3c6b03089fa3079b73cfac8eab3e2f25d736c4e730e5119919a",
+          "description": "Image digest (`sha256:...`). Combined with `tag` rather than replacing it: the digest\npins the pull, while `tag` stays on as the readable version marker.",
+          "required": [],
+          "title": "digest",
+          "type": "string"
+        },
         "pullPolicy": {
-          "default": "IfNotPresent",
-          "description": "Valid options are: Always, IfNotPresent, Never\nThe image pull policy.",
+          "default": "",
+          "description": "The image pull policy. Empty resolves automatically from the tag/digest.",
           "enum": [
+            "",
             "Always",
             "IfNotPresent",
             "Never"
           ],
           "required": [],
           "title": "pullPolicy"
+        },
+        "registry": {
+          "default": "",
+          "description": "Registry host. Empty means Docker Hub.",
+          "required": [],
+          "title": "registry",
+          "type": "string"
         },
         "repository": {
           "default": "timmi6790/netcup-offer-bot",
@@ -77,8 +832,8 @@
           "type": "string"
         },
         "tag": {
-          "default": "v1.5.21@sha256:29ca3ed4dfa9b3c6b03089fa3079b73cfac8eab3e2f25d736c4e730e5119919a",
-          "description": "The container image tag.",
+          "default": "v1.5.21",
+          "description": "The container image tag. Defaults to the chart's `appVersion` when empty.",
           "required": [],
           "title": "tag",
           "type": "string"
@@ -96,6 +851,13 @@
       "title": "imagePullSecrets",
       "type": "array"
     },
+    "kubeVersionOverride": {
+      "default": "",
+      "description": "Kubernetes version to target when branching on API availability.\nLets `helm template` render for a specific cluster version without a live connection.",
+      "required": [],
+      "title": "kubeVersionOverride",
+      "type": "string"
+    },
     "metrics": {
       "additionalProperties": true,
       "properties": {
@@ -106,17 +868,17 @@
           "title": "enabled",
           "type": "boolean"
         },
-        "port": {
-          "default": 9184,
-          "description": "Port to expose metrics on.",
-          "required": [],
-          "title": "port",
-          "type": "integer"
-        },
-        "serviceMonitor": {
+        "podMonitor": {
           "additionalProperties": true,
-          "description": "ServiceMonitor configuration for Prometheus Operator integration.",
+          "description": "PodMonitor configuration for Prometheus Operator integration.\nRenamed from `serviceMonitor`: the chart has always rendered a PodMonitor, and there is\nno Service to monitor.",
           "properties": {
+            "enabled": {
+              "default": true,
+              "description": "Create the PodMonitor. Requires the Prometheus Operator CRDs.",
+              "required": [],
+              "title": "enabled",
+              "type": "boolean"
+            },
             "interval": {
               "default": "1m",
               "description": "Metrics scrape interval (e.g., 1m, 30s).",
@@ -124,12 +886,12 @@
               "title": "interval",
               "type": "string"
             },
-            "namespace": {
-              "default": "monitoring",
-              "description": "Namespace where monitoring tools are running",
+            "labels": {
+              "additionalProperties": true,
+              "description": "Extra labels for the PodMonitor, e.g. the `release` label a Prometheus Operator\ninstance selects on.",
               "required": [],
-              "title": "namespace",
-              "type": "string"
+              "title": "labels",
+              "type": "object"
             },
             "scrapeTimeout": {
               "default": "30s",
@@ -140,11 +902,32 @@
             }
           },
           "required": [],
-          "title": "serviceMonitor"
+          "title": "podMonitor"
+        },
+        "port": {
+          "default": 9184,
+          "description": "Port to expose metrics on.",
+          "required": [],
+          "title": "port",
+          "type": "integer"
         }
       },
       "required": [],
       "title": "metrics"
+    },
+    "nameOverride": {
+      "default": "",
+      "description": "Override the chart name used in resource names and labels.",
+      "required": [],
+      "title": "nameOverride",
+      "type": "string"
+    },
+    "namespaceOverride": {
+      "default": "",
+      "description": "Deploy into a namespace other than the release namespace.",
+      "required": [],
+      "title": "namespaceOverride",
+      "type": "string"
     },
     "networkPolicy": {
       "additionalProperties": true,
@@ -154,6 +937,13 @@
           "additionalProperties": true,
           "description": "Egress configuration",
           "properties": {
+            "cidr": {
+              "default": "0.0.0.0/0",
+              "description": "Destination CIDR for the HTTP/HTTPS rules",
+              "required": [],
+              "title": "cidr",
+              "type": "string"
+            },
             "customRules": {
               "description": "Custom egress rules",
               "items": {
@@ -192,6 +982,40 @@
                   "required": [],
                   "title": "enabled",
                   "type": "boolean"
+                },
+                "namespaceSelector": {
+                  "additionalProperties": true,
+                  "description": "Namespace selector for the DNS service",
+                  "properties": {
+                    "kubernetes.io/metadata.name": {
+                      "default": "kube-system",
+                      "required": [],
+                      "title": "kubernetes.io/metadata.name",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kubernetes.io/metadata.name"
+                  ],
+                  "title": "namespaceSelector",
+                  "type": "object"
+                },
+                "podSelector": {
+                  "additionalProperties": true,
+                  "description": "Pod selector for the DNS service",
+                  "properties": {
+                    "k8s-app": {
+                      "default": "kube-dns",
+                      "required": [],
+                      "title": "k8s-app",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "k8s-app"
+                  ],
+                  "title": "podSelector",
+                  "type": "object"
                 }
               },
               "required": [],
@@ -203,6 +1027,33 @@
               "required": [],
               "title": "enabled",
               "type": "boolean"
+            },
+            "except": {
+              "description": "CIDRs carved out of `cidr`. Defaults exclude RFC1918 private space and link-local\n169.254.0.0/16, which covers the cloud instance metadata endpoint.",
+              "items": {
+                "anyOf": [
+                  {
+                    "required": [],
+                    "type": "string"
+                  },
+                  {
+                    "required": [],
+                    "type": "string"
+                  },
+                  {
+                    "required": [],
+                    "type": "string"
+                  },
+                  {
+                    "required": [],
+                    "type": "string"
+                  }
+                ],
+                "required": []
+              },
+              "required": [],
+              "title": "except",
+              "type": "array"
             },
             "http": {
               "additionalProperties": true,
@@ -233,21 +1084,6 @@
               },
               "required": [],
               "title": "https"
-            },
-            "sentry": {
-              "additionalProperties": true,
-              "description": "Sentry configuration for egress",
-              "properties": {
-                "enabled": {
-                  "default": false,
-                  "description": "Allow egress to Sentry (HTTPS)",
-                  "required": [],
-                  "title": "enabled",
-                  "type": "boolean"
-                }
-              },
-              "required": [],
-              "title": "sentry"
             }
           },
           "required": [],
@@ -283,7 +1119,7 @@
                   "type": "string"
                 },
                 "selector": {
-                  "additionalProperties": false,
+                  "additionalProperties": true,
                   "description": "Pod selector for Ingress Controller (default: Traefik label)",
                   "properties": {
                     "app.kubernetes.io/name": {
@@ -368,16 +1204,23 @@
       "required": [],
       "title": "networkPolicy"
     },
+    "nodeSelector": {
+      "additionalProperties": true,
+      "description": "Node selector for pod assignment.",
+      "required": [],
+      "title": "nodeSelector",
+      "type": "object"
+    },
     "persistence": {
       "additionalProperties": true,
       "properties": {
         "data": {
           "additionalProperties": true,
-          "description": "Configuration for persistent data storage.",
+          "description": "Configuration for persistent data storage.\nThe bot keeps its seen-offer state on disk; disabling persistence means it re-announces\nevery offer after a restart.",
           "properties": {
             "accessMode": {
               "default": "ReadWriteOnce",
-              "description": "The access mode for the persistent volume.",
+              "description": "The access mode for the persistent volume.\n`ReadWriteOnce` forces the Deployment to the `Recreate` update strategy: a rolling\nupdate would wedge, because the replacement pod cannot attach a volume the outgoing\npod still holds.",
               "enum": [
                 "ReadWriteOnce",
                 "ReadOnlyMany",
@@ -386,11 +1229,39 @@
               "required": [],
               "title": "accessMode"
             },
+            "annotations": {
+              "additionalProperties": true,
+              "description": "Annotations for the PersistentVolumeClaim, e.g. `helm.sh/resource-policy: keep`.",
+              "required": [],
+              "title": "annotations",
+              "type": "object"
+            },
+            "enabled": {
+              "default": true,
+              "description": "Create a PersistentVolumeClaim. When disabled, an emptyDir is used instead.",
+              "required": [],
+              "title": "enabled",
+              "type": "boolean"
+            },
+            "existingClaim": {
+              "default": "",
+              "description": "Use an existing PersistentVolumeClaim instead of creating one.",
+              "required": [],
+              "title": "existingClaim",
+              "type": "string"
+            },
             "size": {
               "default": "10Mi",
               "description": "The storage size requested for the volume.",
               "required": [],
               "title": "size",
+              "type": "string"
+            },
+            "storageClassName": {
+              "default": "",
+              "description": "StorageClass for the claim. Empty uses the cluster default; `\"-\"` disables dynamic\nprovisioning.",
+              "required": [],
+              "title": "storageClassName",
               "type": "string"
             }
           },
@@ -401,8 +1272,34 @@
       "required": [],
       "title": "persistence"
     },
+    "podAnnotations": {
+      "additionalProperties": true,
+      "description": "Additional annotations to add to the pod.",
+      "required": [],
+      "title": "podAnnotations",
+      "type": "object"
+    },
+    "podAntiAffinity": {
+      "default": "",
+      "description": "Shorthand for spreading replicas across nodes. `soft` prefers, `hard` requires.\nIgnored when `affinity` is set.",
+      "enum": [
+        "",
+        "soft",
+        "hard"
+      ],
+      "required": [],
+      "title": "podAntiAffinity"
+    },
+    "podLabels": {
+      "additionalProperties": true,
+      "description": "Additional labels to add to the pod.",
+      "required": [],
+      "title": "podLabels",
+      "type": "object"
+    },
     "podSecurityContext": {
       "additionalProperties": true,
+      "description": "Pod security context, merged over the preset.",
       "properties": {
         "fsGroup": {
           "default": 1000,
@@ -411,12 +1308,12 @@
           "title": "fsGroup",
           "type": "integer"
         },
-        "runAsNonRoot": {
-          "default": true,
-          "description": "Run pod as non-root user",
+        "runAsGroup": {
+          "default": 1000,
+          "description": "Primary group ID to run as",
           "required": [],
-          "title": "runAsNonRoot",
-          "type": "boolean"
+          "title": "runAsGroup",
+          "type": "integer"
         },
         "runAsUser": {
           "default": 1000,
@@ -429,12 +1326,30 @@
       "required": [],
       "title": "podSecurityContext"
     },
+    "podSecurityContextPreset": {
+      "default": "restricted",
+      "description": "Pod security context baseline. `restricted` applies the Pod Security Standards\nrestricted profile (`runAsNonRoot`, `seccompProfile: RuntimeDefault`,\n`fsGroupChangePolicy: OnRootMismatch`) on top of the identity fields below.",
+      "enum": [
+        "restricted",
+        "none"
+      ],
+      "required": [],
+      "title": "podSecurityContextPreset"
+    },
     "priorityClassName": {
       "default": "",
       "description": "Optional Kubernetes PriorityClass name",
       "required": [],
       "title": "priorityClassName",
       "type": "string"
+    },
+    "replicaCount": {
+      "default": 1,
+      "description": "Number of replicas. The bot holds a ReadWriteOnce volume, so more than one replica\nwill not schedule.",
+      "minimum": 0,
+      "required": [],
+      "title": "replicaCount",
+      "type": "integer"
     },
     "resources": {
       "additionalProperties": true,
@@ -458,6 +1373,13 @@
           "additionalProperties": true,
           "description": "Resource requests for the container.",
           "properties": {
+            "cpu": {
+              "default": "10m",
+              "description": "Minimum CPU requested by the container.\nThe bot is idle between RSS polls; this only has to keep it out of BestEffort.\nWithout a CPU request the pod is BestEffort and is the first thing evicted\nunder node pressure.",
+              "required": [],
+              "title": "cpu",
+              "type": "string"
+            },
             "memory": {
               "default": "15Mi",
               "description": "Minimum guaranteed memory allocation.",
@@ -473,54 +1395,49 @@
       "required": [],
       "title": "resources"
     },
+    "resourcesPreset": {
+      "default": "",
+      "description": "Named resource sizing. Ignored when `resources` is set.",
+      "enum": [
+        "",
+        "nano",
+        "micro",
+        "small",
+        "medium",
+        "large"
+      ],
+      "required": [],
+      "title": "resourcesPreset"
+    },
+    "revisionHistoryLimit": {
+      "default": 3,
+      "description": "Number of old ReplicaSets retained for rollback.",
+      "required": [],
+      "title": "revisionHistoryLimit",
+      "type": "integer"
+    },
     "securityContext": {
       "additionalProperties": true,
-      "properties": {
-        "allowPrivilegeEscalation": {
-          "default": false,
-          "description": "Allow privilege escalation",
-          "required": [],
-          "title": "allowPrivilegeEscalation",
-          "type": "boolean"
-        },
-        "capabilities": {
-          "additionalProperties": true,
-          "properties": {
-            "drop": {
-              "description": "Linux capabilities to drop",
-              "items": {
-                "anyOf": [
-                  {
-                    "required": [],
-                    "type": "string"
-                  }
-                ],
-                "required": []
-              },
-              "required": [],
-              "title": "drop",
-              "type": "array"
-            }
-          },
-          "required": [],
-          "title": "capabilities"
-        },
-        "readOnlyRootFilesystem": {
-          "default": true,
-          "description": "Mount root filesystem as read-only",
-          "required": [],
-          "title": "readOnlyRootFilesystem",
-          "type": "boolean"
-        }
-      },
+      "description": "Container security context, merged over the preset.",
       "required": [],
-      "title": "securityContext"
+      "title": "securityContext",
+      "type": "object"
+    },
+    "securityContextPreset": {
+      "default": "restricted",
+      "description": "Container security context baseline. `restricted` drops all Linux capabilities and\nforbids privilege escalation, running as root and a writable root filesystem.",
+      "enum": [
+        "restricted",
+        "none"
+      ],
+      "required": [],
+      "title": "securityContextPreset"
     },
     "serviceAccount": {
       "additionalProperties": true,
       "properties": {
         "annotations": {
-          "additionalProperties": false,
+          "additionalProperties": true,
           "description": "Additional annotations for the service account",
           "required": [],
           "title": "annotations",
@@ -550,6 +1467,29 @@
       },
       "required": [],
       "title": "serviceAccount"
+    },
+    "strategy": {
+      "additionalProperties": true,
+      "description": "Deployment update strategy. Empty uses the Kubernetes default rolling update.",
+      "required": [],
+      "title": "strategy",
+      "type": "object"
+    },
+    "terminationGracePeriodSeconds": {
+      "default": 30,
+      "description": "Grace period for pod shutdown.",
+      "required": [],
+      "title": "terminationGracePeriodSeconds",
+      "type": "integer"
+    },
+    "tolerations": {
+      "description": "Tolerations for pod assignment.",
+      "items": {
+        "required": []
+      },
+      "required": [],
+      "title": "tolerations",
+      "type": "array"
     },
     "topologySpreadConstraints": {
       "description": "Pod topology spread constraints for availability",

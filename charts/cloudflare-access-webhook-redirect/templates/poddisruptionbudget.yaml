@@ -1,10 +1,15 @@
 {{- if .Values.podDisruptionBudget.enabled }}
-apiVersion: policy/v1
+apiVersion: {{ include "common.capabilities.pdb.apiVersion" . }}
 kind: PodDisruptionBudget
 metadata:
   name: {{ include "common.fullname" . }}
+  namespace: {{ include "common.namespace" . }}
   labels:
     {{- include "common.labels" . | nindent 4 }}
+  {{- with (include "common.annotations" .) }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
 spec:
   {{- if .Values.podDisruptionBudget.minAvailable }}
   minAvailable: {{ .Values.podDisruptionBudget.minAvailable }}

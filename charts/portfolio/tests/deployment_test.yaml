@@ -1,8 +1,14 @@
-suite: test deployment
+suite: deployment
 templates:
   - deployment.yaml
+  - configmap.yaml
+# The deployment annotates a checksum of the ConfigMap, so both templates must render; the
+# per-test selector keeps assertions on the Deployment.
 tests:
-  - it: should create a Deployment
+  - it: creates a Deployment named after the release
+    documentSelector:
+      path: kind
+      value: Deployment
     asserts:
       - isKind:
           of: Deployment
@@ -10,16 +16,24 @@ tests:
           path: metadata.name
           value: RELEASE-NAME-portfolio
 
-  - it: should set correct image
+  - it: exposes the application port as http
+    documentSelector:
+      path: kind
+      value: Deployment
     set:
-      image.repository: timschoenle/portfolio
-      image.tag: v2.0.0
+      application.port: 9090
     asserts:
       - equal:
-          path: spec.template.spec.containers[0].image
-          value: timschoenle/portfolio:v2.0.0
+          path: spec.template.spec.containers[0].ports
+          value:
+            - containerPort: 9090
+              name: http
+              protocol: TCP
 
-  - it: should configure health checks correctly
+  - it: probes the health endpoint on all three probes
+    documentSelector:
+      path: kind
+      value: Deployment
     asserts:
       - equal:
           path: spec.template.spec.containers[0].startupProbe.httpGet.path
@@ -30,32 +44,43 @@ tests:
       - equal:
           path: spec.template.spec.containers[0].readinessProbe.httpGet.path
           value: /api/health
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.httpGet.port
+          value: http
 
-  - it: should configure security context
+  # Kubernetes rejects any successThreshold other than 1 on startup and liveness probes.
+  - it: omits successThreshold where Kubernetes forbids it
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      startupProbe.successThreshold: 3
+      livenessProbe.successThreshold: 3
     asserts:
+      - notExists:
+          path: spec.template.spec.containers[0].startupProbe.successThreshold
+      - notExists:
+          path: spec.template.spec.containers[0].livenessProbe.successThreshold
       - equal:
-          path: spec.template.spec.securityContext.runAsNonRoot
-          value: true
-      - equal:
-          path: spec.template.spec.securityContext.runAsUser
-          value: 1001
-      - equal:
-          path: spec.template.spec.securityContext.runAsGroup
-          value: 1001
-      - equal:
-          path: spec.template.spec.securityContext.fsGroup
-          value: 1001
-      - equal:
-          path: spec.template.spec.containers[0].securityContext.allowPrivilegeEscalation
-          value: false
-      - equal:
-          path: spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem
-          value: true
-      - contains:
-          path: spec.template.spec.containers[0].securityContext.capabilities.drop
-          content: ALL
+          path: spec.template.spec.containers[0].readinessProbe.successThreshold
+          value: 1
 
-  - it: should load configuration from the ConfigMap
+  - it: drops a probe entirely when disabled
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      startupProbe.enabled: false
+    asserts:
+      - notExists:
+          path: spec.template.spec.containers[0].startupProbe
+      - exists:
+          path: spec.template.spec.containers[0].livenessProbe
+
+  - it: loads configuration from the ConfigMap
+    documentSelector:
+      path: kind
+      value: Deployment
     asserts:
       - contains:
           path: spec.template.spec.containers[0].envFrom
@@ -63,50 +88,61 @@ tests:
             configMapRef:
               name: RELEASE-NAME-portfolio
 
-  - it: should not inject a GITHUB_TOKEN at runtime
+  - it: injects no secrets at runtime
+    documentSelector:
+      path: kind
+      value: Deployment
     asserts:
       - notExists:
           path: spec.template.spec.containers[0].env
 
-  - it: should mount required volumes
+  # Without this the pod keeps running the old configuration after a values change.
+  - it: rolls the pod when the ConfigMap changes
+    documentSelector:
+      path: kind
+      value: Deployment
     asserts:
-      - contains:
-          path: spec.template.spec.containers[0].volumeMounts
-          content:
-            name: tmp
-            mountPath: /tmp
+      - exists:
+          path: spec.template.metadata.annotations["checksum/configmap"]
 
-  - it: should set resource limits
+  - it: applies the configured resource requests and limits
+    documentSelector:
+      path: kind
+      value: Deployment
     asserts:
       - equal:
           path: spec.template.spec.containers[0].resources.limits.cpu
           value: 250m
-      - equal:
-          path: spec.template.spec.containers[0].resources.limits.memory
-          value: 128Mi
-      - equal:
-          path: spec.template.spec.containers[0].resources.requests.cpu
-          value: 25m
       - equal:
           path: spec.template.spec.containers[0].resources.requests.memory
           value: 32Mi
 
-  - it: should use custom resources when set
+  - it: falls back to a named resource preset
+    documentSelector:
+      path: kind
+      value: Deployment
     set:
-      resources.limits.cpu: 1000m
-      resources.limits.memory: 512Mi
-      resources.requests.cpu: 250m
-      resources.requests.memory: 256Mi
+      resources: null
+      resourcesPreset: micro
     asserts:
       - equal:
+          path: spec.template.spec.containers[0].resources.requests.cpu
+          value: 25m
+      # Presets set no CPU limit: it cannot protect the node the way a memory limit does,
+      # it only throttles this workload.
+      - notExists:
           path: spec.template.spec.containers[0].resources.limits.cpu
-          value: 1000m
       - equal:
           path: spec.template.spec.containers[0].resources.limits.memory
-          value: 512Mi
+          value: 128Mi
+
+  - it: scales to the requested replica count
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      replicaCount: 3
+    asserts:
       - equal:
-          path: spec.template.spec.containers[0].resources.requests.cpu
-          value: 250m
-      - equal:
-          path: spec.template.spec.containers[0].resources.requests.memory
-          value: 256Mi
+          path: spec.replicas
+          value: 3

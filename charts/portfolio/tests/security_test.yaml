@@ -1,0 +1,273 @@
+suite: pod security baseline
+templates:
+  - deployment.yaml
+  - configmap.yaml
+# The deployment annotates a checksum of the ConfigMap, so helm-unittest has to render
+# both templates; the selector keeps every assertion below on the Deployment.
+documentSelector:
+  path: kind
+  value: Deployment
+tests:
+  - it: satisfies the restricted Pod Security Standard
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.template.spec.securityContext.runAsNonRoot
+          value: true
+      - equal:
+          path: spec.template.spec.securityContext.seccompProfile.type
+          value: RuntimeDefault
+      - equal:
+          path: spec.template.spec.securityContext.fsGroupChangePolicy
+          value: OnRootMismatch
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.allowPrivilegeEscalation
+          value: false
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.privileged
+          value: false
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem
+          value: true
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.runAsNonRoot
+          value: true
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.capabilities.drop
+          value: [ALL]
+
+  # The ServiceAccount-level setting is ignored the moment a pod names a different account,
+  # so the pod-level one is what actually keeps the token off the container filesystem.
+  - it: keeps the ServiceAccount token out of the pod
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.template.spec.automountServiceAccountToken
+          value: false
+
+  # A read-only root filesystem without a writable temp directory breaks most runtimes.
+  - it: provides a writable /tmp alongside the read-only root filesystem
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: tmp
+            mountPath: /tmp
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: tmp
+            emptyDir: {}
+
+  - it: drops the /tmp scaffolding when the root filesystem is writable
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      securityContext.readOnlyRootFilesystem: false
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: tmp
+            mountPath: /tmp
+
+  - it: lets the security baseline be switched off
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      podSecurityContextPreset: none
+      securityContextPreset: none
+    asserts:
+      # Only what the chart itself declares survives; none of the preset's policy fields do.
+      - notExists:
+          path: spec.template.spec.securityContext.runAsNonRoot
+      - notExists:
+          path: spec.template.spec.securityContext.seccompProfile
+      - notExists:
+          path: spec.template.spec.securityContext.fsGroupChangePolicy
+      - notExists:
+          path: spec.template.spec.containers[0].securityContext
+
+  - it: merges user overrides over the preset
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      securityContext.readOnlyRootFilesystem: false
+      securityContext.capabilities.drop: [NET_RAW]
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem
+          value: false
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.capabilities.drop
+          value: [NET_RAW]
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.allowPrivilegeEscalation
+          value: false
+
+  - it: pins the image by digest
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - matchRegex:
+          path: spec.template.spec.containers[0].image
+          pattern: "@sha256:[0-9a-f]{64}$"
+
+  - it: builds the image reference from registry, repository and tag
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      image.registry: ghcr.io
+      image.repository: example/app
+      image.tag: v1.2.3
+      image.digest: ""
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: ghcr.io/example/app:v1.2.3
+
+  - it: keeps the tag alongside the digest
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      image.registry: ghcr.io
+      image.repository: example/app
+      image.tag: v1.2.3
+      image.digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: ghcr.io/example/app:v1.2.3@sha256:0000000000000000000000000000000000000000000000000000000000000000
+
+  - it: pulls a mutable latest tag on every start
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      image.tag: latest
+      image.digest: ""
+      image.pullPolicy: ""
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].imagePullPolicy
+          value: Always
+
+  - it: keeps the chart version out of the pod labels
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      # helm.sh/chart embeds the chart version; carrying it on the pod template would force
+      # a rollout on every chart-only version bump.
+      - notExists:
+          path: spec.template.metadata.labels["helm.sh/chart"]
+      - exists:
+          path: metadata.labels["helm.sh/chart"]
+
+  - it: keeps the selector labels stable and minimal
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.selector.matchLabels
+          value:
+            app.kubernetes.io/name: portfolio
+            app.kubernetes.io/instance: RELEASE-NAME
+
+  - it: applies scheduling constraints
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      nodeSelector:
+        disktype: ssd
+      tolerations:
+        - key: dedicated
+          operator: Exists
+      priorityClassName: high
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+    asserts:
+      - equal:
+          path: spec.template.spec.nodeSelector.disktype
+          value: ssd
+      - equal:
+          path: spec.template.spec.priorityClassName
+          value: high
+      - lengthEqual:
+          path: spec.template.spec.tolerations
+          count: 1
+      - lengthEqual:
+          path: spec.template.spec.topologySpreadConstraints
+          count: 1
+
+  - it: expands the podAntiAffinity shorthand
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      podAntiAffinity: hard
+    asserts:
+      - equal:
+          path: spec.template.spec.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution[0].topologyKey
+          value: kubernetes.io/hostname
+
+  - it: lets an explicit affinity win over the shorthand
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      podAntiAffinity: hard
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: kubernetes.io/os
+                    operator: In
+                    values: [linux]
+    asserts:
+      - exists:
+          path: spec.template.spec.affinity.nodeAffinity
+      - notExists:
+          path: spec.template.spec.affinity.podAntiAffinity
+
+  - it: appends extra environment variables
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      extraEnv:
+        - name: EXTRA
+          value: "1"
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: EXTRA
+            value: "1"
+
+  - it: retains a bounded rollback history
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.revisionHistoryLimit
+          value: 3

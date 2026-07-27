@@ -1,0 +1,66 @@
+suite: config checksums
+# Guards `common.configChecksum`. The checksum exists to roll pods when mounted configuration
+# changes, so it must react to `data`/`stringData` and to nothing else. Hashing the rendered
+# manifest instead — the previous behaviour — made every chart version bump and every label
+# change roll every pod, which trains people to ignore the rollout entirely.
+templates:
+  - deployment.yaml
+  - configmap.yaml
+  - secret.yaml
+set:
+  application.handler.targetBase: https://example.invalid
+tests:
+  - it: omits the checksum for a Secret that does not render
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - exists:
+          path: spec.template.metadata.annotations["checksum/configmap"]
+      - notExists:
+          path: spec.template.metadata.annotations["checksum/secret"]
+
+  - it: publishes a Secret checksum once inline credentials are set
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      application.cloudflareAccess.clientId: some-client-id
+      application.cloudflareAccess.clientSecret: some-client-secret
+    asserts:
+      - exists:
+          path: spec.template.metadata.annotations["checksum/secret"]
+
+  - it: derives the checksum from the ConfigMap data
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.template.metadata.annotations["checksum/configmap"]
+          value: ef5f72b54178ba13ca6d4e482b2ad65d79e79456740a8345f125088f47777d13
+
+  - it: holds the checksum steady across manifest metadata that pods do not mount
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      commonAnnotations:
+        example.invalid/owner: platform
+      commonLabels:
+        example.invalid/tier: backend
+    asserts:
+      - equal:
+          path: spec.template.metadata.annotations["checksum/configmap"]
+          value: ef5f72b54178ba13ca6d4e482b2ad65d79e79456740a8345f125088f47777d13
+
+  - it: moves the checksum when mounted configuration actually changes
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      application.logLevel: debug
+    asserts:
+      - notEqual:
+          path: spec.template.metadata.annotations["checksum/configmap"]
+          value: ef5f72b54178ba13ca6d4e482b2ad65d79e79456740a8345f125088f47777d13

@@ -1,8 +1,16 @@
 # cloudflare-access-webhook-redirect
 
-![Version: 2.1.11](https://img.shields.io/badge/Version-2.1.11-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: v0.3.21](https://img.shields.io/badge/AppVersion-v0.3.21-informational?style=flat-square)
+
+
+
+![Version: 3.0.0](https://img.shields.io/badge/Version-3.0.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: v0.3.21](https://img.shields.io/badge/AppVersion-v0.3.21-informational?style=flat-square) 
 
 A Helm chart for deploying the Cloudflare Access Webhook Redirect service. This service acts as an authentication proxy that validates requests using Cloudflare Access Service Auth tokens before forwarding them to target backend services.
+
+> [!WARNING]
+> This chart's latest major release changes the values contract. See
+> [UPGRADING.md](https://github.com/TimSchoenle/helm-charts/blob/main/UPGRADING.md) before
+> upgrading from an earlier major version.
 
 ## Use Case
 
@@ -62,21 +70,30 @@ The following table lists the configurable parameters of the chart and their def
 | application.sentryDsn | string | `""` | Sentry DSN for error tracking (empty disables) |
 | application.server.host | string | `"0.0.0.0"` | Server bind address |
 | application.server.port | int | `8080` | HTTP server port |
+| automountServiceAccountToken | bool | `false` | Mount the ServiceAccount API token into the pod. Set on the pod itself, which is what actually keeps the token out of the container: the ServiceAccount-level setting is ignored as soon as a pod names a different account. |
 | autoscaling.enabled | bool | `false` | Enable Horizontal Pod Autoscaler (HPA) |
 | autoscaling.maxReplicas | int | `5` | Maximum replicas |
 | autoscaling.minReplicas | int | `1` | Minimum replicas |
 | autoscaling.targetCPUUtilizationPercentage | int | `80` | Target CPU utilization (%) |
 | autoscaling.targetMemoryUtilizationPercentage | int | `80` | Target memory utilization (%) |
+| commonAnnotations | object | `{}` | Annotations added to every object this chart creates. |
+| commonLabels | object | `{}` | Labels added to every object this chart creates. |
+| extraEnv | list | `[]` | Additional environment variables for the application container. |
+| extraVolumeMounts | list | `[]` | Additional volume mounts (e.g., /cache) |
+| extraVolumes | list | `[]` | Additional volumes (e.g., cache, tmp) |
 | fullnameOverride | string | `""` | Override the full release name |
-| image.pullPolicy | string | `"IfNotPresent"` | Image pull policy |
+| image.digest | string | `"sha256:e5607cedf22b71b8835146aaa1c3e274102888d3d85890224ace3bf088aa646a"` | Image digest, pinning the deployment to an immutable image. Wins over `tag`. |
+| image.pullPolicy | string | `""` | Image pull policy. Empty resolves automatically from the tag/digest. |
+| image.registry | string | `""` | Registry host. Empty means Docker Hub. |
 | image.repository | string | `"timmi6790/cloudflare-access-webhook-redirect"` | Container image repository (e.g. docker.io/user/image) |
-| image.tag | string | `"v0.3.21@sha256:e5607cedf22b71b8835146aaa1c3e274102888d3d85890224ace3bf088aa646a"` | Container image tag (version) |
+| image.tag | string | `"v0.3.21"` | Container image tag. Defaults to the chart's `appVersion` when empty. |
 | imagePullSecrets | list | `[]` | Optional image pull secrets for private registries |
 | ingress.annotations | object | `{}` | Additional ingress annotations Example:   cert-manager.io/cluster-issuer: letsencrypt-prod   nginx.ingress.kubernetes.io/rate-limit: "100" |
 | ingress.enabled | bool | `false` | Enable ingress resource |
 | ingress.hosts | list | `[]` | Host definitions for ingress Example:   - host: example.local     paths:       - path: /         pathType: Prefix |
 | ingress.ingressClassName | string | `"nginx"` | Ingress class name (e.g. nginx) |
 | ingress.tls | list | `[]` | TLS configuration for ingress Example:   - secretName: example-tls     hosts:       - example.local |
+| kubeVersionOverride | string | `""` | Kubernetes version to target when branching on API availability. Lets `helm template` render for a specific cluster version without a live connection. |
 | livenessProbe.enabled | bool | `true` | Enable liveness probe |
 | livenessProbe.failureThreshold | int | `3` | Failure threshold |
 | livenessProbe.httpGet.path | string | `"/health"` | Health check path |
@@ -85,18 +102,21 @@ The following table lists the configurable parameters of the chart and their def
 | livenessProbe.periodSeconds | int | `10` | Probe frequency |
 | livenessProbe.timeoutSeconds | int | `5` | Probe timeout |
 | nameOverride | string | `""` | Override the chart name |
-| networkPolicy | object | `{"egress":{"customRules":[],"dns":{"enabled":true},"enabled":true,"http":{"enabled":false},"https":{"enabled":false},"sentry":{"enabled":true}},"enabled":false,"ingress":{"controller":{"enabled":true,"namespace":"traefik","selector":{"app.kubernetes.io/name":"traefik"}},"customRules":[],"enabled":true,"monitoring":{"enabled":true,"namespace":"monitoring"}}}` | Network policy configuration |
-| networkPolicy.egress | object | `{"customRules":[],"dns":{"enabled":true},"enabled":true,"http":{"enabled":false},"https":{"enabled":false},"sentry":{"enabled":true}}` | Egress configuration |
+| namespaceOverride | string | `""` | Deploy into a namespace other than the release namespace. |
+| networkPolicy | object | `{"egress":{"cidr":"0.0.0.0/0","customRules":[],"dns":{"enabled":true,"namespaceSelector":{"kubernetes.io/metadata.name":"kube-system"},"podSelector":{"k8s-app":"kube-dns"}},"enabled":true,"except":["10.0.0.0/8","172.16.0.0/12","192.168.0.0/16","169.254.0.0/16"],"http":{"enabled":false},"https":{"enabled":true}},"enabled":false,"ingress":{"controller":{"enabled":true,"namespace":"traefik","selector":{"app.kubernetes.io/name":"traefik"}},"customRules":[],"enabled":true,"monitoring":{"enabled":true,"namespace":"monitoring"}}}` | Network policy configuration |
+| networkPolicy.egress | object | `{"cidr":"0.0.0.0/0","customRules":[],"dns":{"enabled":true,"namespaceSelector":{"kubernetes.io/metadata.name":"kube-system"},"podSelector":{"k8s-app":"kube-dns"}},"enabled":true,"except":["10.0.0.0/8","172.16.0.0/12","192.168.0.0/16","169.254.0.0/16"],"http":{"enabled":false},"https":{"enabled":true}}` | Egress configuration |
+| networkPolicy.egress.cidr | string | `"0.0.0.0/0"` | Destination CIDR for the HTTP/HTTPS rules |
 | networkPolicy.egress.customRules | list | `[]` | Custom egress rules |
-| networkPolicy.egress.dns | object | `{"enabled":true}` | DNS configuration for egress |
-| networkPolicy.egress.dns.enabled | bool | `true` | Allow egress to DNS |
+| networkPolicy.egress.dns | object | `{"enabled":true,"namespaceSelector":{"kubernetes.io/metadata.name":"kube-system"},"podSelector":{"k8s-app":"kube-dns"}}` | DNS configuration for egress |
+| networkPolicy.egress.dns.enabled | bool | `true` | Allow egress to the cluster DNS service |
+| networkPolicy.egress.dns.namespaceSelector | object | `{"kubernetes.io/metadata.name":"kube-system"}` | Namespace selector for the DNS service |
+| networkPolicy.egress.dns.podSelector | object | `{"k8s-app":"kube-dns"}` | Pod selector for the DNS service |
 | networkPolicy.egress.enabled | bool | `true` | Enable egress rules |
+| networkPolicy.egress.except | list | `["10.0.0.0/8","172.16.0.0/12","192.168.0.0/16","169.254.0.0/16"]` | CIDRs carved out of `cidr`. Defaults exclude RFC1918 private space and link-local 169.254.0.0/16, which covers the cloud instance metadata endpoint. |
 | networkPolicy.egress.http | object | `{"enabled":false}` | HTTP configuration for egress |
-| networkPolicy.egress.http.enabled | bool | `false` | Allow egress to HTTP (TCP/80) |
-| networkPolicy.egress.https | object | `{"enabled":false}` | HTTPS configuration for egress |
-| networkPolicy.egress.https.enabled | bool | `false` | Allow egress to HTTPS (TCP/443) |
-| networkPolicy.egress.sentry | object | `{"enabled":true}` | Sentry configuration for egress |
-| networkPolicy.egress.sentry.enabled | bool | `true` | Allow egress to Sentry (HTTPS) |
+| networkPolicy.egress.http.enabled | bool | `false` | Allow egress to TCP/80 on the destinations described by `cidr`/`except` |
+| networkPolicy.egress.https | object | `{"enabled":true}` | HTTPS configuration for egress. Also covers Sentry, which replaced the former dedicated `sentry` flag: that flag emitted a rule byte-identical to this one. |
+| networkPolicy.egress.https.enabled | bool | `true` | Allow egress to TCP/443 on the destinations described by `cidr`/`except` |
 | networkPolicy.enabled | bool | `false` | Enable network policies |
 | networkPolicy.ingress | object | `{"controller":{"enabled":true,"namespace":"traefik","selector":{"app.kubernetes.io/name":"traefik"}},"customRules":[],"enabled":true,"monitoring":{"enabled":true,"namespace":"monitoring"}}` | Ingress configuration |
 | networkPolicy.ingress.controller | object | `{"enabled":true,"namespace":"traefik","selector":{"app.kubernetes.io/name":"traefik"}}` | Ingress Controller configuration |
@@ -110,13 +130,16 @@ The following table lists the configurable parameters of the chart and their def
 | networkPolicy.ingress.monitoring.namespace | string | `"monitoring"` | Namespace where monitoring tools are running |
 | nodeSelector | object | `{}` | Node selector labels for scheduling |
 | podAnnotations | object | `{}` | Additional annotations for the Pod metadata |
+| podAntiAffinity | string | `""` | Shorthand for spreading replicas across nodes. `soft` prefers, `hard` requires. Ignored when `affinity` is set. |
 | podDisruptionBudget.enabled | bool | `false` | Enable PodDisruptionBudget |
 | podDisruptionBudget.maxUnavailable | int | `1` | Maximum unavailable pods |
 | podDisruptionBudget.minAvailable | int | `1` | Minimum available pods |
 | podLabels | object | `{}` | Additional labels for the Pod metadata |
+| podSecurityContext | object | `{"fsGroup":10001,"runAsGroup":10001,"runAsUser":10001}` | Pod security context, merged over the preset. |
 | podSecurityContext.fsGroup | int | `10001` | Group ID for file system access |
-| podSecurityContext.runAsNonRoot | bool | `true` | Run pod as non-root user |
+| podSecurityContext.runAsGroup | int | `10001` | Primary group ID to run as |
 | podSecurityContext.runAsUser | int | `10001` | User ID to run as |
+| podSecurityContextPreset | string | `"restricted"` | Pod security context baseline. `restricted` applies the Pod Security Standards restricted profile (`runAsNonRoot`, `seccompProfile: RuntimeDefault`, `fsGroupChangePolicy: OnRootMismatch`) on top of the identity fields below. |
 | priorityClassName | string | `""` | Optional Kubernetes PriorityClass name |
 | readinessProbe.enabled | bool | `true` | Enable readiness probe |
 | readinessProbe.failureThreshold | int | `3` | Failure threshold |
@@ -130,9 +153,10 @@ The following table lists the configurable parameters of the chart and their def
 | resources.limits.memory | string | `"50Mi"` | Maximum memory usage (e.g. 64Mi) |
 | resources.requests.cpu | string | `"10m"` | Guaranteed CPU request |
 | resources.requests.memory | string | `"35Mi"` | Guaranteed memory request |
-| securityContext.allowPrivilegeEscalation | bool | `false` | Allow privilege escalation |
-| securityContext.capabilities.drop | list | `["ALL"]` | Linux capabilities to drop |
-| securityContext.readOnlyRootFilesystem | bool | `false` | Mount root filesystem as read-only |
+| resourcesPreset | string | `""` | Named resource sizing. Ignored when `resources` is set. |
+| revisionHistoryLimit | int | `3` | Number of old ReplicaSets retained for rollback. |
+| securityContext | object | `{}` | Container security context, merged over the preset. The preset mounts the root filesystem read-only; a writable /tmp is provided automatically via an emptyDir volume. |
+| securityContextPreset | string | `"restricted"` | Container security context baseline. `restricted` drops all Linux capabilities and forbids privilege escalation, running as root and a writable root filesystem. |
 | service.annotations | object | `{}` | Additional service annotations |
 | service.port | int | `80` | Service port |
 | service.type | string | `"ClusterIP"` | Kubernetes service type |
@@ -148,10 +172,10 @@ The following table lists the configurable parameters of the chart and their def
 | startupProbe.periodSeconds | int | `5` | Probe frequency |
 | startupProbe.successThreshold | int | `1` | Success threshold |
 | startupProbe.timeoutSeconds | int | `3` | Probe timeout |
+| strategy | object | `{}` | Deployment update strategy. Empty uses the Kubernetes default rolling update. |
+| terminationGracePeriodSeconds | int | `30` | Grace period for pod shutdown. |
 | tolerations | list | `[]` | Tolerations for taints |
 | topologySpreadConstraints | list | `[]` | Pod topology spread constraints for availability |
-| volumeMounts | list | `[]` | Additional volume mounts (e.g., /cache) |
-| volumes | list | `[]` | Additional volumes (e.g., cache, tmp) |
 
 ## Cloudflare Access Configuration
 
@@ -422,6 +446,7 @@ This provides a zero-trust authentication layer for services that don't have bui
 | Name | Email | Url |
 | ---- | ------ | --- |
 | Tim Schönle |  | <https://github.com/TimSchoenle> |
+
 
 ----------------------------------------------
 Autogenerated from chart metadata using [helm-docs v1.14.2](https://github.com/norwoodj/helm-docs/releases/v1.14.2)

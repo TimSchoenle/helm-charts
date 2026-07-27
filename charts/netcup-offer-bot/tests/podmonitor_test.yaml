@@ -1,0 +1,57 @@
+suite: pod monitor
+templates:
+  - podmonitor.yaml
+tests:
+  - it: renders nothing while metrics are disabled
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders nothing when the PodMonitor is opted out of
+    set:
+      metrics.enabled: true
+      metrics.podMonitor.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  # The previous selector was `app: <release>`, a label the pods never carried, so
+  # Prometheus matched nothing and no metric was ever scraped.
+  - it: selects the pods this chart actually creates
+    set:
+      metrics.enabled: true
+    asserts:
+      - isKind:
+          of: PodMonitor
+      - equal:
+          path: spec.selector.matchLabels
+          value:
+            app.kubernetes.io/name: netcup-offer-bot
+            app.kubernetes.io/instance: RELEASE-NAME
+
+  - it: scrapes the named metrics port
+    set:
+      metrics.enabled: true
+    asserts:
+      - equal:
+          path: spec.podMetricsEndpoints[0].port
+          value: metrics
+      - equal:
+          path: spec.podMetricsEndpoints[0].path
+          value: /metrics
+      - equal:
+          path: spec.podMetricsEndpoints[0].interval
+          value: 1m
+      - equal:
+          path: spec.podMetricsEndpoints[0].scrapeTimeout
+          value: 30s
+
+  - it: carries extra labels for Prometheus Operator selection
+    set:
+      metrics.enabled: true
+      metrics.podMonitor.labels:
+        release: kube-prometheus-stack
+    asserts:
+      - equal:
+          path: metadata.labels.release
+          value: kube-prometheus-stack

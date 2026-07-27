@@ -1,0 +1,268 @@
+matches the committed Deployment snapshot:
+  1: |
+    apiVersion: v1
+    data:
+      BUCKET.ENTRIES: null
+      LOG_LEVEL: info
+      S3.HOST: s3.amazon.com
+      S3.REGION: eu-central-1
+      SERVER.HOST: 0.0.0.0
+      SERVER.PORT: "8080"
+    kind: ConfigMap
+    metadata:
+      labels:
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: s3-bucket-perma-link
+        app.kubernetes.io/version: v0.3.22
+        helm.sh/chart: s3-bucket-perma-link-2.0.0
+      name: RELEASE-NAME-s3-bucket-perma-link
+      namespace: NAMESPACE
+  2: |
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      labels:
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: s3-bucket-perma-link
+        app.kubernetes.io/version: v0.3.22
+        helm.sh/chart: s3-bucket-perma-link-2.0.0
+      name: RELEASE-NAME-s3-bucket-perma-link
+      namespace: NAMESPACE
+    spec:
+      replicas: 1
+      revisionHistoryLimit: 3
+      selector:
+        matchLabels:
+          app.kubernetes.io/instance: RELEASE-NAME
+          app.kubernetes.io/name: s3-bucket-perma-link
+      template:
+        metadata:
+          annotations:
+            checksum/configmap: 9c02f94053c1ad7f6190ff9cf4b958d30ee5c6bfa10014518b2b769398312809
+            checksum/secret: 7eb70257593da06f682a3ddda54a9d260d4fc514f645237f5ca74b08f8da61a6
+          labels:
+            app.kubernetes.io/instance: RELEASE-NAME
+            app.kubernetes.io/managed-by: Helm
+            app.kubernetes.io/name: s3-bucket-perma-link
+            app.kubernetes.io/version: v0.3.22
+        spec:
+          automountServiceAccountToken: false
+          containers:
+            - env:
+                - name: S3.ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      key: access_key
+                      name: RELEASE-NAME-s3-bucket-perma-link
+                - name: S3.SECRET_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      key: secret_key
+                      name: RELEASE-NAME-s3-bucket-perma-link
+              envFrom:
+                - configMapRef:
+                    name: RELEASE-NAME-s3-bucket-perma-link
+              image: timmi6790/s3-bucket-perma-link@sha256:99638220674a86fe194c4aeccfe2d8ad50a62f56bad4661892ed2959e76a9660
+              imagePullPolicy: IfNotPresent
+              livenessProbe:
+                failureThreshold: 3
+                httpGet:
+                  path: /health
+                  port: http
+                initialDelaySeconds: 1
+                periodSeconds: 10
+                timeoutSeconds: 5
+              name: s3-bucket-perma-link
+              ports:
+                - containerPort: 8080
+                  name: http
+                  protocol: TCP
+              readinessProbe:
+                failureThreshold: 3
+                httpGet:
+                  path: /health
+                  port: http
+                initialDelaySeconds: 1
+                periodSeconds: 5
+                successThreshold: 1
+                timeoutSeconds: 3
+              resources:
+                limits:
+                  memory: 20Mi
+                requests:
+                  cpu: 10m
+                  memory: 15Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
+                privileged: false
+                readOnlyRootFilesystem: true
+                runAsNonRoot: true
+              startupProbe:
+                failureThreshold: 12
+                httpGet:
+                  path: /health
+                  port: http
+                initialDelaySeconds: 1
+                periodSeconds: 5
+                timeoutSeconds: 3
+              volumeMounts:
+                - mountPath: /tmp
+                  name: tmp
+          securityContext:
+            fsGroup: 1000
+            fsGroupChangePolicy: OnRootMismatch
+            runAsGroup: 1000
+            runAsNonRoot: true
+            runAsUser: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          serviceAccountName: RELEASE-NAME-s3-bucket-perma-link
+          terminationGracePeriodSeconds: 30
+          volumes:
+            - emptyDir: {}
+              name: tmp
+matches the committed Deployment snapshot with network policies and probes on:
+  1: |
+    apiVersion: v1
+    data:
+      BUCKET.ENTRIES: null
+      LOG_LEVEL: info
+      S3.HOST: s3.amazon.com
+      S3.REGION: eu-central-1
+      SERVER.HOST: 0.0.0.0
+      SERVER.PORT: "8080"
+    kind: ConfigMap
+    metadata:
+      labels:
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: s3-bucket-perma-link
+        app.kubernetes.io/version: v0.3.22
+        helm.sh/chart: s3-bucket-perma-link-2.0.0
+      name: RELEASE-NAME-s3-bucket-perma-link
+      namespace: NAMESPACE
+  2: |
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      labels:
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: s3-bucket-perma-link
+        app.kubernetes.io/version: v0.3.22
+        helm.sh/chart: s3-bucket-perma-link-2.0.0
+      name: RELEASE-NAME-s3-bucket-perma-link
+      namespace: NAMESPACE
+    spec:
+      replicas: 1
+      revisionHistoryLimit: 3
+      selector:
+        matchLabels:
+          app.kubernetes.io/instance: RELEASE-NAME
+          app.kubernetes.io/name: s3-bucket-perma-link
+      template:
+        metadata:
+          annotations:
+            checksum/configmap: 9c02f94053c1ad7f6190ff9cf4b958d30ee5c6bfa10014518b2b769398312809
+            checksum/secret: 7eb70257593da06f682a3ddda54a9d260d4fc514f645237f5ca74b08f8da61a6
+          labels:
+            app.kubernetes.io/instance: RELEASE-NAME
+            app.kubernetes.io/managed-by: Helm
+            app.kubernetes.io/name: s3-bucket-perma-link
+            app.kubernetes.io/version: v0.3.22
+        spec:
+          affinity:
+            podAntiAffinity:
+              preferredDuringSchedulingIgnoredDuringExecution:
+                - podAffinityTerm:
+                    labelSelector:
+                      matchLabels:
+                        app.kubernetes.io/instance: RELEASE-NAME
+                        app.kubernetes.io/name: s3-bucket-perma-link
+                    topologyKey: kubernetes.io/hostname
+                  weight: 100
+          automountServiceAccountToken: false
+          containers:
+            - env:
+                - name: S3.ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      key: access_key
+                      name: RELEASE-NAME-s3-bucket-perma-link
+                - name: S3.SECRET_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      key: secret_key
+                      name: RELEASE-NAME-s3-bucket-perma-link
+              envFrom:
+                - configMapRef:
+                    name: RELEASE-NAME-s3-bucket-perma-link
+              image: timmi6790/s3-bucket-perma-link@sha256:99638220674a86fe194c4aeccfe2d8ad50a62f56bad4661892ed2959e76a9660
+              imagePullPolicy: IfNotPresent
+              livenessProbe:
+                failureThreshold: 3
+                httpGet:
+                  path: /health
+                  port: http
+                initialDelaySeconds: 1
+                periodSeconds: 10
+                timeoutSeconds: 5
+              name: s3-bucket-perma-link
+              ports:
+                - containerPort: 8080
+                  name: http
+                  protocol: TCP
+              readinessProbe:
+                failureThreshold: 3
+                httpGet:
+                  path: /health
+                  port: http
+                initialDelaySeconds: 1
+                periodSeconds: 5
+                successThreshold: 1
+                timeoutSeconds: 3
+              resources:
+                limits:
+                  memory: 20Mi
+                requests:
+                  cpu: 10m
+                  memory: 15Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
+                privileged: false
+                readOnlyRootFilesystem: true
+                runAsNonRoot: true
+              startupProbe:
+                failureThreshold: 12
+                httpGet:
+                  path: /health
+                  port: http
+                initialDelaySeconds: 1
+                periodSeconds: 5
+                timeoutSeconds: 3
+              volumeMounts:
+                - mountPath: /tmp
+                  name: tmp
+          nodeSelector:
+            kubernetes.io/os: linux
+          securityContext:
+            fsGroup: 1000
+            fsGroupChangePolicy: OnRootMismatch
+            runAsGroup: 1000
+            runAsNonRoot: true
+            runAsUser: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          serviceAccountName: RELEASE-NAME-s3-bucket-perma-link
+          terminationGracePeriodSeconds: 30
+          volumes:
+            - emptyDir: {}
+              name: tmp

@@ -2,96 +2,39 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: {{ include "common.fullname" . }}
+  namespace: {{ include "common.namespace" . }}
   labels:
     {{- include "common.labels" . | nindent 4 }}
+  {{- with (include "common.annotations" .) }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
 spec:
-  replicas: 1
+  replicas: {{ .Values.replicaCount }}
+  revisionHistoryLimit: {{ .Values.revisionHistoryLimit }}
+  {{- with (include "common.updateStrategy" (dict "ctx" . "rwo" false)) }}
+  strategy:
+    {{- . | nindent 4 }}
+  {{- end }}
   selector:
     matchLabels:
       {{- include "common.selectorLabels" . | nindent 6 }}
   template:
     metadata:
+      {{- with (include "common.podAnnotations" (dict "ctx" $ "templates" (list))) }}
       annotations:
-        {{- with .Values.podAnnotations }}
-        {{- toYaml . | nindent 8 }}
-        {{- end }}
+        {{- . | nindent 8 }}
+      {{- end }}
       labels:
-        {{- include "common.labels" . | nindent 8 }}
-        {{- with .Values.podLabels }}
-        {{- toYaml . | nindent 8 }}
-        {{- end }}
+        {{- include "common.podLabels" . | nindent 8 }}
     spec:
-      {{- if .Values.priorityClassName }}
-      priorityClassName: {{ .Values.priorityClassName }}
-      {{- end }}
-      {{- with .Values.topologySpreadConstraints }}
-      topologySpreadConstraints:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
-      {{- with .Values.imagePullSecrets }}
-      imagePullSecrets:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
-      serviceAccountName: {{ include "common.serviceAccountName" . }}
-      {{- with .Values.podSecurityContext }}
-      securityContext:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
+      {{- include "common.podSpec.common" . | nindent 6 }}
       containers:
-        - name: {{ .Chart.Name }}
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
-          imagePullPolicy: {{ .Values.image.pullPolicy }}
-       {{- with .Values.securityContext }}
-          securityContext:
-         {{- toYaml . | nindent 12 }}
-       {{- end }}
-          ports:
-            - name: port
-              containerPort: {{ .Values.application.server.port }}
-              protocol: TCP
-          startupProbe:
-            httpGet:
-              path: {{ .Values.application.healthCheck.startup.path }}
-              port: port
-            initialDelaySeconds: {{ .Values.application.healthCheck.startup.initialDelaySeconds }}
-            periodSeconds: {{ .Values.application.healthCheck.startup.periodSeconds }}
-            timeoutSeconds: {{ .Values.application.healthCheck.startup.timeoutSeconds }}
-            successThreshold: {{ .Values.application.healthCheck.startup.successThreshold }}
-            failureThreshold: {{ .Values.application.healthCheck.startup.failureThreshold }}
-          livenessProbe:
-            httpGet:
-              path: {{ .Values.application.healthCheck.liveness.path }}
-              port: port
-            initialDelaySeconds: {{ .Values.application.healthCheck.liveness.initialDelaySeconds }}
-            periodSeconds: {{ .Values.application.healthCheck.liveness.periodSeconds }}
-            timeoutSeconds: {{ .Values.application.healthCheck.liveness.timeoutSeconds }}
-            successThreshold: {{ .Values.application.healthCheck.liveness.successThreshold }}
-            failureThreshold: {{ .Values.application.healthCheck.liveness.failureThreshold }}
-          readinessProbe:
-            httpGet:
-              path: {{ .Values.application.healthCheck.readiness.path }}
-              port: port
-            initialDelaySeconds: {{ .Values.application.healthCheck.readiness.initialDelaySeconds }}
-            periodSeconds: {{ .Values.application.healthCheck.readiness.periodSeconds }}
-            timeoutSeconds: {{ .Values.application.healthCheck.readiness.timeoutSeconds }}
-            successThreshold: {{ .Values.application.healthCheck.readiness.successThreshold }}
-            failureThreshold: {{ .Values.application.healthCheck.readiness.failureThreshold }}
-          resources:
-            {{- with .Values.resources.requests }}
-            requests:
-              {{- with .cpu}}
-              cpu: {{ . | quote }}
-              {{- end }}
-              {{- with .memory}}
-              memory: {{ . | quote }}
-              {{- end }}
-            {{- end }}
-            {{- with .Values.resources.limits }}
-            limits:
-              {{- with .cpu}}
-              cpu: {{ . | quote }}
-                {{- end }}
-                {{- with .memory}}
-              memory: {{ . | quote }}
-                {{- end }}
-            {{- end }}
+        {{- include "common.container" (dict
+              "ctx" $
+              "ports" (list (dict "name" "http" "containerPort" (int .Values.application.server.port) "protocol" "TCP"))
+            ) | nindent 8 }}
+      {{- with (include "common.volumes" (dict "ctx" $)) }}
+      volumes:
+        {{- . | nindent 8 }}
+      {{- end }}

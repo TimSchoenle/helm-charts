@@ -1,8 +1,15 @@
-suite: test deployment
+suite: deployment
 templates:
   - deployment.yaml
+  - configmap.yaml
+  - secret.yaml
+set:
+  env.webHook: https://example.invalid/hook
 tests:
-  - it: should create deployment with correct name
+  - it: creates a Deployment named after the release
+    documentSelector:
+      path: kind
+      value: Deployment
     asserts:
       - isKind:
           of: Deployment
@@ -10,10 +17,10 @@ tests:
           path: metadata.name
           value: RELEASE-NAME-netcup-offer-bot
 
-  - it: should set environment variables
-    set:
-      env:
-        webHook: "https://discord.com/api/webhooks/test"
+  - it: reads the webhook from the generated Secret
+    documentSelector:
+      path: kind
+      value: Deployment
     asserts:
       - contains:
           path: spec.template.spec.containers[0].env
@@ -24,39 +31,122 @@ tests:
                 name: RELEASE-NAME-netcup-offer-bot
                 key: webHook
 
-  - it: should configure config map
+  - it: reads it from an existing Secret when one is given
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      existingSecret: my-webhook-secret
     asserts:
       - contains:
-          path: spec.template.spec.containers[0].envFrom
+          path: spec.template.spec.containers[0].env
           content:
-            configMapRef:
-              name: RELEASE-NAME-netcup-offer-bot
+            name: WEB_HOOK
+            valueFrom:
+              secretKeyRef:
+                name: my-webhook-secret
+                key: webHook
 
-  - it: should mount persistent volume
+  - it: mounts the state volume the bot needs to avoid re-announcing offers
+    documentSelector:
+      path: kind
+      value: Deployment
     asserts:
       - contains:
           path: spec.template.spec.containers[0].volumeMounts
           content:
-            name: RELEASE-NAME-netcup-offer-bot
+            name: data
             mountPath: /app/data
       - contains:
           path: spec.template.spec.volumes
           content:
-            name: RELEASE-NAME-netcup-offer-bot
+            name: data
             persistentVolumeClaim:
               claimName: RELEASE-NAME-netcup-offer-bot
 
-  - it: should set resource limits
-    set:
-      resources:
-        limits:
-          memory: 30Mi
-        requests:
-          memory: 20Mi
+  # A rolling update cannot start: the replacement pod would have to attach a ReadWriteOnce
+  # volume that the outgoing pod still holds.
+  - it: uses Recreate while a ReadWriteOnce claim is attached
+    documentSelector:
+      path: kind
+      value: Deployment
     asserts:
       - equal:
-          path: spec.template.spec.containers[0].resources.limits.memory
-          value: 30Mi
+          path: spec.strategy.type
+          value: Recreate
+
+  - it: leaves the default rolling update in place for a shared volume
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      persistence.data.accessMode: ReadWriteMany
+    asserts:
+      - notExists:
+          path: spec.strategy
+
+  - it: lets an explicit strategy win
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      strategy:
+        type: RollingUpdate
+        rollingUpdate:
+          maxUnavailable: 0
+    asserts:
       - equal:
-          path: spec.template.spec.containers[0].resources.requests.memory
-          value: 20Mi
+          path: spec.strategy.type
+          value: RollingUpdate
+
+  - it: falls back to an emptyDir when persistence is disabled
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      persistence.data.enabled: false
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: data
+            emptyDir: {}
+      - notExists:
+          path: spec.strategy
+
+  - it: binds an existing claim when one is given
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      persistence.data.existingClaim: my-state
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: data
+            persistentVolumeClaim:
+              claimName: my-state
+
+  - it: exposes the metrics port only when metrics are enabled
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - notExists:
+          path: spec.template.spec.containers[0].ports
+
+  - it: exposes a named metrics port when metrics are enabled
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      metrics.enabled: true
+      metrics.port: 9184
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].ports
+          value:
+            - containerPort: 9184
+              name: metrics
+              protocol: TCP

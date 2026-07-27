@@ -2,8 +2,13 @@ kind: ConfigMap
 apiVersion: v1
 metadata:
   name: {{ include "common.fullname" . }}
+  namespace: {{ include "common.namespace" . }}
   labels:
     {{- include "common.labels" . | nindent 4 }}
+  {{- with (include "common.annotations" .) }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
 data:
   CHECK_INTERVAL: {{ required "checkInterval is required" .Values.env.checkInterval | quote }}
   {{- with .Values.metrics.port}}

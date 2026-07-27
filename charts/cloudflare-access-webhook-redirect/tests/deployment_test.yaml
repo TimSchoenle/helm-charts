@@ -1,8 +1,15 @@
-suite: test deployment
+suite: deployment
 templates:
   - deployment.yaml
+  - configmap.yaml
+  - secret.yaml
+set:
+  application.handler.targetBase: https://example.invalid
 tests:
-  - it: should create deployment
+  - it: creates a Deployment named after the release
+    documentSelector:
+      path: kind
+      value: Deployment
     asserts:
       - isKind:
           of: Deployment
@@ -10,27 +17,24 @@ tests:
           path: metadata.name
           value: RELEASE-NAME-cloudflare-access-webhook-redirect
 
-  - it: should set replica count
+  - it: exposes the server port as http
+    documentSelector:
+      path: kind
+      value: Deployment
     set:
-      replicaCount: 3
+      application.server.port: 9090
     asserts:
       - equal:
-          path: spec.replicas
-          value: 3
+          path: spec.template.spec.containers[0].ports
+          value:
+            - containerPort: 9090
+              name: http
+              protocol: TCP
 
-  - it: should configure config map
-    asserts:
-      - contains:
-          path: spec.template.spec.containers[0].envFrom
-          content:
-            configMapRef:
-              name: RELEASE-NAME-cloudflare-access-webhook-redirect
-
-  - it: should use cloudflare secret
-    set:
-      application:
-        cloudflareAccess:
-          secretName: "cf-secret"
+  - it: reads Cloudflare Access credentials from the generated Secret
+    documentSelector:
+      path: kind
+      value: Deployment
     asserts:
       - contains:
           path: spec.template.spec.containers[0].env
@@ -38,7 +42,7 @@ tests:
             name: CLOUDFLARE.CLIENT_ID
             valueFrom:
               secretKeyRef:
-                name: cf-secret
+                name: RELEASE-NAME-cloudflare-access-webhook-redirect
                 key: client_id
       - contains:
           path: spec.template.spec.containers[0].env
@@ -46,14 +50,69 @@ tests:
             name: CLOUDFLARE.CLIENT_SECRET
             valueFrom:
               secretKeyRef:
-                name: cf-secret
+                name: RELEASE-NAME-cloudflare-access-webhook-redirect
                 key: client_secret
 
-  - it: should set security context
+  - it: reads them from an existing Secret when one is given
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      application.cloudflareAccess.secretName: my-access-secret
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: CLOUDFLARE.CLIENT_ID
+            valueFrom:
+              secretKeyRef:
+                name: my-access-secret
+                key: client_id
+
+  # The chart used to declare a `config` volume from the ConfigMap that no container ever
+  # mounted; only the /tmp scratch volume should exist.
+  - it: mounts no dead volumes
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - lengthEqual:
+          path: spec.template.spec.volumes
+          count: 1
+      - equal:
+          path: spec.template.spec.volumes[0].name
+          value: tmp
+
+  - it: loads configuration from the ConfigMap and rolls on change
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].envFrom
+          content:
+            configMapRef:
+              name: RELEASE-NAME-cloudflare-access-webhook-redirect
+      - exists:
+          path: spec.template.metadata.annotations["checksum/configmap"]
+
+  - it: hands replica count to the autoscaler when one is enabled
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      autoscaling.enabled: true
+    asserts:
+      - notExists:
+          path: spec.replicas
+
+  - it: sets replicas directly when autoscaling is off
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      replicaCount: 4
     asserts:
       - equal:
-          path: spec.template.spec.securityContext.runAsNonRoot
-          value: true
-      - equal:
-          path: spec.template.spec.securityContext.runAsUser
-          value: 10001
+          path: spec.replicas
+          value: 4

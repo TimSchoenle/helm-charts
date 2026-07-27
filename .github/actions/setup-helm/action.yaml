@@ -1,24 +1,47 @@
 name: 'Setup Helm Environment'
-description: 'Installs Helm and common plugins'
+description: 'Installs a pinned Helm and the chart plugins this repository depends on'
 inputs:
-  token:
-    description: 'GitHub Token'
+  helm-version:
+    description: >-
+      Helm version to install. Pinned by default: `latest` silently carried this repository
+      from Helm 3 to Helm 4, changing the toolchain that packages and signs releases with no
+      signal in any diff.
     required: false
-    default: ${{ github.token }}
+    default: 'v3.21.3'
+  unittest-version:
+    description: 'helm-unittest plugin version'
+    required: false
+    default: '1.1.2'
+  schema-version:
+    description: 'helm-schema plugin version'
+    required: false
+    default: '0.18.1'
 runs:
   using: "composite"
   steps:
     - name: Install Helm
       uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
       with:
-        version: 'latest'
+        version: ${{ inputs.helm-version }}
 
     - name: Install helm-unittest
       shell: bash
+      env:
+        UNITTEST_VERSION: ${{ inputs.unittest-version }}
       run: |
-        helm plugin install https://github.com/helm-unittest/helm-unittest --verify=false
+        helm plugin install https://github.com/helm-unittest/helm-unittest \
+          --version "${UNITTEST_VERSION}" --verify=false
 
     - name: Install helm-schema
       shell: bash
+      env:
+        SCHEMA_VERSION: ${{ inputs.schema-version }}
       run: |
-        helm plugin install https://github.com/dadav/helm-schema --version 0.18.1 --verify=false
+        helm plugin install https://github.com/dadav/helm-schema \
+          --version "${SCHEMA_VERSION}" --verify=false
+
+    - name: Report installed versions
+      shell: bash
+      run: |
+        helm version
+        helm plugin list

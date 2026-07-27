@@ -6,6 +6,11 @@
 
 {{ template "chart.description" . }}
 
+> [!WARNING]
+> This chart's latest major release changes the values contract. See
+> [UPGRADING.md](https://github.com/TimSchoenle/helm-charts/blob/main/UPGRADING.md) before
+> upgrading from an earlier major version.
+
 ## Prerequisites
 
 - Kubernetes 1.19+
@@ -150,25 +155,42 @@ The chart configures comprehensive health checks using the `/api/health` endpoin
 - **Liveness Probe**: Restarts unhealthy containers
 - **Readiness Probe**: Controls traffic routing to ready pods
 
-All probes are fully configurable via values:
+All probes are fully configurable via values. Each probe takes one handler (`httpGet`,
+`tcpSocket`, `exec` or `grpc`) and the usual timings; anything left unset falls back to the
+Kubernetes default rather than being written into the manifest:
 
 ```yaml
-application:
-  healthCheck:
+startupProbe:
+  enabled: true
+  httpGet:
     path: /api/health
-    startup:
-      initialDelaySeconds: 10
-      periodSeconds: 5
-      failureThreshold: 12
-    liveness:
-      initialDelaySeconds: 30
-      periodSeconds: 10
-      failureThreshold: 3
-    readiness:
-      initialDelaySeconds: 10
-      periodSeconds: 5
-      failureThreshold: 3
+    port: http
+  initialDelaySeconds: 10
+  periodSeconds: 5
+  failureThreshold: 12
+
+livenessProbe:
+  enabled: true
+  httpGet:
+    path: /api/health
+    port: http
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  failureThreshold: 3
+
+readinessProbe:
+  enabled: true
+  httpGet:
+    path: /api/health
+    port: http
+  initialDelaySeconds: 10
+  periodSeconds: 5
+  failureThreshold: 3
 ```
+
+> [!NOTE]
+> `successThreshold` is accepted only on the readiness probe. Kubernetes rejects any value
+> other than `1` on startup and liveness probes, so the chart omits it there.
 
 ## Security
 
@@ -177,8 +199,16 @@ The chart follows security best practices:
 - Runs as non-root user (UID 1001)
 - Read-only root filesystem (enabled by default)
 - No privilege escalation
-- Service account token not automounted by default
+- `seccompProfile: RuntimeDefault`
+- Service account token not mounted into the pod
 - Drop all capabilities
+
+Together these satisfy the [restricted Pod Security Standard][pss]. Set
+`podSecurityContextPreset: none` / `securityContextPreset: none` to opt out, or override
+individual fields under `podSecurityContext` / `securityContext` — user values are merged
+over the preset rather than replacing it.
+
+[pss]: https://kubernetes.io/docs/concepts/security/pod-security-standards/#restricted
 
 Writable volumes are provided only where necessary:
 - `/tmp` - Temporary files

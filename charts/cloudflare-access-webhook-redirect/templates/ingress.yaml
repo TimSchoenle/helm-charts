@@ -1,21 +1,22 @@
 {{- if .Values.ingress.enabled -}}
-apiVersion: networking.k8s.io/v1
+apiVersion: {{ include "common.capabilities.ingress.apiVersion" . }}
 kind: Ingress
 metadata:
   name: {{ include "common.fullname" . }}
+  namespace: {{ include "common.namespace" . }}
   labels:
     {{- include "common.labels" . | nindent 4 }}
-  {{- with .Values.ingress.annotations }}
+  {{- with (include "common.tplvalues.merge" (dict "values" (list .Values.ingress.annotations .Values.commonAnnotations) "context" $)) }}
   annotations:
-    {{- toYaml . | nindent 4 }}
+    {{- . | nindent 4 }}
   {{- end }}
 spec:
-  {{- if .Values.ingress.ingressClassName }}
-  ingressClassName: {{ .Values.ingress.ingressClassName }}
+  {{- with .Values.ingress.ingressClassName }}
+  ingressClassName: {{ . }}
   {{- end }}
-  {{- if .Values.ingress.tls }}
+  {{- with .Values.ingress.tls }}
   tls:
-    {{- range .Values.ingress.tls }}
+    {{- range (include "common.tplvalues.render" (dict "value" . "context" $) | fromYamlArray) }}
     - hosts:
         {{- range .hosts }}
         - {{ . | quote }}
@@ -24,7 +25,7 @@ spec:
     {{- end }}
   {{- end }}
   rules:
-    {{- range .Values.ingress.hosts }}
+    {{- range (include "common.tplvalues.render" (dict "value" .Values.ingress.hosts "context" $) | fromYamlArray) }}
     - host: {{ .host | quote }}
       http:
         paths:

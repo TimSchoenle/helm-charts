@@ -15,20 +15,32 @@ image:
   # @schema
   # type: string
   # @schema
+  # -- Registry host. Empty means Docker Hub.
+  registry: ""
+
+  # @schema
+  # type: string
+  # @schema
   # -- Container image repository (e.g. docker.io/user/image)
   repository: timmi6790/cloudflare-access-webhook-redirect
 
   # @schema
   # type: string
   # @schema
-  # -- Container image tag (version)
-  tag: v0.3.21@sha256:e5607cedf22b71b8835146aaa1c3e274102888d3d85890224ace3bf088aa646a
+  # -- Container image tag. Defaults to the chart's `appVersion` when empty.
+  tag: v0.3.21
 
   # @schema
-  # enum: [Always, IfNotPresent, Never]
+  # type: string
   # @schema
-  # -- Image pull policy
-  pullPolicy: IfNotPresent
+  # -- Image digest, pinning the deployment to an immutable image. Wins over `tag`.
+  digest: sha256:e5607cedf22b71b8835146aaa1c3e274102888d3d85890224ace3bf088aa646a
+
+  # @schema
+  # enum: ["", Always, IfNotPresent, Never]
+  # @schema
+  # -- Image pull policy. Empty resolves automatically from the tag/digest.
+  pullPolicy: ""
 
 # @schema
 # type: array
@@ -98,15 +110,18 @@ podAnnotations: {}
 podLabels: {}
 
 # @schema
+# enum: [restricted, none]
+# @schema
+# -- Pod security context baseline. `restricted` applies the Pod Security Standards
+# restricted profile (`runAsNonRoot`, `seccompProfile: RuntimeDefault`,
+# `fsGroupChangePolicy: OnRootMismatch`) on top of the identity fields below.
+podSecurityContextPreset: restricted
+
+# @schema
 # additionalProperties: true
 # @schema
+# -- Pod security context, merged over the preset.
 podSecurityContext:
-  # @schema
-  # type: boolean
-  # @schema
-  # -- Run pod as non-root user
-  runAsNonRoot: true
-
   # @schema
   # type: integer
   # @schema
@@ -116,35 +131,30 @@ podSecurityContext:
   # @schema
   # type: integer
   # @schema
+  # -- Primary group ID to run as
+  runAsGroup: 10001
+
+  # @schema
+  # type: integer
+  # @schema
   # -- Group ID for file system access
   fsGroup: 10001
 
 # @schema
+# enum: [restricted, none]
+# @schema
+# -- Container security context baseline. `restricted` drops all Linux capabilities and
+# forbids privilege escalation, running as root and a writable root filesystem.
+securityContextPreset: restricted
+
+# @schema
+# type: object
 # additionalProperties: true
 # @schema
-securityContext:
-  # @schema
-  # type: boolean
-  # @schema
-  # -- Allow privilege escalation
-  allowPrivilegeEscalation: false
-
-  # @schema
-  # additionalProperties: true
-  # @schema
-  capabilities:
-    # @schema
-    # type: array
-    # @schema
-    # -- Linux capabilities to drop
-    drop:
-      - ALL
-
-  # @schema
-  # type: boolean
-  # @schema
-  # -- Mount root filesystem as read-only
-  readOnlyRootFilesystem: false
+# -- Container security context, merged over the preset.
+# The preset mounts the root filesystem read-only; a writable /tmp is provided
+# automatically via an emptyDir volume.
+securityContext: {}
 
 # @schema
 # additionalProperties: true
@@ -539,13 +549,13 @@ topologySpreadConstraints: []
 # type: array
 # @schema
 # -- Additional volumes (e.g., cache, tmp)
-volumes: []
+extraVolumes: []
 
 # @schema
 # type: array
 # @schema
 # -- Additional volume mounts (e.g., /cache)
-volumeMounts: []
+extraVolumeMounts: []
 
 # @schema
 # type: object
@@ -647,6 +657,7 @@ networkPolicy:
 
       # @schema
       # type: object
+      # additionalProperties: true
       # @schema
       # -- Pod selector for Ingress Controller (default: Traefik label)
       selector:
@@ -686,8 +697,24 @@ networkPolicy:
       # @schema
       # type: boolean
       # @schema
-      # -- Allow egress to DNS
+      # -- Allow egress to the cluster DNS service
       enabled: true
+
+      # @schema
+      # type: object
+      # additionalProperties: true
+      # @schema
+      # -- Namespace selector for the DNS service
+      namespaceSelector:
+        kubernetes.io/metadata.name: kube-system
+
+      # @schema
+      # type: object
+      # additionalProperties: true
+      # @schema
+      # -- Pod selector for the DNS service
+      podSelector:
+        k8s-app: kube-dns
 
     # @schema
     # additionalProperties: true
@@ -697,30 +724,38 @@ networkPolicy:
       # @schema
       # type: boolean
       # @schema
-      # -- Allow egress to HTTP (TCP/80)
+      # -- Allow egress to TCP/80 on the destinations described by `cidr`/`except`
       enabled: false
 
     # @schema
     # additionalProperties: true
     # @schema
-    # -- HTTPS configuration for egress
+    # -- HTTPS configuration for egress.
+    # Also covers Sentry, which replaced the former dedicated `sentry` flag: that flag
+    # emitted a rule byte-identical to this one.
     https:
       # @schema
       # type: boolean
       # @schema
-      # -- Allow egress to HTTPS (TCP/443)
-      enabled: false
+      # -- Allow egress to TCP/443 on the destinations described by `cidr`/`except`
+      enabled: true
 
     # @schema
-    # additionalProperties: true
+    # type: string
     # @schema
-    # -- Sentry configuration for egress
-    sentry:
-      # @schema
-      # type: boolean
-      # @schema
-      # -- Allow egress to Sentry (HTTPS)
-      enabled: true
+    # -- Destination CIDR for the HTTP/HTTPS rules
+    cidr: 0.0.0.0/0
+
+    # @schema
+    # type: array
+    # @schema
+    # -- CIDRs carved out of `cidr`. Defaults exclude RFC1918 private space and link-local
+    # 169.254.0.0/16, which covers the cloud instance metadata endpoint.
+    except:
+      - 10.0.0.0/8
+      - 172.16.0.0/12
+      - 192.168.0.0/16
+      - 169.254.0.0/16
 
     # @schema
     # type: array
@@ -744,3 +779,75 @@ networkPolicy:
     #           app: my-generic-app
     # -- Custom egress rules
     customRules: []
+# @schema
+# type: integer
+# @schema
+# -- Number of old ReplicaSets retained for rollback.
+revisionHistoryLimit: 3
+
+# @schema
+# type: object
+# additionalProperties: true
+# @schema
+# -- Deployment update strategy. Empty uses the Kubernetes default rolling update.
+strategy: {}
+
+# @schema
+# type: integer
+# @schema
+# -- Grace period for pod shutdown.
+terminationGracePeriodSeconds: 30
+
+# @schema
+# type: boolean
+# @schema
+# -- Mount the ServiceAccount API token into the pod.
+# Set on the pod itself, which is what actually keeps the token out of the container: the
+# ServiceAccount-level setting is ignored as soon as a pod names a different account.
+automountServiceAccountToken: false
+
+# @schema
+# type: object
+# additionalProperties: true
+# @schema
+# -- Labels added to every object this chart creates.
+commonLabels: {}
+
+# @schema
+# type: object
+# additionalProperties: true
+# @schema
+# -- Annotations added to every object this chart creates.
+commonAnnotations: {}
+
+# @schema
+# enum: ["", nano, micro, small, medium, large]
+# @schema
+# -- Named resource sizing. Ignored when `resources` is set.
+resourcesPreset: ""
+
+# @schema
+# enum: ["", soft, hard]
+# @schema
+# -- Shorthand for spreading replicas across nodes. `soft` prefers, `hard` requires.
+# Ignored when `affinity` is set.
+podAntiAffinity: ""
+
+# @schema
+# type: array
+# @schema
+# -- Additional environment variables for the application container.
+extraEnv: []
+
+# @schema
+# type: string
+# @schema
+# -- Kubernetes version to target when branching on API availability.
+# Lets `helm template` render for a specific cluster version without a live connection.
+kubeVersionOverride: ""
+
+# @schema
+# type: string
+# @schema
+# -- Deploy into a namespace other than the release namespace.
+namespaceOverride: ""

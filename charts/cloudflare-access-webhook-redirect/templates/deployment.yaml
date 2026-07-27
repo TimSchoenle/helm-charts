@@ -2,113 +2,47 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: {{ include "common.fullname" . }}
+  namespace: {{ include "common.namespace" . }}
   labels:
     {{- include "common.labels" . | nindent 4 }}
+  {{- with (include "common.annotations" .) }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
 spec:
   {{- if not .Values.autoscaling.enabled }}
   replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  revisionHistoryLimit: {{ .Values.revisionHistoryLimit }}
+  {{- with (include "common.updateStrategy" (dict "ctx" . "rwo" false)) }}
+  strategy:
+    {{- . | nindent 4 }}
   {{- end }}
   selector:
     matchLabels:
       {{- include "common.selectorLabels" . | nindent 6 }}
   template:
     metadata:
+      {{- with (include "common.podAnnotations" (dict "ctx" $ "templates" (list "configmap.yaml" "secret.yaml"))) }}
       annotations:
-        {{- with .Values.podAnnotations }}
-        {{- toYaml . | nindent 8 }}
-        {{- end }}
+        {{- . | nindent 8 }}
+      {{- end }}
       labels:
-        {{- include "common.labels" . | nindent 8 }}
-        {{- with .Values.podLabels }}
-        {{- toYaml . | nindent 8 }}
-        {{- end }}
+        {{- include "common.podLabels" . | nindent 8 }}
     spec:
-      {{- if .Values.priorityClassName }}
-      priorityClassName: {{ .Values.priorityClassName }}
-      {{- end }}
-      {{- with .Values.topologySpreadConstraints }}
-      topologySpreadConstraints:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
-      {{- with .Values.imagePullSecrets }}
-      imagePullSecrets:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
-      serviceAccountName: {{ include "common.serviceAccountName" . }}
-      {{- with .Values.podSecurityContext }}
-      securityContext:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
+      {{- include "common.podSpec.common" . | nindent 6 }}
       containers:
-        - name: {{ .Chart.Name }}
-        {{- with .Values.securityContext }}
-          securityContext:
-          {{- toYaml . | nindent 12 }}
-        {{- end }}
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
-          imagePullPolicy: {{ .Values.image.pullPolicy }}
-          ports:
-            - name: http
-              containerPort: {{ .Values.application.server.port }}
-              protocol: TCP
-          envFrom:
-            - configMapRef:
-                name: {{ include "common.fullname" . }}
-          env:
-            - name: CLOUDFLARE.CLIENT_ID
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "cloudflare-access-webhook-redirect.access-secretName" . }}
-                  key: client_id
-            - name: CLOUDFLARE.CLIENT_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "cloudflare-access-webhook-redirect.access-secretName" . }}
-                  key: client_secret
-          {{- if .Values.startupProbe.enabled }}
-          startupProbe:
-            {{- omit .Values.startupProbe "enabled" | toYaml | nindent 12 }}
-          {{- end }}
-        {{- if .Values.livenessProbe.enabled }}
-          livenessProbe:
-          {{- omit .Values.livenessProbe "enabled" | toYaml | nindent 12 }}
-        {{- end }}
-        {{- if .Values.readinessProbe.enabled }}
-          readinessProbe:
-          {{- omit .Values.readinessProbe "enabled" | toYaml | nindent 12 }}
-        {{- end }}
-        {{- with .Values.resources }}
-          resources:
-          {{- toYaml . | nindent 12 }}
-        {{- end }}
-          volumeMounts:
-        {{- if .Values.securityContext.readOnlyRootFilesystem }}
-            - name: tmp
-              mountPath: /tmp
-        {{- end }}
-        {{- with .Values.volumeMounts }}
-        {{- toYaml . | nindent 8 }}
-        {{- end }}
+        {{- $secret := include "cloudflare-access-webhook-redirect.access-secretName" . }}
+        {{- include "common.container" (dict
+              "ctx" $
+              "ports" (list (dict "name" "http" "containerPort" (int .Values.application.server.port) "protocol" "TCP"))
+              "envFrom" (list (dict "configMapRef" (dict "name" (include "common.fullname" .))))
+              "env" (list
+                (dict "name" "CLOUDFLARE.CLIENT_ID" "valueFrom" (dict "secretKeyRef" (dict "name" $secret "key" "client_id")))
+                (dict "name" "CLOUDFLARE.CLIENT_SECRET" "valueFrom" (dict "secretKeyRef" (dict "name" $secret "key" "client_secret")))
+              )
+            ) | nindent 8 }}
+      {{- with (include "common.volumes" (dict "ctx" $)) }}
       volumes:
-        - name: config
-          configMap:
-            name: {{ include "common.fullname" . }}
-      {{- if .Values.securityContext.readOnlyRootFilesystem }}
-        - name: tmp
-          emptyDir: {}
-      {{- end }}
-      {{- with .Values.volumes }}
-      {{- toYaml . | nindent 6 }}
-      {{- end }}
-      {{- with .Values.nodeSelector }}
-      nodeSelector:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
-      {{- with .Values.affinity }}
-      affinity:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
-      {{- with .Values.tolerations }}
-      tolerations:
-        {{- toYaml . | nindent 8 }}
+        {{- . | nindent 8 }}
       {{- end }}

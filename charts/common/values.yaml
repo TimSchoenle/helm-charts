@@ -1,1 +1,516 @@
+# vim: set ft=yaml:
 # yaml-language-server: $schema=values.schema.json
+
+# This is a library chart: it renders nothing on its own and these values are never applied
+# directly. They document the value contract that `common.*` partials expect, and act as the
+# reference shape for consuming charts.
+
+# @schema
+# type: string
+# @schema
+# -- Override the chart name used in resource names and labels.
+nameOverride: ""
+
+# @schema
+# type: string
+# @schema
+# -- Override the full generated resource name.
+fullnameOverride: ""
+
+# @schema
+# type: string
+# @schema
+# -- Deploy into a namespace other than the release namespace.
+namespaceOverride: ""
+
+# @schema
+# type: string
+# @schema
+# -- Kubernetes version to target when branching on API availability.
+# Lets `helm template` render for a specific cluster version without a live connection.
+# Leave empty to detect from the cluster.
+kubeVersionOverride: ""
+
+# @schema
+# type: object
+# additionalProperties: true
+# @schema
+# -- Labels added to every object the chart creates. Values may contain Go templates.
+commonLabels: {}
+
+# @schema
+# type: object
+# additionalProperties: true
+# @schema
+# -- Annotations added to every object the chart creates. Values may contain Go templates.
+commonAnnotations: {}
+
+# @schema
+# type: string
+# @schema
+# -- Value for the `app.kubernetes.io/component` label.
+component: ""
+
+# @schema
+# type: string
+# @schema
+# -- Value for the `app.kubernetes.io/part-of` label.
+partOf: ""
+
+# @schema
+# additionalProperties: true
+# @schema
+image:
+  # @schema
+  # type: string
+  # @schema
+  # -- Registry host. Left empty, the repository is used as-is (Docker Hub).
+  registry: ""
+
+  # @schema
+  # type: string
+  # @schema
+  # -- Image repository. Required.
+  repository: ""
+
+  # @schema
+  # type: string
+  # @schema
+  # -- Image tag. Defaults to the chart's `appVersion`.
+  tag: ""
+
+  # @schema
+  # type: string
+  # @schema
+  # -- Image digest (`sha256:...`). Takes precedence over `tag` when set, pinning the
+  # deployment to an immutable image.
+  digest: ""
+
+  # @schema
+  # enum: ["", Always, IfNotPresent, Never]
+  # @schema
+  # -- Image pull policy. Left empty, resolves to `Always` for the `latest` tag and
+  # `IfNotPresent` for anything pinned.
+  pullPolicy: ""
+
+# @schema
+# type: array
+# @schema
+# -- Pull secrets for private registries. Accepts `- name: regcred` or the shorthand `- regcred`.
+imagePullSecrets: []
+
+# @schema
+# additionalProperties: true
+# @schema
+serviceAccount:
+  # @schema
+  # type: boolean
+  # @schema
+  # -- Create a dedicated ServiceAccount.
+  create: true
+
+  # @schema
+  # type: string
+  # @schema
+  # -- Name of the ServiceAccount. Generated when empty.
+  name: ""
+
+  # @schema
+  # type: object
+  # additionalProperties: true
+  # @schema
+  # -- Annotations for the ServiceAccount.
+  annotations: {}
+
+  # @schema
+  # type: boolean
+  # @schema
+  # -- Mount the API token into pods that default to this ServiceAccount.
+  automountToken: false
+
+# @schema
+# type: boolean
+# @schema
+# -- Mount the ServiceAccount API token into the pod.
+# Set on the pod itself, which is what actually keeps the token out of the container: the
+# ServiceAccount-level setting is ignored as soon as a pod names a different account.
+automountServiceAccountToken: false
+
+# @schema
+# enum: [restricted, none]
+# @schema
+# -- Baseline for the pod security context. `restricted` applies the Pod Security Standards
+# restricted profile (`runAsNonRoot`, `seccompProfile: RuntimeDefault`,
+# `fsGroupChangePolicy: OnRootMismatch`); `none` applies nothing. Identity fields
+# (`runAsUser`, `runAsGroup`, `fsGroup`) are always left to the chart, since they must match
+# the UID baked into the image.
+podSecurityContextPreset: restricted
+
+# @schema
+# type: object
+# additionalProperties: true
+# @schema
+# -- Pod security context, merged over the preset.
+podSecurityContext: {}
+
+# @schema
+# enum: [restricted, none]
+# @schema
+# -- Baseline for the container security context. `restricted` drops all capabilities and
+# forbids privilege escalation, a writable root filesystem and running as root.
+securityContextPreset: restricted
+
+# @schema
+# type: object
+# additionalProperties: true
+# @schema
+# -- Container security context, merged over the preset.
+securityContext: {}
+
+# @schema
+# enum: ["", nano, micro, small, medium, large]
+# @schema
+# -- Named resource sizing. Ignored when `resources` is set.
+# Presets set a memory limit and CPU/memory requests but no CPU limit: a CPU limit does not
+# protect the node the way a memory limit does, it only throttles this workload.
+resourcesPreset: ""
+
+# @schema
+# type: object
+# additionalProperties: true
+# @schema
+# -- Explicit resource requests and limits. Wins over `resourcesPreset`.
+resources: {}
+
+# @schema
+# additionalProperties: true
+# @schema
+# -- Startup probe. Set `enabled` and exactly one handler (`httpGet`, `tcpSocket`, `exec`
+# or `grpc`); unset timing fields fall back to the Kubernetes defaults.
+startupProbe:
+  # @schema
+  # type: boolean
+  # @schema
+  # -- Enable the startup probe.
+  enabled: false
+
+# @schema
+# additionalProperties: true
+# @schema
+# -- Liveness probe. See `startupProbe` for the accepted shape.
+livenessProbe:
+  # @schema
+  # type: boolean
+  # @schema
+  # -- Enable the liveness probe.
+  enabled: false
+
+# @schema
+# additionalProperties: true
+# @schema
+# -- Readiness probe. See `startupProbe` for the accepted shape.
+readinessProbe:
+  # @schema
+  # type: boolean
+  # @schema
+  # -- Enable the readiness probe.
+  enabled: false
+
+# @schema
+# type: object
+# additionalProperties: true
+# @schema
+# -- Annotations added to the pod template.
+podAnnotations: {}
+
+# @schema
+# type: object
+# additionalProperties: true
+# @schema
+# -- Labels added to the pod template.
+podLabels: {}
+
+# @schema
+# type: object
+# additionalProperties: true
+# @schema
+# -- Deployment update strategy. Defaults to the Kubernetes default, except for workloads
+# with a ReadWriteOnce volume, which fall back to `Recreate` to avoid a wedged rollout.
+strategy: {}
+
+# @schema
+# type: integer
+# @schema
+# -- Number of old ReplicaSets to retain for rollback.
+revisionHistoryLimit: 3
+
+# @schema
+# type: integer
+# @schema
+# -- Grace period for pod shutdown.
+terminationGracePeriodSeconds: 30
+
+# @schema
+# type: string
+# @schema
+# -- PriorityClass for the pod.
+priorityClassName: ""
+
+# @schema
+# type: object
+# additionalProperties: true
+# @schema
+# -- Node selector for pod assignment.
+nodeSelector: {}
+
+# @schema
+# type: array
+# @schema
+# -- Tolerations for pod assignment.
+tolerations: []
+
+# @schema
+# type: object
+# additionalProperties: true
+# @schema
+# -- Explicit affinity rules. Wins over `podAntiAffinity`.
+affinity: {}
+
+# @schema
+# enum: ["", soft, hard]
+# @schema
+# -- Shorthand for spreading replicas across nodes. `soft` prefers, `hard` requires.
+podAntiAffinity: ""
+
+# @schema
+# type: array
+# @schema
+# -- Topology spread constraints.
+topologySpreadConstraints: []
+
+# @schema
+# type: array
+# @schema
+# -- Host aliases injected into the pod's /etc/hosts.
+hostAliases: []
+
+# @schema
+# type: string
+# @schema
+# -- Pod DNS policy.
+dnsPolicy: ""
+
+# @schema
+# type: object
+# additionalProperties: true
+# @schema
+# -- Pod DNS configuration.
+dnsConfig: {}
+
+# @schema
+# type: array
+# @schema
+# -- Additional environment variables appended to the application container.
+extraEnv: []
+
+# @schema
+# type: array
+# @schema
+# -- Additional volumes added to the pod.
+extraVolumes: []
+
+# @schema
+# type: array
+# @schema
+# -- Additional volume mounts added to the application container.
+extraVolumeMounts: []
+
+# @schema
+# additionalProperties: true
+# @schema
+# -- Network policy configuration.
+#
+# Every generated egress rule is scoped by a `to:` selector. An egress rule that lists only
+# ports is not a restriction — the NetworkPolicy API reads a missing `to` as "any
+# destination", so such a policy permits traffic to every in-cluster service and to the
+# cloud metadata endpoint.
+networkPolicy:
+  # @schema
+  # type: boolean
+  # @schema
+  # -- Create the NetworkPolicies. When enabled with no rules configured, the result is a
+  # default-deny policy, which is intentional.
+  enabled: false
+
+  # @schema
+  # additionalProperties: true
+  # @schema
+  # -- Ingress rules.
+  ingress:
+    # @schema
+    # type: boolean
+    # @schema
+    # -- Add ingress rules. Disabled means default-deny for inbound traffic.
+    enabled: true
+
+    # @schema
+    # additionalProperties: true
+    # @schema
+    # -- Allow scraping from a monitoring namespace.
+    monitoring:
+      # @schema
+      # type: boolean
+      # @schema
+      # -- Allow ingress from the monitoring namespace.
+      enabled: true
+
+      # @schema
+      # type: string
+      # @schema
+      # -- Monitoring namespace, matched on `kubernetes.io/metadata.name`.
+      namespace: monitoring
+
+      # @schema
+      # type: object
+      # additionalProperties: true
+      # @schema
+      # -- Override the namespace selector entirely.
+      namespaceSelector: {}
+
+      # @schema
+      # type: array
+      # @schema
+      # -- Restrict the rule to specific ports. Empty means all ports.
+      ports: []
+
+    # @schema
+    # additionalProperties: true
+    # @schema
+    # -- Allow traffic from the ingress controller.
+    controller:
+      # @schema
+      # type: boolean
+      # @schema
+      # -- Allow ingress from the ingress controller.
+      enabled: true
+
+      # @schema
+      # type: string
+      # @schema
+      # -- Namespace the ingress controller runs in.
+      namespace: traefik
+
+      # @schema
+      # type: object
+      # additionalProperties: true
+      # @schema
+      # -- Pod selector matching the ingress controller.
+      selector:
+        app.kubernetes.io/name: traefik
+
+      # @schema
+      # type: array
+      # @schema
+      # -- Restrict the rule to specific ports. Empty means all ports.
+      ports: []
+
+    # @schema
+    # type: array
+    # @schema
+    # -- Additional ingress rules, appended verbatim.
+    customRules: []
+
+  # @schema
+  # additionalProperties: true
+  # @schema
+  # -- Egress rules.
+  egress:
+    # @schema
+    # type: boolean
+    # @schema
+    # -- Add egress rules. Disabled means default-deny for outbound traffic.
+    enabled: true
+
+    # @schema
+    # additionalProperties: true
+    # @schema
+    # -- Allow DNS resolution.
+    dns:
+      # @schema
+      # type: boolean
+      # @schema
+      # -- Allow egress to the cluster DNS service.
+      enabled: true
+
+      # @schema
+      # type: object
+      # additionalProperties: true
+      # @schema
+      # -- Namespace selector for the DNS service.
+      namespaceSelector:
+        kubernetes.io/metadata.name: kube-system
+
+      # @schema
+      # type: object
+      # additionalProperties: true
+      # @schema
+      # -- Pod selector for the DNS service.
+      podSelector:
+        k8s-app: kube-dns
+
+    # @schema
+    # additionalProperties: true
+    # @schema
+    # -- Allow outbound HTTP.
+    http:
+      # @schema
+      # type: boolean
+      # @schema
+      # -- Allow egress to TCP/80 on the destinations described by `cidr`/`except`.
+      enabled: false
+
+    # @schema
+    # additionalProperties: true
+    # @schema
+    # -- Allow outbound HTTPS.
+    https:
+      # @schema
+      # type: boolean
+      # @schema
+      # -- Allow egress to TCP/443 on the destinations described by `cidr`/`except`.
+      enabled: true
+
+    # @schema
+    # type: string
+    # @schema
+    # -- Destination CIDR for the HTTP/HTTPS rules.
+    cidr: 0.0.0.0/0
+
+    # @schema
+    # type: array
+    # @schema
+    # -- CIDRs carved out of `cidr`. Defaults exclude RFC1918 private space and link-local
+    # 169.254.0.0/16, which covers the cloud instance metadata endpoint.
+    except:
+      - 10.0.0.0/8
+      - 172.16.0.0/12
+      - 192.168.0.0/16
+      - 169.254.0.0/16
+
+    # @schema
+    # type: array
+    # @schema
+    # -- Additional egress rules, appended verbatim. Each must carry its own `to:` selector.
+    customRules: []
+
+  # @schema
+  # type: array
+  # @schema
+  # -- Extra ingress rules appended regardless of `ingress.enabled`.
+  extraIngress: []
+
+  # @schema
+  # type: array
+  # @schema
+  # -- Extra egress rules appended regardless of `egress.enabled`.
+  extraEgress: []

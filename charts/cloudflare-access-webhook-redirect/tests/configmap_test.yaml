@@ -1,0 +1,44 @@
+suite: configmap
+templates:
+  - configmap.yaml
+set:
+  application.handler.targetBase: https://example.invalid
+tests:
+  - it: carries the server and webhook configuration
+    asserts:
+      - isKind:
+          of: ConfigMap
+      - equal:
+          path: data["SERVER.PORT"]
+          value: "8080"
+      - equal:
+          path: data["WEBHOOK.TARGET_BASE"]
+          value: https://example.invalid
+      - equal:
+          path: data.LOG_LEVEL
+          value: info
+
+  - it: flattens webhook paths into the expected wire format
+    set:
+      application.handler.paths:
+        api/webhook:
+          - ALL
+        test:
+          - GET
+          - POST
+    asserts:
+      - equal:
+          path: data["WEBHOOK.PATHS"]
+          value: "api/webhook:ALL; test:GET,POST"
+
+  # One pass reports everything that is missing, rather than one `required` failure per
+  # render.
+  - it: reports every missing required value at once
+    set:
+      application.handler.targetBase: ""
+      application.server.host: ""
+    asserts:
+      - failedTemplate:
+          errorPattern: "application.server.host is required but was not set"
+      - failedTemplate:
+          errorPattern: "application.handler.targetBase is required but was not set"

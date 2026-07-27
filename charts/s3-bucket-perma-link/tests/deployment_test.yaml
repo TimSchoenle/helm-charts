@@ -1,8 +1,13 @@
-suite: test deployment
+suite: deployment
 templates:
   - deployment.yaml
+  - configmap.yaml
+  - secret.yaml
 tests:
-  - it: should create deployment
+  - it: creates a Deployment named after the release
+    documentSelector:
+      path: kind
+      value: Deployment
     asserts:
       - isKind:
           of: Deployment
@@ -10,11 +15,28 @@ tests:
           path: metadata.name
           value: RELEASE-NAME-s3-bucket-perma-link
 
-  - it: should mount S3 secret
+  # The Service targets this port, and the probes address it by name.
+  - it: exposes the server port as http
+    documentSelector:
+      path: kind
+      value: Deployment
     set:
-      application:
-        s3:
-          secretName: s3-creds
+      application.server.port: 9090
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].ports
+          value:
+            - containerPort: 9090
+              name: http
+              protocol: TCP
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.httpGet.port
+          value: http
+
+  - it: reads S3 credentials from the generated Secret
+    documentSelector:
+      path: kind
+      value: Deployment
     asserts:
       - contains:
           path: spec.template.spec.containers[0].env
@@ -22,7 +44,7 @@ tests:
             name: S3.ACCESS_KEY
             valueFrom:
               secretKeyRef:
-                name: s3-creds
+                name: RELEASE-NAME-s3-bucket-perma-link
                 key: access_key
       - contains:
           path: spec.template.spec.containers[0].env
@@ -30,13 +52,34 @@ tests:
             name: S3.SECRET_KEY
             valueFrom:
               secretKeyRef:
-                name: s3-creds
+                name: RELEASE-NAME-s3-bucket-perma-link
                 key: secret_key
 
-  - it: should configure config map
+  - it: reads them from an existing Secret when one is given
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      application.s3.secretName: my-s3-secret
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: S3.ACCESS_KEY
+            valueFrom:
+              secretKeyRef:
+                name: my-s3-secret
+                key: access_key
+
+  - it: loads configuration from the ConfigMap and rolls on change
+    documentSelector:
+      path: kind
+      value: Deployment
     asserts:
       - contains:
           path: spec.template.spec.containers[0].envFrom
           content:
             configMapRef:
               name: RELEASE-NAME-s3-bucket-perma-link
+      - exists:
+          path: spec.template.metadata.annotations["checksum/configmap"]

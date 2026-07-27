@@ -1,13 +1,23 @@
+{{- include "common.validateValues" (dict "ctx" $ "required" (list
+     "application.server.host"
+     "application.server.port"
+     "application.handler.targetBase"
+   )) }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: {{ include "common.fullname" . }}
+  namespace: {{ include "common.namespace" . }}
   labels:
     {{- include "common.labels" . | nindent 4 }}
+  {{- with (include "common.annotations" .) }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
 data:
-  SERVER.HOST: {{ required "server host is required" .Values.application.server.host | quote }}
-  SERVER.PORT: {{ required "server port is required" .Values.application.server.port | quote }}
-  WEBHOOK.TARGET_BASE: {{ required "target base is required" .Values.application.handler.targetBase | quote }}
+  SERVER.HOST: {{ .Values.application.server.host | quote }}
+  SERVER.PORT: {{ .Values.application.server.port | quote }}
+  WEBHOOK.TARGET_BASE: {{ .Values.application.handler.targetBase | quote }}
   WEBHOOK.PATHS: {{ include "config.paths" . }}
   LOG_LEVEL: {{ .Values.application.logLevel | quote }}
   {{- with .Values.application.sentryDsn }}

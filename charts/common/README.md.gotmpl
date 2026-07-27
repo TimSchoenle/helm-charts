@@ -1,0 +1,130 @@
+{{ template "chart.header" . }}
+
+{{ template "chart.badgesSection" . }}
+
+{{ template "chart.description" . }}
+
+This is a **library chart**. It renders nothing on its own and is never released; the
+application charts in this repository depend on it via `file://../common` and compose its
+partials.
+
+## Design
+
+The library provides *partials*, not whole resources. Charts keep ownership of which
+Kubernetes objects they create; the library owns everything those objects have in common —
+naming, labels, image references, security contexts, probes, resources, scheduling and
+network policy.
+
+A minimal consumer looks like this:
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ `{{ include "common.fullname" . }}` }}
+  namespace: {{ `{{ include "common.namespace" . }}` }}
+  labels:
+    {{ `{{- include "common.labels" . | nindent 4 }}` }}
+spec:
+  replicas: {{ `{{ .Values.replicaCount }}` }}
+  revisionHistoryLimit: {{ `{{ .Values.revisionHistoryLimit }}` }}
+  selector:
+    matchLabels:
+      {{ `{{- include "common.selectorLabels" . | nindent 6 }}` }}
+  template:
+    metadata:
+      labels:
+        {{ `{{- include "common.podLabels" . | nindent 8 }}` }}
+    spec:
+      {{ `{{- include "common.podSpec.common" . | nindent 6 }}` }}
+      containers:
+        {{ `{{- include "common.container" (dict "ctx" $ "ports" (list (dict "name" "http" "containerPort" 8080 "protocol" "TCP"))) | nindent 8 }}` }}
+      {{ `{{- with (include "common.volumes" (dict "ctx" $)) }}` }}
+      volumes:
+        {{ `{{- . | nindent 8 }}` }}
+      {{ `{{- end }}` }}
+```
+
+## Partials
+
+### Naming and metadata
+
+| Partial | Purpose |
+|---|---|
+| `common.name` | Chart name, honouring `nameOverride` |
+| `common.fullname` | Release-qualified resource name, honouring `fullnameOverride` |
+| `common.fullname.suffixed` | `common.fullname` plus a suffix, truncated to stay within 63 characters |
+| `common.chart` | `name-version`, for the `helm.sh/chart` label |
+| `common.namespace` | Release namespace, honouring `namespaceOverride` |
+| `common.labels` | Full label set for object metadata |
+| `common.podLabels` | Pod-template labels — deliberately excludes `helm.sh/chart` |
+| `common.selectorLabels` | The stable subset used in immutable selector fields |
+| `common.annotations` | `commonAnnotations`, rendered as templates |
+
+### Workload
+
+| Partial | Purpose |
+|---|---|
+| `common.podSpec.common` | Everything a pod spec shares across charts, except `containers` and `volumes` |
+| `common.container` | The application container, as a YAML list item |
+| `common.volumes` / `common.volumeMounts` | Chart volumes plus the `/tmp` scratch volume a read-only root filesystem requires |
+| `common.probes` / `common.probe` | Startup, liveness and readiness probes |
+| `common.resources` | Explicit `resources`, else a named `resourcesPreset` |
+| `common.podSecurityContext` / `common.containerSecurityContext` | Restricted Pod Security Standard baseline, merged with chart values |
+| `common.image` / `common.imagePullPolicy` / `common.imagePullSecrets` | Image reference from registry/repository/tag/digest |
+| `common.affinity` | Explicit `affinity`, else the `podAntiAffinity` shorthand |
+| `common.updateStrategy` | Deployment strategy, falling back to `Recreate` for ReadWriteOnce volumes |
+| `common.podAnnotations` | Pod annotations plus config checksums that force a rollout |
+
+### Network policy
+
+| Partial | Purpose |
+|---|---|
+| `common.networkPolicy` | Both policies, gated on `networkPolicy.enabled` |
+| `common.networkPolicy.ingress` / `.egress` | The individual policies |
+
+> [!IMPORTANT]
+> Every generated egress rule carries a `to:` selector. An egress rule that lists only
+> `ports` is not a restriction — the NetworkPolicy API reads a missing `to` as *any
+> destination*, so such a policy permits traffic to every in-cluster service and to the
+> cloud instance metadata endpoint at `169.254.169.254`. Rules added through
+> `networkPolicy.egress.customRules` must supply their own `to:`.
+
+### Capabilities and utilities
+
+| Partial | Purpose |
+|---|---|
+| `common.capabilities.kubeVersion` | Cluster version with vendor suffixes stripped, honouring `kubeVersionOverride` |
+| `common.capabilities.{ingress,hpa,pdb,networkPolicy}.apiVersion` | Version-appropriate API groups |
+| `common.capabilities.apiVersions.has` | Whether an API is registered on the target cluster |
+| `common.tplvalues.render` | Render a value that itself contains Go templates |
+| `common.tplvalues.merge` | Merge several maps without mutating them |
+| `common.serviceAccountName`, `common.secretName`, `common.configMapName` | Resolve to an `existing*` override, else the chart's own object |
+| `common.validateValues` | Report every missing required value at once |
+
+## Development
+
+The library cannot be exercised directly, since it renders nothing. A test-only consumer
+lives at `.github/testdata/common-fixture` — outside `charts/`, so chart-testing and
+chart-releaser never see it — and instantiates every partial:
+
+```shell
+helm dependency update .github/testdata/common-fixture
+helm unittest .github/testdata/common-fixture
+```
+
+Bumping this chart's `version` requires bumping the pinned dependency version in every
+consuming `Chart.yaml`.
+
+## Values
+
+The values below are never applied directly. They document the contract the partials expect
+and act as the reference shape for consuming charts.
+
+{{ template "chart.valuesSection" . }}
+
+{{ template "chart.sourcesSection" . }}
+
+{{ template "chart.maintainersSection" . }}
+
+{{ template "helm-docs.versionFooter" . }}

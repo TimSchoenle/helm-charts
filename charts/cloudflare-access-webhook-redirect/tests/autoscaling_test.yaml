@@ -1,0 +1,94 @@
+suite: autoscaling and disruption budget
+templates:
+  - hpa.yaml
+  - poddisruptionbudget.yaml
+tests:
+  - it: creates neither by default
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: creates an HPA when autoscaling is enabled
+    template: hpa.yaml
+    set:
+      autoscaling.enabled: true
+    asserts:
+      - isKind:
+          of: HorizontalPodAutoscaler
+      - equal:
+          path: spec.scaleTargetRef.name
+          value: RELEASE-NAME-cloudflare-access-webhook-redirect
+      - equal:
+          path: spec.minReplicas
+          value: 1
+      - equal:
+          path: spec.maxReplicas
+          value: 5
+
+  # Resolved from the cluster version rather than hardcoded, so the chart still renders a
+  # valid manifest on clusters where autoscaling/v2 is not yet served.
+  - it: picks the HPA API version from the cluster
+    template: hpa.yaml
+    set:
+      autoscaling.enabled: true
+    capabilities:
+      majorVersion: 1
+      minorVersion: 22
+    asserts:
+      - equal:
+          path: apiVersion
+          value: autoscaling/v2beta2
+
+  - it: picks autoscaling/v2 on modern clusters
+    template: hpa.yaml
+    set:
+      autoscaling.enabled: true
+    capabilities:
+      majorVersion: 1
+      minorVersion: 29
+    asserts:
+      - equal:
+          path: apiVersion
+          value: autoscaling/v2
+
+  - it: emits only the metrics that are configured
+    template: hpa.yaml
+    set:
+      autoscaling.enabled: true
+      autoscaling.targetMemoryUtilizationPercentage: null
+    asserts:
+      - lengthEqual:
+          path: spec.metrics
+          count: 1
+      - equal:
+          path: spec.metrics[0].resource.name
+          value: cpu
+
+  - it: creates a PodDisruptionBudget when enabled
+    template: poddisruptionbudget.yaml
+    set:
+      podDisruptionBudget.enabled: true
+      podDisruptionBudget.maxUnavailable: null
+    asserts:
+      - isKind:
+          of: PodDisruptionBudget
+      - equal:
+          path: spec.minAvailable
+          value: 1
+      - equal:
+          path: spec.selector.matchLabels
+          value:
+            app.kubernetes.io/name: cloudflare-access-webhook-redirect
+            app.kubernetes.io/instance: RELEASE-NAME
+
+  - it: picks the PodDisruptionBudget API version from the cluster
+    template: poddisruptionbudget.yaml
+    set:
+      podDisruptionBudget.enabled: true
+    capabilities:
+      majorVersion: 1
+      minorVersion: 20
+    asserts:
+      - equal:
+          path: apiVersion
+          value: policy/v1beta1

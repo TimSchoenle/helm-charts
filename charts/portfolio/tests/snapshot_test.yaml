@@ -1,0 +1,20 @@
+suite: rendered manifest snapshot
+# Locks the full rendered output of every template in this chart. Any change to the common
+# library or to this chart's templates that alters a manifest shows up here as a reviewable
+# diff; regenerate deliberately with `helm unittest -u charts/portfolio`.
+templates:
+  - deployment.yaml
+  - configmap.yaml
+tests:
+  - it: matches the committed Deployment snapshot
+    asserts:
+      - matchSnapshot: {}
+
+  - it: matches the committed Deployment snapshot with network policies and probes on
+    set:
+      networkPolicy.enabled: true
+      podAntiAffinity: soft
+      nodeSelector:
+        kubernetes.io/os: linux
+    asserts:
+      - matchSnapshot: {}

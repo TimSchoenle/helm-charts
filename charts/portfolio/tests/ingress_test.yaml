@@ -1,13 +1,13 @@
-suite: test ingress
+suite: ingress
 templates:
   - ingress.yaml
 tests:
-  - it: should not create ingress by default
+  - it: creates no Ingress by default
     asserts:
       - hasDocuments:
           count: 0
 
-  - it: should create ingress when enabled
+  - it: creates an Ingress routing to the Service
     set:
       ingress.enabled: true
       ingress.hosts:
@@ -21,8 +21,32 @@ tests:
       - equal:
           path: spec.ingressClassName
           value: nginx
+      - equal:
+          path: spec.rules[0].host
+          value: portfolio.example.com
+      - equal:
+          path: spec.rules[0].http.paths[0].backend.service.name
+          value: RELEASE-NAME-portfolio
 
-  - it: should configure TLS
+  # Resolved from the cluster version rather than hardcoded, so the chart still renders a
+  # valid manifest on clusters that predate networking.k8s.io/v1.
+  - it: picks the Ingress API version from the cluster
+    set:
+      ingress.enabled: true
+      ingress.hosts:
+        - host: portfolio.example.com
+          paths:
+            - path: /
+              pathType: Prefix
+    capabilities:
+      majorVersion: 1
+      minorVersion: 29
+    asserts:
+      - equal:
+          path: apiVersion
+          value: networking.k8s.io/v1
+
+  - it: configures TLS
     set:
       ingress.enabled: true
       ingress.hosts:
@@ -42,7 +66,7 @@ tests:
           path: spec.tls[0].hosts
           content: portfolio.example.com
 
-  - it: should support custom annotations
+  - it: supports controller annotations
     set:
       ingress.enabled: true
       ingress.annotations:

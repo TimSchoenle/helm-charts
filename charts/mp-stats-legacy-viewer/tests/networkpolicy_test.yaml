@@ -1,0 +1,195 @@
+suite: network policies
+templates:
+  - networkpolicy.yaml
+tests:
+  - it: renders nothing when network policies are disabled
+    set:
+      networkPolicy.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: creates one ingress and one egress policy when enabled
+    set:
+      networkPolicy.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 2
+      - isKind:
+          of: NetworkPolicy
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-mp-stats-legacy-viewer-ingress
+        documentIndex: 0
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-mp-stats-legacy-viewer-egress
+        documentIndex: 1
+
+  - it: scopes both policies to this release's pods
+    set:
+      networkPolicy.enabled: true
+    asserts:
+      - equal:
+          path: spec.podSelector.matchLabels["app.kubernetes.io/instance"]
+          value: RELEASE-NAME
+        documentIndex: 0
+      - equal:
+          path: spec.podSelector.matchLabels["app.kubernetes.io/instance"]
+          value: RELEASE-NAME
+        documentIndex: 1
+
+  # The regression guard for the egress hole this chart shipped before this major version: an egress rule
+  # with `ports` but no `to` is read by the NetworkPolicy API as "any destination", so the
+  # policy permits traffic to every in-cluster service and to the cloud metadata endpoint.
+  - it: scopes every egress rule with a destination selector
+    set:
+      networkPolicy.enabled: true
+      networkPolicy.egress.http.enabled: true
+      networkPolicy.egress.https.enabled: true
+      networkPolicy.egress.customRules:
+        - to:
+            - ipBlock:
+                cidr: 203.0.113.0/24
+          ports:
+            - port: 9000
+              protocol: TCP
+    documentIndex: 1
+    asserts:
+      - notExists:
+          path: spec.egress[?(!@.to)]
+
+  - it: restricts DNS egress to the cluster DNS service
+    set:
+      networkPolicy.enabled: true
+    documentIndex: 1
+    asserts:
+      - equal:
+          path: spec.egress[0].to[0].namespaceSelector.matchLabels["kubernetes.io/metadata.name"]
+          value: kube-system
+      - equal:
+          path: spec.egress[0].to[0].podSelector.matchLabels["k8s-app"]
+          value: kube-dns
+      - contains:
+          path: spec.egress[0].ports
+          content:
+            port: 53
+            protocol: UDP
+      - contains:
+          path: spec.egress[0].ports
+          content:
+            port: 53
+            protocol: TCP
+
+  - it: excludes private and link-local space from internet egress
+    set:
+      networkPolicy.enabled: true
+      networkPolicy.egress.https.enabled: true
+    documentIndex: 1
+    asserts:
+      - equal:
+          path: spec.egress[1].to[0].ipBlock.cidr
+          value: 0.0.0.0/0
+      # 169.254.169.254 is the cloud instance metadata endpoint.
+      - contains:
+          path: spec.egress[1].to[0].ipBlock.except
+          content: 169.254.0.0/16
+      - contains:
+          path: spec.egress[1].to[0].ipBlock.except
+          content: 10.0.0.0/8
+      - contains:
+          path: spec.egress[1].to[0].ipBlock.except
+          content: 172.16.0.0/12
+      - contains:
+          path: spec.egress[1].to[0].ipBlock.except
+          content: 192.168.0.0/16
+
+  - it: honours a custom internet destination
+    set:
+      networkPolicy.enabled: true
+      networkPolicy.egress.https.enabled: true
+      networkPolicy.egress.cidr: 203.0.113.0/24
+      networkPolicy.egress.except:
+        - 203.0.113.128/25
+    documentIndex: 1
+    asserts:
+      - equal:
+          path: spec.egress[1].to[0].ipBlock.cidr
+          value: 203.0.113.0/24
+      - equal:
+          path: spec.egress[1].to[0].ipBlock.except
+          value:
+            - 203.0.113.128/25
+
+  - it: is default-deny when rules are switched off
+    set:
+      networkPolicy.enabled: true
+      networkPolicy.ingress.enabled: false
+      networkPolicy.egress.enabled: false
+    asserts:
+      - equal:
+          path: spec.policyTypes
+          value: [Ingress]
+        documentIndex: 0
+      - isNullOrEmpty:
+          path: spec.ingress
+        documentIndex: 0
+      - equal:
+          path: spec.policyTypes
+          value: [Egress]
+        documentIndex: 1
+      - isNullOrEmpty:
+          path: spec.egress
+        documentIndex: 1
+
+  - it: allows scraping from the monitoring namespace
+    set:
+      networkPolicy.enabled: true
+      networkPolicy.ingress.monitoring.namespace: custom-monitoring
+    documentIndex: 0
+    asserts:
+      # Matched on the label Kubernetes sets on every namespace itself, not on an
+      # operator-maintained `name` label that may not exist.
+      - equal:
+          path: spec.ingress[0].from[0].namespaceSelector.matchLabels["kubernetes.io/metadata.name"]
+          value: custom-monitoring
+
+  - it: allows traffic from the ingress controller
+    set:
+      networkPolicy.enabled: true
+      networkPolicy.ingress.monitoring.enabled: false
+      networkPolicy.ingress.controller.namespace: ingress-nginx
+      networkPolicy.ingress.controller.selector:
+        app.kubernetes.io/name: ingress-nginx
+    documentIndex: 0
+    asserts:
+      - equal:
+          path: spec.ingress[0].from[0].namespaceSelector.matchLabels["kubernetes.io/metadata.name"]
+          value: ingress-nginx
+      - equal:
+          path: spec.ingress[0].from[0].podSelector.matchLabels["app.kubernetes.io/name"]
+          value: ingress-nginx
+
+  - it: appends extra rules regardless of the enabled flags
+    set:
+      networkPolicy.enabled: true
+      networkPolicy.ingress.enabled: false
+      networkPolicy.egress.enabled: false
+      networkPolicy.extraIngress:
+        - from:
+            - podSelector:
+                matchLabels:
+                  app: sidecar
+      networkPolicy.extraEgress:
+        - to:
+            - ipBlock:
+                cidr: 198.51.100.0/24
+    asserts:
+      - lengthEqual:
+          path: spec.ingress
+          count: 1
+        documentIndex: 0
+      - lengthEqual:
+          path: spec.egress
+          count: 1
+        documentIndex: 1

@@ -64,7 +64,7 @@ The following table lists the configurable parameters of the chart and their def
 | extraVolumeMounts | list | `[]` | Additional volume mounts added to the application container. |
 | extraVolumes | list | `[]` | Additional volumes added to the pod. |
 | fullnameOverride | string | `""` | Override the full generated resource name. |
-| image.digest | string | `"sha256:0509b22f40e374829a589616281cf5cda882c70c00c8ce4c2498bf3aef5ef0ad"` | Image digest, pinning the deployment to an immutable image. Wins over `tag`. |
+| image.digest | string | `"sha256:0509b22f40e374829a589616281cf5cda882c70c00c8ce4c2498bf3aef5ef0ad"` | Image digest (`sha256:...`). Combined with `tag` rather than replacing it: the digest pins the pull, while `tag` stays on as the readable version marker. |
 | image.pullPolicy | string | `""` | The image pull policy. Empty resolves automatically from the tag/digest. |
 | image.registry | string | `""` | Registry host. Empty means Docker Hub. |
 | image.repository | string | `"timschoenle/mp-stats-legacy-viewer"` | The container image repository. |

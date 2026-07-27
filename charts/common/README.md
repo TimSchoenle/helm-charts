@@ -71,10 +71,11 @@ spec:
 | `common.probes` / `common.probe` | Startup, liveness and readiness probes |
 | `common.resources` | Explicit `resources`, else a named `resourcesPreset` |
 | `common.podSecurityContext` / `common.containerSecurityContext` | Restricted Pod Security Standard baseline, merged with chart values |
-| `common.image` / `common.imagePullPolicy` / `common.imagePullSecrets` | Image reference from registry/repository/tag/digest |
+| `common.image` / `common.imagePullPolicy` / `common.imagePullSecrets` | Image reference as `registry/repository:tag@digest` |
 | `common.affinity` | Explicit `affinity`, else the `podAntiAffinity` shorthand |
 | `common.updateStrategy` | Deployment strategy, falling back to `Recreate` for ReadWriteOnce volumes |
 | `common.podAnnotations` | Pod annotations plus config checksums that force a rollout |
+| `common.configChecksum` | Digest of one template's `data`/`stringData`/`binaryData` |
 
 ### Network policy
 
@@ -137,7 +138,7 @@ and act as the reference shape for consuming charts.
 | extraVolumes | list | `[]` | Additional volumes added to the pod. |
 | fullnameOverride | string | `""` | Override the full generated resource name. |
 | hostAliases | list | `[]` | Host aliases injected into the pod's /etc/hosts. |
-| image.digest | string | `""` | Image digest (`sha256:...`). Takes precedence over `tag` when set, pinning the deployment to an immutable image. |
+| image.digest | string | `""` | Image digest (`sha256:...`). Combined with `tag` rather than replacing it: the digest pins the pull, while `tag` stays on as the readable version marker. |
 | image.pullPolicy | string | `""` | Image pull policy. Left empty, resolves to `Always` for the `latest` tag and `IfNotPresent` for anything pinned. |
 | image.registry | string | `""` | Registry host. Left empty, the repository is used as-is (Docker Hub). |
 | image.repository | string | `""` | Image repository. Required. |

@@ -6,9 +6,16 @@ Two call forms are accepted:
   {{ include "common.image" (dict "ctx" $ "image" .Values.sidecar) }} -> explicit image dict
 
 
-Resolution order for the identifier: `image.digest` wins over `image.tag`; a tag that
-already embeds a digest (`v1.2.3@sha256:...`) is passed through untouched, so charts
-migrating from the old single-field form keep working.
+Tag and digest are combined rather than ranked: a digest alongside a tag renders as
+`repo:v1.2.3@sha256:...`. The digest is what actually pins the pull, while the tag is
+retained because it is the only human-readable version marker visible in `kubectl get pod`,
+event logs and registry UIs. Dropping it in favour of the digest alone buys no extra
+immutability and costs all of that legibility.
+
+A tag that already embeds a digest (`v1.2.3@sha256:...`) is split and recombined into the
+same form, so charts using the old single-field style keep working. Supplying an embedded
+digest and `image.digest` that disagree is ambiguous and fails the render rather than
+silently picking one.
 */}}
 {{- define "common.image" -}}
 {{- $ctx := . -}}
@@ -22,18 +29,27 @@ migrating from the old single-field form keep working.
 {{- $registry := $image.registry | default "" -}}
 {{- $repository := $image.repository | required "image.repository is required" -}}
 {{- $tag := $image.tag | default $ctx.Chart.AppVersion | toString -}}
-{{- $digest := $image.digest | default "" -}}
+{{- $digest := $image.digest | default "" | toString -}}
+{{- if contains "@" $tag -}}
+{{- $parts := splitList "@" $tag -}}
+{{- $embedded := $parts | last -}}
+{{- if and $digest (ne $digest $embedded) -}}
+{{- fail (printf "common.image: image.tag embeds digest %q but image.digest is %q; set only one" $embedded $digest) -}}
+{{- end -}}
+{{- $tag = index $parts 0 -}}
+{{- $digest = $embedded -}}
+{{- end -}}
 {{- $name := $repository -}}
 {{- if $registry -}}
 {{- $name = printf "%s/%s" $registry $repository -}}
 {{- end -}}
-{{- if $digest -}}
-{{- printf "%s@%s" $name $digest -}}
-{{- else if contains "@" $tag -}}
-{{- printf "%s@%s" $name (splitList "@" $tag | last) -}}
-{{- else -}}
-{{- printf "%s:%s" $name $tag -}}
+{{- if $tag -}}
+{{- $name = printf "%s:%s" $name $tag -}}
 {{- end -}}
+{{- if $digest -}}
+{{- $name = printf "%s@%s" $name $digest -}}
+{{- end -}}
+{{- $name -}}
 {{- end -}}
 
 {{/*
@@ -53,9 +69,14 @@ a digest gets `IfNotPresent`.
 {{- $image = .Values.image -}}
 {{- end -}}
 {{- $tag := $image.tag | default $ctx.Chart.AppVersion | toString -}}
+{{- $digest := $image.digest | default "" | toString -}}
+{{- if contains "@" $tag -}}
+{{- $digest = $tag | splitList "@" | last -}}
+{{- $tag = $tag | splitList "@" | first -}}
+{{- end -}}
 {{- if $image.pullPolicy -}}
 {{- $image.pullPolicy -}}
-{{- else if $image.digest -}}
+{{- else if $digest -}}
 IfNotPresent
 {{- else if or (eq $tag "latest") (hasSuffix ":latest" $tag) -}}
 Always

@@ -82,7 +82,7 @@ The following table lists the configurable parameters of the chart and their def
 | extraVolumeMounts | list | `[]` | Additional volume mounts (e.g., /cache) |
 | extraVolumes | list | `[]` | Additional volumes (e.g., cache, tmp) |
 | fullnameOverride | string | `""` | Override the full release name |
-| image.digest | string | `"sha256:e5607cedf22b71b8835146aaa1c3e274102888d3d85890224ace3bf088aa646a"` | Image digest, pinning the deployment to an immutable image. Wins over `tag`. |
+| image.digest | string | `"sha256:e5607cedf22b71b8835146aaa1c3e274102888d3d85890224ace3bf088aa646a"` | Image digest (`sha256:...`). Combined with `tag` rather than replacing it: the digest pins the pull, while `tag` stays on as the readable version marker. |
 | image.pullPolicy | string | `""` | Image pull policy. Empty resolves automatically from the tag/digest. |
 | image.registry | string | `""` | Registry host. Empty means Docker Hub. |
 | image.repository | string | `"timmi6790/cloudflare-access-webhook-redirect"` | Container image repository (e.g. docker.io/user/image) |

@@ -5,6 +5,16 @@ suite: rendered manifest snapshot
 templates:
   - deployment.yaml
   - configmap.yaml
+# Chart version, appVersion and the image coordinates are pinned to placeholders so a routine
+# version or image bump never invalidates the snapshot. That those fields are wired up
+# correctly is asserted in security_test.yaml; this suite guards the *shape* of the rendered
+# manifests only.
+chart:
+  version: 0.0.0
+  appVersion: 0.0.0
+set:
+  image.tag: v0.0.0
+  image.digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
 tests:
   - it: matches the committed Deployment snapshot
     asserts:

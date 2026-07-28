@@ -1,6 +1,6 @@
 # netcup-offer-bot
 
-![Version: 3.0.1](https://img.shields.io/badge/Version-3.0.1-informational?style=flat-square) ![AppVersion: v1.5.22](https://img.shields.io/badge/AppVersion-v1.5.22-informational?style=flat-square)
+![Version: 3.0.3](https://img.shields.io/badge/Version-3.0.3-informational?style=flat-square) ![AppVersion: v1.5.22](https://img.shields.io/badge/AppVersion-v1.5.22-informational?style=flat-square)
 
 This chart deploys the Netcup Offer Bot, which monitors https://www.netcup-sonderangebote.de/ RSS feed and sends notifications to Discord webhooks when new offers are available.
 
@@ -65,7 +65,6 @@ The following table lists the configurable parameters of the chart and their def
 | extraVolumeMounts | list | `[]` | Additional volume mounts added to the application container. |
 | extraVolumes | list | `[]` | Additional volumes added to the pod. |
 | fullnameOverride | string | `""` | Override the full generated resource name. |
-| image.digest | string | `"sha256:29ca3ed4dfa9b3c6b03089fa3079b73cfac8eab3e2f25d736c4e730e5119919a"` | Image digest (`sha256:...`). Combined with `tag` rather than replacing it: the digest pins the pull, while `tag` stays on as the readable version marker. |
 | image.pullPolicy | string | `""` | The image pull policy. Empty resolves automatically from the tag/digest. |
 | image.registry | string | `""` | Registry host. Empty means Docker Hub. |
 | image.repository | string | `"timmi6790/netcup-offer-bot"` | The container image repository. |

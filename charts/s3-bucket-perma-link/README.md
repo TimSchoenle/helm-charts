@@ -1,6 +1,6 @@
 # s3-bucket-perma-link
 
-![Version: 2.0.1](https://img.shields.io/badge/Version-2.0.1-informational?style=flat-square) ![AppVersion: v0.3.22](https://img.shields.io/badge/AppVersion-v0.3.22-informational?style=flat-square)
+![Version: 2.0.2](https://img.shields.io/badge/Version-2.0.2-informational?style=flat-square) ![AppVersion: v0.3.22](https://img.shields.io/badge/AppVersion-v0.3.22-informational?style=flat-square)
 
 This chart deploys a simple web server that provides permanent links to specific S3 bucket resources. It allows you to define static URL paths that always point to specific files in your S3 buckets.
 
@@ -70,11 +70,10 @@ The following table lists the configurable parameters of the chart and their def
 | extraVolumeMounts | list | `[]` | Additional volume mounts added to the application container. |
 | extraVolumes | list | `[]` | Additional volumes added to the pod. |
 | fullnameOverride | string | `""` | Override the full generated resource name. |
-| image.digest | string | `"sha256:99638220674a86fe194c4aeccfe2d8ad50a62f56bad4661892ed2959e76a9660"` | Image digest (`sha256:...`). Combined with `tag` rather than replacing it: the digest pins the pull, while `tag` stays on as the readable version marker. |
 | image.pullPolicy | string | `""` | The image pull policy. Empty resolves automatically from the tag/digest. |
 | image.registry | string | `""` | Registry host. Empty means Docker Hub. |
 | image.repository | string | `"timmi6790/s3-bucket-perma-link"` | The container image repository. |
-| image.tag | string | `"v0.3.22"` | The container image tag. Defaults to the chart's `appVersion` when empty. |
+| image.tag | string | `"v0.3.22@sha256:99638220674a86fe194c4aeccfe2d8ad50a62f56bad4661892ed2959e76a9660"` | The container image tag, pinned by digest (`vX.Y.Z@sha256:...`). The digest pins the pull, while the tag stays on as the readable version marker. Defaults to the chart's `appVersion` when empty. |
 | imagePullSecrets | list | `[]` | Optional image pull secrets for private registries. |
 | ingress.annotations | object | `{}` | Custom annotations for the Ingress resource. Useful for configuring ingress controllers (e.g., cert-manager, rate limits). |
 | ingress.enabled | bool | `false` | Enable or disable Kubernetes Ingress resource creation. Set to `true` to expose the service externally via Ingress. |

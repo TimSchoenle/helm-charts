@@ -102,27 +102,28 @@ tests:
       image.registry: ghcr.io
       image.repository: example/app
       image.tag: v1.2.3
-      image.digest: ""
     asserts:
       - equal:
           path: spec.template.spec.containers[0].image
           value: ghcr.io/example/app:v1.2.3
 
-  - it: keeps the tag alongside the digest
+  - it: keeps the tag alongside the digest it pins
     set:
       image.registry: ghcr.io
       image.repository: example/app
-      image.tag: v1.2.3
-      image.digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+      image.tag: v1.2.3@sha256:0000000000000000000000000000000000000000000000000000000000000000
     asserts:
       - equal:
           path: spec.template.spec.containers[0].image
           value: ghcr.io/example/app:v1.2.3@sha256:0000000000000000000000000000000000000000000000000000000000000000
+      # An embedded digest is immutable, so there is nothing to re-pull.
+      - equal:
+          path: spec.template.spec.containers[0].imagePullPolicy
+          value: IfNotPresent
 
   - it: pulls a mutable latest tag on every start
     set:
       image.tag: latest
-      image.digest: ""
       image.pullPolicy: ""
     asserts:
       - equal:

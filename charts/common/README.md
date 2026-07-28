@@ -1,6 +1,6 @@
 # common
 
-![Version: 1.0.1](https://img.shields.io/badge/Version-1.0.1-informational?style=flat-square) ![Type: library](https://img.shields.io/badge/Type-library-informational?style=flat-square)
+![Version: 1.0.2](https://img.shields.io/badge/Version-1.0.2-informational?style=flat-square) ![Type: library](https://img.shields.io/badge/Type-library-informational?style=flat-square)
 
 Shared template partials for the TimSchoenle Helm charts
 
@@ -138,11 +138,10 @@ and act as the reference shape for consuming charts.
 | extraVolumes | list | `[]` | Additional volumes added to the pod. |
 | fullnameOverride | string | `""` | Override the full generated resource name. |
 | hostAliases | list | `[]` | Host aliases injected into the pod's /etc/hosts. |
-| image.digest | string | `""` | Image digest (`sha256:...`). Combined with `tag` rather than replacing it: the digest pins the pull, while `tag` stays on as the readable version marker. |
 | image.pullPolicy | string | `""` | Image pull policy. Left empty, resolves to `Always` for the `latest` tag and `IfNotPresent` for anything pinned. |
 | image.registry | string | `""` | Registry host. Left empty, the repository is used as-is (Docker Hub). |
 | image.repository | string | `""` | Image repository. Required. |
-| image.tag | string | `""` | Image tag. Defaults to the chart's `appVersion`. |
+| image.tag | string | `""` | Image tag. Defaults to the chart's `appVersion`. May pin a digest inline (`v1.2.3@sha256:...`): the digest pins the pull, while the tag stays on as the readable version marker. |
 | imagePullSecrets | list | `[]` | Pull secrets for private registries. Accepts `- name: regcred` or the shorthand `- regcred`. |
 | kubeVersionOverride | string | `""` | Kubernetes version to target when branching on API availability. Lets `helm template` render for a specific cluster version without a live connection. Leave empty to detect from the cluster. |
 | livenessProbe | object | `{"enabled":false}` | Liveness probe. See `startupProbe` for the accepted shape. |

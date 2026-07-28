@@ -1,6 +1,6 @@
 # netcup-offer-bot
 
-![Version: 3.0.2](https://img.shields.io/badge/Version-3.0.2-informational?style=flat-square) ![AppVersion: v1.5.21](https://img.shields.io/badge/AppVersion-v1.5.21-informational?style=flat-square)
+![Version: 3.0.3](https://img.shields.io/badge/Version-3.0.3-informational?style=flat-square) ![AppVersion: v1.5.22](https://img.shields.io/badge/AppVersion-v1.5.22-informational?style=flat-square)
 
 This chart deploys the Netcup Offer Bot, which monitors https://www.netcup-sonderangebote.de/ RSS feed and sends notifications to Discord webhooks when new offers are available.
 
@@ -68,7 +68,7 @@ The following table lists the configurable parameters of the chart and their def
 | image.pullPolicy | string | `""` | The image pull policy. Empty resolves automatically from the tag/digest. |
 | image.registry | string | `""` | Registry host. Empty means Docker Hub. |
 | image.repository | string | `"timmi6790/netcup-offer-bot"` | The container image repository. |
-| image.tag | string | `"v1.5.21@sha256:29ca3ed4dfa9b3c6b03089fa3079b73cfac8eab3e2f25d736c4e730e5119919a"` | The container image tag, pinned by digest (`vX.Y.Z@sha256:...`). The digest pins the pull, while the tag stays on as the readable version marker. Defaults to the chart's `appVersion` when empty. |
+| image.tag | string | `"v1.5.22@sha256:61680432f3880345634a1b6076ad629302e5a06157434580532dbb3e54514828"` | The container image tag. Defaults to the chart's `appVersion` when empty. |
 | imagePullSecrets | list | `[]` | Optional image pull secrets for private registries |
 | kubeVersionOverride | string | `""` | Kubernetes version to target when branching on API availability. Lets `helm template` render for a specific cluster version without a live connection. |
 | metrics.enabled | bool | `false` | Enable Prometheus metrics endpoint. |

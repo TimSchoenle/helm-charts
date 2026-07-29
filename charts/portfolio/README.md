@@ -1,6 +1,6 @@
 # portfolio
 
-![Version: 3.0.2](https://img.shields.io/badge/Version-3.0.2-informational?style=flat-square) ![AppVersion: v2.1.3](https://img.shields.io/badge/AppVersion-v2.1.3-informational?style=flat-square)
+![Version: 3.0.3](https://img.shields.io/badge/Version-3.0.3-informational?style=flat-square) ![AppVersion: v2.2.0](https://img.shields.io/badge/AppVersion-v2.2.0-informational?style=flat-square)
 
 Personal portfolio built with Rust (Yew frontend, Axum server).
 
@@ -63,7 +63,7 @@ The following table lists the configurable parameters of the chart and their def
 | image.pullPolicy | string | `""` | Kubernetes image pull policy. Empty resolves automatically from the tag/digest. |
 | image.registry | string | `""` | Registry host. Empty means Docker Hub. |
 | image.repository | string | `"timschoenle/portfolio"` | Container image repository where the Portfolio application image is stored. |
-| image.tag | string | `"v2.1.3@sha256:722e3ead404823fc5a12b71b9780eb12484c4a560ecce30c2129e3e5c5b456ad"` | Container image tag to deploy, pinned by digest (`vX.Y.Z@sha256:...`). The digest pins the pull, while the tag stays on as the readable version marker. Defaults to the chart's `appVersion` when empty. |
+| image.tag | string | `"v2.2.0@sha256:af0ebc2fdecbd9a3ea1eae9cdcd5aa950300ce077803d11fe13948f9cd6cecfa"` | Container image tag to deploy, pinned by digest (`vX.Y.Z@sha256:...`). The digest pins the pull, while the tag stays on as the readable version marker. Defaults to the chart's `appVersion` when empty. |
 | imagePullSecrets | list | `[]` | Optional image pull secrets for private registries. |
 | ingress.annotations | object | `{}` | Custom annotations for the Ingress resource. Example: ```yaml annotations:   cert-manager.io/cluster-issuer: "letsencrypt-prod"   nginx.ingress.kubernetes.io/ssl-redirect: "true" ``` |
 | ingress.enabled | bool | `false` | Enable or disable Kubernetes Ingress resource creation. |

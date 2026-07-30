@@ -1,0 +1,19 @@
+# Every Service port published, including the encrypted ServerQuery listener.
+#
+# NodePort rather than LoadBalancer because `helm --wait` blocks until a LoadBalancer is
+# assigned an address, which never happens on a kind cluster.
+license:
+  accept: true
+
+serverQuery:
+  protocols: raw,ssh
+
+service:
+  type: NodePort
+  externalTrafficPolicy: Local
+  annotations:
+    example.com/purpose: ci
+  query:
+    enabled: true
+  querySsh:
+    enabled: true

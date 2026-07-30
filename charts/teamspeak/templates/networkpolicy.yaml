@@ -1,0 +1,163 @@
+{{- /*
+NetworkPolicies for the TeamSpeak pod.
+
+Written here rather than through `common.networkPolicy` because a voice server's rules are
+not the library's shape: it accepts UDP from the public internet on a port taken from values,
+and it needs two outbound rules to TeamSpeak's own infrastructure that no other chart in this
+repository has. The library's peer helpers (`dnsPeers`, `internetPeers`) are reused verbatim,
+so the "no egress rule without a `to:` selector" rule and the metadata-endpoint carve-out
+still hold.
+
+Rendering either policy with no rules enabled is meaningful and intentional: a policy that
+selects the pod and declares its policyType with an empty rule list is a default-deny.
+*/ -}}
+{{- if .Values.networkPolicy.enabled -}}
+{{- $ingress := .Values.networkPolicy.ingress -}}
+{{- $egress := .Values.networkPolicy.egress -}}
+{{- /*
+  Peer for the external-database egress rule. Built here rather than inline so the empty case
+  is explicit: an omitted selector has to become `podSelector: {}` — every pod in the release
+  namespace — and never `namespaceSelector: {}`, which would open every namespace instead.
+*/ -}}
+{{- $databasePeer := dict -}}
+{{- with $egress.database.namespaceSelector -}}
+{{- $_ := set $databasePeer "namespaceSelector" (dict "matchLabels" .) -}}
+{{- end -}}
+{{- with $egress.database.podSelector -}}
+{{- $_ := set $databasePeer "podSelector" (dict "matchLabels" .) -}}
+{{- end -}}
+{{- if not $databasePeer -}}
+{{- $_ := set $databasePeer "podSelector" dict -}}
+{{- end -}}
+apiVersion: {{ include "common.capabilities.networkPolicy.apiVersion" . }}
+kind: NetworkPolicy
+metadata:
+  name: {{ include "common.fullname.suffixed" (dict "ctx" . "suffix" "ingress") }}
+  namespace: {{ include "common.namespace" . }}
+  labels:
+    {{- include "common.labels" . | nindent 4 }}
+  {{- with (include "common.annotations" .) }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "common.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress:
+    {{- if $ingress.enabled }}
+    {{- if and $ingress.clients.enabled $ingress.clients.cidrs }}
+    - from:
+        {{- range $ingress.clients.cidrs }}
+        - ipBlock:
+            cidr: {{ . | quote }}
+        {{- end }}
+      ports:
+        - port: {{ int $.Values.server.voicePort }}
+          protocol: UDP
+        - port: {{ int $.Values.server.fileTransferPort }}
+          protocol: TCP
+    {{- end }}
+    {{- if and $ingress.query.enabled $ingress.query.cidrs }}
+    - from:
+        {{- range $ingress.query.cidrs }}
+        - ipBlock:
+            cidr: {{ . | quote }}
+        {{- end }}
+      ports:
+        - port: {{ int $.Values.server.queryPort }}
+          protocol: TCP
+        {{- if include "teamspeak.sshQueryEnabled" $ }}
+        - port: {{ int $.Values.server.querySshPort }}
+          protocol: TCP
+        {{- end }}
+    {{- end }}
+    {{- if and $ingress.monitoring.enabled $.Values.metrics.enabled }}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              {{- toYaml ($ingress.monitoring.namespaceSelector | default (dict "kubernetes.io/metadata.name" $ingress.monitoring.namespace)) | nindent 14 }}
+      ports:
+        - port: {{ int $.Values.metrics.port }}
+          protocol: TCP
+    {{- end }}
+    {{- with $ingress.customRules }}
+    {{- include "common.tplvalues.render" (dict "value" . "context" $) | nindent 4 }}
+    {{- end }}
+    {{- end }}
+    {{- with .Values.networkPolicy.extraIngress }}
+    {{- include "common.tplvalues.render" (dict "value" . "context" $) | nindent 4 }}
+    {{- end }}
+---
+apiVersion: {{ include "common.capabilities.networkPolicy.apiVersion" . }}
+kind: NetworkPolicy
+metadata:
+  name: {{ include "common.fullname.suffixed" (dict "ctx" . "suffix" "egress") }}
+  namespace: {{ include "common.namespace" . }}
+  labels:
+    {{- include "common.labels" . | nindent 4 }}
+  {{- with (include "common.annotations" .) }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "common.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Egress
+  egress:
+    {{- if $egress.enabled }}
+    {{- if $egress.dns.enabled }}
+    - to:
+        {{- include "common.networkPolicy.dnsPeers" . | nindent 8 }}
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    {{- end }}
+    {{- /*
+      accounting.teamspeak.com on TCP 2008 is not optional: the server checks its licence
+      there on startup and periodically afterwards, and takes the virtual server offline when
+      it cannot. The hostname's address changes over time, so the rule is scoped to the
+      public internet rather than to a fixed IP.
+    */}}
+    {{- if $egress.accounting.enabled }}
+    - to:
+        {{- include "common.networkPolicy.internetPeers" . | nindent 8 }}
+      ports:
+        - port: {{ int $egress.accounting.port }}
+          protocol: TCP
+    {{- end }}
+    {{- if $egress.weblist.enabled }}
+    - to:
+        {{- include "common.networkPolicy.internetPeers" . | nindent 8 }}
+      ports:
+        - port: {{ int $egress.weblist.port }}
+          protocol: UDP
+    {{- end }}
+    {{- if $egress.https.enabled }}
+    - to:
+        {{- include "common.networkPolicy.internetPeers" . | nindent 8 }}
+      ports:
+        - port: 443
+          protocol: TCP
+    {{- end }}
+    {{- if and $egress.database.enabled (include "teamspeak.usesExternalDatabase" .) }}
+    - to:
+        {{- toYaml (list $databasePeer) | nindent 8 }}
+      ports:
+        - port: {{ int .Values.database.port }}
+          protocol: TCP
+    {{- end }}
+    {{- with $egress.customRules }}
+    {{- include "common.tplvalues.render" (dict "value" . "context" $) | nindent 4 }}
+    {{- end }}
+    {{- end }}
+    {{- with .Values.networkPolicy.extraEgress }}
+    {{- include "common.tplvalues.render" (dict "value" . "context" $) | nindent 4 }}
+    {{- end }}
+{{- end }}

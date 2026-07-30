@@ -1,0 +1,69 @@
+suite: test persistentvolumeclaim
+templates:
+  - claim-persistentvolumeclaim.yaml
+set:
+  license.accept: true
+tests:
+  # The size is set here rather than left to the default: this test is about the claim being
+  # wired to persistence.data.size, not about which size the chart happens to ship.
+  - it: claims storage for the server database, keypair and uploads
+    set:
+      persistence.data.size: 7Gi
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: PersistentVolumeClaim
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-teamspeak
+      - equal:
+          path: spec.accessModes
+          value: [ReadWriteOnce]
+      - equal:
+          path: spec.resources.requests.storage
+          value: 7Gi
+      # Empty means "cluster default", which is not the same as an empty string.
+      - notExists:
+          path: spec.storageClassName
+
+  - it: honours an explicit StorageClass
+    set:
+      persistence.data.storageClassName: fast-ssd
+    asserts:
+      - equal:
+          path: spec.storageClassName
+          value: fast-ssd
+
+  - it: disables dynamic provisioning for the "-" sentinel
+    set:
+      persistence.data.storageClassName: "-"
+    asserts:
+      - equal:
+          path: spec.storageClassName
+          value: ""
+
+  # Losing this volume loses the server identity, so operators need a way to outlive the
+  # release that created it.
+  - it: carries retention annotations onto the claim
+    set:
+      persistence.data.annotations:
+        helm.sh/resource-policy: keep
+    asserts:
+      - equal:
+          path: metadata.annotations["helm.sh/resource-policy"]
+          value: keep
+
+  - it: creates nothing when an existing claim is named
+    set:
+      persistence.data.existingClaim: ts3-data
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: creates nothing when persistence is disabled
+    set:
+      persistence.data.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0

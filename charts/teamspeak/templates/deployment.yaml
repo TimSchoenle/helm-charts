@@ -1,0 +1,55 @@
+{{- include "teamspeak.validateValues" . }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "common.fullname" . }}
+  namespace: {{ include "common.namespace" . }}
+  labels:
+    {{- include "common.labels" . | nindent 4 }}
+  {{- with (include "common.annotations" .) }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- /*
+    A TeamSpeak server is a singleton. Two replicas on one database corrupt it; two on
+    separate volumes are two unrelated servers sharing one Service, which load-balances
+    clients between them at random.
+  */}}
+  replicas: {{ .Values.replicaCount }}
+  revisionHistoryLimit: {{ .Values.revisionHistoryLimit }}
+  {{- /*
+    A ReadWriteOnce claim cannot be attached to the replacement pod while the outgoing pod
+    still holds it, so a rolling update deadlocks. Fall back to Recreate.
+  */}}
+  {{- $rwo := and .Values.persistence.data.enabled (eq .Values.persistence.data.accessMode "ReadWriteOnce") }}
+  {{- with (include "common.updateStrategy" (dict "ctx" . "rwo" $rwo)) }}
+  strategy:
+    {{- . | nindent 4 }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "common.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with (include "common.podAnnotations" (dict "ctx" $ "templates" (list "configmap.yaml" "secret.yaml"))) }}
+      annotations:
+        {{- . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "common.podLabels" . | nindent 8 }}
+    spec:
+      {{- include "common.podSpec.common" . | nindent 6 }}
+      containers:
+        {{- include "common.container" (dict
+              "ctx" $
+              "ports" (include "teamspeak.containerPorts" . | fromYamlArray)
+              "env" (include "teamspeak.env" . | fromYamlArray)
+              "envFrom" (list (dict "configMapRef" (dict "name" (include "common.fullname" .))))
+              "volumeMounts" (include "teamspeak.volumeMounts" . | fromYamlArray)
+            ) | nindent 8 }}
+        {{- if .Values.metrics.enabled }}
+        {{- include "teamspeak.exporterContainer" . | nindent 8 }}
+        {{- end }}
+      volumes:
+        {{- include "common.volumes" (dict "ctx" $ "volumes" (include "teamspeak.volumes" . | fromYamlArray)) | nindent 8 }}

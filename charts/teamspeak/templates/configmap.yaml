@@ -1,0 +1,47 @@
+{{- /*
+Non-secret server configuration.
+
+The image's entrypoint turns TS3SERVER_* environment variables into ts3server.ini at start
+up, so this ConfigMap *is* the server configuration file. Credentials are deliberately absent
+— they come from the Secret by reference, see `teamspeak.env`.
+*/ -}}
+{{- $sqlCreatePaths := dict "ts3db_sqlite3" "create_sqlite" "ts3db_mariadb" "create_mariadb" "ts3db_postgresql" "create_postgresql" -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "common.fullname" . }}
+  namespace: {{ include "common.namespace" . }}
+  labels:
+    {{- include "common.labels" . | nindent 4 }}
+  {{- with (include "common.annotations" .) }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
+data:
+  TS3SERVER_DEFAULT_VOICE_PORT: {{ .Values.server.voicePort | quote }}
+  TS3SERVER_FILETRANSFER_PORT: {{ .Values.server.fileTransferPort | quote }}
+  TS3SERVER_QUERY_PORT: {{ .Values.server.queryPort | quote }}
+  TS3SERVER_QUERY_SSH_PORT: {{ .Values.server.querySshPort | quote }}
+  TS3SERVER_QUERY_PROTOCOLS: {{ .Values.serverQuery.protocols | quote }}
+  TS3SERVER_QUERY_TIMEOUT: {{ .Values.serverQuery.timeout | quote }}
+  TS3SERVER_QUERY_SKIPBRUTEFORCECHECK: {{ ternary "1" "0" .Values.serverQuery.skipBruteForceCheck | quote }}
+  TS3SERVER_HINTS_ENABLED: {{ ternary "1" "0" .Values.server.hintsEnabled | quote }}
+  TS3SERVER_LOG_QUERY_COMMANDS: {{ ternary "1" "0" .Values.server.logQueryCommands | quote }}
+  TS3SERVER_LOG_APPEND: {{ ternary "1" "0" .Values.server.logAppend | quote }}
+  {{- with .Values.server.machineId }}
+  TS3SERVER_MACHINE_ID: {{ . | quote }}
+  {{- end }}
+  TS3SERVER_DB_PLUGIN: {{ .Values.database.plugin | quote }}
+  TS3SERVER_DB_SQLCREATEPATH: {{ get $sqlCreatePaths .Values.database.plugin | quote }}
+  TS3SERVER_DB_CONNECTIONS: {{ .Values.database.connections | quote }}
+  TS3SERVER_DB_CLIENTKEEPDAYS: {{ .Values.database.clientKeepDays | quote }}
+  {{- if include "teamspeak.usesExternalDatabase" . }}
+  TS3SERVER_DB_HOST: {{ .Values.database.host | quote }}
+  TS3SERVER_DB_PORT: {{ .Values.database.port | quote }}
+  TS3SERVER_DB_NAME: {{ .Values.database.name | quote }}
+  TS3SERVER_DB_USER: {{ .Values.database.user | quote }}
+  TS3SERVER_DB_WAITUNTILREADY: {{ .Values.database.waitUntilReady | quote }}
+  {{- end }}
+  {{- range $key, $value := .Values.extraServerConfig }}
+  {{ $key }}: {{ include "common.tplvalues.render" (dict "value" $value "context" $) | quote }}
+  {{- end }}

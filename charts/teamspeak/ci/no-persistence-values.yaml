@@ -1,0 +1,14 @@
+# Ephemeral server: no PersistentVolumeClaim, so the data volume is an emptyDir and the
+# server comes back as a different one after every restart. Only sensible for throwaway
+# environments — which is exactly what CI is.
+license:
+  accept: true
+
+# ClusterIP rather than the chart default, because `helm --wait` blocks until a LoadBalancer
+# is assigned an address, which never happens on a kind cluster.
+service:
+  type: ClusterIP
+
+persistence:
+  data:
+    enabled: false

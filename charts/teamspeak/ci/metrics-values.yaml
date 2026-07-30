@@ -1,0 +1,37 @@
+# Full observability stack: exporter sidecar, PodMonitor, alerting rules and the Grafana
+# dashboard. The exporter authenticates against ServerQuery, so a known admin password is
+# mandatory here.
+license:
+  accept: true
+
+serverQuery:
+  adminPassword: ci-serveradmin-password
+
+# ClusterIP rather than the chart default, because `helm --wait` blocks until a LoadBalancer
+# is assigned an address, which never happens on a kind cluster.
+service:
+  type: ClusterIP
+
+metrics:
+  enabled: true
+  channelMetrics: true
+  podMonitor:
+    enabled: true
+    labels:
+      release: kube-prometheus-stack
+  prometheusRule:
+    enabled: true
+    labels:
+      release: kube-prometheus-stack
+    additionalRules:
+      - alert: TeamSpeakCustomProbe
+        expr: ts3_serverinfo_online == 0
+        for: 1h
+        labels:
+          severity: none
+        annotations:
+          summary: Placeholder rule proving additionalRules render
+  dashboards:
+    enabled: true
+    annotations:
+      grafana_folder: TeamSpeak

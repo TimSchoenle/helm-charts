@@ -1,0 +1,80 @@
+{{- /*
+The client-facing Service.
+
+TeamSpeak clients dial the voice port they were given, so the port a client connects to has
+to be the port the server listens on — there is no protocol-level redirect. That rules out
+letting Kubernetes allocate a node port, and it is why `service.voice.port` does not exist:
+the Service port is always `server.voicePort`.
+
+The voice port is UDP and the file transfer port is TCP, so this is a mixed-protocol Service.
+Type LoadBalancer with mixed protocols needs Kubernetes 1.26+ (or 1.20+ with the
+MixedProtocolLBService feature gate) and a load balancer implementation that supports it.
+*/ -}}
+{{- $ports := list -}}
+{{- if .Values.service.voice.enabled -}}
+{{- $ports = append $ports (dict "name" "voice" "port" (int .Values.server.voicePort) "targetPort" "voice" "protocol" "UDP" "nodePort" (int .Values.service.voice.nodePort)) -}}
+{{- end -}}
+{{- if .Values.service.fileTransfer.enabled -}}
+{{- $ports = append $ports (dict "name" "filetransfer" "port" (int .Values.server.fileTransferPort) "targetPort" "filetransfer" "protocol" "TCP" "nodePort" (int .Values.service.fileTransfer.nodePort)) -}}
+{{- end -}}
+{{- if .Values.service.query.enabled -}}
+{{- $ports = append $ports (dict "name" "query" "port" (int .Values.server.queryPort) "targetPort" "query" "protocol" "TCP" "nodePort" (int .Values.service.query.nodePort)) -}}
+{{- end -}}
+{{- if .Values.service.querySsh.enabled -}}
+{{- $ports = append $ports (dict "name" "query-ssh" "port" (int .Values.server.querySshPort) "targetPort" "query-ssh" "protocol" "TCP" "nodePort" (int .Values.service.querySsh.nodePort)) -}}
+{{- end -}}
+{{- if $ports -}}
+{{- $nodePortsHonoured := has .Values.service.type (list "NodePort" "LoadBalancer") -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "common.fullname" . }}
+  namespace: {{ include "common.namespace" . }}
+  labels:
+    {{- include "common.labels" . | nindent 4 }}
+  {{- with (include "common.tplvalues.merge" (dict "values" (list .Values.service.annotations .Values.commonAnnotations) "context" $)) }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.service.type }}
+  {{- /*
+    `Local` keeps the client's source address intact. The server's ban list and flood
+    protection key off that address, so under `Cluster` every client looks like a node and
+    one abusive client gets the whole cluster banned.
+  */}}
+  {{- if and .Values.service.externalTrafficPolicy $nodePortsHonoured }}
+  externalTrafficPolicy: {{ .Values.service.externalTrafficPolicy }}
+  {{- end }}
+  {{- with .Values.service.ipFamilyPolicy }}
+  ipFamilyPolicy: {{ . }}
+  {{- end }}
+  {{- if eq .Values.service.type "LoadBalancer" }}
+  {{- with .Values.service.loadBalancerIP }}
+  loadBalancerIP: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.service.loadBalancerClass }}
+  loadBalancerClass: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.service.loadBalancerSourceRanges }}
+  loadBalancerSourceRanges:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- end }}
+  {{- with .Values.service.externalIPs }}
+  externalIPs:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  ports:
+    {{- range $ports }}
+    - name: {{ .name }}
+      port: {{ .port }}
+      targetPort: {{ .targetPort }}
+      protocol: {{ .protocol }}
+      {{- if and .nodePort $nodePortsHonoured }}
+      nodePort: {{ .nodePort }}
+      {{- end }}
+    {{- end }}
+  selector:
+    {{- include "common.selectorLabels" . | nindent 4 }}
+{{- end }}

@@ -1,0 +1,24 @@
+{{- /*
+Grafana dashboards, published the way the Grafana sidecar dashboard loader discovers them: a
+labelled ConfigMap whose keys are file names.
+
+The dashboard JSON lives under `dashboards/` and is read with `.Files.Glob` rather than being
+inlined here, because Grafana's own `{{ }}` legend syntax collides with Helm's template
+delimiters — a dashboard written into a template would need every legend escaped.
+*/ -}}
+{{- if and .Values.metrics.enabled .Values.metrics.dashboards.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "common.fullname.suffixed" (dict "ctx" . "suffix" "dashboards") }}
+  namespace: {{ .Values.metrics.dashboards.namespace | default (include "common.namespace" .) }}
+  labels:
+    {{- include "common.labels" . | nindent 4 }}
+    {{ .Values.metrics.dashboards.label }}: {{ .Values.metrics.dashboards.labelValue | quote }}
+  {{- with (include "common.tplvalues.merge" (dict "values" (list .Values.metrics.dashboards.annotations .Values.commonAnnotations) "context" $)) }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
+data:
+  {{- (.Files.Glob "dashboards/*.json").AsConfig | nindent 2 }}
+{{- end }}

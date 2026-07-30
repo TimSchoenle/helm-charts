@@ -1,0 +1,60 @@
+suite: rendered manifest snapshot
+# Locks the full rendered output of every template in this chart. Any change to the common
+# library or to this chart's templates that alters a manifest shows up here as a reviewable
+# diff; regenerate deliberately with `helm unittest -u charts/teamspeak`.
+templates:
+  - deployment.yaml
+  - configmap.yaml
+  - secret.yaml
+  - service.yaml
+  - claim-persistentvolumeclaim.yaml
+  - networkpolicy.yaml
+  - podmonitor.yaml
+  - prometheusrule.yaml
+  - dashboard-configmap.yaml
+# Chart version, appVersion and the image coordinates are pinned to placeholders so a routine
+# version or image bump never invalidates the snapshot. That those fields are wired up
+# correctly is asserted in security_test.yaml; this suite guards the *shape* of the rendered
+# manifests only.
+chart:
+  version: 0.0.0
+  appVersion: 0.0.0
+set:
+  license.accept: true
+  image.tag: v0.0.0@sha256:0000000000000000000000000000000000000000000000000000000000000000
+tests:
+  - it: matches the committed snapshot for a default install
+    asserts:
+      - matchSnapshot: {}
+
+  - it: matches the committed snapshot with observability and network policies on
+    set:
+      serverQuery.adminPassword: hunter2
+      metrics.enabled: true
+      metrics.image.tag: v0.0.0@sha256:1111111111111111111111111111111111111111111111111111111111111111
+      metrics.prometheusRule.enabled: true
+      metrics.dashboards.enabled: false
+      networkPolicy.enabled: true
+      networkPolicy.ingress.query.enabled: true
+      networkPolicy.ingress.query.cidrs:
+        - 10.42.0.0/16
+      networkPolicy.egress.weblist.enabled: true
+      podAntiAffinity: soft
+      nodeSelector:
+        kubernetes.io/os: linux
+    asserts:
+      - matchSnapshot: {}
+
+  - it: matches the committed snapshot for an external database and full Service exposure
+    set:
+      serverQuery.protocols: raw,ssh
+      database.plugin: ts3db_mariadb
+      database.host: mariadb.data.svc
+      database.password: s3cret
+      persistence.data.enabled: false
+      service.type: LoadBalancer
+      service.query.enabled: true
+      service.querySsh.enabled: true
+      license.existingSecret: ts3-license
+    asserts:
+      - matchSnapshot: {}

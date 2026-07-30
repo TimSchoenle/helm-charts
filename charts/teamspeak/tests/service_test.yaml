@@ -1,0 +1,161 @@
+suite: test service
+templates:
+  - service.yaml
+set:
+  license.accept: true
+tests:
+  - it: publishes voice and file transfer by default, and nothing else
+    asserts:
+      - isKind:
+          of: Service
+      - equal:
+          path: spec.type
+          value: LoadBalancer
+      - lengthEqual:
+          path: spec.ports
+          count: 2
+      - contains:
+          path: spec.ports
+          content:
+            name: voice
+            port: 9987
+            targetPort: voice
+            protocol: UDP
+      - contains:
+          path: spec.ports
+          content:
+            name: filetransfer
+            port: 30033
+            targetPort: filetransfer
+            protocol: TCP
+
+  # There is no service.voice.port: clients dial the port they were given, so the published
+  # port has to be the port the server listens on.
+  - it: publishes exactly the port the server listens on
+    set:
+      server.voicePort: 9988
+    asserts:
+      - contains:
+          path: spec.ports
+          content:
+            name: voice
+            port: 9988
+            targetPort: voice
+            protocol: UDP
+
+  - it: keeps the plaintext ServerQuery port off the Service by default
+    asserts:
+      - notContains:
+          path: spec.ports
+          content:
+            name: query
+            port: 10011
+            targetPort: query
+            protocol: TCP
+
+  - it: publishes the ServerQuery ports on request
+    set:
+      serverQuery.protocols: raw,ssh
+      service.query.enabled: true
+      service.querySsh.enabled: true
+    asserts:
+      - lengthEqual:
+          path: spec.ports
+          count: 4
+      - contains:
+          path: spec.ports
+          content:
+            name: query
+            port: 10011
+            targetPort: query
+            protocol: TCP
+      - contains:
+          path: spec.ports
+          content:
+            name: query-ssh
+            port: 10022
+            targetPort: query-ssh
+            protocol: TCP
+
+  # The server's ban list and flood protection key off the client address; under Cluster
+  # every client looks like a node and one abuser gets everyone banned.
+  - it: preserves the client source address on an externally reachable Service
+    asserts:
+      - equal:
+          path: spec.externalTrafficPolicy
+          value: Local
+
+  - it: omits externalTrafficPolicy on a ClusterIP Service, where it is invalid
+    set:
+      service.type: ClusterIP
+    asserts:
+      - notExists:
+          path: spec.externalTrafficPolicy
+
+  - it: carries LoadBalancer settings only for a LoadBalancer
+    set:
+      service.loadBalancerIP: 203.0.113.10
+      service.loadBalancerClass: example.com/lb
+      service.loadBalancerSourceRanges:
+        - 198.51.100.0/24
+    asserts:
+      - equal:
+          path: spec.loadBalancerIP
+          value: 203.0.113.10
+      - equal:
+          path: spec.loadBalancerClass
+          value: example.com/lb
+      - equal:
+          path: spec.loadBalancerSourceRanges
+          value: [198.51.100.0/24]
+
+  - it: drops LoadBalancer settings for a ClusterIP Service
+    set:
+      service.type: ClusterIP
+      service.loadBalancerIP: 203.0.113.10
+    asserts:
+      - notExists:
+          path: spec.loadBalancerIP
+
+  - it: pins node ports where the Service type honours them
+    set:
+      service.type: NodePort
+      service.voice.nodePort: 31987
+    asserts:
+      - contains:
+          path: spec.ports
+          content:
+            name: voice
+            port: 9987
+            targetPort: voice
+            protocol: UDP
+            nodePort: 31987
+
+  - it: ignores node ports on a ClusterIP Service
+    set:
+      service.type: ClusterIP
+      service.voice.nodePort: 31987
+    asserts:
+      - contains:
+          path: spec.ports
+          content:
+            name: voice
+            port: 9987
+            targetPort: voice
+            protocol: UDP
+
+  - it: selects the pods this chart runs
+    asserts:
+      - equal:
+          path: spec.selector
+          value:
+            app.kubernetes.io/name: teamspeak
+            app.kubernetes.io/instance: RELEASE-NAME
+
+  - it: renders nothing rather than an invalid portless Service
+    set:
+      service.voice.enabled: false
+      service.fileTransfer.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0

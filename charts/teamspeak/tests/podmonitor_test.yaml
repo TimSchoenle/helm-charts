@@ -1,0 +1,78 @@
+suite: test podmonitor
+templates:
+  - podmonitor.yaml
+set:
+  license.accept: true
+  serverQuery.adminPassword: hunter2
+tests:
+  - it: renders nothing while the exporter is not running
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders nothing when the PodMonitor itself is opted out of
+    set:
+      metrics.enabled: true
+      metrics.podMonitor.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: scrapes the sidecar's metrics port
+    set:
+      metrics.enabled: true
+    asserts:
+      - isKind:
+          of: PodMonitor
+      - equal:
+          path: spec.podMetricsEndpoints[0].port
+          value: metrics
+      - equal:
+          path: spec.podMetricsEndpoints[0].path
+          value: /metrics
+      - equal:
+          path: spec.podMetricsEndpoints[0].interval
+          value: 1m
+      - equal:
+          path: spec.podMetricsEndpoints[0].scrapeTimeout
+          value: 30s
+
+  # A selector that matches no pods scrapes nothing and fails silently, which is the worst
+  # possible failure mode for monitoring.
+  - it: selects the pods this chart runs
+    set:
+      metrics.enabled: true
+    asserts:
+      - equal:
+          path: spec.selector.matchLabels
+          value:
+            app.kubernetes.io/name: teamspeak
+            app.kubernetes.io/instance: RELEASE-NAME
+
+  - it: carries the label a Prometheus Operator instance selects on
+    set:
+      metrics.enabled: true
+      metrics.podMonitor.labels:
+        release: kube-prometheus-stack
+    asserts:
+      - equal:
+          path: metadata.labels.release
+          value: kube-prometheus-stack
+
+  - it: passes relabeling rules through
+    set:
+      metrics.enabled: true
+      metrics.podMonitor.relabelings:
+        - sourceLabels: [__meta_kubernetes_pod_node_name]
+          targetLabel: node
+      metrics.podMonitor.metricRelabelings:
+        - sourceLabels: [__name__]
+          regex: ts3_channel_.*
+          action: drop
+    asserts:
+      - lengthEqual:
+          path: spec.podMetricsEndpoints[0].relabelings
+          count: 1
+      - lengthEqual:
+          path: spec.podMetricsEndpoints[0].metricRelabelings
+          count: 1

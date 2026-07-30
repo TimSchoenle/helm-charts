@@ -1,0 +1,330 @@
+suite: test networkpolicy
+templates:
+  - networkpolicy.yaml
+set:
+  license.accept: true
+tests:
+  - it: creates no policies unless asked
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: creates one policy per direction
+    set:
+      networkPolicy.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 2
+
+  - it: admits clients to the voice and file transfer ports
+    set:
+      networkPolicy.enabled: true
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-teamspeak-ingress
+    asserts:
+      - equal:
+          path: spec.policyTypes
+          value: [Ingress]
+      - equal:
+          path: spec.ingress[0].from
+          value:
+            - ipBlock:
+                cidr: 0.0.0.0/0
+      - equal:
+          path: spec.ingress[0].ports
+          value:
+            - port: 9987
+              protocol: UDP
+            - port: 30033
+              protocol: TCP
+
+  - it: follows custom ports into the ingress rules
+    set:
+      networkPolicy.enabled: true
+      server.voicePort: 9988
+      server.fileTransferPort: 30034
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-teamspeak-ingress
+    asserts:
+      - equal:
+          path: spec.ingress[0].ports
+          value:
+            - port: 9988
+              protocol: UDP
+            - port: 30034
+              protocol: TCP
+
+  - it: narrows client access to the given CIDRs
+    set:
+      networkPolicy.enabled: true
+      networkPolicy.ingress.clients.cidrs:
+        - 198.51.100.0/24
+        - 203.0.113.0/24
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-teamspeak-ingress
+    asserts:
+      - equal:
+          path: spec.ingress[0].from
+          value:
+            - ipBlock:
+                cidr: 198.51.100.0/24
+            - ipBlock:
+                cidr: 203.0.113.0/24
+
+  - it: keeps ServerQuery closed by default
+    set:
+      networkPolicy.enabled: true
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-teamspeak-ingress
+    asserts:
+      - lengthEqual:
+          path: spec.ingress
+          count: 1
+
+  - it: opens ServerQuery only to the CIDRs given
+    set:
+      networkPolicy.enabled: true
+      serverQuery.protocols: raw,ssh
+      networkPolicy.ingress.query.enabled: true
+      networkPolicy.ingress.query.cidrs:
+        - 10.42.0.0/16
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-teamspeak-ingress
+    asserts:
+      - equal:
+          path: spec.ingress[1].ports
+          value:
+            - port: 10011
+              protocol: TCP
+            - port: 10022
+              protocol: TCP
+
+  # An enabled rule with no peers would be a rule with no `from`, which the NetworkPolicy API
+  # reads as "from anywhere" — the exact opposite of the intent.
+  - it: emits no ServerQuery rule when no CIDR was given
+    set:
+      networkPolicy.enabled: true
+      networkPolicy.ingress.query.enabled: true
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-teamspeak-ingress
+    asserts:
+      - lengthEqual:
+          path: spec.ingress
+          count: 1
+
+  - it: admits Prometheus to the metrics port only while the exporter runs
+    set:
+      networkPolicy.enabled: true
+      serverQuery.adminPassword: hunter2
+      metrics.enabled: true
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-teamspeak-ingress
+    asserts:
+      - equal:
+          path: spec.ingress[1].from
+          value:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: monitoring
+      - equal:
+          path: spec.ingress[1].ports
+          value:
+            - port: 9189
+              protocol: TCP
+
+  - it: skips the monitoring rule when nothing is listening on the metrics port
+    set:
+      networkPolicy.enabled: true
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-teamspeak-ingress
+    asserts:
+      - lengthEqual:
+          path: spec.ingress
+          count: 1
+
+  - it: is a default-deny when ingress rules are switched off
+    set:
+      networkPolicy.enabled: true
+      networkPolicy.ingress.enabled: false
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-teamspeak-ingress
+    asserts:
+      - equal:
+          path: spec.policyTypes
+          value: [Ingress]
+      - isNullOrEmpty:
+          path: spec.ingress
+
+  - it: appends extra ingress rules regardless of the toggle
+    set:
+      networkPolicy.enabled: true
+      networkPolicy.ingress.enabled: false
+      networkPolicy.extraIngress:
+        - from:
+            - podSelector:
+                matchLabels:
+                  app.kubernetes.io/name: ts3-admin
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-teamspeak-ingress
+    asserts:
+      - lengthEqual:
+          path: spec.ingress
+          count: 1
+
+  # accounting.teamspeak.com on TCP 2008 is what keeps the virtual server online.
+  - it: allows DNS and the TeamSpeak accounting service outbound
+    set:
+      networkPolicy.enabled: true
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-teamspeak-egress
+    asserts:
+      - equal:
+          path: spec.policyTypes
+          value: [Egress]
+      - equal:
+          path: spec.egress[0].ports
+          value:
+            - port: 53
+              protocol: UDP
+            - port: 53
+              protocol: TCP
+      - equal:
+          path: spec.egress[1].ports
+          value:
+            - port: 2008
+              protocol: TCP
+      # Every generated rule carries a `to:`; a rule with only `ports:` means "anywhere".
+      - exists:
+          path: spec.egress[1].to
+      - lengthEqual:
+          path: spec.egress
+          count: 2
+
+  # 169.254.169.254 is the cloud instance metadata endpoint and the usual first stop after a
+  # container compromise.
+  - it: carves private and link-local space out of the internet rules
+    set:
+      networkPolicy.enabled: true
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-teamspeak-egress
+    asserts:
+      - equal:
+          path: spec.egress[1].to
+          value:
+            - ipBlock:
+                cidr: 0.0.0.0/0
+                except:
+                  - 10.0.0.0/8
+                  - 172.16.0.0/12
+                  - 192.168.0.0/16
+                  - 169.254.0.0/16
+
+  - it: opts into the public server list separately
+    set:
+      networkPolicy.enabled: true
+      networkPolicy.egress.weblist.enabled: true
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-teamspeak-egress
+    asserts:
+      - equal:
+          path: spec.egress[2].ports
+          value:
+            - port: 2010
+              protocol: UDP
+
+  - it: reaches an external database inside the release namespace by default
+    set:
+      networkPolicy.enabled: true
+      database.plugin: ts3db_mariadb
+      database.host: mariadb
+      database.password: s3cret
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-teamspeak-egress
+    asserts:
+      # podSelector: {} is the release namespace; namespaceSelector: {} would be every
+      # namespace in the cluster.
+      - equal:
+          path: spec.egress[2].to
+          value:
+            - podSelector: {}
+      - equal:
+          path: spec.egress[2].ports
+          value:
+            - port: 3306
+              protocol: TCP
+
+  - it: scopes the database rule to the selectors given
+    set:
+      networkPolicy.enabled: true
+      database.plugin: ts3db_mariadb
+      database.host: mariadb
+      database.password: s3cret
+      database.port: 5432
+      networkPolicy.egress.database.namespaceSelector:
+        kubernetes.io/metadata.name: data
+      networkPolicy.egress.database.podSelector:
+        app.kubernetes.io/name: mariadb
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-teamspeak-egress
+    asserts:
+      - equal:
+          path: spec.egress[2].to
+          value:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: data
+              podSelector:
+                matchLabels:
+                  app.kubernetes.io/name: mariadb
+      - equal:
+          path: spec.egress[2].ports
+          value:
+            - port: 5432
+              protocol: TCP
+
+  - it: emits no database rule while SQLite is in use
+    set:
+      networkPolicy.enabled: true
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-teamspeak-egress
+    asserts:
+      - lengthEqual:
+          path: spec.egress
+          count: 2
+
+  - it: is a default-deny when egress rules are switched off
+    set:
+      networkPolicy.enabled: true
+      networkPolicy.egress.enabled: false
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-teamspeak-egress
+    asserts:
+      - isNullOrEmpty:
+          path: spec.egress
+
+  - it: selects the pods this chart runs
+    set:
+      networkPolicy.enabled: true
+    asserts:
+      - equal:
+          path: spec.podSelector.matchLabels
+          value:
+            app.kubernetes.io/name: teamspeak
+            app.kubernetes.io/instance: RELEASE-NAME

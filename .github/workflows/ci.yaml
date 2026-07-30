@@ -300,6 +300,27 @@ jobs:
           node_image: kindest/node:${{ matrix.kubernetes }}
           wait: '120s'
 
+      # Charts that ship PodMonitors or PrometheusRules fail to render without the Prometheus
+      # Operator's CRDs, and kind provides none. Only the two kinds the charts actually use are
+      # applied: the operator itself is not needed, because nothing has to reconcile these
+      # objects for the install to be verified — the API server just has to accept them.
+      # Server-side apply because the CRD schemas exceed the annotation size limit that
+      # client-side `kubectl apply` would hit.
+      - name: Install Prometheus Operator CRDs
+        if: steps.list-changed.outputs.changed == 'true'
+        env:
+          # renovate: datasource=github-releases depName=prometheus-operator/prometheus-operator
+          PROMETHEUS_OPERATOR_VERSION: v0.93.0
+        run: |
+          set -euo pipefail
+          base="https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/${PROMETHEUS_OPERATOR_VERSION}/example/prometheus-operator-crd"
+          for crd in podmonitors prometheusrules; do
+            kubectl apply --server-side -f "${base}/monitoring.coreos.com_${crd}.yaml"
+          done
+          kubectl wait --for=condition=Established --timeout=60s \
+            crd/podmonitors.monitoring.coreos.com \
+            crd/prometheusrules.monitoring.coreos.com
+
       - name: Run chart-testing (install)
         if: steps.list-changed.outputs.changed == 'true'
         run: ct install --config ./.github/configs/ct-lint.yaml

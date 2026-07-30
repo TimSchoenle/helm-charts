@@ -123,6 +123,7 @@ tests:
       networkPolicy.enabled: true
       serverQuery.adminPassword: hunter2
       metrics.enabled: true
+      metrics.port: 9190
     documentSelector:
       path: metadata.name
       value: RELEASE-NAME-teamspeak-ingress
@@ -133,10 +134,12 @@ tests:
             - namespaceSelector:
                 matchLabels:
                   kubernetes.io/metadata.name: monitoring
+      # Tracks metrics.port rather than the shipped default, so the rule and the sidecar
+      # cannot silently drift apart.
       - equal:
           path: spec.ingress[1].ports
           value:
-            - port: 9189
+            - port: 9190
               protocol: TCP
 
   - it: skips the monitoring rule when nothing is listening on the metrics port

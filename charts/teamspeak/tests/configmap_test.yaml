@@ -4,7 +4,36 @@ templates:
 set:
   license.accept: true
 tests:
+  # Inputs are set explicitly so this stays a test of the values -> TS3SERVER_* mapping. The
+  # shipped defaults are guarded separately, below.
   - it: publishes the port and query settings the entrypoint turns into ts3server.ini
+    set:
+      server.voicePort: 9988
+      server.fileTransferPort: 30034
+      server.queryPort: 10012
+      serverQuery.protocols: ssh
+      serverQuery.timeout: 301
+    asserts:
+      - equal:
+          path: data.TS3SERVER_DEFAULT_VOICE_PORT
+          value: "9988"
+      - equal:
+          path: data.TS3SERVER_FILETRANSFER_PORT
+          value: "30034"
+      - equal:
+          path: data.TS3SERVER_QUERY_PORT
+          value: "10012"
+      - equal:
+          path: data.TS3SERVER_QUERY_PROTOCOLS
+          value: ssh
+      - equal:
+          path: data.TS3SERVER_QUERY_TIMEOUT
+          value: "301"
+
+  # Deliberate contract guard: TeamSpeak clients dial these numbers, so the shipped defaults
+  # have to stay the protocol defaults. If this fails, the default was changed on purpose and
+  # the change needs a conscious decision — it is not a test to relax.
+  - it: ships the TeamSpeak protocol default ports
     asserts:
       - equal:
           path: data.TS3SERVER_DEFAULT_VOICE_PORT
@@ -15,12 +44,6 @@ tests:
       - equal:
           path: data.TS3SERVER_QUERY_PORT
           value: "10011"
-      - equal:
-          path: data.TS3SERVER_QUERY_PROTOCOLS
-          value: raw
-      - equal:
-          path: data.TS3SERVER_QUERY_TIMEOUT
-          value: "300"
 
   # The ini file takes 0/1, not the YAML booleans the values file is written in.
   - it: renders booleans the way the server's ini parser expects

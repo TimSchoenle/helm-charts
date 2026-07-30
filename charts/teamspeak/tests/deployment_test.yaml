@@ -289,6 +289,10 @@ tests:
     set:
       serverQuery.adminPassword: hunter2
       metrics.enabled: true
+      # Pinned here so a change to the shipped exporter port does not fail this test, which
+      # is about the sidecar being wired to the query port over loopback.
+      metrics.port: 9189
+      server.queryPort: 10011
     asserts:
       - lengthEqual:
           path: spec.template.spec.containers
@@ -328,16 +332,31 @@ tests:
     set:
       serverQuery.adminPassword: hunter2
       metrics.enabled: true
+      metrics.resources:
+        requests:
+          cpu: 11m
+          memory: 25Mi
+        limits:
+          memory: 65Mi
     asserts:
       - equal:
           path: spec.template.spec.containers[1].resources.requests.cpu
-          value: 10m
+          value: 11m
       - equal:
           path: spec.template.spec.containers[1].resources.requests.memory
-          value: 24Mi
+          value: 25Mi
       - equal:
           path: spec.template.spec.containers[1].resources.limits.memory
-          value: 64Mi
+          value: 65Mi
+      # The sidecar must not inherit the server container's envelope.
+      - notEqual:
+          path: spec.template.spec.containers[1].resources
+          value:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
 
   - it: follows the exporter toggles
     documentSelector:
@@ -379,10 +398,12 @@ tests:
     documentSelector:
       path: kind
       value: Deployment
+    set:
+      terminationGracePeriodSeconds: 90
     asserts:
       - equal:
           path: spec.template.spec.terminationGracePeriodSeconds
-          value: 60
+          value: 90
 
   # The checksum annotation is what turns a configuration edit into a rollout. It only
   # appears for templates that actually rendered configuration, so its absence is meaningful

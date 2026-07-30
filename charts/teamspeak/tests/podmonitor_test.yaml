@@ -21,6 +21,8 @@ tests:
   - it: scrapes the sidecar's metrics port
     set:
       metrics.enabled: true
+      metrics.podMonitor.interval: 2m
+      metrics.podMonitor.scrapeTimeout: 45s
     asserts:
       - isKind:
           of: PodMonitor
@@ -32,10 +34,10 @@ tests:
           value: /metrics
       - equal:
           path: spec.podMetricsEndpoints[0].interval
-          value: 1m
+          value: 2m
       - equal:
           path: spec.podMetricsEndpoints[0].scrapeTimeout
-          value: 30s
+          value: 45s
 
   # A selector that matches no pods scrapes nothing and fails silently, which is the worst
   # possible failure mode for monitoring.

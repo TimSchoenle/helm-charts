@@ -4,7 +4,11 @@ templates:
 set:
   license.accept: true
 tests:
+  # The size is set here rather than left to the default: this test is about the claim being
+  # wired to persistence.data.size, not about which size the chart happens to ship.
   - it: claims storage for the server database, keypair and uploads
+    set:
+      persistence.data.size: 7Gi
     asserts:
       - hasDocuments:
           count: 1
@@ -18,7 +22,7 @@ tests:
           value: [ReadWriteOnce]
       - equal:
           path: spec.resources.requests.storage
-          value: 1Gi
+          value: 7Gi
       # Empty means "cluster default", which is not the same as an empty string.
       - notExists:
           path: spec.storageClassName

@@ -1,0 +1,429 @@
+suite: test deployment
+templates:
+  - deployment.yaml
+  - configmap.yaml
+  - secret.yaml
+# helm-unittest only parses the templates listed above, and the Deployment annotates a
+# checksum of both the ConfigMap and the Secret, so all three have to be rendered. Every test
+# then selects the Deployment explicitly.
+set:
+  license.accept: true
+tests:
+  - it: opens the voice, file transfer and query ports
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].ports
+          content:
+            name: voice
+            containerPort: 9987
+            protocol: UDP
+      - contains:
+          path: spec.template.spec.containers[0].ports
+          content:
+            name: filetransfer
+            containerPort: 30033
+            protocol: TCP
+      # Always present: the probes and the exporter reach it over loopback. Exposure is the
+      # Service's and the NetworkPolicy's decision, not the container's.
+      - contains:
+          path: spec.template.spec.containers[0].ports
+          content:
+            name: query
+            containerPort: 10011
+            protocol: TCP
+      - lengthEqual:
+          path: spec.template.spec.containers[0].ports
+          count: 3
+
+  - it: opens the SSH query port only when that protocol is enabled
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      serverQuery.protocols: raw,ssh
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].ports
+          content:
+            name: query-ssh
+            containerPort: 10022
+            protocol: TCP
+
+  - it: follows custom port numbers
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      server.voicePort: 9988
+      server.fileTransferPort: 30034
+      server.queryPort: 10012
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].ports
+          content:
+            name: voice
+            containerPort: 9988
+            protocol: UDP
+      - contains:
+          path: spec.template.spec.containers[0].ports
+          content:
+            name: query
+            containerPort: 10012
+            protocol: TCP
+
+  - it: accepts the licence explicitly
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: TS3SERVER_LICENSE
+            value: accept
+
+  - it: reads its configuration from the ConfigMap
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].envFrom
+          content:
+            configMapRef:
+              name: RELEASE-NAME-teamspeak
+
+  - it: mounts the data volume from the claim it creates
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: data
+            mountPath: /var/ts3server
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: data
+            persistentVolumeClaim:
+              claimName: RELEASE-NAME-teamspeak
+
+  - it: mounts an existing claim when one is given
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      persistence.data.existingClaim: ts3-data
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: data
+            persistentVolumeClaim:
+              claimName: ts3-data
+
+  - it: falls back to an emptyDir when persistence is off
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      persistence.data.enabled: false
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: data
+            emptyDir: {}
+
+  # A rolling update cannot hand a ReadWriteOnce volume from the outgoing pod to its
+  # replacement, so it would deadlock.
+  - it: recreates rather than rolls when the volume is ReadWriteOnce
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.strategy.type
+          value: Recreate
+
+  - it: leaves the strategy to Kubernetes when the volume can be shared
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      persistence.data.accessMode: ReadWriteMany
+    asserts:
+      - notExists:
+          path: spec.strategy
+
+  - it: lets an explicit strategy win
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      strategy:
+        type: RollingUpdate
+    asserts:
+      - equal:
+          path: spec.strategy.type
+          value: RollingUpdate
+
+  - it: mounts the licence file read-only when one is supplied
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      license.existingSecret: ts3-license
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: license
+            secret:
+              secretName: ts3-license
+              defaultMode: 0440
+              items:
+                - key: licensekey.dat
+                  path: licensekey.dat
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: license
+            mountPath: /etc/ts3server/license
+            readOnly: true
+      # licensepath names a directory, not a file.
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: TS3SERVER_LICENSEPATH
+            value: /etc/ts3server/license/
+
+  - it: omits the licence plumbing when no licence secret is given
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: TS3SERVER_LICENSEPATH
+            value: /etc/ts3server/license/
+
+  - it: passes the database password by reference for external backends
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      database.plugin: ts3db_mariadb
+      database.host: mariadb
+      database.password: s3cret
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: TS3SERVER_DB_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: RELEASE-NAME-teamspeak
+                key: database-password
+
+  - it: leaves the database password out entirely for SQLite
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      database.password: s3cret
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: TS3SERVER_DB_PASSWORD
+
+  - it: reads credentials from an operator-supplied Secret under its own key names
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      existingSecret: ts3-credentials
+      serverQuery.existingSecretPasswordKey: query-pw
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: TS3SERVER_SERVERADMIN_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: ts3-credentials
+                key: query-pw
+
+  # Without a configured password the server generates one, so there is no Secret key to
+  # reference and the env var has to be absent rather than dangling.
+  - it: omits the password reference when no password is configured
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: TS3SERVER_SERVERADMIN_PASSWORD
+
+  - it: runs no sidecar while metrics are disabled
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - lengthEqual:
+          path: spec.template.spec.containers
+          count: 1
+
+  - it: wires the exporter sidecar to the query port over loopback
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      serverQuery.adminPassword: hunter2
+      metrics.enabled: true
+      # Pinned here so a change to the shipped exporter port does not fail this test, which
+      # is about the sidecar being wired to the query port over loopback.
+      metrics.port: 9189
+      server.queryPort: 10011
+    asserts:
+      - lengthEqual:
+          path: spec.template.spec.containers
+          count: 2
+      - equal:
+          path: spec.template.spec.containers[1].args
+          value:
+            - "-listen=:9189"
+            - "-remote=127.0.0.1:10011"
+            - "-user=serveradmin"
+            - "-enablechannelmetrics=false"
+            - "-ignorefloodlimits=true"
+      - contains:
+          path: spec.template.spec.containers[1].ports
+          content:
+            name: metrics
+            containerPort: 9189
+            protocol: TCP
+      - contains:
+          path: spec.template.spec.containers[1].env
+          content:
+            name: SERVERQUERY_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: RELEASE-NAME-teamspeak
+                key: serveradmin-password
+      # Probing /metrics would issue ServerQuery commands on every probe.
+      - exists:
+          path: spec.template.spec.containers[1].livenessProbe.tcpSocket
+      - notExists:
+          path: spec.template.spec.containers[1].livenessProbe.httpGet
+
+  - it: gives the sidecar its own resource envelope
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      serverQuery.adminPassword: hunter2
+      metrics.enabled: true
+      metrics.resources:
+        requests:
+          cpu: 11m
+          memory: 25Mi
+        limits:
+          memory: 65Mi
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[1].resources.requests.cpu
+          value: 11m
+      - equal:
+          path: spec.template.spec.containers[1].resources.requests.memory
+          value: 25Mi
+      - equal:
+          path: spec.template.spec.containers[1].resources.limits.memory
+          value: 65Mi
+      # The sidecar must not inherit the server container's envelope.
+      - notEqual:
+          path: spec.template.spec.containers[1].resources
+          value:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+
+  - it: follows the exporter toggles
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      serverQuery.adminPassword: hunter2
+      metrics.enabled: true
+      metrics.channelMetrics: true
+      metrics.ignoreFloodLimits: false
+      metrics.port: 9999
+      metrics.user: monitoring
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[1].args
+          value:
+            - "-listen=:9999"
+            - "-remote=127.0.0.1:10011"
+            - "-user=monitoring"
+            - "-enablechannelmetrics=true"
+            - "-ignorefloodlimits=false"
+
+  - it: probes the file transfer port, which is up regardless of query protocol
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].startupProbe.tcpSocket.port
+          value: filetransfer
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe.tcpSocket.port
+          value: filetransfer
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.tcpSocket.port
+          value: filetransfer
+
+  - it: gives the server time to shut down cleanly
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      terminationGracePeriodSeconds: 90
+    asserts:
+      - equal:
+          path: spec.template.spec.terminationGracePeriodSeconds
+          value: 90
+
+  # The checksum annotation is what turns a configuration edit into a rollout. It only
+  # appears for templates that actually rendered configuration, so its absence is meaningful
+  # too: with no Secret there is nothing to hash.
+  - it: rolls the pod when the mounted configuration changes
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - exists:
+          path: spec.template.metadata.annotations["checksum/configmap"]
+      - notExists:
+          path: spec.template.metadata.annotations["checksum/secret"]
+
+  - it: also tracks the Secret once there is one
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      serverQuery.adminPassword: hunter2
+    asserts:
+      - exists:
+          path: spec.template.metadata.annotations["checksum/secret"]

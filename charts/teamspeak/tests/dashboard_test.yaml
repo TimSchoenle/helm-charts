@@ -1,0 +1,73 @@
+suite: test grafana dashboards
+templates:
+  - dashboard-configmap.yaml
+set:
+  license.accept: true
+  serverQuery.adminPassword: hunter2
+tests:
+  - it: renders nothing while the exporter is not running
+    set:
+      metrics.dashboards.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: is opt-in even with the exporter running
+    set:
+      metrics.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: ships the dashboard under the label the Grafana sidecar selects on
+    set:
+      metrics.enabled: true
+      metrics.dashboards.enabled: true
+    asserts:
+      - isKind:
+          of: ConfigMap
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-teamspeak-dashboards
+      - equal:
+          path: metadata.labels.grafana_dashboard
+          value: "1"
+      - exists:
+          path: data["teamspeak.json"]
+
+  # Grafana's legend syntax uses the same delimiters as Helm, which is why the JSON is read
+  # from a file rather than written into a template.
+  - it: leaves Grafana's own templating intact
+    set:
+      metrics.enabled: true
+      metrics.dashboards.enabled: true
+    asserts:
+      - matchRegex:
+          path: data["teamspeak.json"]
+          pattern: '\{\{virtualserver\}\}'
+
+  - it: follows a custom sidecar label and folder
+    set:
+      metrics.enabled: true
+      metrics.dashboards.enabled: true
+      metrics.dashboards.label: grafana_dashboards
+      metrics.dashboards.labelValue: teamspeak
+      metrics.dashboards.annotations:
+        grafana_folder: TeamSpeak
+    asserts:
+      - equal:
+          path: metadata.labels.grafana_dashboards
+          value: teamspeak
+      - equal:
+          path: metadata.annotations.grafana_folder
+          value: TeamSpeak
+
+  - it: can live in the namespace the Grafana sidecar watches
+    set:
+      metrics.enabled: true
+      metrics.dashboards.enabled: true
+      metrics.dashboards.namespace: monitoring
+    asserts:
+      - equal:
+          path: metadata.namespace
+          value: monitoring

@@ -1,0 +1,49 @@
+# Network policies on, with every generated rule exercised: public client access, a narrowed
+# ServerQuery allowlist, Prometheus scraping, and both outbound TeamSpeak services.
+license:
+  accept: true
+
+serverQuery:
+  adminPassword: ci-serveradmin-password
+
+# ClusterIP rather than the chart default, because `helm --wait` blocks until a LoadBalancer
+# is assigned an address, which never happens on a kind cluster.
+service:
+  type: ClusterIP
+
+metrics:
+  enabled: true
+
+networkPolicy:
+  enabled: true
+  ingress:
+    enabled: true
+    clients:
+      enabled: true
+      cidrs:
+        - 0.0.0.0/0
+    query:
+      enabled: true
+      cidrs:
+        - 10.42.0.0/16
+    monitoring:
+      enabled: true
+      namespace: monitoring
+    customRules:
+      - from:
+          - podSelector:
+              matchLabels:
+                app.kubernetes.io/name: ts3-admin
+        ports:
+          - port: 10011
+            protocol: TCP
+  egress:
+    enabled: true
+    dns:
+      enabled: true
+    accounting:
+      enabled: true
+    weblist:
+      enabled: true
+    https:
+      enabled: true

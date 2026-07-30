@@ -1,0 +1,103 @@
+suite: values validation
+# Constraints that relate values to each other, which no JSON schema can express. Every one
+# of these would otherwise surface as a crash-looping pod rather than a failed render.
+templates:
+  - deployment.yaml
+  - configmap.yaml
+  - secret.yaml
+tests:
+  - it: refuses to deploy a server whose licence was not accepted
+    asserts:
+      - template: deployment.yaml
+        failedTemplate:
+          errorPattern: license.accept must be true
+
+  - it: refuses to run the exporter without a password it can authenticate with
+    set:
+      license.accept: true
+      metrics.enabled: true
+    asserts:
+      - template: deployment.yaml
+        failedTemplate:
+          errorPattern: metrics.enabled requires a known ServerQuery password
+
+  - it: accepts an operator-supplied Secret as that password
+    set:
+      license.accept: true
+      metrics.enabled: true
+      existingSecret: ts3-credentials
+    asserts:
+      - template: deployment.yaml
+        notFailedTemplate: {}
+
+  # The exporter speaks the plaintext protocol over loopback; without it there is nothing to
+  # connect to.
+  - it: refuses to run the exporter with the raw query protocol disabled
+    set:
+      license.accept: true
+      metrics.enabled: true
+      serverQuery.adminPassword: hunter2
+      serverQuery.protocols: ssh
+    asserts:
+      - template: deployment.yaml
+        failedTemplate:
+          errorPattern: 'requires "raw" in serverQuery.protocols'
+
+  - it: requires connection details for an external database
+    set:
+      license.accept: true
+      database.plugin: ts3db_mariadb
+    asserts:
+      - template: deployment.yaml
+        failedTemplate:
+          errorPattern: database.host is required
+
+  - it: requires a password for an external database
+    set:
+      license.accept: true
+      database.plugin: ts3db_mariadb
+      database.host: mariadb
+    asserts:
+      - template: deployment.yaml
+        failedTemplate:
+          errorPattern: database.password \(or existingSecret\) is required
+
+  - it: refuses to publish a ServerQuery port the server is not listening on
+    set:
+      license.accept: true
+      service.querySsh.enabled: true
+    asserts:
+      - template: deployment.yaml
+        failedTemplate:
+          errorPattern: service.querySsh.enabled requires
+
+  # Silently ignoring the claim would leave the operator believing their data is persisted.
+  - it: refuses to silently ignore an existing claim
+    set:
+      license.accept: true
+      persistence.data.enabled: false
+      persistence.data.existingClaim: ts3-data
+    asserts:
+      - template: deployment.yaml
+        failedTemplate:
+          errorPattern: persistence.data.existingClaim is set but
+
+  - it: reports every mistake in one go
+    set:
+      database.plugin: ts3db_mariadb
+    asserts:
+      - template: deployment.yaml
+        failedTemplate:
+          errorPattern: "(?s)license.accept must be true.*database.host is required"
+
+  - it: renders once the configuration is coherent
+    set:
+      license.accept: true
+      serverQuery.adminPassword: hunter2
+      metrics.enabled: true
+      database.plugin: ts3db_mariadb
+      database.host: mariadb
+      database.password: s3cret
+    asserts:
+      - template: deployment.yaml
+        notFailedTemplate: {}

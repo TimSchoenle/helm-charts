@@ -1,0 +1,55 @@
+{{ include "common.fullname" . }} has been deployed.
+
+1. The ServerAdmin privilege key is printed exactly once, on the server's first start. Claim
+   it before anything else — without it nobody can administer the server:
+
+     kubectl logs -n {{ include "common.namespace" . }} -l app.kubernetes.io/instance={{ .Release.Name }} -c {{ .Chart.Name }} | grep -i token
+
+{{- if not (include "teamspeak.hasAdminPassword" .) }}
+
+2. No ServerQuery password was configured, so the server generated one. It appears in the same
+   log output and is not recoverable afterwards:
+
+     kubectl logs -n {{ include "common.namespace" . }} -l app.kubernetes.io/instance={{ .Release.Name }} -c {{ .Chart.Name }} | grep -i "serveradmin"
+{{- else }}
+
+2. The ServerQuery admin password is stored in the Secret {{ include "common.secretName" . }},
+   under the key {{ include "teamspeak.adminPasswordKey" . }}.
+{{- end }}
+
+3. Connect a client to:
+{{- if eq .Values.service.type "LoadBalancer" }}
+
+     kubectl get svc -n {{ include "common.namespace" . }} {{ include "common.fullname" . }} -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+
+   on port {{ .Values.server.voicePort }}/udp.
+{{- else if eq .Values.service.type "NodePort" }}
+
+     any node address, port {{ .Values.server.voicePort }}/udp.
+
+   Note that TeamSpeak clients dial the voice port directly, so the allocated node port has to
+   equal {{ .Values.server.voicePort }}. Widen --service-node-port-range if it does not.
+{{- else }}
+
+     {{ include "common.fullname" . }}.{{ include "common.namespace" . }}.svc:{{ .Values.server.voicePort }}/udp
+
+   This is a ClusterIP Service, so nothing outside the cluster can reach it. Set
+   service.type=LoadBalancer to publish it.
+{{- end }}
+
+{{- if not .Values.persistence.data.enabled }}
+
+WARNING: persistence.data.enabled is false. The server keeps its identity, database, channels
+and permissions on disk; on an emptyDir every restart produces a different server and the
+privilege key above stops working.
+{{- end }}
+{{- if and .Values.persistence.data.enabled (not .Values.persistence.data.existingClaim) (not (index .Values.persistence.data.annotations "helm.sh/resource-policy")) }}
+
+NOTE: the PersistentVolumeClaim is owned by this release, so `helm uninstall` deletes it and
+the server identity with it. Set persistence.data.annotations."helm\.sh/resource-policy"=keep
+to survive an uninstall.
+{{- end }}
+{{- if and .Values.metrics.enabled (not .Values.metrics.podMonitor.enabled) }}
+
+NOTE: the metrics exporter is running but no PodMonitor was created; nothing is scraping it.
+{{- end }}

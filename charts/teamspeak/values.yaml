@@ -1,0 +1,1480 @@
+# vim: set ft=yaml:
+# yaml-language-server: $schema=values.schema.json
+
+# @schema
+# additionalProperties: true
+# @schema
+image:
+  # @schema
+  # type: string
+  # @schema
+  # -- Registry host. Empty means Docker Hub.
+  registry: ""
+
+  # @schema
+  # type: string
+  # @schema
+  # -- The container image repository. Defaults to the official TeamSpeak image, which is
+  # published and signed by TeamSpeak Systems GmbH.
+  repository: teamspeak
+
+  # @schema
+  # type: string
+  # @schema
+  # -- The container image tag. Defaults to the chart's `appVersion` when empty.
+  tag: 3.13.8@sha256:15acbc64c92f57ef1fd8dd203791fa7f70a14707e60ee494132f26b5ca265c6b
+
+  # @schema
+  # enum: ["", Always, IfNotPresent, Never]
+  # @schema
+  # -- The image pull policy. Empty resolves automatically from the tag/digest.
+  pullPolicy: ""
+
+# @schema
+# type: array
+# @schema
+# -- Optional image pull secrets for private registries.
+imagePullSecrets: []
+
+# @schema
+# additionalProperties: true
+# @schema
+license:
+  # @schema
+  # type: boolean
+  # @schema
+  # -- Accept the TeamSpeak end user license agreement
+  # (<https://teamspeak.com/en/features/licensing/>). The server refuses to start without it,
+  # so the chart fails the render rather than shipping a pod that crash-loops.
+  accept: false
+
+  # @schema
+  # type: string
+  # @schema
+  # -- Name of an existing Secret holding a non-free `licensekey.dat`. When set, the file is
+  # mounted read-only and `licensepath` is pointed at it. Leave empty to run on the free
+  # 32-slot license.
+  existingSecret: ""
+
+  # @schema
+  # type: string
+  # @schema
+  # -- Key inside `license.existingSecret` that holds the license file.
+  existingSecretKey: licensekey.dat
+
+# @schema
+# type: string
+# @schema
+# -- Name of an existing Secret holding the ServerQuery admin password (and, for external
+# databases, the database password). When set, the chart creates no Secret of its own and
+# `serverQuery.adminPassword` / `database.password` are ignored — which keeps both out of
+# `values.yaml` and out of the Helm release object.
+existingSecret: ""
+
+# @schema
+# additionalProperties: true
+# @schema
+serverQuery:
+  # @schema
+  # type: string
+  # @schema
+  # -- Password for the `serveradmin` ServerQuery account. Leave empty to let the server
+  # generate one on first start and print it to the log. Required — here or via
+  # `existingSecret` — when `metrics.enabled` is true, because the exporter authenticates
+  # with it.
+  adminPassword: ""
+
+  # @schema
+  # type: string
+  # @schema
+  # -- Key inside `existingSecret` that holds the ServerQuery admin password.
+  existingSecretPasswordKey: serveradmin-password
+
+  # @schema
+  # enum: [raw, ssh, "raw,ssh", "ssh,raw"]
+  # @schema
+  # -- ServerQuery protocols the server offers. `raw` is plaintext and must never be exposed
+  # beyond the pod; `ssh` is encrypted. The metrics exporter speaks `raw` over the pod
+  # loopback interface, so `raw` has to stay enabled while `metrics.enabled` is true.
+  protocols: raw
+
+  # @schema
+  # type: integer
+  # minimum: 1
+  # @schema
+  # -- Seconds an idle ServerQuery connection is kept open.
+  timeout: 300
+
+  # @schema
+  # type: boolean
+  # @schema
+  # -- Skip the ServerQuery brute-force protection. Leave disabled; it exists to slow down
+  # password guessing against the admin account.
+  skipBruteForceCheck: false
+
+# @schema
+# additionalProperties: true
+# @schema
+server:
+  # @schema
+  # type: integer
+  # minimum: 1
+  # maximum: 65535
+  # @schema
+  # -- UDP port the voice server listens on. TeamSpeak clients dial this port directly, so
+  # whatever the outside world connects to must resolve to exactly this number — see the
+  # chart README on exposing the server.
+  voicePort: 9987
+
+  # @schema
+  # type: integer
+  # minimum: 1
+  # maximum: 65535
+  # @schema
+  # -- TCP port used for avatar, icon and channel file transfers.
+  fileTransferPort: 30033
+
+  # @schema
+  # type: integer
+  # minimum: 1
+  # maximum: 65535
+  # @schema
+  # -- TCP port of the plaintext (raw) ServerQuery interface. Always opened inside the pod so
+  # the metrics exporter and the probes can reach it; exposing it outside the pod is a
+  # separate decision made by `service.query` and the NetworkPolicy.
+  queryPort: 10011
+
+  # @schema
+  # type: integer
+  # minimum: 1
+  # maximum: 65535
+  # @schema
+  # -- TCP port of the SSH ServerQuery interface. Only opened when `serverQuery.protocols`
+  # includes `ssh`.
+  querySshPort: 10022
+
+  # @schema
+  # type: string
+  # @schema
+  # -- Stable machine identifier written to the instance database. Set this when several
+  # servers share one database; leave empty otherwise.
+  machineId: ""
+
+  # @schema
+  # type: boolean
+  # @schema
+  # -- Send the client-side usage hints ("Did you know...") to connecting clients.
+  hintsEnabled: true
+
+  # @schema
+  # type: boolean
+  # @schema
+  # -- Log every ServerQuery command. Useful for auditing, noisy in normal operation.
+  logQueryCommands: false
+
+  # @schema
+  # type: boolean
+  # @schema
+  # -- Append to the existing log file instead of starting a new one per launch.
+  logAppend: false
+
+# @schema
+# type: object
+# additionalProperties:
+#   type: string
+# @schema
+# -- Additional `TS3SERVER_*` environment variables written to the ConfigMap verbatim, for
+# settings this chart does not model explicitly (see the image's entrypoint for the full
+# list). Values are rendered through the template engine, so `{{ .Release.Name }}` works.
+# Never put credentials here — the ConfigMap is not a Secret.
+extraServerConfig: {}
+
+# @schema
+# additionalProperties: true
+# @schema
+database:
+  # @schema
+  # enum: [ts3db_sqlite3, ts3db_mariadb, ts3db_postgresql]
+  # @schema
+  # -- Database backend. `ts3db_sqlite3` keeps everything in the data volume and is the right
+  # answer for a single server; the external backends exist for multi-instance setups.
+  plugin: ts3db_sqlite3
+
+  # @schema
+  # type: string
+  # @schema
+  # -- Database host. Required unless the plugin is `ts3db_sqlite3`.
+  host: ""
+
+  # @schema
+  # type: integer
+  # minimum: 1
+  # maximum: 65535
+  # @schema
+  # -- Database port.
+  port: 3306
+
+  # @schema
+  # type: string
+  # @schema
+  # -- Database name.
+  name: teamspeak
+
+  # @schema
+  # type: string
+  # @schema
+  # -- Database user.
+  user: teamspeak
+
+  # @schema
+  # type: string
+  # @schema
+  # -- Database password. Ignored when `existingSecret` is set.
+  password: ""
+
+  # @schema
+  # type: string
+  # @schema
+  # -- Key inside `existingSecret` that holds the database password.
+  existingSecretPasswordKey: database-password
+
+  # @schema
+  # type: integer
+  # minimum: 2
+  # maximum: 100
+  # @schema
+  # -- Size of the database connection pool.
+  connections: 10
+
+  # @schema
+  # type: integer
+  # minimum: 0
+  # @schema
+  # -- Days of client history retained in the database.
+  clientKeepDays: 30
+
+  # @schema
+  # type: integer
+  # minimum: 0
+  # @schema
+  # -- Seconds to wait for an external database to accept connections before giving up.
+  waitUntilReady: 30
+
+# @schema
+# additionalProperties: true
+# @schema
+service:
+  # @schema
+  # enum: [ClusterIP, NodePort, LoadBalancer]
+  # @schema
+  # -- Service type. `LoadBalancer` is the default and the only type that works unmodified:
+  # it answers on `server.voicePort` itself, which is the port clients dial. `ClusterIP`
+  # reaches nobody outside the cluster. `NodePort` only works when the node port range is
+  # widened to cover the voice port and `service.voice.nodePort` is pinned to it, because
+  # clients cannot be told to use a different one.
+  type: LoadBalancer
+
+  # @schema
+  # type: object
+  # additionalProperties: true
+  # @schema
+  # -- Annotations for the Service, e.g. cloud load balancer configuration.
+  annotations: {}
+
+  # @schema
+  # enum: ["", Cluster, Local]
+  # @schema
+  # -- External traffic policy. `Local` preserves the client source IP, which is what the
+  # server's ban and flood protection operates on — with `Cluster` every client appears to
+  # come from a node address and one abusive client can get everyone banned.
+  externalTrafficPolicy: Local
+
+  # @schema
+  # type: string
+  # @schema
+  # -- Static IP to request for a LoadBalancer service.
+  loadBalancerIP: ""
+
+  # @schema
+  # type: string
+  # @schema
+  # -- LoadBalancer implementation to use, for clusters running more than one.
+  loadBalancerClass: ""
+
+  # @schema
+  # type: array
+  # items:
+  #   type: string
+  # @schema
+  # -- CIDRs allowed to reach the LoadBalancer. Empty means everywhere.
+  loadBalancerSourceRanges: []
+
+  # @schema
+  # type: array
+  # items:
+  #   type: string
+  # @schema
+  # -- External IPs the Service should also answer on.
+  externalIPs: []
+
+  # @schema
+  # enum: ["", SingleStack, PreferDualStack, RequireDualStack]
+  # @schema
+  # -- IP family policy for the Service.
+  ipFamilyPolicy: ""
+
+  # @schema
+  # additionalProperties: true
+  # @schema
+  # -- Voice port (UDP). This is the port TeamSpeak clients connect to.
+  voice:
+    # @schema
+    # type: boolean
+    # @schema
+    # -- Publish the voice port on the Service.
+    enabled: true
+
+    # @schema
+    # type: integer
+    # minimum: 0
+    # maximum: 65535
+    # @schema
+    # -- Node port to pin. `0` lets Kubernetes allocate one, which is correct for the default
+    # `LoadBalancer` type: the load balancer answers on `server.voicePort` and the node port
+    # behind it is an internal detail no client dials. Under `NodePort` the client dials the
+    # node port itself, so it has to be pinned to `server.voicePort` — which in turn needs
+    # `--service-node-port-range` widened to cover 9987.
+    nodePort: 0
+
+  # @schema
+  # additionalProperties: true
+  # @schema
+  # -- File transfer port (TCP).
+  fileTransfer:
+    # @schema
+    # type: boolean
+    # @schema
+    # -- Publish the file transfer port on the Service. Disabling it leaves voice working but
+    # breaks avatars, icons and channel file browsing.
+    enabled: true
+
+    # @schema
+    # type: integer
+    # minimum: 0
+    # maximum: 65535
+    # @schema
+    # -- Node port to pin. `0` lets Kubernetes allocate one. Under `NodePort`, pin it to
+    # `server.fileTransferPort`; the server hands that number to clients.
+    nodePort: 0
+
+  # @schema
+  # additionalProperties: true
+  # @schema
+  # -- Plaintext (raw) ServerQuery port (TCP).
+  query:
+    # @schema
+    # type: boolean
+    # @schema
+    # -- Publish the raw ServerQuery port on the Service. Off by default: the protocol sends
+    # the admin password in the clear, and the in-pod metrics exporter does not need it.
+    enabled: false
+
+    # @schema
+    # type: integer
+    # minimum: 0
+    # maximum: 65535
+    # @schema
+    # -- Node port to pin. `0` lets Kubernetes allocate one.
+    nodePort: 0
+
+  # @schema
+  # additionalProperties: true
+  # @schema
+  # -- SSH ServerQuery port (TCP). Requires `ssh` in `serverQuery.protocols`.
+  querySsh:
+    # @schema
+    # type: boolean
+    # @schema
+    # -- Publish the SSH ServerQuery port on the Service.
+    enabled: false
+
+    # @schema
+    # type: integer
+    # minimum: 0
+    # maximum: 65535
+    # @schema
+    # -- Node port to pin. `0` lets Kubernetes allocate one.
+    nodePort: 0
+
+# @schema
+# additionalProperties: true
+# @schema
+persistence:
+  # @schema
+  # additionalProperties: true
+  # @schema
+  # -- Storage for `/var/ts3server`: the SQLite database, the server keypair, uploaded files
+  # and the logs. Without it every restart produces a brand new server — new unique ID, new
+  # admin token, no channels, and every client's permissions gone.
+  data:
+    # @schema
+    # type: boolean
+    # @schema
+    # -- Create a PersistentVolumeClaim. When disabled, an emptyDir is used instead and all
+    # server state is lost on restart.
+    enabled: true
+
+    # @schema
+    # type: string
+    # @schema
+    # -- Use an existing PersistentVolumeClaim instead of creating one.
+    existingClaim: ""
+
+    # @schema
+    # enum: [ReadWriteOnce, ReadOnlyMany, ReadWriteMany]
+    # @schema
+    # -- The access mode for the persistent volume.
+    # `ReadWriteOnce` forces the Deployment to the `Recreate` update strategy: a rolling
+    # update would wedge, because the replacement pod cannot attach a volume the outgoing
+    # pod still holds.
+    accessMode: ReadWriteOnce
+
+    # @schema
+    # type: string
+    # @schema
+    # -- StorageClass for the claim. Empty uses the cluster default; `"-"` disables dynamic
+    # provisioning.
+    storageClassName: ""
+
+    # @schema
+    # type: string
+    # @schema
+    # -- The storage size requested for the volume.
+    size: 3Gi
+
+    # @schema
+    # type: object
+    # additionalProperties: true
+    # @schema
+    # -- Annotations for the PersistentVolumeClaim. `helm.sh/resource-policy: keep` is worth
+    # setting here — it stops `helm uninstall` from deleting the server identity along with
+    # the release.
+    annotations: {}
+
+# @schema
+# additionalProperties: true
+# @schema
+metrics:
+  # @schema
+  # type: boolean
+  # @schema
+  # -- Run the Prometheus exporter sidecar. It talks ServerQuery over the pod loopback
+  # interface, which the server allowlists by default, so no query port has to leave the pod.
+  # Requires a known ServerQuery admin password (`serverQuery.adminPassword` or
+  # `existingSecret`).
+  enabled: false
+
+  # @schema
+  # additionalProperties: true
+  # @schema
+  image:
+    # @schema
+    # type: string
+    # @schema
+    # -- Registry host. Empty means Docker Hub.
+    registry: ""
+
+    # @schema
+    # type: string
+    # @schema
+    # -- Exporter image repository. The default is a `FROM scratch`, non-root build of
+    # hikhvar/ts3exporter.
+    repository: ricardbejarano/ts3exporter
+
+    # @schema
+    # type: string
+    # @schema
+    # -- Exporter image tag, pinned by digest.
+    tag: 0.0.7@sha256:3f3e2fceb82365320446728474502b1dd26de1123e6eb9ffcc0626003c743d0e
+
+    # @schema
+    # enum: ["", Always, IfNotPresent, Never]
+    # @schema
+    # -- The image pull policy. Empty resolves automatically from the tag/digest.
+    pullPolicy: ""
+
+  # @schema
+  # type: integer
+  # minimum: 1
+  # maximum: 65535
+  # @schema
+  # -- Port the exporter serves `/metrics` on. Never published on the Service — scraping goes
+  # through the PodMonitor.
+  port: 9189
+
+  # @schema
+  # type: string
+  # @schema
+  # -- ServerQuery account the exporter logs in as.
+  user: serveradmin
+
+  # @schema
+  # type: boolean
+  # @schema
+  # -- Collect per-channel metrics. Each scrape then costs `(2 + channels) * virtualservers`
+  # ServerQuery commands, so leave this off on servers with many channels.
+  channelMetrics: false
+
+  # @schema
+  # type: boolean
+  # @schema
+  # -- Skip the exporter's client-side flood limiter. Correct for the sidecar: the server
+  # exempts loopback connections from flood control anyway, and the limiter would otherwise
+  # stretch a scrape past its timeout.
+  ignoreFloodLimits: true
+
+  # @schema
+  # $ref: https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.ResourceRequirements
+  # @schema
+  # -- Resource requests and limits for the exporter sidecar.
+  resources:
+    # @schema
+    # additionalProperties: true
+    # @schema
+    # -- Resource limits for the exporter.
+    limits:
+      # @schema
+      # type: string
+      # @schema
+      # -- Maximum allowed memory usage.
+      memory: 64Mi
+
+    # @schema
+    # additionalProperties: true
+    # @schema
+    # -- Resource requests for the exporter.
+    requests:
+      # @schema
+      # type: string
+      # @schema
+      # -- Minimum CPU requested. Without a CPU request the pod drops to BestEffort and is
+      # the first thing evicted under node pressure.
+      cpu: 10m
+
+      # @schema
+      # type: string
+      # @schema
+      # -- Minimum guaranteed memory allocation.
+      memory: 24Mi
+
+  # @schema
+  # additionalProperties: true
+  # @schema
+  # -- PodMonitor for Prometheus Operator integration.
+  podMonitor:
+    # @schema
+    # type: boolean
+    # @schema
+    # -- Create the PodMonitor. Requires the Prometheus Operator CRDs.
+    enabled: true
+
+    # @schema
+    # type: string
+    # @schema
+    # -- Metrics scrape interval.
+    interval: 1m
+
+    # @schema
+    # type: string
+    # @schema
+    # -- Timeout for metrics scraping. Keep it comfortably above the ServerQuery round trip;
+    # channel metrics in particular are slow.
+    scrapeTimeout: 30s
+
+    # @schema
+    # type: object
+    # additionalProperties: true
+    # @schema
+    # -- Extra labels for the PodMonitor, e.g. the `release` label a Prometheus Operator
+    # instance selects on.
+    labels: {}
+
+    # @schema
+    # type: array
+    # @schema
+    # -- Relabeling rules applied to discovered targets.
+    relabelings: []
+
+    # @schema
+    # type: array
+    # @schema
+    # -- Relabeling rules applied to scraped samples.
+    metricRelabelings: []
+
+  # @schema
+  # additionalProperties: true
+  # @schema
+  # -- PrometheusRule carrying the alerting rules below.
+  prometheusRule:
+    # @schema
+    # type: boolean
+    # @schema
+    # -- Create the PrometheusRule. Requires the Prometheus Operator CRDs.
+    enabled: false
+
+    # @schema
+    # type: string
+    # @schema
+    # -- Namespace for the PrometheusRule. Empty uses the release namespace.
+    namespace: ""
+
+    # @schema
+    # type: object
+    # additionalProperties: true
+    # @schema
+    # -- Extra labels for the PrometheusRule, e.g. the `release` label a Prometheus Operator
+    # instance selects on.
+    labels: {}
+
+    # @schema
+    # additionalProperties: true
+    # @schema
+    # -- Built-in alerting rules. Each one can be switched off individually and carries its
+    # own threshold, severity and `for` duration.
+    rules:
+      # @schema
+      # additionalProperties: true
+      # @schema
+      # -- Fires when Prometheus cannot scrape the exporter at all — the pod is gone, the
+      # sidecar crashed, or the network policy is wrong.
+      exporterDown:
+        # @schema
+        # type: boolean
+        # @schema
+        # -- Enable the rule.
+        enabled: true
+
+        # @schema
+        # type: string
+        # @schema
+        # -- How long the condition must hold before the alert fires.
+        for: 10m
+
+        # @schema
+        # type: string
+        # @schema
+        # -- Alert severity label.
+        severity: critical
+
+      # @schema
+      # additionalProperties: true
+      # @schema
+      # -- Fires when the exporter is reachable but the virtual server itself reports offline.
+      serverOffline:
+        # @schema
+        # type: boolean
+        # @schema
+        # -- Enable the rule.
+        enabled: true
+
+        # @schema
+        # type: string
+        # @schema
+        # -- How long the condition must hold before the alert fires.
+        for: 5m
+
+        # @schema
+        # type: string
+        # @schema
+        # -- Alert severity label.
+        severity: critical
+
+      # @schema
+      # additionalProperties: true
+      # @schema
+      # -- Fires when the server restarted recently. On a server whose state lives on an
+      # emptyDir this also means the identity and all permissions were just lost.
+      serverRestarted:
+        # @schema
+        # type: boolean
+        # @schema
+        # -- Enable the rule.
+        enabled: true
+
+        # @schema
+        # type: integer
+        # minimum: 1
+        # @schema
+        # -- Uptime below this many seconds counts as a restart.
+        thresholdSeconds: 300
+
+        # @schema
+        # type: string
+        # @schema
+        # -- How long the condition must hold before the alert fires.
+        for: 0m
+
+        # @schema
+        # type: string
+        # @schema
+        # -- Alert severity label.
+        severity: info
+
+      # @schema
+      # additionalProperties: true
+      # @schema
+      # -- Fires when the virtual server is running out of slots, so it can be resized before
+      # clients start getting turned away.
+      slotsNearlyFull:
+        # @schema
+        # type: boolean
+        # @schema
+        # -- Enable the rule.
+        enabled: true
+
+        # @schema
+        # type: number
+        # minimum: 0
+        # maximum: 1
+        # @schema
+        # -- Fraction of the slot limit that counts as nearly full.
+        threshold: 0.9
+
+        # @schema
+        # type: string
+        # @schema
+        # -- How long the condition must hold before the alert fires.
+        for: 15m
+
+        # @schema
+        # type: string
+        # @schema
+        # -- Alert severity label.
+        severity: warning
+
+      # @schema
+      # additionalProperties: true
+      # @schema
+      # -- Fires when ServerQuery commands start failing, which normally means the exporter's
+      # credentials went stale or it is being flood-limited — the metrics are lying by then.
+      queryCommandFailures:
+        # @schema
+        # type: boolean
+        # @schema
+        # -- Enable the rule.
+        enabled: true
+
+        # @schema
+        # type: string
+        # @schema
+        # -- How long the condition must hold before the alert fires.
+        for: 15m
+
+        # @schema
+        # type: string
+        # @schema
+        # -- Alert severity label.
+        severity: warning
+
+    # @schema
+    # type: array
+    # @schema
+    # -- Additional rules appended to the generated group, in Prometheus rule syntax.
+    additionalRules: []
+
+  # @schema
+  # additionalProperties: true
+  # @schema
+  # -- Grafana dashboards, shipped as ConfigMaps for the Grafana sidecar dashboard loader.
+  dashboards:
+    # @schema
+    # type: boolean
+    # @schema
+    # -- Create the dashboard ConfigMap.
+    enabled: false
+
+    # @schema
+    # type: string
+    # @schema
+    # -- Namespace for the ConfigMap. Empty uses the release namespace. It has to be a
+    # namespace the Grafana sidecar watches.
+    namespace: ""
+
+    # @schema
+    # type: string
+    # @schema
+    # -- Label the Grafana sidecar selects dashboards on.
+    label: grafana_dashboard
+
+    # @schema
+    # type: string
+    # @schema
+    # -- Value for that label.
+    labelValue: "1"
+
+    # @schema
+    # type: object
+    # additionalProperties: true
+    # @schema
+    # -- Extra annotations, e.g. `grafana_folder` to place the dashboard in a folder.
+    annotations: {}
+
+# @schema
+# additionalProperties: true
+# @schema
+# -- Startup probe. Gives the server room to create its database and keypair on first boot
+# without the liveness probe killing it half way through.
+startupProbe:
+  # @schema
+  # type: boolean
+  # @schema
+  # -- Enable the startup probe.
+  enabled: true
+
+  # @schema
+  # additionalProperties: true
+  # @schema
+  # -- TCP handler for the probe. The file transfer port is the one listener that is up
+  # regardless of which ServerQuery protocols are enabled.
+  tcpSocket:
+    # @schema
+    # type: string
+    # @schema
+    # -- Named container port to probe.
+    port: filetransfer
+
+  # @schema
+  # type: integer
+  # @schema
+  # -- Delay before the first probe.
+  initialDelaySeconds: 5
+
+  # @schema
+  # type: integer
+  # @schema
+  # -- Probe interval.
+  periodSeconds: 5
+
+  # @schema
+  # type: integer
+  # @schema
+  # -- Probe timeout.
+  timeoutSeconds: 3
+
+  # @schema
+  # type: integer
+  # @schema
+  # -- Consecutive failures before the container is considered failed. 36 x 5s covers a
+  # three-minute first boot on slow storage.
+  failureThreshold: 36
+
+# @schema
+# additionalProperties: true
+# @schema
+# -- Liveness probe. Restarts the container when it stops accepting connections.
+livenessProbe:
+  # @schema
+  # type: boolean
+  # @schema
+  # -- Enable the liveness probe.
+  enabled: true
+
+  # @schema
+  # additionalProperties: true
+  # @schema
+  # -- TCP handler for the probe.
+  tcpSocket:
+    # @schema
+    # type: string
+    # @schema
+    # -- Named container port to probe.
+    port: filetransfer
+
+  # @schema
+  # type: integer
+  # @schema
+  # -- Probe interval.
+  periodSeconds: 30
+
+  # @schema
+  # type: integer
+  # @schema
+  # -- Probe timeout.
+  timeoutSeconds: 5
+
+  # @schema
+  # type: integer
+  # @schema
+  # -- Consecutive failures before the container is restarted. Deliberately tolerant: a
+  # restart drops every connected client, so it should never be the answer to one slow probe.
+  failureThreshold: 5
+
+# @schema
+# additionalProperties: true
+# @schema
+# -- Readiness probe. Removes the pod from the Service while it cannot serve clients.
+readinessProbe:
+  # @schema
+  # type: boolean
+  # @schema
+  # -- Enable the readiness probe.
+  enabled: true
+
+  # @schema
+  # additionalProperties: true
+  # @schema
+  # -- TCP handler for the probe.
+  tcpSocket:
+    # @schema
+    # type: string
+    # @schema
+    # -- Named container port to probe.
+    port: filetransfer
+
+  # @schema
+  # type: integer
+  # @schema
+  # -- Probe interval.
+  periodSeconds: 10
+
+  # @schema
+  # type: integer
+  # @schema
+  # -- Probe timeout.
+  timeoutSeconds: 3
+
+  # @schema
+  # type: integer
+  # @schema
+  # -- Consecutive failures before the pod is taken out of the Service.
+  failureThreshold: 3
+
+# @schema
+# enum: [restricted, none]
+# @schema
+# -- Pod security context baseline. `restricted` applies the Pod Security Standards
+# restricted profile (`runAsNonRoot`, `seccompProfile: RuntimeDefault`,
+# `fsGroupChangePolicy: OnRootMismatch`) on top of the identity fields below.
+podSecurityContextPreset: restricted
+
+# @schema
+# $ref: https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.PodSecurityContext
+# @schema
+# -- Pod security context, merged over the preset. The identity fields match the `ts3server`
+# account baked into the official image; changing them without also changing the image
+# leaves the data volume unwritable.
+podSecurityContext:
+  # @schema
+  # type: integer
+  # @schema
+  # -- User ID to run as.
+  runAsUser: 9987
+
+  # @schema
+  # type: integer
+  # @schema
+  # -- Primary group ID to run as.
+  runAsGroup: 9987
+
+  # @schema
+  # type: integer
+  # @schema
+  # -- Group ID applied to the mounted volumes, so the non-root server can write its
+  # database and logs.
+  fsGroup: 9987
+
+# @schema
+# enum: [restricted, none]
+# @schema
+# -- Container security context baseline. `restricted` drops all Linux capabilities and
+# forbids privilege escalation, running as root and a writable root filesystem.
+securityContextPreset: restricted
+
+# @schema
+# $ref: https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.SecurityContext
+# @schema
+# -- Container security context, merged over the preset.
+securityContext: {}
+
+# @schema
+# additionalProperties: true
+# @schema
+serviceAccount:
+  # @schema
+  # type: boolean
+  # @schema
+  # -- Whether to create a dedicated service account.
+  create: true
+
+  # @schema
+  # type: object
+  # additionalProperties: true
+  # @schema
+  # -- Additional annotations for the service account.
+  annotations: {}
+
+  # @schema
+  # type: string
+  # @schema
+  # -- Custom service account name (auto-generated if empty).
+  name: ""
+
+  # @schema
+  # type: boolean
+  # @schema
+  # -- Whether to automount the service account token.
+  automountToken: false
+
+# @schema
+# $ref: https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.ResourceRequirements
+# @schema
+resources:
+  # @schema
+  # additionalProperties: true
+  # @schema
+  # -- Resource limits for the server container.
+  limits:
+    # @schema
+    # type: string
+    # @schema
+    # -- Maximum allowed memory usage. No CPU limit is set on purpose: throttling a real-time
+    # voice mixer produces audible stutter, and a CPU limit protects nobody but the node's
+    # scheduler accounting.
+    memory: 512Mi
+
+  # @schema
+  # additionalProperties: true
+  # @schema
+  # -- Resource requests for the server container.
+  requests:
+    # @schema
+    # type: string
+    # @schema
+    # -- Minimum CPU requested. Voice mixing is latency-sensitive, so this reserves enough to
+    # keep the server off a fully contended core.
+    cpu: 100m
+
+    # @schema
+    # type: string
+    # @schema
+    # -- Minimum guaranteed memory allocation.
+    memory: 128Mi
+
+# @schema
+# additionalProperties: true
+# @schema
+# -- Network policy configuration.
+networkPolicy:
+  # @schema
+  # type: boolean
+  # @schema
+  # -- Enable network policies.
+  enabled: false
+
+  # @schema
+  # additionalProperties: true
+  # @schema
+  # -- Ingress configuration.
+  ingress:
+    # @schema
+    # type: boolean
+    # @schema
+    # -- Enable ingress rules. With this off the policy is a default-deny and nobody reaches
+    # the server at all.
+    enabled: true
+
+    # @schema
+    # additionalProperties: true
+    # @schema
+    # -- Client access to the voice and file transfer ports.
+    clients:
+      # @schema
+      # type: boolean
+      # @schema
+      # -- Allow clients to reach the voice and file transfer ports.
+      enabled: true
+
+      # @schema
+      # type: array
+      # items:
+      #   type: string
+      # @schema
+      # -- CIDRs clients may connect from. The default is the whole internet, which is what a
+      # public voice server needs; narrow it for a private deployment.
+      cidrs:
+        - 0.0.0.0/0
+
+    # @schema
+    # additionalProperties: true
+    # @schema
+    # -- ServerQuery access. Off by default — the raw protocol is plaintext and the metrics
+    # sidecar reaches it over loopback, which no NetworkPolicy governs.
+    query:
+      # @schema
+      # type: boolean
+      # @schema
+      # -- Allow the ServerQuery ports to be reached from outside the pod.
+      enabled: false
+
+      # @schema
+      # type: array
+      # items:
+      #   type: string
+      # @schema
+      # -- CIDRs allowed to reach ServerQuery. Leave this as narrow as you possibly can.
+      cidrs: []
+
+    # @schema
+    # additionalProperties: true
+    # @schema
+    # -- Prometheus access to the exporter sidecar.
+    monitoring:
+      # @schema
+      # type: boolean
+      # @schema
+      # -- Allow ingress from the monitoring namespace to the metrics port.
+      enabled: true
+
+      # @schema
+      # type: string
+      # @schema
+      # -- Namespace where the Prometheus server runs.
+      namespace: monitoring
+
+      # @schema
+      # type: object
+      # additionalProperties: true
+      # @schema
+      # -- Namespace selector for the monitoring namespace. Defaults to matching
+      # `networkPolicy.ingress.monitoring.namespace` by name.
+      namespaceSelector: {}
+
+    # @schema
+    # type: array
+    # items:
+    #   $ref: https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyIngressRule
+    # @schema
+    # -- Custom ingress rules.
+    customRules: []
+
+  # @schema
+  # additionalProperties: true
+  # @schema
+  # -- Egress configuration.
+  egress:
+    # @schema
+    # type: boolean
+    # @schema
+    # -- Enable egress rules. With this off the policy is a default-deny.
+    enabled: true
+
+    # @schema
+    # additionalProperties: true
+    # @schema
+    # -- DNS configuration for egress.
+    dns:
+      # @schema
+      # type: boolean
+      # @schema
+      # -- Allow egress to DNS.
+      enabled: true
+
+      # @schema
+      # type: object
+      # additionalProperties: true
+      # @schema
+      # -- Namespace selector for the DNS service.
+      namespaceSelector:
+        kubernetes.io/metadata.name: kube-system
+
+      # @schema
+      # type: object
+      # additionalProperties: true
+      # @schema
+      # -- Pod selector for the DNS service.
+      podSelector:
+        k8s-app: kube-dns
+
+    # @schema
+    # additionalProperties: true
+    # @schema
+    # -- TeamSpeak licensing/accounting service on TCP 2008. The server contacts it on
+    # startup and periodically afterwards; blocking it takes the virtual server offline.
+    accounting:
+      # @schema
+      # type: boolean
+      # @schema
+      # -- Allow egress to the accounting service.
+      enabled: true
+
+      # @schema
+      # type: integer
+      # minimum: 1
+      # maximum: 65535
+      # @schema
+      # -- Accounting port.
+      port: 2008
+
+    # @schema
+    # additionalProperties: true
+    # @schema
+    # -- TeamSpeak public server list on UDP 2010. Only needed when the server advertises
+    # itself on the global list.
+    weblist:
+      # @schema
+      # type: boolean
+      # @schema
+      # -- Allow egress to the server list.
+      enabled: false
+
+      # @schema
+      # type: integer
+      # minimum: 1
+      # maximum: 65535
+      # @schema
+      # -- Weblist port.
+      port: 2010
+
+    # @schema
+    # additionalProperties: true
+    # @schema
+    # -- Outbound HTTPS. Not needed by the server itself; enable it only if something you
+    # added to the pod requires it.
+    https:
+      # @schema
+      # type: boolean
+      # @schema
+      # -- Allow egress to HTTPS (TCP/443).
+      enabled: false
+
+    # @schema
+    # additionalProperties: true
+    # @schema
+    # -- Egress to an external database. Only relevant when `database.plugin` is not SQLite.
+    database:
+      # @schema
+      # type: boolean
+      # @schema
+      # -- Allow egress to the database. Ignored while the SQLite plugin is in use.
+      enabled: true
+
+      # @schema
+      # type: object
+      # additionalProperties: true
+      # @schema
+      # -- Namespace selector for the database. Empty means the release namespace.
+      namespaceSelector: {}
+
+      # @schema
+      # type: object
+      # additionalProperties: true
+      # @schema
+      # -- Pod selector for the database.
+      podSelector: {}
+
+    # @schema
+    # type: string
+    # @schema
+    # -- Destination CIDR for the internet-facing egress rules.
+    cidr: 0.0.0.0/0
+
+    # @schema
+    # type: array
+    # items:
+    #   type: string
+    # @schema
+    # -- CIDRs carved out of `cidr`. Defaults exclude RFC1918 private space and link-local
+    # 169.254.0.0/16, which covers the cloud instance metadata endpoint.
+    except:
+      - 10.0.0.0/8
+      - 172.16.0.0/12
+      - 192.168.0.0/16
+      - 169.254.0.0/16
+
+    # @schema
+    # type: array
+    # items:
+    #   $ref: https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyEgressRule
+    # @schema
+    # -- Custom egress rules.
+    customRules: []
+
+  # @schema
+  # type: array
+  # items:
+  #   $ref: https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyIngressRule
+  # @schema
+  # -- Ingress rules appended verbatim, whether or not `networkPolicy.ingress.enabled` is set.
+  extraIngress: []
+
+  # @schema
+  # type: array
+  # items:
+  #   $ref: https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyEgressRule
+  # @schema
+  # -- Egress rules appended verbatim, whether or not `networkPolicy.egress.enabled` is set.
+  extraEgress: []
+
+# @schema
+# type: integer
+# @schema
+# -- Number of old ReplicaSets retained for rollback.
+revisionHistoryLimit: 3
+
+# @schema
+# $ref: https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.apps.v1.DeploymentStrategy
+# @schema
+# -- Deployment update strategy. Empty falls back to `Recreate` whenever the data volume is
+# ReadWriteOnce, because a rolling update cannot hand that volume over.
+strategy: {}
+
+# @schema
+# type: integer
+# @schema
+# -- Grace period for pod shutdown. The server flushes its database and disconnects clients
+# on SIGTERM; cutting that short risks a corrupt SQLite file.
+terminationGracePeriodSeconds: 60
+
+# @schema
+# type: boolean
+# @schema
+# -- Mount the ServiceAccount API token into the pod.
+# Set on the pod itself, which is what actually keeps the token out of the container: the
+# ServiceAccount-level setting is ignored as soon as a pod names a different account.
+automountServiceAccountToken: false
+
+# @schema
+# type: object
+# additionalProperties: true
+# @schema
+# -- Labels added to every object this chart creates.
+commonLabels: {}
+
+# @schema
+# type: object
+# additionalProperties: true
+# @schema
+# -- Annotations added to every object this chart creates.
+commonAnnotations: {}
+
+# @schema
+# enum: ["", nano, micro, small, medium, large]
+# @schema
+# -- Named resource sizing. Ignored when `resources` is set.
+resourcesPreset: ""
+
+# @schema
+# enum: ["", soft, hard]
+# @schema
+# -- Shorthand for spreading replicas across nodes. `soft` prefers, `hard` requires.
+# Ignored when `affinity` is set.
+podAntiAffinity: ""
+
+# @schema
+# type: array
+# items:
+#   $ref: https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.EnvVar
+# @schema
+# -- Additional environment variables for the server container.
+extraEnv: []
+
+# @schema
+# type: string
+# @schema
+# -- Kubernetes version to target when branching on API availability.
+# Lets `helm template` render for a specific cluster version without a live connection.
+kubeVersionOverride: ""
+
+# @schema
+# type: integer
+# minimum: 0
+# maximum: 1
+# @schema
+# -- Number of replicas. A TeamSpeak server is a singleton: two instances on one database
+# corrupt it, and two on separate volumes are two different servers. Only `0` (stopped) and
+# `1` are meaningful.
+replicaCount: 1
+
+# @schema
+# type: string
+# @schema
+# -- Override the chart name used in resource names and labels.
+nameOverride: ""
+
+# @schema
+# type: string
+# @schema
+# -- Override the full generated resource name.
+fullnameOverride: ""
+
+# @schema
+# type: string
+# @schema
+# -- Deploy into a namespace other than the release namespace.
+namespaceOverride: ""
+
+# @schema
+# type: object
+# additionalProperties: true
+# @schema
+# -- Additional annotations to add to the pod.
+podAnnotations: {}
+
+# @schema
+# type: object
+# additionalProperties: true
+# @schema
+# -- Additional labels to add to the pod.
+podLabels: {}
+
+# @schema
+# type: object
+# additionalProperties:
+#   type: string
+# @schema
+# -- Node selector for pod assignment.
+nodeSelector: {}
+
+# @schema
+# type: array
+# items:
+#   $ref: https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.Toleration
+# @schema
+# -- Tolerations for pod assignment.
+tolerations: []
+
+# @schema
+# $ref: https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.Affinity
+# @schema
+# -- Explicit affinity rules. Wins over `podAntiAffinity`.
+affinity: {}
+
+# @schema
+# type: array
+# items:
+#   $ref: https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.TopologySpreadConstraint
+# @schema
+# -- Pod topology spread constraints for availability.
+topologySpreadConstraints: []
+
+# @schema
+# type: string
+# @schema
+# -- Optional Kubernetes PriorityClass name.
+priorityClassName: ""
+
+# @schema
+# type: array
+# items:
+#   $ref: https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.Volume
+# @schema
+# -- Additional volumes added to the pod.
+extraVolumes: []
+
+# @schema
+# type: array
+# items:
+#   $ref: https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.VolumeMount
+# @schema
+# -- Additional volume mounts added to the server container.
+extraVolumeMounts: []

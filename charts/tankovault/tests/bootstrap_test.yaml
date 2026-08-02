@@ -3,8 +3,11 @@ templates:
   - job-migrate.yaml
   - job-seed.yaml
   - deployment.yaml
+  - serviceaccount.yaml
+  - secret.yaml
+  - configmap-bootstrap.yaml
 values:
-  - ../ci/default-values.yaml
+  - ../ci/default.yaml
 tests:
   - it: uses a pre-install hook Job against an external database
     template: job-migrate.yaml
@@ -164,6 +167,53 @@ tests:
       - equal:
           path: spec.template.spec.containers[0].args
           value: [seed-admin]
+
+  - it: creates everything the migration Job mounts or runs as ahead of it
+    # Helm creates a release's own resources only after every pre-install hook has finished, so
+    # anything the hook Job references has to be a hook itself and carry a lower weight than the
+    # Job at -5. Without the ServiceAccount the Job controller never even schedules a pod
+    # (`error looking up service account`) and the install times out; without the Secret the
+    # pod starts with an empty projection — it is `optional: true` — and dies on a missing
+    # database URL.
+    templates:
+      - serviceaccount.yaml
+      - secret.yaml
+      - configmap-bootstrap.yaml
+    asserts:
+      - equal:
+          path: metadata.annotations["helm.sh/hook"]
+          value: pre-install,pre-upgrade
+      - equal:
+          path: metadata.annotations["helm.sh/hook-weight"]
+          value: "-10"
+
+  - it: keeps those resources for as long as the release, not just the hook
+    # `hook-succeeded` would delete the account every workload runs as and the Secret every pod
+    # projects the moment the migration finished.
+    templates:
+      - serviceaccount.yaml
+      - secret.yaml
+      - configmap-bootstrap.yaml
+    asserts:
+      - equal:
+          path: metadata.annotations["helm.sh/hook-delete-policy"]
+          value: before-hook-creation
+
+  - it: still carries the operator's own annotations onto them
+    # The hook annotations are added to the same block `commonAnnotations` renders into.
+    templates:
+      - serviceaccount.yaml
+      - secret.yaml
+    set:
+      commonAnnotations:
+        example.com/owner: platform
+    asserts:
+      - equal:
+          path: metadata.annotations["example.com/owner"]
+          value: platform
+      - equal:
+          path: metadata.annotations["helm.sh/hook"]
+          value: pre-install,pre-upgrade
 
   - it: gives the seed step the same pepper the api runs with
     # Seeding with a different pepper produces an administrator whose password never verifies,

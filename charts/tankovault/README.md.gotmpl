@@ -166,6 +166,15 @@ Schema migration is a discrete step, never something a service does at startup.
   bundled StatefulSet exists and could only ever time out. Running it in every pod is safe and
   is sanctioned upstream; sqlx takes a Postgres advisory lock for the duration.
 
+The migration Job runs before Helm creates any of the release's own objects, so the three things
+it needs — the ServiceAccount, the credential Secret and its ConfigMap — are Helm hooks
+themselves, created at weight `-10` ahead of the Job at `-5`. They are deliberately not deleted
+when the hook finishes, because the release's workloads use them for as long as they run. The
+consequence to know about: being hooks, these three do not appear in `helm get manifest`, are not
+reverted by `helm rollback`, and **survive `helm uninstall`** — delete the leftover
+`<release>` Secret, `<release>` ServiceAccount and `<release>-bootstrap-config` ConfigMap by hand
+if you want the namespace empty.
+
 ## Exposure
 
 Only the frontend is published. It serves the SPA and reverse-proxies `/v1/*` to the API, so one

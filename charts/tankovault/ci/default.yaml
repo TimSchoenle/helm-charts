@@ -1,6 +1,12 @@
 # External datastores, which is the chart's default posture: nothing stateful is created
-# unless it is asked for. The endpoints do not have to resolve for `helm template`, and the
-# `install` job uses minimal-values.yaml instead of this file.
+# unless it is asked for.
+#
+# A render fixture, not an install fixture: the endpoints below do not resolve anywhere, so the
+# `pre-install` migration hook could only ever fail against them. `ct install` installs every
+# `ci/*-values.yaml`, which is why this file is not named that way — the repository's own
+# render, kubeconform and policy jobs glob `ci/*.yaml` and still cover it, and so do the
+# `tests/` suites that reference it. Only `minimal-values.yaml` and
+# `bundled-datastores-values.yaml` are installable, and they keep the suffix.
 auth:
   jwtSecret: ci-jwt-secret-0123456789abcdef0123
   passwordPepper: ci-password-pepper-0123456789abcd

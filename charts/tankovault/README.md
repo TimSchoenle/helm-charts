@@ -56,6 +56,7 @@ so `helm upgrade` never rotates one out from under a running workload.
 | Value | Generated when empty | Read it back with |
 |---|---|---|
 | `auth.jwtSecret` | always | `auth__jwt_secret` |
+| `auth.passwordPepper` | first install only (see below) | `auth__password_pepper` |
 | `internal.token` | `profile=production` | `internal__token` |
 | `anilist.tokenEncryptionKey` | `services.sync.enabled` | `anilist__token_encryption_key` |
 | `bootstrap.seedAdmin.password` | `bootstrap.seedAdmin.enabled` | `seed_admin_password` |
@@ -65,11 +66,21 @@ so `helm upgrade` never rotates one out from under a running workload.
 kubectl get secret tankovault -o jsonpath='{.data.seed_admin_password}' | base64 -d
 ```
 
-Set a value explicitly only when it has to be known outside the release. Two things are **not**
-generated: `auth.passwordPepper`, because an install already running without one would have every
-stored password invalidated the moment it appeared; and anything issued by a third party — the
-AniList application credentials, SMTP and webhook endpoints — which cannot be invented. Generation
-also requires the chart to own the `Secret`: with `existingSecret` set it fills in nothing.
+Set a value explicitly only when it has to be known outside the release. Values issued by a third
+party — the AniList application credentials, SMTP and webhook endpoints — are never generated,
+because they cannot be invented. Generation also requires the chart to own the `Secret`: with
+`existingSecret` set it fills in nothing.
+
+`auth.passwordPepper` is the one exception to "generated when empty": it is generated only when
+this release has no `Secret` yet. Introducing a pepper into a release that has been storing
+unpeppered password hashes would make every one of them unverifiable, so an upgrade never adds
+one — a release running without a pepper keeps running without it until you set the value
+yourself, at which point every existing password is invalidated deliberately rather than by
+surprise.
+
+**Back the `Secret` up.** Losing `auth__password_pepper` invalidates every stored password;
+losing `anilist__token_encryption_key` forces every account to re-link. That is true however
+those values were set, but generated values exist nowhere else.
 
 ## Configuration reloads instead of restarting
 
@@ -205,7 +216,7 @@ still describe `docker compose` remediation steps, because that is what upstream
 | anilist.redirectUri | string | `""` | OAuth redirect URI. Left empty it is derived from the ingress as `<external URL>/account/anilist-callback`. It must point at the **frontend**, not the API: the API callback would need the SPA's in-memory bearer token, which a browser redirect cannot carry. |
 | anilist.tokenEncryptionKey | string | `""` | Base64 of exactly 32 bytes, sealing every user's AniList token at rest. Left empty the chart generates one when `services.sync` is enabled and remembers it across upgrades, which is the recommended setting; set one explicitly (`openssl rand -base64 32`) only if it has to be known outside the release. Losing it forces every account to re-link; leaking it exposes every stored token. Rotating it does not re-seal tokens already stored. |
 | auth.jwtSecret | string | `""` | Token signing secret (`auth.jwt_secret`). Left empty the chart generates one and remembers it across upgrades, which is the recommended setting; set one explicitly (minimum 32 characters, e.g. `openssl rand -hex 32`) only if it has to be known outside the release. The known upstream placeholder is refused at boot in every profile, and rotating the value signs every user out. |
-| auth.passwordPepper | string | `""` | Server-side pepper mixed into every argon2id hash, so a database leak alone cannot be brute-forced offline. Optional, but once set it must never change: rotating or losing it invalidates every stored password. It must also be given to the `seed-admin` step byte-identically, or the administrator it creates can never log in. This is the one credential the chart never generates for you: an install that has been running without a pepper would have every stored password invalidated the moment one appeared. |
+| auth.passwordPepper | string | `""` | Server-side pepper mixed into every argon2id hash, so a database leak alone cannot be brute-forced offline. Left empty the chart generates one **on a first install only** and remembers it across upgrades; a release that already exists without a pepper keeps running without one, because every password stored unpeppered would stop verifying the moment one appeared. For the same reason it must never change once set: rotating or losing it invalidates every stored password, so back the Secret up. The `seed-admin` step receives the identical value, or the administrator it creates could never log in. |
 | bootstrap | object | `{"image":{"repository":"timschoenle/tankovault-bootstrap","tag":"v0.4.0@sha256:5c7804fdd404b2cf3cf752a8cbba1c859c8baf205e2c98c8dac0e870da9d7e97"},"migrate":{"backoffLimit":3,"mode":"auto"},"resourcesPreset":"small","seedAdmin":{"email":"","enabled":false,"password":"","username":"admin"},"seedProviders":{"enabled":false}}` | Schema migration and first-install seeding, all from the `bootstrap` image. Nothing published carries a destructive command; resetting the schema is not available in any image. |
 | bootstrap.image.repository | string | `"timschoenle/tankovault-bootstrap"` | Image repository. |
 | bootstrap.image.tag | string | `"v0.4.0@sha256:5c7804fdd404b2cf3cf752a8cbba1c859c8baf205e2c98c8dac0e870da9d7e97"` | Image tag, pinned by digest. |

@@ -1,0 +1,35 @@
+# The smallest installable stack: the request path plus its database, sized to fit a kind node.
+# This is what the `install` job runs, because bringing up all eight services, three datastores
+# and FlareSolverr exceeds a single-node CI cluster's budget.
+auth:
+  jwtSecret: ci-jwt-secret-0123456789abcdef0123
+internal:
+  token: ci-internal-token-0123456789abcdef01
+profile: development
+postgresql:
+  enabled: true
+  auth:
+    password: ci-postgresql-password
+  persistence:
+    enabled: false
+  resourcesPreset: small
+defaults:
+  resourcesPreset: nano
+  podAntiAffinity: ""
+services:
+  frontend:
+    replicaCount: 1
+  api:
+    replicaCount: 1
+  controlPlane:
+    enabled: false
+  worker:
+    enabled: false
+  notifier:
+    enabled: false
+  sync:
+    enabled: false
+  challengeSolver:
+    enabled: false
+  render:
+    enabled: false

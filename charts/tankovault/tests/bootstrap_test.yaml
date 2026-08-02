@@ -1,0 +1,111 @@
+suite: test migration and seeding
+templates:
+  - job-migrate.yaml
+  - job-seed.yaml
+  - deployment.yaml
+values:
+  - ../ci/default-values.yaml
+tests:
+  - it: uses a pre-install hook Job against an external database
+    template: job-migrate.yaml
+    asserts:
+      - equal:
+          path: metadata.annotations["helm.sh/hook"]
+          value: pre-install,pre-upgrade
+      - equal:
+          path: metadata.annotations["helm.sh/hook-weight"]
+          value: "-5"
+      - equal:
+          path: spec.template.spec.containers[0].args
+          value: [migrate]
+
+  - it: switches to an initContainer when the database is bundled
+    # A pre-install hook runs before the release's own resources, so with the bundled
+    # PostgreSQL the StatefulSet it would connect to does not exist yet and the hook could only
+    # ever time out. Concurrent initContainers are safe: sqlx takes a Postgres advisory lock.
+    template: job-migrate.yaml
+    set:
+      postgresql.enabled: true
+      postgresql.auth.password: test-password
+      externalDatabase.url: ""
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: adds the migration initContainer to every service pod in that mode
+    template: deployment.yaml
+    set:
+      postgresql.enabled: true
+      postgresql.auth.password: test-password
+      externalDatabase.url: ""
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-api
+    asserts:
+      - equal:
+          path: spec.template.spec.initContainers[0].name
+          value: migrate
+      - equal:
+          path: spec.template.spec.initContainers[0].args
+          value: [migrate]
+
+  - it: attaches no probes to a one-shot bootstrap container
+    # `common.container` would otherwise inherit the service probes from `defaults` and fail a
+    # container that has no listener at all.
+    template: job-migrate.yaml
+    asserts:
+      - isNull:
+          path: spec.template.spec.containers[0].livenessProbe
+      - isNull:
+          path: spec.template.spec.containers[0].readinessProbe
+
+  - it: honours an explicit migrate mode over the derived one
+    template: job-migrate.yaml
+    set:
+      postgresql.enabled: true
+      postgresql.auth.password: test-password
+      externalDatabase.url: ""
+      bootstrap.migrate.mode: job
+    asserts:
+      - hasDocuments:
+          count: 1
+
+  - it: renders no migration at all when disabled
+    template: job-migrate.yaml
+    set:
+      bootstrap.migrate.mode: disabled
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: seeds only on install, after the schema exists
+    template: job-seed.yaml
+    set:
+      bootstrap.seedAdmin.enabled: true
+      bootstrap.seedAdmin.password: seed-password
+    documentIndex: 0
+    asserts:
+      - equal:
+          path: metadata.annotations["helm.sh/hook"]
+          value: post-install
+      - equal:
+          path: metadata.annotations["helm.sh/hook-weight"]
+          value: "5"
+      - equal:
+          path: spec.template.spec.containers[0].args
+          value: [seed-admin]
+
+  - it: gives the seed step the same pepper the api runs with
+    # Seeding with a different pepper produces an administrator whose password never verifies,
+    # which presents as a wrong password rather than as a misconfiguration.
+    template: job-seed.yaml
+    set:
+      bootstrap.seedAdmin.enabled: true
+      bootstrap.seedAdmin.password: seed-password
+    documentIndex: 0
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes[?(@.name=="secrets")].projected.sources[0].secret.items
+          content:
+            key: auth__password_pepper
+            path: auth__password_pepper

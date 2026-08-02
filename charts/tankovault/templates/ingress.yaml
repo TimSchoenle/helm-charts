@@ -1,0 +1,80 @@
+{{- /*
+The frontend is the only service published by default, and that is a design property rather
+than a default worth changing casually: it serves the SPA and reverse-proxies `/v1/*` to the
+API, so one origin covers the whole application and the SPA's API calls, its SSE stream, its
+session cookies and its passkey origin all resolve without a cross-origin hop.
+*/ -}}
+{{- if .Values.ingress.enabled }}
+{{- $host := required "ingress.host is required when ingress.enabled is true" .Values.ingress.host }}
+apiVersion: {{ include "common.capabilities.ingress.apiVersion" . }}
+kind: Ingress
+metadata:
+  name: {{ include "common.fullname" . }}
+  namespace: {{ include "common.namespace" . }}
+  labels:
+    {{- include "common.labels" . | nindent 4 }}
+  {{- $annotations := merge (deepCopy .Values.ingress.annotations) (deepCopy .Values.commonAnnotations) }}
+  {{- with $annotations }}
+  annotations:
+    {{- include "common.tplvalues.render" (dict "value" . "context" $) | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with .Values.ingress.className }}
+  ingressClassName: {{ . | quote }}
+  {{- end }}
+  {{- if .Values.ingress.tls.enabled }}
+  tls:
+    - hosts:
+        - {{ $host | quote }}
+      secretName: {{ default (printf "%s-tls" (include "common.fullname" .)) .Values.ingress.tls.secretName }}
+  {{- end }}
+  rules:
+    - host: {{ $host | quote }}
+      http:
+        paths:
+          - path: {{ .Values.ingress.path }}
+            pathType: {{ .Values.ingress.pathType }}
+            backend:
+              service:
+                name: {{ include "tankovault.fullname" (dict "ctx" . "service" "frontend") }}
+                port:
+                  number: 3000
+{{- end }}
+{{- if .Values.ingress.api.enabled }}
+---
+{{- $apiHost := required "ingress.api.host is required when ingress.api.enabled is true" .Values.ingress.api.host }}
+apiVersion: {{ include "common.capabilities.ingress.apiVersion" . }}
+kind: Ingress
+metadata:
+  name: {{ include "common.fullname.suffixed" (dict "ctx" . "suffix" "api") }}
+  namespace: {{ include "common.namespace" . }}
+  labels:
+    {{- include "common.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+  {{- $apiAnnotations := merge (deepCopy .Values.ingress.api.annotations) (deepCopy .Values.commonAnnotations) }}
+  {{- with $apiAnnotations }}
+  annotations:
+    {{- include "common.tplvalues.render" (dict "value" . "context" $) | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with .Values.ingress.className }}
+  ingressClassName: {{ . | quote }}
+  {{- end }}
+  {{- if .Values.ingress.tls.enabled }}
+  tls:
+    - hosts:
+        - {{ $apiHost | quote }}
+      secretName: {{ default (printf "%s-api-tls" (include "common.fullname" .)) .Values.ingress.tls.secretName }}
+  {{- end }}
+  rules:
+    - host: {{ $apiHost | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "tankovault.fullname" (dict "ctx" . "service" "api") }}
+                port:
+                  number: 8080
+{{- end }}

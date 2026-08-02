@@ -1,0 +1,206 @@
+{{ template "chart.header" . }}
+
+{{ template "chart.deprecationWarning" . }}
+
+{{ template "chart.badgesSection" . }}
+
+{{ template "chart.description" . }}
+
+TankoVault is a multi-service manga/manhwa aggregator and tracker. It indexes series metadata
+across provider sites and layers watchlists, read progress, notifications and AniList
+synchronisation on top — it stores links and metadata only, and never downloads, caches or
+serves chapter images.
+
+This chart deploys the whole system: the `frontend` SPA server, the `api` edge, the
+`control-plane` scheduler, the `worker` fetch tier, `notifier`, `sync`, `challenge-solver` and
+the optional headless `render` tier, plus the one-shot `bootstrap` migration and seeding steps.
+
+## Prerequisites
+
+- Kubernetes 1.19+
+- Helm 3.0+
+- A PostgreSQL database — either the bundled one (`postgresql.enabled=true`) or your own
+  (`externalDatabase.*`)
+- A NATS server with JetStream enabled, if `worker` or `control-plane` are deployed
+- The Prometheus Operator CRDs, if `metrics.serviceMonitor` or `metrics.prometheusRule` are enabled
+- An ingress controller, if `ingress.enabled=true`
+
+## Get Repository Info
+
+```shell
+helm repo add timschoenle https://timschoenle.github.io/helm-charts
+helm repo update
+```
+
+## Install
+
+Nothing stateful is created unless you ask for it, and the only credentials you must supply are
+the ones issued by somebody else. The smallest working install is therefore:
+
+```shell
+helm install tankovault timschoenle/tankovault \
+  --set postgresql.enabled=true \
+  --set nats.enabled=true \
+  --set valkey.enabled=true \
+  --set flaresolverr.enabled=true \
+  --set bootstrap.seedAdmin.enabled=true
+```
+
+`services.sync` additionally needs an [AniList OAuth application](https://anilist.co/settings/developer);
+set `services.sync.enabled=false` if you do not want it.
+
+### Generated credentials
+
+Every credential whose value is meaningful only inside the release is generated when you leave it
+empty, and remembered afterwards: the chart reads the previous value back out of its own `Secret`,
+so `helm upgrade` never rotates one out from under a running workload.
+
+| Value | Generated when empty | Read it back with |
+|---|---|---|
+| `auth.jwtSecret` | always | `auth__jwt_secret` |
+| `internal.token` | `profile=production` | `internal__token` |
+| `anilist.tokenEncryptionKey` | `services.sync.enabled` | `anilist__token_encryption_key` |
+| `bootstrap.seedAdmin.password` | `bootstrap.seedAdmin.enabled` | `seed_admin_password` |
+| `postgresql.auth.password` | `postgresql.enabled` | `postgresql__password` |
+
+```shell
+kubectl get secret tankovault -o jsonpath='{.data.seed_admin_password}' | base64 -d
+```
+
+Set a value explicitly only when it has to be known outside the release. Two things are **not**
+generated: `auth.passwordPepper`, because an install already running without one would have every
+stored password invalidated the moment it appeared; and anything issued by a third party — the
+AniList application credentials, SMTP and webhook endpoints — which cannot be invented. Generation
+also requires the chart to own the `Secret`: with `existingSecret` set it fills in nothing.
+
+## Configuration reloads instead of restarting
+
+This is the one place where the chart deliberately departs from the convention used by the other
+charts in this repository, and it is worth understanding before you change anything.
+
+Every TankoVault service watches the directories its configuration came from. When the kubelet
+refreshes a mounted `ConfigMap` or `Secret`, the service re-reads the whole configuration and
+rebuilds its runtime in place. So this chart:
+
+- delivers **all** configuration as files, never as environment variables. Only the four
+  process-level keys that are read before the layered configuration exists
+  (`TANKOVAULT_PROFILE`, `TANKOVAULT_CONFIG`, `TANKOVAULT_SECRETS_DIR`, `RUST_LOG`) are passed
+  through the environment;
+- mounts them as whole directories, never with `subPath`, because a `subPath` mount is resolved
+  once at container start and never updated;
+- emits **no `checksum/config` pod annotations**, so `helm upgrade` with a changed `config` value
+  does not roll the Deployments.
+
+A configuration change therefore takes effect within a kubelet sync period (roughly a minute),
+with the pods' restart count unchanged. Verify it that way, too:
+
+```shell
+kubectl get pods -l app.kubernetes.io/part-of=tankovault \
+  -o custom-columns=NAME:.metadata.name,RESTARTS:.status.containerStatuses[0].restartCount
+```
+
+Three exceptions are worth knowing:
+
+| Change | Effect |
+|---|---|
+| `telemetry.*`, `metrics.*` | Installed process-globally; needs a real restart |
+| `auth.jwtSecret` | Reloads, and signs every user out |
+| `auth.passwordPepper` | Reloads, and invalidates **every stored password** |
+| `anilist.tokenEncryptionKey` | Reloads, but does not re-seal tokens already stored |
+
+Set `configReload.rolloutOnChange=true` if you would rather configuration changes behave like an
+ordinary image bump.
+
+## Configuration and secrets
+
+`config` is the TankoVault TOML tree exactly as `docs/CONFIGURATION.md` documents it, so a key
+written `TANKOVAULT_RATE_LIMIT__AUTH__PER_MINUTE` upstream is written here as:
+
+```yaml
+config:
+  rate_limit:
+    auth:
+      per_minute: 10
+```
+
+`services.<name>.config` overrides it for one service. The chart fills in the topology itself —
+each service's `bind_addr`, `telemetry.service_name`, the peer URLs, and the datastore
+endpoints — and derives `anilist.redirect_uri`, `email.base_url` and `auth.webauthn_origin` from
+the ingress, because all three are bound to the browser-visible origin and produce runtime-only
+failures when they disagree with it.
+
+Credentials go in a `Secret` and are mounted as one file per key, named for the configuration
+path with `__` for nesting (`auth__jwt_secret`, `anilist__token_encryption_key`). **Each pod
+receives only the keys its own service reads**, so the `worker` — the tier that parses untrusted
+provider HTML — never has the token-signing key on its filesystem.
+
+To keep credentials out of the release entirely, pre-create the Secret and set `existingSecret`.
+The chart then generates nothing, so this Secret must carry every key the enabled services need:
+
+```shell
+kubectl create secret generic tankovault-credentials \
+  --from-literal=auth__jwt_secret="$(openssl rand -hex 32)" \
+  --from-literal=internal__token="$(openssl rand -hex 32)" \
+  --from-literal=anilist__token_encryption_key="$(openssl rand -base64 32)"
+```
+
+## Migrations
+
+Schema migration is a discrete step, never something a service does at startup.
+`bootstrap.migrate.mode` defaults to `auto`, which picks:
+
+- **`job`** when the database is external — a `pre-install,pre-upgrade` hook, so the new schema
+  is in place before any new code sees it;
+- **`initContainer`** when `postgresql.enabled=true` — a pre-install hook would run before the
+  bundled StatefulSet exists and could only ever time out. Running it in every pod is safe and
+  is sanctioned upstream; sqlx takes a Postgres advisory lock for the duration.
+
+## Exposure
+
+Only the frontend is published. It serves the SPA and reverse-proxies `/v1/*` to the API, so one
+origin covers the whole application and the SPA's API calls, its SSE stream, its session cookies
+and its passkey origin all resolve without a cross-origin hop.
+
+`control-plane`, `sync`, `render` and `challenge-solver` expose privileged contracts and upstream
+publishes none of them even on a single host. Giving any of the four a Service type other than
+`ClusterIP` fails rendering unless you also set `allowUnsafeExposure=true`.
+
+`ingress.api.enabled` adds a second Ingress for split-origin clients. If you use it, set
+`config.security.cors.allowed_origins` and `config.auth.webauthn_origin` to match, or logins will
+fail in ways that only show up in a browser.
+
+## The bundled datastores are evaluation-tier
+
+`postgresql`, `valkey`, `nats` and `flaresolverr` exist so that `helm install` produces a working
+stack on a bare cluster. Each is a single instance with no replication and no failover, and the
+bundled PostgreSQL has no point-in-time recovery. Before this carries anything you care about,
+move to `externalDatabase`, `externalRedis` and `externalNats`.
+
+They are embedded rather than pulled in as subcharts for concrete reasons, recorded in
+`Chart.yaml`: the official Valkey chart defines its own `common.image`, which collides with this
+repository's `common` library because Helm's template namespace is global across dependencies;
+and the NATS chart ships no `values.schema.json`, so `helm schema` derives a closed one from its
+own values and makes the very `merge` patches unsettable that its pods need in order to pass this
+repository's policy scan.
+
+## Observability
+
+Every service serves a Prometheus scrape on an isolated port. `metrics.serviceMonitor.enabled`
+creates **one ServiceMonitor per service**, because metrics carry no service label and the `job`
+label is the sole identifier of which service emitted a series.
+
+`jobLabel` is pointed at `app.kubernetes.io/component` deliberately: without it the Prometheus
+Operator sets `job` to the Service name, while the vendored rules match on the bare slug
+(`up{job=~"api|frontend"}`). The rules would load without error and simply never fire.
+
+The recording rules, alerting rules and Grafana dashboard under `rules/` and `dashboards/` are
+vendored verbatim from the upstream repository's `deploy/observability/`. Some alert annotations
+still describe `docker compose` remediation steps, because that is what upstream ships.
+
+{{ template "chart.valuesSection" . }}
+
+{{ template "chart.sourcesSection" . }}
+
+{{ template "chart.maintainersSection" . }}
+
+{{ template "helm-docs.versionFooter" . }}

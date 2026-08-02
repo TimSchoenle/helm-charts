@@ -1,0 +1,41 @@
+# The batteries-included path: every bundled datastore on, migrations via the initContainer
+# (which `bootstrap.migrate.mode: auto` selects because postgresql.enabled is true), and the
+# install seeded with an administrator.
+#
+# postgresql.auth.password is set explicitly rather than generated: `helm template` has no
+# cluster to look up the previous value in, so an empty password would render a different
+# secret on every invocation and make this file useless for snapshot comparison.
+auth:
+  jwtSecret: ci-jwt-secret-0123456789abcdef0123
+  passwordPepper: ci-password-pepper-0123456789abcd
+internal:
+  token: ci-internal-token-0123456789abcdef01
+anilist:
+  clientId: "12345"
+  clientSecret: ci-anilist-client-secret
+  tokenEncryptionKey: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
+  redirectUri: https://tankovault.example.com/account/anilist-callback
+postgresql:
+  enabled: true
+  auth:
+    password: ci-postgresql-password
+  persistence:
+    size: 1Gi
+valkey:
+  enabled: true
+nats:
+  enabled: true
+  persistence:
+    size: 1Gi
+flaresolverr:
+  enabled: true
+services:
+  render:
+    enabled: true
+bootstrap:
+  seedAdmin:
+    enabled: true
+    email: admin@tankovault.example.com
+    password: ci-seed-admin-password
+  seedProviders:
+    enabled: true

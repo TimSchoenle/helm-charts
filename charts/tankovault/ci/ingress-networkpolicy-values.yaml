@@ -1,0 +1,40 @@
+# Ingress (both the frontend and the opt-in API host) together with the full NetworkPolicy set,
+# so the policy scan and kubeconform see every rule this chart can emit.
+auth:
+  jwtSecret: ci-jwt-secret-0123456789abcdef0123
+internal:
+  token: ci-internal-token-0123456789abcdef01
+anilist:
+  clientId: "12345"
+  clientSecret: ci-anilist-client-secret
+  tokenEncryptionKey: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
+externalDatabase:
+  url: postgres://tankovault:ci@postgresql.example.com:5432/tankovault
+externalNats:
+  url: nats://nats.example.com:4222
+externalFlaresolverr:
+  url: http://flaresolverr.example.com:8191
+valkey:
+  enabled: true
+services:
+  render:
+    enabled: true
+ingress:
+  enabled: true
+  className: nginx
+  host: tankovault.example.com
+  tls:
+    enabled: true
+  api:
+    enabled: true
+    host: api.tankovault.example.com
+networkPolicy:
+  enabled: true
+  ingressController:
+    namespaceSelector:
+      kubernetes.io/metadata.name: ingress-nginx
+    podSelector:
+      app.kubernetes.io/name: ingress-nginx
+  monitoring:
+    namespaceSelector:
+      kubernetes.io/metadata.name: monitoring

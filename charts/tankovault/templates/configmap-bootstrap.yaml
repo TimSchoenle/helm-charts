@@ -1,0 +1,25 @@
+{{- if ne (include "tankovault.migrateMode" .) "disabled" }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "common.fullname" . }}-bootstrap-config
+  namespace: {{ include "common.namespace" . }}
+  labels:
+    {{- include "common.labels" . | nindent 4 }}
+    app.kubernetes.io/component: bootstrap
+  annotations:
+    {{- with (include "common.annotations" .) }}
+    {{- . | nindent 4 }}
+    {{- end }}
+    {{- /*
+      A hook resource, so it exists before the pre-install migration Job that mounts it. The
+      delete policy deliberately omits `hook-succeeded`: the same ConfigMap is mounted by the
+      migration initContainer on every service pod, which outlives the hook.
+    */}}
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-10"
+    "helm.sh/hook-delete-policy": before-hook-creation
+data:
+  config.toml: |
+    {{- include "tankovault.bootstrapConfigToml" . | nindent 4 }}
+{{- end }}

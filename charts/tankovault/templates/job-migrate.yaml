@@ -1,0 +1,17 @@
+{{- /*
+Schema migration as a discrete pre-rollout step, which is how upstream ships it: no service
+migrates at startup. Runs as a `pre-install,pre-upgrade` hook so the new schema is in place
+before any new code sees it — the expand half of the expand/contract convention migrations
+here follow.
+
+Not used when `bootstrap.migrate.mode` resolves to `initContainer`; see
+`tankovault.migrateMode` for why the bundled PostgreSQL forces that.
+*/ -}}
+{{- if eq (include "tankovault.migrateMode" .) "job" }}
+{{ include "tankovault.bootstrapJob" (dict
+     "ctx" .
+     "command" "migrate"
+     "name" "migrate"
+     "hook" "pre-install,pre-upgrade"
+     "weight" "-5") }}
+{{- end }}

@@ -1,0 +1,8 @@
+{{- $specs := include "tankovault.serviceSpecs" . | fromYaml -}}
+{{- range $service, $spec := $specs }}
+{{- $values := index $.Values.services $service }}
+{{- if and $values.enabled $values.autoscaling $values.autoscaling.enabled }}
+---
+{{ include "tankovault.hpa" (dict "ctx" $ "service" $service) }}
+{{- end }}
+{{- end }}

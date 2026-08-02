@@ -1,0 +1,24 @@
+{{- /*
+First-install seeding. Both steps are create-only, so re-running them leaves an existing
+installation exactly as it is — but they are still `post-install` only, because there is no
+reason to run them again on every upgrade.
+
+`seed-admin` creates the only account privilege is ever minted for: registration confers none.
+*/ -}}
+{{- if .Values.bootstrap.seedAdmin.enabled }}
+{{ include "tankovault.bootstrapJob" (dict
+     "ctx" .
+     "command" "seed-admin"
+     "name" "seed-admin"
+     "hook" "post-install"
+     "weight" "5") }}
+{{- end }}
+{{- if .Values.bootstrap.seedProviders.enabled }}
+---
+{{ include "tankovault.bootstrapJob" (dict
+     "ctx" .
+     "command" "seed-providers"
+     "name" "seed-providers"
+     "hook" "post-install"
+     "weight" "6") }}
+{{- end }}

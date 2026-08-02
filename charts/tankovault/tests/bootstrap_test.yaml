@@ -49,6 +49,76 @@ tests:
           path: spec.template.spec.initContainers[0].args
           value: [migrate]
 
+  - it: leaves pods that never touch the database without a migration initContainer
+    # A pod projects only its own `secretKeys`. `frontend` has none, so the shared bootstrap
+    # volumeMounts would name a `secrets` volume the pod does not define and the API server
+    # rejects the whole Deployment.
+    template: deployment.yaml
+    set:
+      postgresql.enabled: true
+      postgresql.auth.password: test-password
+      externalDatabase.url: ""
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-frontend
+    asserts:
+      - isNull:
+          path: spec.template.spec.initContainers
+      - notContains:
+          path: spec.template.spec.volumes
+          any: true
+          content:
+            name: secrets
+
+  - it: backs the bootstrap container's /tmp mount with a volume of its own
+    # `common.container` adds the /tmp mount whenever the root filesystem is read-only, and only
+    # `common.volumes` provisions the emptyDir behind it. Emitting the Job's volumes directly
+    # produced mounts naming a volume the pod never declared, which the API server rejects.
+    template: job-migrate.yaml
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: tmp
+            mountPath: /tmp
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: tmp
+            emptyDir: {}
+
+  - it: keeps per-service extras out of the one-shot bootstrap workloads
+    # `mergeOverwrite` leaves a populated list in place of an empty one, so these have to be
+    # forced. An inherited extraVolumeMount is not merely noise: nothing declares the volume it
+    # names in a bootstrap Job, so the Job is rejected.
+    template: job-migrate.yaml
+    set:
+      defaults.extraEnv:
+        - name: LEAK
+          value: "x"
+      defaults.extraVolumes:
+        - name: leakvol
+          emptyDir: {}
+      defaults.extraVolumeMounts:
+        - name: leakvol
+          mountPath: /leak
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: LEAK
+            value: "x"
+      - notContains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: leakvol
+            mountPath: /leak
+      - notContains:
+          path: spec.template.spec.volumes
+          any: true
+          content:
+            name: leakvol
+
   - it: attaches no probes to a one-shot bootstrap container
     # `common.container` would otherwise inherit the service probes from `defaults` and fail a
     # container that has no listener at all.

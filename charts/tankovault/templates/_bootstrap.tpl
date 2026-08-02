@@ -30,28 +30,50 @@ never log in — a failure that looks like a wrong password rather than a miscon
 {{- end -}}
 
 {{/*
-A container running one `bootstrap` subcommand.
+The values tree the bootstrap workloads render against — `.Values.defaults` with the bootstrap
+image, its own resources and no probes at all: these are one-shot commands with no listener,
+and `common.container` would otherwise attach the service probes and fail them immediately.
 
-Used both as the migration initContainer on every service pod and as the body of the seed
-Jobs, so the two can never drift apart. Probes are explicitly disabled: these are one-shot
-commands with no listener, and `common.container` would otherwise attach the service probes
-from `defaults` and fail the container immediately.
+Shared by the container and by the Job that carries it so that the two resolve
+`readOnlyRootFilesystem` — and therefore the `/tmp` mount and the `tmp` volume that has to back
+it — from exactly the same values. Deriving the volumes from anything else produces a pod whose
+mounts name a volume it does not define, which the API server rejects outright.
 
-Args: ctx (root), command (bootstrap subcommand), name (container name).
+Args: the root context.
 */}}
-{{- define "tankovault.bootstrapContainer" -}}
-{{- $root := .ctx -}}
+{{- define "tankovault.bootstrapValues" -}}
+{{- $root := . -}}
 {{- $bootstrap := $root.Values.bootstrap -}}
 {{- $values := mergeOverwrite (deepCopy ($root.Values.defaults | default dict)) (dict
       "image" (merge (deepCopy $bootstrap.image) (deepCopy ($root.Values.image | default dict)))
       "imagePullSecrets" ($root.Values.imagePullSecrets | default list)
       "resourcesPreset" $bootstrap.resourcesPreset
       "resources" dict
-      "extraEnv" list
-      "extraVolumeMounts" list
       "startupProbe" (dict "enabled" false)
       "livenessProbe" (dict "enabled" false)
       "readinessProbe" (dict "enabled" false)) -}}
+{{- /*
+  Forced rather than merged: `mergeOverwrite` leaves an empty list in place of a populated one,
+  so a service's extra environment and volumes would otherwise leak into a one-shot command
+  that has no use for them — and an extra volume the bootstrap container never mounts.
+*/ -}}
+{{- $_ := set $values "extraEnv" list -}}
+{{- $_ := set $values "extraVolumeMounts" list -}}
+{{- $_ := set $values "extraVolumes" list -}}
+{{- toYaml $values -}}
+{{- end -}}
+
+{{/*
+A container running one `bootstrap` subcommand.
+
+Used both as the migration initContainer on the service pods that need the schema and as the
+body of the seed Jobs, so the two can never drift apart.
+
+Args: ctx (root), command (bootstrap subcommand), name (container name).
+*/}}
+{{- define "tankovault.bootstrapContainer" -}}
+{{- $root := .ctx -}}
+{{- $values := include "tankovault.bootstrapValues" $root | fromYaml -}}
 {{- $ctx := dict "Values" $values "Chart" $root.Chart "Release" $root.Release "Capabilities" $root.Capabilities "Template" $root.Template "Files" $root.Files -}}
 {{- include "common.container" (dict
       "ctx" $ctx
@@ -93,6 +115,8 @@ Args: ctx (root), command, name (resource name suffix), hook, weight.
 */}}
 {{- define "tankovault.bootstrapJob" -}}
 {{- $root := .ctx -}}
+{{- $values := include "tankovault.bootstrapValues" $root | fromYaml -}}
+{{- $ctx := dict "Values" $values "Chart" $root.Chart "Release" $root.Release "Capabilities" $root.Capabilities "Template" $root.Template "Files" $root.Files -}}
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -127,5 +151,8 @@ spec:
       containers:
         {{- include "tankovault.bootstrapContainer" (dict "ctx" $root "command" .command "name" .name) | nindent 8 }}
       volumes:
-        {{- include "tankovault.bootstrapVolumes" $root | nindent 8 }}
+        {{- include "common.volumes" (dict
+              "ctx" $ctx
+              "volumes" (include "tankovault.bootstrapVolumes" $root | fromYamlArray)
+            ) | nindent 8 }}
 {{- end -}}

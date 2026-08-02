@@ -95,6 +95,14 @@ Builds the scoped render context described in `tankovault.serviceValues` and the
 the `common` library unchanged, so probes, resources, security contexts, image resolution,
 affinity and the pod spec all come from the same helpers every other chart in this repository
 uses — just resolved per service instead of per chart.
+
+In `initContainer` migrate mode the migration is attached only to the pods of services that
+use the database. Those are exactly the pods that carry `database__url`: a pod projects only
+its own `secretKeys`, so on `frontend` — which has none — the shared bootstrap volumeMounts
+would name a `secrets` volume the pod does not define and the API server rejects the
+Deployment outright, while on `render` and `challenge-solver` the volume exists but holds no
+database URL and the migration could only fail. Migrating from the pods that actually need the
+schema also keeps the ordering guarantee intact.
 */}}
 {{- define "tankovault.deployment" -}}
 {{- $root := .ctx -}}
@@ -141,7 +149,7 @@ spec:
       {{- end }}
     spec:
       {{- include "common.podSpec.common" $ctx | nindent 6 }}
-      {{- if eq (include "tankovault.migrateMode" $root) "initContainer" }}
+      {{- if and (eq (include "tankovault.migrateMode" $root) "initContainer") $spec.needsDatabase }}
       initContainers:
         {{- include "tankovault.bootstrapContainer" (dict "ctx" $root "command" "migrate" "name" "migrate") | nindent 8 }}
       {{- end }}

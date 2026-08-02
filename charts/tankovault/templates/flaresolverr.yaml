@@ -9,6 +9,13 @@
   Chromium needs a writable HOME for its profile and crashpad database, and far more shared
   memory than the 64Mi Kubernetes gives `/dev/shm` by default; both are emptyDirs so the root
   filesystem can stay read-only.
+
+  The one remaining write is the chromedriver binary itself: FlareSolverr hard-codes
+  `/app/chromedriver` and hands it to undetected-chromedriver, which patches the executable in
+  place on every start. Against a read-only root filesystem that patch fails with `[Errno 30]
+  Read-only file system` and the container crash-loops. An initContainer copies the binary out
+  of the image into an emptyDir, and the container mounts that copy over `/app/chromedriver`,
+  so the single file the patcher needs is writable and nothing else is.
 */ -}}
 {{- $probe := dict "enabled" true "tcpSocket" (dict "port" "http") }}
 {{- $values := include "tankovault.datastore.values" (dict
@@ -21,13 +28,29 @@
       "readinessProbe" (merge (dict "periodSeconds" 10 "timeoutSeconds" 3 "failureThreshold" 3) (deepCopy $probe))
     ) | fromYaml }}
 {{- $ctx := dict "Values" $values "Chart" $.Chart "Release" $.Release "Capabilities" $.Capabilities "Template" $.Template "Files" $.Files }}
+{{- /*
+  The copy step runs the same image with no probes — `common.container` would otherwise attach
+  the service probes to a one-shot command that never listens — and the smallest preset, since
+  all it does is copy a file.
+*/ -}}
+{{- $initValues := include "tankovault.datastore.values" (dict
+      "ctx" .
+      "image" $fs.image
+      "resourcesPreset" "nano"
+      "runAsUser" $fs.runAsUser "runAsGroup" $fs.runAsUser "fsGroup" $fs.runAsUser
+    ) | fromYaml }}
+{{- $initCtx := dict "Values" $initValues "Chart" $.Chart "Release" $.Release "Capabilities" $.Capabilities "Template" $.Template "Files" $.Files }}
 {{- $home := "/home/flaresolverr" }}
+{{- $driverPath := "/app/chromedriver" }}
+{{- $driverDir := "/driver" }}
 {{- $mounts := list
       (dict "name" "home" "mountPath" $home)
-      (dict "name" "dshm" "mountPath" "/dev/shm") }}
+      (dict "name" "dshm" "mountPath" "/dev/shm")
+      (dict "name" "driver" "mountPath" $driverPath "subPath" "chromedriver") }}
 {{- $volumes := list
       (dict "name" "home" "emptyDir" dict)
-      (dict "name" "dshm" "emptyDir" (dict "medium" "Memory" "sizeLimit" $fs.shmSize)) }}
+      (dict "name" "dshm" "emptyDir" (dict "medium" "Memory" "sizeLimit" $fs.shmSize))
+      (dict "name" "driver" "emptyDir" dict) }}
 apiVersion: v1
 kind: Service
 metadata:
@@ -59,6 +82,13 @@ spec:
         app.kubernetes.io/component: flaresolverr
     spec:
       {{- include "common.podSpec.common" $ctx | nindent 6 }}
+      initContainers:
+        {{- include "common.container" (dict
+              "ctx" $initCtx
+              "name" "copy-chromedriver"
+              "command" (list "/bin/sh" "-c" (printf "cp -p %s %s/chromedriver" $driverPath $driverDir))
+              "volumeMounts" (list (dict "name" "driver" "mountPath" $driverDir))
+            ) | nindent 8 }}
       containers:
         {{- include "common.container" (dict
               "ctx" $ctx

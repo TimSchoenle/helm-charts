@@ -85,6 +85,38 @@ tests:
           path: spec.template.spec.securityContext.runAsNonRoot
           value: true
 
+  - it: gives FlareSolverr a writable chromedriver without giving up the read-only root filesystem
+    # undetected-chromedriver patches /app/chromedriver in place on every start, so that one
+    # file is staged into an emptyDir by an initContainer and mounted back over the image's copy.
+    template: flaresolverr.yaml
+    documentIndex: 1
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem
+          value: true
+      - equal:
+          path: spec.template.spec.initContainers[0].name
+          value: copy-chromedriver
+      - equal:
+          path: spec.template.spec.initContainers[0].command
+          value: [/bin/sh, -c, cp -p /app/chromedriver /driver/chromedriver]
+      - contains:
+          path: spec.template.spec.initContainers[0].volumeMounts
+          content:
+            name: driver
+            mountPath: /driver
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: driver
+            mountPath: /app/chromedriver
+            subPath: chromedriver
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: driver
+            emptyDir: {}
+
   - it: gives the render tier the writable paths Chromium needs
     template: deployment.yaml
     documentSelector:

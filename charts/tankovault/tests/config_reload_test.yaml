@@ -53,6 +53,32 @@ tests:
             - name: TANKOVAULT_SECRETS_DIR
               value: /etc/tankovault/secrets
 
+  - it: names the secrets directory only where one is actually mounted
+    # A configured `TANKOVAULT_SECRETS_DIR` that cannot be read is a boot failure naming the
+    # path, not an empty layer. A pod projects only its own service's `secretKeys` and the
+    # frontend has none, so naming the directory anyway crash-loops it on
+    # `which could not be read: No such file or directory`.
+    template: deployment.yaml
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-frontend
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].env
+          value:
+            - name: TANKOVAULT_PROFILE
+              value: production
+            - name: TANKOVAULT_CONFIG
+              value: /etc/tankovault/config
+      - notContains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: secrets
+            mountPath: /etc/tankovault/secrets
+            readOnly: true
+      - isNull:
+          path: spec.template.spec.volumes[?(@.name=="secrets")]
+
   - it: mounts configuration as a whole directory, never a subPath
     template: deployment.yaml
     documentSelector:

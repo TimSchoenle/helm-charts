@@ -154,14 +154,24 @@ boot**, naming the key and both sources. Keeping configuration entirely in files
 collision is structurally impossible, and it is also what makes reload work — an environment
 variable cannot be rotated under a running process. Only the keys that are read before the
 layered configuration exists are passed this way; none of them can be file-sourced.
+
+`TANKOVAULT_SECRETS_DIR` is emitted only for a pod that actually mounts the secrets volume.
+The directory it names is not optional to the service: a configured secrets directory that
+cannot be read is a boot failure naming the path, not an empty layer. A pod projects only its
+own `secretKeys`, and `frontend` has none — so pointing it at a directory no volume provides
+crash-loops it on `which could not be read: No such file or directory`.
+
+Args: ctx (root), secrets (truthy when the pod mounts the secrets volume).
 */}}
 {{- define "tankovault.env" -}}
 - name: TANKOVAULT_PROFILE
   value: {{ .ctx.Values.profile | quote }}
 - name: TANKOVAULT_CONFIG
   value: {{ .ctx.Values.configReload.configDir | quote }}
+{{- if .secrets }}
 - name: TANKOVAULT_SECRETS_DIR
   value: {{ .ctx.Values.configReload.secretsDir | quote }}
+{{- end }}
 {{- end -}}
 
 {{/*
@@ -172,13 +182,24 @@ the kubelet keeps both up to date in place. Neither may ever be mounted with `su
 subPath mount is resolved once at container start and never receives updates, which would
 silently turn every configuration change back into "restart the pod to pick it up".
 */}}
+{{/*
+Whether one service's pod carries a secrets volume at all — the single predicate the volume,
+its mount and `TANKOVAULT_SECRETS_DIR` all read, so the three can never disagree. Empty when
+the service projects no keys; `frontend` is the case that exists today.
+
+Args: ctx (root), service.
+*/}}
+{{- define "tankovault.hasSecrets" -}}
+{{- include "tankovault.secretSources" (dict "ctx" .ctx "service" .service) | trim -}}
+{{- end -}}
+
 {{- define "tankovault.volumes" -}}
 {{- $ctx := .ctx -}}
 {{- $service := .service -}}
 - name: config
   configMap:
     name: {{ include "tankovault.fullname" (dict "ctx" $ctx "service" $service) }}-config
-{{- $sources := include "tankovault.secretSources" (dict "ctx" $ctx "service" $service) | trim }}
+{{- $sources := include "tankovault.hasSecrets" (dict "ctx" $ctx "service" $service) }}
 {{- if $sources }}
 - name: secrets
   projected:
@@ -194,7 +215,7 @@ silently turn every configuration change back into "restart the pod to pick it u
 - name: config
   mountPath: {{ $ctx.Values.configReload.configDir | quote }}
   readOnly: true
-{{- if include "tankovault.secretSources" (dict "ctx" $ctx "service" $service) | trim }}
+{{- if include "tankovault.hasSecrets" (dict "ctx" $ctx "service" $service) }}
 - name: secrets
   mountPath: {{ $ctx.Values.configReload.secretsDir | quote }}
   readOnly: true

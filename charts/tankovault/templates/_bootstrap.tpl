@@ -69,6 +69,11 @@ A container running one `bootstrap` subcommand.
 Used both as the migration initContainer on the service pods that need the schema and as the
 body of the seed Jobs, so the two can never drift apart.
 
+The environment always names the secrets directory: `tankovault.bootstrapVolumeMounts` mounts
+that volume unconditionally, and both pods this container runs in provide one — the bootstrap
+Job through `tankovault.bootstrapVolumes`, and a service pod because the migration is attached
+only to services whose `needsDatabase` puts `database__url` in their own projection.
+
 Args: ctx (root), command (bootstrap subcommand), name (container name).
 */}}
 {{- define "tankovault.bootstrapContainer" -}}
@@ -79,7 +84,7 @@ Args: ctx (root), command (bootstrap subcommand), name (container name).
       "ctx" $ctx
       "name" .name
       "args" (list .command)
-      "env" (include "tankovault.env" (dict "ctx" $root) | fromYamlArray)
+      "env" (include "tankovault.env" (dict "ctx" $root "secrets" true) | fromYamlArray)
       "volumeMounts" (include "tankovault.bootstrapVolumeMounts" $root | fromYamlArray)
     ) -}}
 {{- end -}}

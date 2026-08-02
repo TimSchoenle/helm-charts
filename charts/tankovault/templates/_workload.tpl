@@ -158,7 +158,10 @@ spec:
               "ctx" $ctx
               "name" $spec.slug
               "ports" (include "tankovault.containerPorts" (dict "ctx" $root "service" $service) | fromYamlArray)
-              "env" (include "tankovault.env" (dict "ctx" $root) | fromYamlArray)
+              "env" (include "tankovault.env" (dict
+                    "ctx" $root
+                    "secrets" (include "tankovault.hasSecrets" (dict "ctx" $root "service" $service))
+                  ) | fromYamlArray)
               "volumeMounts" $mounts
             ) | nindent 8 }}
       {{- with (include "common.volumes" (dict "ctx" $ctx "volumes" $volumes)) }}

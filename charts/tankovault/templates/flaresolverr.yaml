@@ -1,0 +1,104 @@
+{{- if .Values.flaresolverr.enabled }}
+{{- $fs := .Values.flaresolverr }}
+{{- /*
+  `runAsUser` is set explicitly and cannot be dropped. The upstream image's `USER` directive
+  names a user rather than a UID, and the kubelet cannot verify `runAsNonRoot: true` against a
+  non-numeric user — it refuses to start the pod with `container has runAsNonRoot and image has
+  non-numeric user`. The value is the UID `useradd` assigns in that image.
+
+  Chromium needs a writable HOME for its profile and crashpad database, and far more shared
+  memory than the 64Mi Kubernetes gives `/dev/shm` by default; both are emptyDirs so the root
+  filesystem can stay read-only.
+
+  The one remaining write is the chromedriver binary itself: FlareSolverr hard-codes
+  `/app/chromedriver` and hands it to undetected-chromedriver, which patches the executable in
+  place on every start. Against a read-only root filesystem that patch fails with `[Errno 30]
+  Read-only file system` and the container crash-loops. An initContainer copies the binary out
+  of the image into an emptyDir, and the container mounts that copy over `/app/chromedriver`,
+  so the single file the patcher needs is writable and nothing else is.
+*/ -}}
+{{- $probe := dict "enabled" true "tcpSocket" (dict "port" "http") }}
+{{- $values := include "tankovault.datastore.values" (dict
+      "ctx" .
+      "image" $fs.image
+      "resourcesPreset" $fs.resourcesPreset
+      "runAsUser" $fs.runAsUser "runAsGroup" $fs.runAsUser "fsGroup" $fs.runAsUser
+      "startupProbe" (merge (dict "periodSeconds" 5 "timeoutSeconds" 3 "failureThreshold" 30) (deepCopy $probe))
+      "livenessProbe" (merge (dict "periodSeconds" 30 "timeoutSeconds" 5 "failureThreshold" 5) (deepCopy $probe))
+      "readinessProbe" (merge (dict "periodSeconds" 10 "timeoutSeconds" 3 "failureThreshold" 3) (deepCopy $probe))
+    ) | fromYaml }}
+{{- $ctx := dict "Values" $values "Chart" $.Chart "Release" $.Release "Capabilities" $.Capabilities "Template" $.Template "Files" $.Files }}
+{{- /*
+  The copy step runs the same image with no probes — `common.container` would otherwise attach
+  the service probes to a one-shot command that never listens — and the smallest preset, since
+  all it does is copy a file.
+*/ -}}
+{{- $initValues := include "tankovault.datastore.values" (dict
+      "ctx" .
+      "image" $fs.image
+      "resourcesPreset" "nano"
+      "runAsUser" $fs.runAsUser "runAsGroup" $fs.runAsUser "fsGroup" $fs.runAsUser
+    ) | fromYaml }}
+{{- $initCtx := dict "Values" $initValues "Chart" $.Chart "Release" $.Release "Capabilities" $.Capabilities "Template" $.Template "Files" $.Files }}
+{{- $home := "/home/flaresolverr" }}
+{{- $driverPath := "/app/chromedriver" }}
+{{- $driverDir := "/driver" }}
+{{- $mounts := list
+      (dict "name" "home" "mountPath" $home)
+      (dict "name" "dshm" "mountPath" "/dev/shm")
+      (dict "name" "driver" "mountPath" $driverPath "subPath" "chromedriver") }}
+{{- $volumes := list
+      (dict "name" "home" "emptyDir" dict)
+      (dict "name" "dshm" "emptyDir" (dict "medium" "Memory" "sizeLimit" $fs.shmSize))
+      (dict "name" "driver" "emptyDir" dict) }}
+apiVersion: v1
+kind: Service
+metadata:
+  {{- include "tankovault.datastore.metadata" (dict "ctx" . "component" "flaresolverr") | nindent 2 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8191
+      targetPort: http
+      protocol: TCP
+  selector:
+    {{- include "tankovault.datastore.selectorLabels" (dict "ctx" . "component" "flaresolverr") | nindent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  {{- include "tankovault.datastore.metadata" (dict "ctx" . "component" "flaresolverr") | nindent 2 }}
+spec:
+  replicas: 1
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      {{- include "tankovault.datastore.selectorLabels" (dict "ctx" . "component" "flaresolverr") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "common.podLabels" $ctx | nindent 8 }}
+        app.kubernetes.io/component: flaresolverr
+    spec:
+      {{- include "common.podSpec.common" $ctx | nindent 6 }}
+      initContainers:
+        {{- include "common.container" (dict
+              "ctx" $initCtx
+              "name" "copy-chromedriver"
+              "command" (list "/bin/sh" "-c" (printf "cp -p %s %s/chromedriver" $driverPath $driverDir))
+              "volumeMounts" (list (dict "name" "driver" "mountPath" $driverDir))
+            ) | nindent 8 }}
+      containers:
+        {{- include "common.container" (dict
+              "ctx" $ctx
+              "name" "flaresolverr"
+              "ports" (list (dict "name" "http" "containerPort" 8191 "protocol" "TCP"))
+              "env" (list
+                (dict "name" "HOME" "value" $home)
+                (dict "name" "LOG_LEVEL" "value" "info"))
+              "volumeMounts" $mounts
+            ) | nindent 8 }}
+      volumes:
+        {{- include "common.volumes" (dict "ctx" $ctx "volumes" $volumes) | nindent 8 }}
+{{- end }}

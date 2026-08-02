@@ -1,0 +1,102 @@
+suite: test the TOML renderer
+templates:
+  - configmap.yaml
+values:
+  - ../ci/default.yaml
+tests:
+  - it: emits every scalar of a table before that table's sub-tables
+    # The single rule that makes the difference between a correct file and a silently wrong
+    # one: in TOML a key belongs to the most recent [table] header, so a scalar emitted after
+    # a sibling sub-table would be reparented into it. Here `security.hsts` must appear before
+    # `[security.cors]`, or the service would read it as `security.cors.hsts` and ignore it.
+    set:
+      config:
+        security:
+          hsts: true
+          cors:
+            allowed_origins: ["https://app.example.com"]
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-api-config
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: "(?s)\\[security\\]\\nhsts = true.*\\[security\\.cors\\]"
+
+  - it: renders each scalar type the way TOML spells it
+    set:
+      config:
+        database:
+          max_connections: 16
+        matching:
+          high: 0.85
+        security:
+          hsts: false
+        metadata:
+          priority:
+            description: ["anilist", "adapter"]
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-api-config
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: "max_connections = 16\\n"
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: "high = 0\\.85\\n"
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: "hsts = false\\n"
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: 'description = \["anilist","adapter"\]'
+
+  - it: quotes and escapes strings rather than emitting them bare
+    set:
+      config:
+        telemetry:
+          log_filter: 'info,tankovault="debug"'
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-api-config
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: 'log_filter = "info,tankovault=\\"debug\\""'
+
+  - it: nests tables with dotted headers
+    set:
+      config:
+        rate_limit:
+          auth:
+            per_minute: 10
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-api-config
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: "\\[rate_limit\\.auth\\]\\nper_minute = 10"
+
+  - it: refuses an array of tables instead of emitting invalid TOML
+    set:
+      config:
+        providers:
+          - name: example
+    asserts:
+      - failedTemplate:
+          errorPattern: "array of tables"
+
+  - it: appends configExtraToml verbatim
+    set:
+      configExtraToml: |
+        [custom]
+        verbatim = true
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-api-config
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: "\\[custom\\]\\nverbatim = true"

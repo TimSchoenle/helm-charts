@@ -1,0 +1,130 @@
+suite: test values validation
+templates:
+  - serviceaccount.yaml
+values:
+  - ../ci/default.yaml
+tests:
+  - it: generates a signing secret rather than refusing to render without one
+    set:
+      auth.jwtSecret: ""
+    asserts:
+      - hasDocuments:
+          count: 1
+
+  - it: refuses a signing secret shorter than the service accepts
+    set:
+      auth.jwtSecret: "too-short"
+    asserts:
+      - failedTemplate:
+          errorPattern: "at least 32 characters"
+
+  - it: generates the internal token in the production profile rather than refusing to render
+    set:
+      profile: production
+      internal.token: ""
+    asserts:
+      - hasDocuments:
+          count: 1
+
+  - it: allows the internal token to be absent outside production
+    set:
+      profile: development
+      internal.token: ""
+    asserts:
+      - hasDocuments:
+          count: 1
+
+  - it: refuses an explicit internal token shorter than the service accepts
+    set:
+      internal.token: "too-short"
+    asserts:
+      - failedTemplate:
+          errorPattern: "internal.token must be at least 32 characters"
+
+  - it: refuses two database sources at once
+    set:
+      postgresql.enabled: true
+      externalDatabase.url: postgres://a:b@c:5432/d
+    asserts:
+      - failedTemplate:
+          errorPattern: "exactly one database source"
+
+  - it: refuses no database at all
+    set:
+      externalDatabase.url: ""
+    asserts:
+      - failedTemplate:
+          errorPattern: "no database configured"
+
+  - it: refuses a partial AniList configuration when sync is enabled
+    # The application credentials are issued by AniList; only the encryption key is generatable.
+    set:
+      anilist.clientSecret: ""
+    asserts:
+      - failedTemplate:
+          errorPattern: "requires the AniList application credentials; missing: anilist.clientSecret"
+
+  - it: does not demand the AniList encryption key it can generate itself
+    set:
+      anilist.tokenEncryptionKey: ""
+    asserts:
+      - hasDocuments:
+          count: 1
+
+  - it: reports every problem in one failure rather than one per run
+    set:
+      auth.jwtSecret: "too-short"
+      anilist.clientId: ""
+    asserts:
+      - failedTemplate:
+          errorPattern: "(?s)auth.jwtSecret must be at least 32 characters.*anilist.clientId"
+
+  - it: generates a password for a seeded administrator rather than demanding one
+    set:
+      bootstrap.seedAdmin.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 1
+
+  - it: refuses a challenge solver with no backend
+    set:
+      externalFlaresolverr.url: ""
+    asserts:
+      - failedTemplate:
+          errorPattern: "requires a solver backend"
+
+  - it: refuses a worker with no NATS to consume from
+    set:
+      externalNats.url: ""
+    asserts:
+      - failedTemplate:
+          errorPattern: "requires NATS JetStream"
+
+  - it: refuses to publish a privileged service
+    # control-plane, sync, render and challenge-solver expose privileged contracts; upstream
+    # publishes none of them even on a single host.
+    set:
+      services.controlPlane.service.type: LoadBalancer
+    asserts:
+      - failedTemplate:
+          errorPattern: "(?s)services.controlPlane.service.type is \"LoadBalancer\".*bypasses the frontend proxy"
+
+  - it: allows publishing a privileged service when explicitly acknowledged
+    set:
+      services.controlPlane.service.type: LoadBalancer
+      allowUnsafeExposure: true
+    asserts:
+      - hasDocuments:
+          count: 1
+
+  - it: stops checking credentials it cannot see
+    # With an existingSecret the chart cannot read the values, so it does not guess at them.
+    # The topology checks that do not depend on credential contents still apply.
+    values:
+      - ../ci/existing-secret.yaml
+    set:
+      externalDatabase.url: ""
+      externalRedis.url: ""
+    asserts:
+      - hasDocuments:
+          count: 1

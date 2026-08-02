@@ -1,0 +1,30 @@
+# External datastores, which is the chart's default posture: nothing stateful is created
+# unless it is asked for.
+#
+# A render fixture, not an install fixture: the endpoints below do not resolve anywhere, so the
+# `pre-install` migration hook could only ever fail against them. `ct install` installs every
+# `ci/*-values.yaml`, which is why this file is not named that way — the repository's own
+# render, kubeconform and policy jobs glob `ci/*.yaml` and still cover it, and so do the
+# `tests/` suites that reference it. Only `minimal-values.yaml` and
+# `bundled-datastores-values.yaml` are installable, and they keep the suffix.
+auth:
+  jwtSecret: ci-jwt-secret-0123456789abcdef0123
+  passwordPepper: ci-password-pepper-0123456789abcd
+internal:
+  token: ci-internal-token-0123456789abcdef01
+anilist:
+  clientId: "12345"
+  clientSecret: ci-anilist-client-secret
+  tokenEncryptionKey: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
+  redirectUri: https://tankovault.example.com/account/anilist-callback
+externalDatabase:
+  url: postgres://tankovault:ci@postgresql.example.com:5432/tankovault
+externalRedis:
+  url: redis://valkey.example.com:6379
+externalNats:
+  url: nats://nats.example.com:4222
+externalFlaresolverr:
+  url: http://flaresolverr.example.com:8191
+services:
+  render:
+    enabled: true

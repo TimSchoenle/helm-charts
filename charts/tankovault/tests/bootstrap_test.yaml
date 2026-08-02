@@ -1,0 +1,231 @@
+suite: test migration and seeding
+templates:
+  - job-migrate.yaml
+  - job-seed.yaml
+  - deployment.yaml
+  - serviceaccount.yaml
+  - secret.yaml
+  - configmap-bootstrap.yaml
+values:
+  - ../ci/default.yaml
+tests:
+  - it: uses a pre-install hook Job against an external database
+    template: job-migrate.yaml
+    asserts:
+      - equal:
+          path: metadata.annotations["helm.sh/hook"]
+          value: pre-install,pre-upgrade
+      - equal:
+          path: metadata.annotations["helm.sh/hook-weight"]
+          value: "-5"
+      - equal:
+          path: spec.template.spec.containers[0].args
+          value: [migrate]
+
+  - it: switches to an initContainer when the database is bundled
+    # A pre-install hook runs before the release's own resources, so with the bundled
+    # PostgreSQL the StatefulSet it would connect to does not exist yet and the hook could only
+    # ever time out. Concurrent initContainers are safe: sqlx takes a Postgres advisory lock.
+    template: job-migrate.yaml
+    set:
+      postgresql.enabled: true
+      postgresql.auth.password: test-password
+      externalDatabase.url: ""
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: adds the migration initContainer to every service pod in that mode
+    template: deployment.yaml
+    set:
+      postgresql.enabled: true
+      postgresql.auth.password: test-password
+      externalDatabase.url: ""
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-api
+    asserts:
+      - equal:
+          path: spec.template.spec.initContainers[0].name
+          value: migrate
+      - equal:
+          path: spec.template.spec.initContainers[0].args
+          value: [migrate]
+
+  - it: leaves pods that never touch the database without a migration initContainer
+    # A pod projects only its own `secretKeys`. `frontend` has none, so the shared bootstrap
+    # volumeMounts would name a `secrets` volume the pod does not define and the API server
+    # rejects the whole Deployment.
+    template: deployment.yaml
+    set:
+      postgresql.enabled: true
+      postgresql.auth.password: test-password
+      externalDatabase.url: ""
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-frontend
+    asserts:
+      - isNull:
+          path: spec.template.spec.initContainers
+      - notContains:
+          path: spec.template.spec.volumes
+          any: true
+          content:
+            name: secrets
+
+  - it: backs the bootstrap container's /tmp mount with a volume of its own
+    # `common.container` adds the /tmp mount whenever the root filesystem is read-only, and only
+    # `common.volumes` provisions the emptyDir behind it. Emitting the Job's volumes directly
+    # produced mounts naming a volume the pod never declared, which the API server rejects.
+    template: job-migrate.yaml
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: tmp
+            mountPath: /tmp
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: tmp
+            emptyDir: {}
+
+  - it: keeps per-service extras out of the one-shot bootstrap workloads
+    # `mergeOverwrite` leaves a populated list in place of an empty one, so these have to be
+    # forced. An inherited extraVolumeMount is not merely noise: nothing declares the volume it
+    # names in a bootstrap Job, so the Job is rejected.
+    template: job-migrate.yaml
+    set:
+      defaults.extraEnv:
+        - name: LEAK
+          value: "x"
+      defaults.extraVolumes:
+        - name: leakvol
+          emptyDir: {}
+      defaults.extraVolumeMounts:
+        - name: leakvol
+          mountPath: /leak
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: LEAK
+            value: "x"
+      - notContains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: leakvol
+            mountPath: /leak
+      - notContains:
+          path: spec.template.spec.volumes
+          any: true
+          content:
+            name: leakvol
+
+  - it: attaches no probes to a one-shot bootstrap container
+    # `common.container` would otherwise inherit the service probes from `defaults` and fail a
+    # container that has no listener at all.
+    template: job-migrate.yaml
+    asserts:
+      - isNull:
+          path: spec.template.spec.containers[0].livenessProbe
+      - isNull:
+          path: spec.template.spec.containers[0].readinessProbe
+
+  - it: honours an explicit migrate mode over the derived one
+    template: job-migrate.yaml
+    set:
+      postgresql.enabled: true
+      postgresql.auth.password: test-password
+      externalDatabase.url: ""
+      bootstrap.migrate.mode: job
+    asserts:
+      - hasDocuments:
+          count: 1
+
+  - it: renders no migration at all when disabled
+    template: job-migrate.yaml
+    set:
+      bootstrap.migrate.mode: disabled
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: seeds only on install, after the schema exists
+    template: job-seed.yaml
+    set:
+      bootstrap.seedAdmin.enabled: true
+      bootstrap.seedAdmin.password: seed-password
+    documentIndex: 0
+    asserts:
+      - equal:
+          path: metadata.annotations["helm.sh/hook"]
+          value: post-install
+      - equal:
+          path: metadata.annotations["helm.sh/hook-weight"]
+          value: "5"
+      - equal:
+          path: spec.template.spec.containers[0].args
+          value: [seed-admin]
+
+  - it: creates everything the migration Job mounts or runs as ahead of it
+    # Helm creates a release's own resources only after every pre-install hook has finished, so
+    # anything the hook Job references has to be a hook itself and carry a lower weight than the
+    # Job at -5. Without the ServiceAccount the Job controller never even schedules a pod
+    # (`error looking up service account`) and the install times out; without the Secret the
+    # pod starts with an empty projection — it is `optional: true` — and dies on a missing
+    # database URL.
+    templates:
+      - serviceaccount.yaml
+      - secret.yaml
+      - configmap-bootstrap.yaml
+    asserts:
+      - equal:
+          path: metadata.annotations["helm.sh/hook"]
+          value: pre-install,pre-upgrade
+      - equal:
+          path: metadata.annotations["helm.sh/hook-weight"]
+          value: "-10"
+
+  - it: keeps those resources for as long as the release, not just the hook
+    # `hook-succeeded` would delete the account every workload runs as and the Secret every pod
+    # projects the moment the migration finished.
+    templates:
+      - serviceaccount.yaml
+      - secret.yaml
+      - configmap-bootstrap.yaml
+    asserts:
+      - equal:
+          path: metadata.annotations["helm.sh/hook-delete-policy"]
+          value: before-hook-creation
+
+  - it: still carries the operator's own annotations onto them
+    # The hook annotations are added to the same block `commonAnnotations` renders into.
+    templates:
+      - serviceaccount.yaml
+      - secret.yaml
+    set:
+      commonAnnotations:
+        example.com/owner: platform
+    asserts:
+      - equal:
+          path: metadata.annotations["example.com/owner"]
+          value: platform
+      - equal:
+          path: metadata.annotations["helm.sh/hook"]
+          value: pre-install,pre-upgrade
+
+  - it: gives the seed step the same pepper the api runs with
+    # Seeding with a different pepper produces an administrator whose password never verifies,
+    # which presents as a wrong password rather than as a misconfiguration.
+    template: job-seed.yaml
+    set:
+      bootstrap.seedAdmin.enabled: true
+      bootstrap.seedAdmin.password: seed-password
+    documentIndex: 0
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes[?(@.name=="secrets")].projected.sources[0].secret.items
+          content:
+            key: auth__password_pepper
+            path: auth__password_pepper

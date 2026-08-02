@@ -1,0 +1,159 @@
+suite: test pod hardening
+# kube-linter covers most of the restricted Pod Security Standard, but it has no template for
+# seccomp, so that one is only ever asserted here.
+templates:
+  - deployment.yaml
+  - postgresql.yaml
+  - nats.yaml
+  - valkey.yaml
+  - flaresolverr.yaml
+  - job-seed.yaml
+values:
+  - ../ci/bundled-datastores-values.yaml
+tests:
+  - it: runs every TankoVault workload as the image's numeric nonroot user
+    template: deployment.yaml
+    asserts:
+      - equal:
+          path: spec.template.spec.securityContext.runAsNonRoot
+          value: true
+      - equal:
+          path: spec.template.spec.securityContext.runAsUser
+          value: 1001
+      - equal:
+          path: spec.template.spec.securityContext.seccompProfile.type
+          value: RuntimeDefault
+
+  - it: gives the bootstrap Jobs the same identity, so they can read the projected credentials
+    # The credentials are projected at mode 0400 and owned by root; only `fsGroup` makes them
+    # readable to the image's UID 1001. A Job rendered without it fails on the first key it
+    # opens with `Permission denied (os error 13)`, which is what a missing `fsGroup` looks
+    # like from inside the container.
+    template: job-seed.yaml
+    documentIndex: 0
+    asserts:
+      - equal:
+          path: spec.template.spec.securityContext.runAsUser
+          value: 1001
+      - equal:
+          path: spec.template.spec.securityContext.runAsGroup
+          value: 1001
+      - equal:
+          path: spec.template.spec.securityContext.fsGroup
+          value: 1001
+
+  - it: drops every capability and forbids privilege escalation
+    template: deployment.yaml
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.allowPrivilegeEscalation
+          value: false
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem
+          value: true
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.capabilities.drop
+          value: [ALL]
+
+  - it: hardens the bundled PostgreSQL too
+    template: postgresql.yaml
+    documentIndex: 1
+    asserts:
+      - equal:
+          path: spec.template.spec.securityContext.seccompProfile.type
+          value: RuntimeDefault
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem
+          value: true
+      - equal:
+          path: spec.template.spec.securityContext.runAsUser
+          value: 999
+
+  - it: hardens the bundled NATS
+    template: nats.yaml
+    documentIndex: 1
+    asserts:
+      - equal:
+          path: spec.template.spec.securityContext.seccompProfile.type
+          value: RuntimeDefault
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem
+          value: true
+
+  - it: hardens the bundled Valkey
+    template: valkey.yaml
+    documentIndex: 1
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem
+          value: true
+      - equal:
+          path: spec.template.spec.securityContext.seccompProfile.type
+          value: RuntimeDefault
+
+  - it: gives FlareSolverr an explicit numeric UID
+    # Its image's USER directive names a user rather than a UID, and the kubelet cannot verify
+    # runAsNonRoot against a non-numeric user — it refuses to start the pod outright.
+    template: flaresolverr.yaml
+    documentIndex: 1
+    asserts:
+      - equal:
+          path: spec.template.spec.securityContext.runAsUser
+          value: 1000
+      - equal:
+          path: spec.template.spec.securityContext.runAsNonRoot
+          value: true
+
+  - it: gives FlareSolverr a writable chromedriver without giving up the read-only root filesystem
+    # undetected-chromedriver patches /app/chromedriver in place on every start, so that one
+    # file is staged into an emptyDir by an initContainer and mounted back over the image's copy.
+    template: flaresolverr.yaml
+    documentIndex: 1
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem
+          value: true
+      - equal:
+          path: spec.template.spec.initContainers[0].name
+          value: copy-chromedriver
+      - equal:
+          path: spec.template.spec.initContainers[0].command
+          value: [/bin/sh, -c, cp -p /app/chromedriver /driver/chromedriver]
+      - contains:
+          path: spec.template.spec.initContainers[0].volumeMounts
+          content:
+            name: driver
+            mountPath: /driver
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: driver
+            mountPath: /app/chromedriver
+            subPath: chromedriver
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: driver
+            emptyDir: {}
+
+  - it: gives the render tier the writable paths Chromium needs
+    template: deployment.yaml
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-render
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: dshm
+            emptyDir:
+              medium: Memory
+              sizeLimit: 1Gi
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: home
+            mountPath: /home/nonroot
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem
+          value: true

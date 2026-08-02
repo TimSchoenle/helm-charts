@@ -1,0 +1,28 @@
+{{- /*
+The upstream Grafana overview dashboard, loaded from a file via `.Files.Glob` rather than
+inlined. Grafana's own legend syntax uses `{{ }}`, which collides with Go's delimiters, so the
+JSON has to arrive as data and never pass through the template engine.
+*/ -}}
+{{- if and .Values.metrics.enabled .Values.metrics.dashboard.enabled }}
+{{- $dashboards := .Files.Glob "dashboards/*.json" }}
+{{- if not $dashboards }}
+{{- fail "metrics.dashboard.enabled is set but no dashboards were found under dashboards/*.json" }}
+{{- end }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "common.fullname.suffixed" (dict "ctx" . "suffix" "dashboards") }}
+  namespace: {{ include "common.namespace" . }}
+  labels:
+    {{- include "common.labels" . | nindent 4 }}
+    {{ .Values.metrics.dashboard.label }}: {{ .Values.metrics.dashboard.labelValue | quote }}
+  {{- with (include "common.annotations" .) }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
+data:
+  {{- range $path, $_ := $dashboards }}
+  {{ base $path }}: |
+    {{- $.Files.Get $path | nindent 4 }}
+  {{- end }}
+{{- end }}

@@ -1,0 +1,60 @@
+{{ include "common.name" . }} {{ .Chart.AppVersion }} installed as {{ .Release.Name }} in {{ include "common.namespace" . }}.
+
+Reach the application:
+{{- if .Values.ingress.enabled }}
+
+  {{ include "tankovault.externalUrl" . }}
+{{- if not .Values.ingress.tls.enabled }}
+
+  WARNING: ingress.tls.enabled is false. `auth.cookie_secure` defaults to true, so the browser
+  will not return the session cookie over plain HTTP and every login will appear to succeed and
+  then immediately log out. `localhost` is the only host exempt from this.
+{{- end }}
+{{- else }}
+
+  kubectl --namespace {{ include "common.namespace" . }} port-forward svc/{{ include "tankovault.fullname" (dict "ctx" . "service" "frontend") }} 3000:3000
+
+  then open http://localhost:3000
+
+  The frontend serves the SPA and proxies /v1/* to the API, so this one origin is all a browser
+  needs. Do not port-forward or publish the API, control-plane, sync, render or challenge-solver
+  directly — they expose privileged contracts and bypass the rate limiter.
+{{- end }}
+{{ if .Values.bootstrap.seedAdmin.enabled }}
+An administrator was seeded as {{ .Values.bootstrap.seedAdmin.username | quote }}. Sign in and
+change the password now.
+{{- if or .Values.bootstrap.seedAdmin.password .Values.existingSecret }}
+The value you supplied is in your values file and in the release Secret.
+{{- else }}
+The chart generated the password; read it once with:
+
+  kubectl --namespace {{ include "common.namespace" . }} get secret {{ include "tankovault.secretName" . }} \
+    -o jsonpath='{.data.seed_admin_password}' | base64 -d
+{{- end }}
+{{- else }}
+No administrator has been created. Registration confers no privilege, so until you run the seed
+step there is no account that can administer anything:
+
+  helm upgrade {{ .Release.Name }} ... \
+    --set bootstrap.seedAdmin.enabled=true
+{{- end }}
+{{ if not .Values.postgresql.enabled }}{{ else }}
+NOTE: the bundled PostgreSQL is a single instance with no failover and no point-in-time
+recovery. It exists so the chart installs on a bare cluster. Before this carries anything you
+care about, move to `externalDatabase` and a database you back up.
+{{- end }}
+{{- if and .Values.services.api.enabled (not (include "tankovault.redisUrl" .)) }}
+
+NOTE: no Redis is configured. The API rate limiter falls back to per-replica in-memory counters,
+which multiplies every configured limit by the replica count, and SSE tickets become
+process-local. Set `valkey.enabled=true` or `externalRedis.url`.
+{{- end }}
+
+Configuration reloads in place. Every service watches its mounted config and secret directories
+and rebuilds its runtime when the kubelet refreshes them, so `helm upgrade` with a changed
+`config` value does NOT restart pods — expect the change to take effect within a kubelet sync
+period (~1 minute), with the restart count unchanged. The exceptions are `telemetry.*` and
+`metrics.*`, which are installed process-globally and need a real restart:
+
+  kubectl --namespace {{ include "common.namespace" . }} rollout restart deployment \
+    --selector app.kubernetes.io/part-of={{ include "common.name" . }}

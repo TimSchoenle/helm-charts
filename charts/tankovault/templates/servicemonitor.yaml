@@ -1,0 +1,58 @@
+{{- /*
+One ServiceMonitor per service, not one for the release.
+
+`docs/OBSERVABILITY.md` is explicit that the setup uses eight per-service jobs rather than one
+job with several targets, because metrics carry no service label and the Prometheus `job` label
+is therefore the sole identifier of which service emitted a series — "collapsing them would
+silently destroy every per-service rule".
+
+`jobLabel` is what makes that true here and must not be dropped. Without it the Prometheus
+Operator sets `job` to the *Service name* (`RELEASE-tankovault-api`), while every vendored rule
+matches on the bare slug — `up{job=~"api|frontend"}`, `sum by (job) (...)`. The rules would load
+without error and then never fire. Pointing `jobLabel` at `app.kubernetes.io/component`, which
+this chart already sets to the slug, makes `job` come out as `api`, `worker`, `control-plane`
+and so on, exactly as the rules and the dashboard expect.
+*/ -}}
+{{- /*
+Rendered whenever it is enabled, without probing `.Capabilities` for the CRD. The Prometheus
+Operator CRDs are a documented prerequisite, and `helm template` — which the repository's policy
+scan and manifest validation both run — reports no API versions at all, so a capability guard
+here would silently drop these objects from every CI render rather than validate them.
+*/ -}}
+{{- if and .Values.metrics.enabled .Values.metrics.serviceMonitor.enabled }}
+{{- $specs := include "tankovault.serviceSpecs" . | fromYaml }}
+{{- range $service, $spec := $specs }}
+{{- if (index $.Values.services $service).enabled }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "tankovault.fullname" (dict "ctx" $ "service" $service) }}
+  namespace: {{ include "common.namespace" $ }}
+  labels:
+    {{- include "common.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $spec.slug }}
+    {{- with $.Values.metrics.serviceMonitor.labels }}
+    {{- include "common.tplvalues.render" (dict "value" . "context" $) | nindent 4 }}
+    {{- end }}
+  {{- with (include "common.annotations" $) }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
+spec:
+  jobLabel: app.kubernetes.io/component
+  namespaceSelector:
+    matchNames:
+      - {{ include "common.namespace" $ }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "tankovault.name" (dict "ctx" $ "service" $service) }}
+      app.kubernetes.io/instance: {{ $.Release.Name }}
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: {{ $.Values.metrics.serviceMonitor.interval }}
+      scrapeTimeout: {{ $.Values.metrics.serviceMonitor.scrapeTimeout }}
+{{- end }}
+{{- end }}
+{{- end }}

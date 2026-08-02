@@ -1,0 +1,3462 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "properties": {
+    "allowUnsafeExposure": {
+      "default": false,
+      "description": "Permit `control-plane`, `sync`, `render` and `challenge-solver` to use a Service type\nother than `ClusterIP`. Off by default and validated, because those four expose privileged\ncontracts: upstream publishes none of them even on a single host, and reaching them directly\nbypasses both the frontend proxy and the rate limiter.",
+      "required": [],
+      "title": "allowUnsafeExposure",
+      "type": "boolean"
+    },
+    "anilist": {
+      "additionalProperties": true,
+      "properties": {
+        "clientId": {
+          "default": "",
+          "description": "AniList OAuth application client ID. Register at \u003chttps://anilist.co/settings/developer\u003e.",
+          "required": [],
+          "title": "clientId",
+          "type": "string"
+        },
+        "clientSecret": {
+          "default": "",
+          "description": "AniList OAuth application client secret.",
+          "required": [],
+          "title": "clientSecret",
+          "type": "string"
+        },
+        "redirectUri": {
+          "default": "",
+          "description": "OAuth redirect URI. Left empty it is derived from the ingress as\n`\u003cexternal URL\u003e/account/anilist-callback`. It must point at the **frontend**, not the API:\nthe API callback would need the SPA's in-memory bearer token, which a browser redirect\ncannot carry.",
+          "required": [],
+          "title": "redirectUri",
+          "type": "string"
+        },
+        "tokenEncryptionKey": {
+          "default": "",
+          "description": "Base64 of exactly 32 bytes, sealing every user's AniList token at rest. Left empty the\nchart generates one when `services.sync` is enabled and remembers it across upgrades, which\nis the recommended setting; set one explicitly (`openssl rand -base64 32`) only if it has to\nbe known outside the release. Losing it forces every account to re-link; leaking it exposes\nevery stored token. Rotating it does not re-seal tokens already stored.",
+          "required": [],
+          "title": "tokenEncryptionKey",
+          "type": "string"
+        }
+      },
+      "required": [],
+      "title": "anilist"
+    },
+    "auth": {
+      "additionalProperties": true,
+      "properties": {
+        "jwtSecret": {
+          "default": "",
+          "description": "Token signing secret (`auth.jwt_secret`). Left empty the chart generates one and remembers\nit across upgrades, which is the recommended setting; set one explicitly (minimum 32\ncharacters, e.g. `openssl rand -hex 32`) only if it has to be known outside the release. The\nknown upstream placeholder is refused at boot in every profile, and rotating the value signs\nevery user out.",
+          "required": [],
+          "title": "jwtSecret",
+          "type": "string"
+        },
+        "passwordPepper": {
+          "default": "",
+          "description": "Server-side pepper mixed into every argon2id hash, so a database leak alone cannot be\nbrute-forced offline. Left empty the chart generates one **on a first install only** and\nremembers it across upgrades; a release that already exists without a pepper keeps running\nwithout one, because every password stored unpeppered would stop verifying the moment one\nappeared. For the same reason it must never change once set: rotating or losing it\ninvalidates every stored password, so back the Secret up. The `seed-admin` step receives the\nidentical value, or the administrator it creates could never log in.",
+          "required": [],
+          "title": "passwordPepper",
+          "type": "string"
+        }
+      },
+      "required": [],
+      "title": "auth"
+    },
+    "bootstrap": {
+      "additionalProperties": true,
+      "description": "Schema migration and first-install seeding, all from the `bootstrap` image. Nothing\npublished carries a destructive command; resetting the schema is not available in any image.",
+      "properties": {
+        "image": {
+          "additionalProperties": true,
+          "properties": {
+            "repository": {
+              "default": "timschoenle/tankovault-bootstrap",
+              "description": "Image repository.",
+              "required": [],
+              "title": "repository",
+              "type": "string"
+            },
+            "tag": {
+              "default": "v0.4.1@sha256:3ee5cc7763db38db5f37d2ae82127428edb6bf8cb4ede4689cc4d7a8c71d86ea",
+              "description": "Image tag, pinned by digest.",
+              "required": [],
+              "title": "tag",
+              "type": "string"
+            }
+          },
+          "required": [],
+          "title": "image"
+        },
+        "migrate": {
+          "additionalProperties": true,
+          "properties": {
+            "backoffLimit": {
+              "default": 3,
+              "description": "Retries before the migration Job is considered failed.",
+              "minimum": 0,
+              "required": [],
+              "title": "backoffLimit",
+              "type": "integer"
+            },
+            "mode": {
+              "default": "auto",
+              "description": "How `bootstrap migrate` runs. `job` is a `pre-install,pre-upgrade` Helm hook, correct\nwhen the database already exists. `initContainer` runs it in every service pod, which is\nwhat the bundled PostgreSQL needs — a pre-install hook would run before the StatefulSet\nexists and could only ever fail. Concurrent runs are safe: sqlx takes a Postgres advisory\nlock. `auto` picks `initContainer` when `postgresql.enabled`, otherwise `job`.",
+              "enum": [
+                "auto",
+                "job",
+                "initContainer",
+                "disabled"
+              ],
+              "required": [],
+              "title": "mode"
+            }
+          },
+          "required": [],
+          "title": "migrate"
+        },
+        "resourcesPreset": {
+          "default": "small",
+          "description": "Resource t-shirt size for the bootstrap containers.",
+          "enum": [
+            "",
+            "nano",
+            "micro",
+            "small",
+            "medium",
+            "large"
+          ],
+          "required": [],
+          "title": "resourcesPreset"
+        },
+        "seedAdmin": {
+          "additionalProperties": true,
+          "properties": {
+            "email": {
+              "default": "",
+              "description": "Administrator email address.",
+              "required": [],
+              "title": "email",
+              "type": "string"
+            },
+            "enabled": {
+              "default": false,
+              "description": "Create the first administrator on install. Create-only: re-running changes nothing.\nThis is the only account privilege is ever minted for, since registration confers none.",
+              "required": [],
+              "title": "enabled",
+              "type": "boolean"
+            },
+            "password": {
+              "default": "",
+              "description": "Initial administrator password. Left empty the chart generates one and remembers it\nacross upgrades; NOTES.txt prints the command that reads it back out of the Secret. It is\ncreated with the same `auth.passwordPepper` the API runs with, because a mismatch produces\nan account that can never log in.",
+              "required": [],
+              "title": "password",
+              "type": "string"
+            },
+            "username": {
+              "default": "admin",
+              "description": "Administrator username.",
+              "required": [],
+              "title": "username",
+              "type": "string"
+            }
+          },
+          "required": [],
+          "title": "seedAdmin"
+        },
+        "seedProviders": {
+          "additionalProperties": true,
+          "properties": {
+            "enabled": {
+              "default": false,
+              "description": "Install the built-in provider presets. Each can be disabled or retargeted from the\nadmin console afterwards.",
+              "required": [],
+              "title": "enabled",
+              "type": "boolean"
+            }
+          },
+          "required": [],
+          "title": "seedProviders"
+        }
+      },
+      "required": [],
+      "title": "bootstrap"
+    },
+    "channels": {
+      "additionalProperties": true,
+      "description": "Notification fan-out targets read by the `notifier` service.",
+      "properties": {
+        "discordWebhookUrl": {
+          "default": "",
+          "description": "Discord webhook URL. Empty disables the channel.",
+          "required": [],
+          "title": "discordWebhookUrl",
+          "type": "string"
+        },
+        "emailTo": {
+          "description": "Static recipient addresses for new-chapter notifications. Empty disables the channel.",
+          "items": {
+            "required": [],
+            "type": "string"
+          },
+          "required": [],
+          "title": "emailTo",
+          "type": "array"
+        },
+        "webhookUrl": {
+          "default": "",
+          "description": "Generic outbound webhook URL. Empty disables the channel.",
+          "required": [],
+          "title": "webhookUrl",
+          "type": "string"
+        }
+      },
+      "required": [],
+      "title": "channels"
+    },
+    "common": {
+      "description": "Shared template partials for the TimSchoenle Helm charts",
+      "properties": {
+        "affinity": {
+          "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.Affinity",
+          "required": []
+        },
+        "automountServiceAccountToken": {
+          "default": false,
+          "description": "Mount the ServiceAccount API token into the pod.\nSet on the pod itself, which is what actually keeps the token out of the container: the\nServiceAccount-level setting is ignored as soon as a pod names a different account.",
+          "required": [],
+          "title": "automountServiceAccountToken",
+          "type": "boolean"
+        },
+        "commonAnnotations": {
+          "additionalProperties": true,
+          "description": "Annotations added to every object the chart creates. Values may contain Go templates.",
+          "required": [],
+          "title": "commonAnnotations",
+          "type": "object"
+        },
+        "commonLabels": {
+          "additionalProperties": true,
+          "description": "Labels added to every object the chart creates. Values may contain Go templates.",
+          "required": [],
+          "title": "commonLabels",
+          "type": "object"
+        },
+        "component": {
+          "default": "",
+          "description": "Value for the `app.kubernetes.io/component` label.",
+          "required": [],
+          "title": "component",
+          "type": "string"
+        },
+        "dnsConfig": {
+          "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.PodDNSConfig",
+          "required": []
+        },
+        "dnsPolicy": {
+          "default": "",
+          "description": "Pod DNS policy.",
+          "required": [],
+          "title": "dnsPolicy",
+          "type": "string"
+        },
+        "extraEnv": {
+          "description": "Additional environment variables appended to the application container.",
+          "items": {
+            "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.EnvVar",
+            "required": []
+          },
+          "required": [],
+          "title": "extraEnv",
+          "type": "array"
+        },
+        "extraVolumeMounts": {
+          "description": "Additional volume mounts added to the application container.",
+          "items": {
+            "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.VolumeMount",
+            "required": []
+          },
+          "required": [],
+          "title": "extraVolumeMounts",
+          "type": "array"
+        },
+        "extraVolumes": {
+          "description": "Additional volumes added to the pod.",
+          "items": {
+            "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.Volume",
+            "required": []
+          },
+          "required": [],
+          "title": "extraVolumes",
+          "type": "array"
+        },
+        "fullnameOverride": {
+          "default": "",
+          "description": "Override the full generated resource name.",
+          "required": [],
+          "title": "fullnameOverride",
+          "type": "string"
+        },
+        "global": {
+          "description": "Global values are values that can be accessed from any chart or subchart by exactly the same name.",
+          "required": [],
+          "title": "global",
+          "type": "object"
+        },
+        "hostAliases": {
+          "description": "Host aliases injected into the pod's /etc/hosts.",
+          "items": {
+            "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.HostAlias",
+            "required": []
+          },
+          "required": [],
+          "title": "hostAliases",
+          "type": "array"
+        },
+        "image": {
+          "additionalProperties": true,
+          "properties": {
+            "pullPolicy": {
+              "default": "",
+              "description": "Image pull policy. Left empty, resolves to `Always` for the `latest` tag and\n`IfNotPresent` for anything pinned.",
+              "enum": [
+                "",
+                "Always",
+                "IfNotPresent",
+                "Never"
+              ],
+              "required": [],
+              "title": "pullPolicy"
+            },
+            "registry": {
+              "default": "",
+              "description": "Registry host. Left empty, the repository is used as-is (Docker Hub).",
+              "required": [],
+              "title": "registry",
+              "type": "string"
+            },
+            "repository": {
+              "default": "",
+              "description": "Image repository. Required.",
+              "required": [],
+              "title": "repository",
+              "type": "string"
+            },
+            "tag": {
+              "default": "",
+              "description": "Image tag. Defaults to the chart's `appVersion`. May pin a digest inline\n(`v1.2.3\nversion marker.",
+              "required": [],
+              "title": "tag",
+              "type": "string"
+            }
+          },
+          "required": [],
+          "title": "image"
+        },
+        "imagePullSecrets": {
+          "description": "Pull secrets for private registries. Accepts `- name: regcred` or the shorthand `- regcred`.",
+          "items": {
+            "required": []
+          },
+          "required": [],
+          "title": "imagePullSecrets",
+          "type": "array"
+        },
+        "kubeVersionOverride": {
+          "default": "",
+          "description": "Kubernetes version to target when branching on API availability.\nLets `helm template` render for a specific cluster version without a live connection.\nLeave empty to detect from the cluster.",
+          "required": [],
+          "title": "kubeVersionOverride",
+          "type": "string"
+        },
+        "livenessProbe": {
+          "additionalProperties": true,
+          "description": "Liveness probe. See `startupProbe` for the accepted shape.",
+          "properties": {
+            "enabled": {
+              "default": false,
+              "description": "Enable the liveness probe.",
+              "required": [],
+              "title": "enabled",
+              "type": "boolean"
+            }
+          },
+          "required": [],
+          "title": "livenessProbe"
+        },
+        "nameOverride": {
+          "default": "",
+          "description": "Override the chart name used in resource names and labels.",
+          "required": [],
+          "title": "nameOverride",
+          "type": "string"
+        },
+        "namespaceOverride": {
+          "default": "",
+          "description": "Deploy into a namespace other than the release namespace.",
+          "required": [],
+          "title": "namespaceOverride",
+          "type": "string"
+        },
+        "networkPolicy": {
+          "additionalProperties": true,
+          "description": "Network policy configuration.\n\nEvery generated egress rule is scoped by a `to:` selector. An egress rule that lists only\nports is not a restriction — the NetworkPolicy API reads a missing `to` as \"any\ndestination\", so such a policy permits traffic to every in-cluster service and to the\ncloud metadata endpoint.",
+          "properties": {
+            "egress": {
+              "additionalProperties": true,
+              "description": "Egress rules.",
+              "properties": {
+                "cidr": {
+                  "default": "0.0.0.0/0",
+                  "description": "Destination CIDR for the HTTP/HTTPS rules.",
+                  "required": [],
+                  "title": "cidr",
+                  "type": "string"
+                },
+                "customRules": {
+                  "description": "Additional egress rules, appended verbatim. Each must carry its own `to:` selector.",
+                  "items": {
+                    "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyEgressRule",
+                    "required": []
+                  },
+                  "required": [],
+                  "title": "customRules",
+                  "type": "array"
+                },
+                "dns": {
+                  "additionalProperties": true,
+                  "description": "Allow DNS resolution.",
+                  "properties": {
+                    "enabled": {
+                      "default": true,
+                      "description": "Allow egress to the cluster DNS service.",
+                      "required": [],
+                      "title": "enabled",
+                      "type": "boolean"
+                    },
+                    "namespaceSelector": {
+                      "additionalProperties": true,
+                      "description": "Namespace selector for the DNS service.",
+                      "properties": {
+                        "kubernetes.io/metadata.name": {
+                          "default": "kube-system",
+                          "required": [],
+                          "title": "kubernetes.io/metadata.name",
+                          "type": "string"
+                        }
+                      },
+                      "required": [],
+                      "title": "namespaceSelector",
+                      "type": "object"
+                    },
+                    "podSelector": {
+                      "additionalProperties": true,
+                      "description": "Pod selector for the DNS service.",
+                      "properties": {
+                        "k8s-app": {
+                          "default": "kube-dns",
+                          "required": [],
+                          "title": "k8s-app",
+                          "type": "string"
+                        }
+                      },
+                      "required": [],
+                      "title": "podSelector",
+                      "type": "object"
+                    }
+                  },
+                  "required": [],
+                  "title": "dns"
+                },
+                "enabled": {
+                  "default": true,
+                  "description": "Add egress rules. Disabled means default-deny for outbound traffic.",
+                  "required": [],
+                  "title": "enabled",
+                  "type": "boolean"
+                },
+                "except": {
+                  "description": "CIDRs carved out of `cidr`. Defaults exclude RFC1918 private space and link-local\n169.254.0.0/16, which covers the cloud instance metadata endpoint.",
+                  "items": {
+                    "anyOf": [
+                      {
+                        "required": [],
+                        "type": "string"
+                      },
+                      {
+                        "required": [],
+                        "type": "string"
+                      },
+                      {
+                        "required": [],
+                        "type": "string"
+                      },
+                      {
+                        "required": [],
+                        "type": "string"
+                      }
+                    ],
+                    "required": []
+                  },
+                  "required": [],
+                  "title": "except",
+                  "type": "array"
+                },
+                "http": {
+                  "additionalProperties": true,
+                  "description": "Allow outbound HTTP.",
+                  "properties": {
+                    "enabled": {
+                      "default": false,
+                      "description": "Allow egress to TCP/80 on the destinations described by `cidr`/`except`.",
+                      "required": [],
+                      "title": "enabled",
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [],
+                  "title": "http"
+                },
+                "https": {
+                  "additionalProperties": true,
+                  "description": "Allow outbound HTTPS.",
+                  "properties": {
+                    "enabled": {
+                      "default": true,
+                      "description": "Allow egress to TCP/443 on the destinations described by `cidr`/`except`.",
+                      "required": [],
+                      "title": "enabled",
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [],
+                  "title": "https"
+                }
+              },
+              "required": [],
+              "title": "egress"
+            },
+            "enabled": {
+              "default": false,
+              "description": "Create the NetworkPolicies. When enabled with no rules configured, the result is a\ndefault-deny policy, which is intentional.",
+              "required": [],
+              "title": "enabled",
+              "type": "boolean"
+            },
+            "extraEgress": {
+              "description": "Extra egress rules appended regardless of `egress.enabled`.",
+              "items": {
+                "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyEgressRule",
+                "required": []
+              },
+              "required": [],
+              "title": "extraEgress",
+              "type": "array"
+            },
+            "extraIngress": {
+              "description": "Extra ingress rules appended regardless of `ingress.enabled`.",
+              "items": {
+                "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyIngressRule",
+                "required": []
+              },
+              "required": [],
+              "title": "extraIngress",
+              "type": "array"
+            },
+            "ingress": {
+              "additionalProperties": true,
+              "description": "Ingress rules.",
+              "properties": {
+                "controller": {
+                  "additionalProperties": true,
+                  "description": "Allow traffic from the ingress controller.",
+                  "properties": {
+                    "enabled": {
+                      "default": true,
+                      "description": "Allow ingress from the ingress controller.",
+                      "required": [],
+                      "title": "enabled",
+                      "type": "boolean"
+                    },
+                    "namespace": {
+                      "default": "traefik",
+                      "description": "Namespace the ingress controller runs in.",
+                      "required": [],
+                      "title": "namespace",
+                      "type": "string"
+                    },
+                    "ports": {
+                      "description": "Restrict the rule to specific ports. Empty means all ports.",
+                      "items": {
+                        "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyPort",
+                        "required": []
+                      },
+                      "required": [],
+                      "title": "ports",
+                      "type": "array"
+                    },
+                    "selector": {
+                      "additionalProperties": true,
+                      "description": "Pod selector matching the ingress controller.",
+                      "properties": {
+                        "app.kubernetes.io/name": {
+                          "default": "traefik",
+                          "required": [],
+                          "title": "app.kubernetes.io/name",
+                          "type": "string"
+                        }
+                      },
+                      "required": [],
+                      "title": "selector",
+                      "type": "object"
+                    }
+                  },
+                  "required": [],
+                  "title": "controller"
+                },
+                "customRules": {
+                  "description": "Additional ingress rules, appended verbatim.",
+                  "items": {
+                    "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyIngressRule",
+                    "required": []
+                  },
+                  "required": [],
+                  "title": "customRules",
+                  "type": "array"
+                },
+                "enabled": {
+                  "default": true,
+                  "description": "Add ingress rules. Disabled means default-deny for inbound traffic.",
+                  "required": [],
+                  "title": "enabled",
+                  "type": "boolean"
+                },
+                "monitoring": {
+                  "additionalProperties": true,
+                  "description": "Allow scraping from a monitoring namespace.",
+                  "properties": {
+                    "enabled": {
+                      "default": true,
+                      "description": "Allow ingress from the monitoring namespace.",
+                      "required": [],
+                      "title": "enabled",
+                      "type": "boolean"
+                    },
+                    "namespace": {
+                      "default": "monitoring",
+                      "description": "Monitoring namespace, matched on `kubernetes.io/metadata.name`.",
+                      "required": [],
+                      "title": "namespace",
+                      "type": "string"
+                    },
+                    "namespaceSelector": {
+                      "additionalProperties": true,
+                      "description": "Override the namespace selector entirely.",
+                      "required": [],
+                      "title": "namespaceSelector",
+                      "type": "object"
+                    },
+                    "ports": {
+                      "description": "Restrict the rule to specific ports. Empty means all ports.",
+                      "items": {
+                        "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyPort",
+                        "required": []
+                      },
+                      "required": [],
+                      "title": "ports",
+                      "type": "array"
+                    }
+                  },
+                  "required": [],
+                  "title": "monitoring"
+                }
+              },
+              "required": [],
+              "title": "ingress"
+            }
+          },
+          "required": [],
+          "title": "networkPolicy"
+        },
+        "nodeSelector": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Node selector for pod assignment.",
+          "required": [],
+          "title": "nodeSelector",
+          "type": "object"
+        },
+        "partOf": {
+          "default": "",
+          "description": "Value for the `app.kubernetes.io/part-of` label.",
+          "required": [],
+          "title": "partOf",
+          "type": "string"
+        },
+        "podAnnotations": {
+          "additionalProperties": true,
+          "description": "Annotations added to the pod template.",
+          "required": [],
+          "title": "podAnnotations",
+          "type": "object"
+        },
+        "podAntiAffinity": {
+          "default": "",
+          "description": "Shorthand for spreading replicas across nodes. `soft` prefers, `hard` requires.",
+          "enum": [
+            "",
+            "soft",
+            "hard"
+          ],
+          "required": [],
+          "title": "podAntiAffinity"
+        },
+        "podLabels": {
+          "additionalProperties": true,
+          "description": "Labels added to the pod template.",
+          "required": [],
+          "title": "podLabels",
+          "type": "object"
+        },
+        "podSecurityContext": {
+          "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.PodSecurityContext",
+          "required": []
+        },
+        "podSecurityContextPreset": {
+          "default": "restricted",
+          "description": "Baseline for the pod security context. `restricted` applies the Pod Security Standards\nrestricted profile (`runAsNonRoot`, `seccompProfile: RuntimeDefault`,\n`fsGroupChangePolicy: OnRootMismatch`); `none` applies nothing. Identity fields\n(`runAsUser`, `runAsGroup`, `fsGroup`) are always left to the chart, since they must match\nthe UID baked into the image.",
+          "enum": [
+            "restricted",
+            "none"
+          ],
+          "required": [],
+          "title": "podSecurityContextPreset"
+        },
+        "priorityClassName": {
+          "default": "",
+          "description": "PriorityClass for the pod.",
+          "required": [],
+          "title": "priorityClassName",
+          "type": "string"
+        },
+        "readinessProbe": {
+          "additionalProperties": true,
+          "description": "Readiness probe. See `startupProbe` for the accepted shape.",
+          "properties": {
+            "enabled": {
+              "default": false,
+              "description": "Enable the readiness probe.",
+              "required": [],
+              "title": "enabled",
+              "type": "boolean"
+            }
+          },
+          "required": [],
+          "title": "readinessProbe"
+        },
+        "resources": {
+          "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.ResourceRequirements",
+          "required": []
+        },
+        "resourcesPreset": {
+          "default": "",
+          "description": "Named resource sizing. Ignored when `resources` is set.\nPresets set a memory limit and CPU/memory requests but no CPU limit: a CPU limit does not\nprotect the node the way a memory limit does, it only throttles this workload.",
+          "enum": [
+            "",
+            "nano",
+            "micro",
+            "small",
+            "medium",
+            "large"
+          ],
+          "required": [],
+          "title": "resourcesPreset"
+        },
+        "revisionHistoryLimit": {
+          "default": 3,
+          "description": "Number of old ReplicaSets to retain for rollback.",
+          "required": [],
+          "title": "revisionHistoryLimit",
+          "type": "integer"
+        },
+        "securityContext": {
+          "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.SecurityContext",
+          "required": []
+        },
+        "securityContextPreset": {
+          "default": "restricted",
+          "description": "Baseline for the container security context. `restricted` drops all capabilities and\nforbids privilege escalation, a writable root filesystem and running as root.",
+          "enum": [
+            "restricted",
+            "none"
+          ],
+          "required": [],
+          "title": "securityContextPreset"
+        },
+        "serviceAccount": {
+          "additionalProperties": true,
+          "properties": {
+            "annotations": {
+              "additionalProperties": true,
+              "description": "Annotations for the ServiceAccount.",
+              "required": [],
+              "title": "annotations",
+              "type": "object"
+            },
+            "automountToken": {
+              "default": false,
+              "description": "Mount the API token into pods that default to this ServiceAccount.",
+              "required": [],
+              "title": "automountToken",
+              "type": "boolean"
+            },
+            "create": {
+              "default": true,
+              "description": "Create a dedicated ServiceAccount.",
+              "required": [],
+              "title": "create",
+              "type": "boolean"
+            },
+            "name": {
+              "default": "",
+              "description": "Name of the ServiceAccount. Generated when empty.",
+              "required": [],
+              "title": "name",
+              "type": "string"
+            }
+          },
+          "required": [],
+          "title": "serviceAccount"
+        },
+        "startupProbe": {
+          "additionalProperties": true,
+          "description": "Startup probe. Set `enabled` and exactly one handler (`httpGet`, `tcpSocket`, `exec`\nor `grpc`); unset timing fields fall back to the Kubernetes defaults.",
+          "properties": {
+            "enabled": {
+              "default": false,
+              "description": "Enable the startup probe.",
+              "required": [],
+              "title": "enabled",
+              "type": "boolean"
+            }
+          },
+          "required": [],
+          "title": "startupProbe"
+        },
+        "strategy": {
+          "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.apps.v1.DeploymentStrategy",
+          "required": []
+        },
+        "terminationGracePeriodSeconds": {
+          "default": 30,
+          "description": "Grace period for pod shutdown.",
+          "required": [],
+          "title": "terminationGracePeriodSeconds",
+          "type": "integer"
+        },
+        "tolerations": {
+          "description": "Tolerations for pod assignment.",
+          "items": {
+            "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.Toleration",
+            "required": []
+          },
+          "required": [],
+          "title": "tolerations",
+          "type": "array"
+        },
+        "topologySpreadConstraints": {
+          "description": "Topology spread constraints.",
+          "items": {
+            "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.TopologySpreadConstraint",
+            "required": []
+          },
+          "required": [],
+          "title": "topologySpreadConstraints",
+          "type": "array"
+        }
+      },
+      "required": [],
+      "title": "common",
+      "type": "object"
+    },
+    "commonAnnotations": {
+      "additionalProperties": true,
+      "description": "Annotations added to every object this chart creates.",
+      "required": [],
+      "title": "commonAnnotations",
+      "type": "object"
+    },
+    "commonLabels": {
+      "additionalProperties": true,
+      "description": "Labels added to every object this chart creates.",
+      "required": [],
+      "title": "commonLabels",
+      "type": "object"
+    },
+    "config": {
+      "additionalProperties": true,
+      "description": "Global TankoVault configuration, expressed exactly as the TOML tree documented in\n`docs/CONFIGURATION.md` (`database.max_connections`, `security.cors.allowed_origins`, ...).\nIt is rendered to a ConfigMap and mounted as a file, never passed as environment variables,\nso **changing a value here reloads the running services in place instead of restarting\nthem**. Two carve-outs from upstream: `telemetry.*` and `metrics.*` are installed\nprocess-globally and still need a restart to take effect.",
+      "required": [],
+      "title": "config",
+      "type": "object"
+    },
+    "configExtraToml": {
+      "default": "",
+      "description": "Verbatim TOML appended after the rendered `config` tree. The escape hatch for anything\nthis chart's TOML renderer cannot express, notably arrays of tables.",
+      "required": [],
+      "title": "configExtraToml",
+      "type": "string"
+    },
+    "configReload": {
+      "additionalProperties": true,
+      "properties": {
+        "configDir": {
+          "default": "/etc/tankovault/config",
+          "description": "Directory the configuration fragments are mounted at, passed as `TANKOVAULT_CONFIG`.",
+          "required": [],
+          "title": "configDir",
+          "type": "string"
+        },
+        "rolloutOnChange": {
+          "default": false,
+          "description": "Add `checksum/config` pod annotations so a configuration change rolls the Deployments.\nOff by default, and deliberately so: every TankoVault service watches the directories its\nconfiguration came from and rebuilds its runtime when the kubelet updates the mounted\nConfigMap or Secret, which is strictly better than a rollout. Turn this on only if you\nwant config changes to behave like an ordinary image bump.",
+          "required": [],
+          "title": "rolloutOnChange",
+          "type": "boolean"
+        },
+        "secretsDir": {
+          "default": "/etc/tankovault/secrets",
+          "description": "Directory the credential files are mounted at, passed as `TANKOVAULT_SECRETS_DIR`.",
+          "required": [],
+          "title": "secretsDir",
+          "type": "string"
+        }
+      },
+      "required": [],
+      "title": "configReload"
+    },
+    "defaults": {
+      "additionalProperties": true,
+      "description": "Settings shared by every TankoVault workload. Anything here can be overridden per service\nunder `services.\u003cname\u003e`, which is merged over this block.",
+      "properties": {
+        "affinity": {
+          "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.Affinity",
+          "required": []
+        },
+        "automountServiceAccountToken": {
+          "default": false,
+          "description": "Whether to automount the service account token. Nothing in TankoVault talks to the\nKubernetes API.",
+          "required": [],
+          "title": "automountServiceAccountToken",
+          "type": "boolean"
+        },
+        "extraEnv": {
+          "description": "Extra environment variables. Use sparingly: this chart delivers configuration as files\nprecisely so it can be reloaded, and a `TANKOVAULT_*` key supplied both here and as a\nmounted secret file **fails the boot** rather than resolving by precedence.",
+          "items": {
+            "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.EnvVar",
+            "required": []
+          },
+          "required": [],
+          "title": "extraEnv",
+          "type": "array"
+        },
+        "extraVolumeMounts": {
+          "description": "Extra container volume mounts.",
+          "items": {
+            "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.VolumeMount",
+            "required": []
+          },
+          "required": [],
+          "title": "extraVolumeMounts",
+          "type": "array"
+        },
+        "extraVolumes": {
+          "description": "Extra pod volumes.",
+          "items": {
+            "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.Volume",
+            "required": []
+          },
+          "required": [],
+          "title": "extraVolumes",
+          "type": "array"
+        },
+        "livenessProbe": {
+          "additionalProperties": true,
+          "description": "Liveness probe. Uses `/health`, never `/ready`: `/ready` reports on Postgres and NATS,\nso wiring liveness to it would turn a database blip into a fleet-wide restart storm.",
+          "properties": {
+            "enabled": {
+              "default": true,
+              "description": "Enable the liveness probe.",
+              "required": [],
+              "title": "enabled",
+              "type": "boolean"
+            },
+            "failureThreshold": {
+              "default": 5,
+              "description": "Consecutive failures before the container is restarted.",
+              "required": [],
+              "title": "failureThreshold",
+              "type": "integer"
+            },
+            "httpGet": {
+              "additionalProperties": true,
+              "description": "HTTP handler for the probe.",
+              "properties": {
+                "path": {
+                  "default": "/health",
+                  "description": "Liveness path.",
+                  "required": [],
+                  "title": "path",
+                  "type": "string"
+                },
+                "port": {
+                  "default": "http",
+                  "description": "Named container port to probe.",
+                  "required": [],
+                  "title": "port",
+                  "type": "string"
+                }
+              },
+              "required": [],
+              "title": "httpGet"
+            },
+            "periodSeconds": {
+              "default": 30,
+              "description": "Probe interval.",
+              "required": [],
+              "title": "periodSeconds",
+              "type": "integer"
+            },
+            "timeoutSeconds": {
+              "default": 5,
+              "description": "Probe timeout.",
+              "required": [],
+              "title": "timeoutSeconds",
+              "type": "integer"
+            }
+          },
+          "required": [],
+          "title": "livenessProbe"
+        },
+        "nodeSelector": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Node selector for pod assignment.",
+          "required": [],
+          "title": "nodeSelector",
+          "type": "object"
+        },
+        "podAnnotations": {
+          "additionalProperties": true,
+          "description": "Extra pod annotations.",
+          "required": [],
+          "title": "podAnnotations",
+          "type": "object"
+        },
+        "podAntiAffinity": {
+          "default": "soft",
+          "description": "Pod anti-affinity across nodes. `soft` prefers spreading replicas, `hard` requires it.",
+          "enum": [
+            "",
+            "soft",
+            "hard"
+          ],
+          "required": [],
+          "title": "podAntiAffinity"
+        },
+        "podLabels": {
+          "additionalProperties": true,
+          "description": "Extra pod labels.",
+          "required": [],
+          "title": "podLabels",
+          "type": "object"
+        },
+        "podSecurityContext": {
+          "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.PodSecurityContext",
+          "required": []
+        },
+        "podSecurityContextPreset": {
+          "default": "restricted",
+          "description": "Pod security context baseline.",
+          "enum": [
+            "restricted",
+            "none"
+          ],
+          "required": [],
+          "title": "podSecurityContextPreset"
+        },
+        "priorityClassName": {
+          "default": "",
+          "description": "Priority class for the pods.",
+          "required": [],
+          "title": "priorityClassName",
+          "type": "string"
+        },
+        "readinessProbe": {
+          "additionalProperties": true,
+          "description": "Readiness probe. Uses `/ready`, which probes every registered dependency concurrently\nand returns per-dependency detail.",
+          "properties": {
+            "enabled": {
+              "default": true,
+              "description": "Enable the readiness probe.",
+              "required": [],
+              "title": "enabled",
+              "type": "boolean"
+            },
+            "failureThreshold": {
+              "default": 3,
+              "description": "Consecutive failures before the pod leaves the Service.",
+              "required": [],
+              "title": "failureThreshold",
+              "type": "integer"
+            },
+            "httpGet": {
+              "additionalProperties": true,
+              "description": "HTTP handler for the probe.",
+              "properties": {
+                "path": {
+                  "default": "/ready",
+                  "description": "Readiness path.",
+                  "required": [],
+                  "title": "path",
+                  "type": "string"
+                },
+                "port": {
+                  "default": "http",
+                  "description": "Named container port to probe.",
+                  "required": [],
+                  "title": "port",
+                  "type": "string"
+                }
+              },
+              "required": [],
+              "title": "httpGet"
+            },
+            "periodSeconds": {
+              "default": 10,
+              "description": "Probe interval.",
+              "required": [],
+              "title": "periodSeconds",
+              "type": "integer"
+            },
+            "timeoutSeconds": {
+              "default": 3,
+              "description": "Probe timeout. Upstream bounds each dependency check at 2s, so 3s leaves headroom\nwithout letting a wedged probe hang.",
+              "required": [],
+              "title": "timeoutSeconds",
+              "type": "integer"
+            }
+          },
+          "required": [],
+          "title": "readinessProbe"
+        },
+        "resources": {
+          "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.ResourceRequirements",
+          "required": []
+        },
+        "resourcesPreset": {
+          "default": "medium",
+          "description": "Default resource t-shirt size, overridden per service below.",
+          "enum": [
+            "",
+            "nano",
+            "micro",
+            "small",
+            "medium",
+            "large"
+          ],
+          "required": [],
+          "title": "resourcesPreset"
+        },
+        "revisionHistoryLimit": {
+          "default": 3,
+          "description": "Number of old ReplicaSets to retain.",
+          "required": [],
+          "title": "revisionHistoryLimit",
+          "type": "integer"
+        },
+        "securityContext": {
+          "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.SecurityContext",
+          "required": []
+        },
+        "securityContextPreset": {
+          "default": "restricted",
+          "description": "Container security context baseline. Safe for every service: eight of the nine images\nare bare `scratch` layers holding only the binary, the musl loader and a CA bundle, so\nthere is no writable path to depend on.",
+          "enum": [
+            "restricted",
+            "none"
+          ],
+          "required": [],
+          "title": "securityContextPreset"
+        },
+        "startupProbe": {
+          "additionalProperties": true,
+          "description": "Startup probe. Hits `/health`, which deliberately checks nothing external.",
+          "properties": {
+            "enabled": {
+              "default": true,
+              "description": "Enable the startup probe.",
+              "required": [],
+              "title": "enabled",
+              "type": "boolean"
+            },
+            "failureThreshold": {
+              "default": 30,
+              "description": "Consecutive failures before the container is considered failed.",
+              "required": [],
+              "title": "failureThreshold",
+              "type": "integer"
+            },
+            "httpGet": {
+              "additionalProperties": true,
+              "description": "HTTP handler for the probe.",
+              "properties": {
+                "path": {
+                  "default": "/health",
+                  "description": "Liveness path.",
+                  "required": [],
+                  "title": "path",
+                  "type": "string"
+                },
+                "port": {
+                  "default": "http",
+                  "description": "Named container port to probe.",
+                  "required": [],
+                  "title": "port",
+                  "type": "string"
+                }
+              },
+              "required": [],
+              "title": "httpGet"
+            },
+            "periodSeconds": {
+              "default": 5,
+              "description": "Probe interval.",
+              "required": [],
+              "title": "periodSeconds",
+              "type": "integer"
+            },
+            "timeoutSeconds": {
+              "default": 3,
+              "description": "Probe timeout.",
+              "required": [],
+              "title": "timeoutSeconds",
+              "type": "integer"
+            }
+          },
+          "required": [],
+          "title": "startupProbe"
+        },
+        "strategy": {
+          "additionalProperties": true,
+          "description": "Deployment update strategy.",
+          "required": [],
+          "title": "strategy"
+        },
+        "terminationGracePeriodSeconds": {
+          "default": 30,
+          "description": "Grace period for shutdown. Every service cancels its work loop on SIGTERM and stops\nbetween units of work.",
+          "required": [],
+          "title": "terminationGracePeriodSeconds",
+          "type": "integer"
+        },
+        "tolerations": {
+          "description": "Tolerations for pod assignment.",
+          "items": {
+            "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.Toleration",
+            "required": []
+          },
+          "required": [],
+          "title": "tolerations",
+          "type": "array"
+        },
+        "topologySpreadConstraints": {
+          "description": "Topology spread constraints.",
+          "items": {
+            "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.TopologySpreadConstraint",
+            "required": []
+          },
+          "required": [],
+          "title": "topologySpreadConstraints",
+          "type": "array"
+        }
+      },
+      "required": [],
+      "title": "defaults"
+    },
+    "email": {
+      "additionalProperties": true,
+      "description": "Transactional email relay, shared by `api` (password reset, verification) and `notifier`.\nThe channel is enabled only when a relay and `from` are both present; a partial\nconfiguration falls back to a no-op mailer that logs and drops.",
+      "properties": {
+        "baseUrl": {
+          "default": "",
+          "description": "Public base URL used to build links in outgoing mail. Left empty it is derived from the\ningress. Leaving it pointed at localhost produces unusable links in real emails.",
+          "required": [],
+          "title": "baseUrl",
+          "type": "string"
+        },
+        "from": {
+          "default": "",
+          "description": "`From` header, e.g. `TankoVault \u003cno-reply",
+          "required": [],
+          "title": "from",
+          "type": "string"
+        },
+        "host": {
+          "default": "",
+          "description": "SMTP host. Empty disables outbound email entirely.",
+          "required": [],
+          "title": "host",
+          "type": "string"
+        },
+        "password": {
+          "default": "",
+          "description": "SMTP password.",
+          "required": [],
+          "title": "password",
+          "type": "string"
+        },
+        "port": {
+          "default": 587,
+          "description": "SMTP port.",
+          "maximum": 65535,
+          "minimum": 1,
+          "required": [],
+          "title": "port",
+          "type": "integer"
+        },
+        "security": {
+          "default": "starttls",
+          "description": "Transport security for the relay connection.",
+          "enum": [
+            "starttls",
+            "tls",
+            "none"
+          ],
+          "required": [],
+          "title": "security"
+        },
+        "username": {
+          "default": "",
+          "description": "SMTP username.",
+          "required": [],
+          "title": "username",
+          "type": "string"
+        }
+      },
+      "required": [],
+      "title": "email"
+    },
+    "existingSecret": {
+      "default": "",
+      "description": "Name of an existing Secret holding the credentials, instead of having the chart render one\nfrom the values above. When set it takes precedence and no credential value is written into\nthe Helm release. Its keys are the configuration paths with `__` for nesting and no dots —\n`auth__jwt_secret`, `auth__password_pepper`, `internal__token`, `anilist__client_id`,\n`anilist__client_secret`, `anilist__token_encryption_key`, `email__username`,\n`email__password`, `channels__discord_webhook_url`, `channels__webhook_url`,\n`database__url`, `redis__url`. Only the keys a given service reads are projected into it.",
+      "required": [],
+      "title": "existingSecret",
+      "type": "string"
+    },
+    "externalDatabase": {
+      "additionalProperties": true,
+      "description": "Point TankoVault at a PostgreSQL you already run. Used whenever `postgresql.enabled` is\nfalse, and the only supported production topology.",
+      "properties": {
+        "existingSecret": {
+          "default": "",
+          "description": "Name of an existing Secret holding the connection URL.",
+          "required": [],
+          "title": "existingSecret",
+          "type": "string"
+        },
+        "url": {
+          "default": "",
+          "description": "Connection URL, e.g. `postgres://user:password\nchart's Secret; prefer `existingSecret` so it never enters the Helm release.",
+          "required": [],
+          "title": "url",
+          "type": "string"
+        },
+        "urlKey": {
+          "default": "database__url",
+          "description": "Key within that Secret.",
+          "required": [],
+          "title": "urlKey",
+          "type": "string"
+        }
+      },
+      "required": [],
+      "title": "externalDatabase"
+    },
+    "externalFlaresolverr": {
+      "additionalProperties": true,
+      "description": "Point the challenge solver at a FlareSolverr you already run.",
+      "properties": {
+        "url": {
+          "default": "",
+          "description": "Endpoint URL, e.g. `http://flaresolverr:8191`.",
+          "required": [],
+          "title": "url",
+          "type": "string"
+        }
+      },
+      "required": [],
+      "title": "externalFlaresolverr"
+    },
+    "externalNats": {
+      "additionalProperties": true,
+      "description": "Point TankoVault at a NATS you already run. Used whenever `nats.enabled` is false.",
+      "properties": {
+        "url": {
+          "default": "",
+          "description": "Connection URL, e.g. `nats://host:4222`. Required by control-plane, worker and notifier;\noptional on the API, where its absence only degrades the live notification stream.",
+          "required": [],
+          "title": "url",
+          "type": "string"
+        }
+      },
+      "required": [],
+      "title": "externalNats"
+    },
+    "externalRedis": {
+      "additionalProperties": true,
+      "description": "Point TankoVault at a Redis-compatible server you already run. Used whenever\n`valkey.enabled` is false.",
+      "properties": {
+        "existingSecret": {
+          "default": "",
+          "description": "Name of an existing Secret holding the connection URL.",
+          "required": [],
+          "title": "existingSecret",
+          "type": "string"
+        },
+        "url": {
+          "default": "",
+          "description": "Connection URL, e.g. `redis://host:6379`. Empty leaves Redis unconfigured, which is\nsupported: the rate limiter and scheduler both degrade rather than fail.",
+          "required": [],
+          "title": "url",
+          "type": "string"
+        },
+        "urlKey": {
+          "default": "redis__url",
+          "description": "Key within that Secret.",
+          "required": [],
+          "title": "urlKey",
+          "type": "string"
+        }
+      },
+      "required": [],
+      "title": "externalRedis"
+    },
+    "flaresolverr": {
+      "additionalProperties": true,
+      "description": "Bundled FlareSolverr, the default backend for the challenge solver.",
+      "properties": {
+        "enabled": {
+          "default": false,
+          "description": "Deploy the bundled FlareSolverr.",
+          "required": [],
+          "title": "enabled",
+          "type": "boolean"
+        },
+        "image": {
+          "additionalProperties": true,
+          "properties": {
+            "repository": {
+              "default": "ghcr.io/flaresolverr/flaresolverr",
+              "description": "Image repository.",
+              "required": [],
+              "title": "repository",
+              "type": "string"
+            },
+            "tag": {
+              "default": "v3.5.0@sha256:139dfee1c6f89249c8d665d1333a42e8ec74ec0a86bc6bb1c8461e10d3a66a47",
+              "description": "Image tag, pinned by digest. Never `latest`: it silently changes the bot-management\nbehaviour the adapters are tuned against.",
+              "required": [],
+              "title": "tag",
+              "type": "string"
+            }
+          },
+          "required": [],
+          "title": "image"
+        },
+        "resourcesPreset": {
+          "default": "large",
+          "description": "Resource t-shirt size.",
+          "enum": [
+            "",
+            "nano",
+            "micro",
+            "small",
+            "medium",
+            "large"
+          ],
+          "required": [],
+          "title": "resourcesPreset"
+        },
+        "runAsUser": {
+          "default": 1000,
+          "description": "Numeric UID to run as. The upstream image's `USER` is a *name*, and the kubelet cannot\nverify `runAsNonRoot` against a non-numeric user — it refuses to start the pod. This is\nthe UID `useradd` assigns in that image.",
+          "required": [],
+          "title": "runAsUser",
+          "type": "integer"
+        },
+        "shmSize": {
+          "default": "1Gi",
+          "description": "Size of the `/dev/shm` in-memory volume for the bundled Chromium.",
+          "required": [],
+          "title": "shmSize",
+          "type": "string"
+        }
+      },
+      "required": [],
+      "title": "flaresolverr"
+    },
+    "fullnameOverride": {
+      "default": "",
+      "description": "Override the fully qualified release name.",
+      "required": [],
+      "title": "fullnameOverride",
+      "type": "string"
+    },
+    "global": {
+      "description": "Global values are values that can be accessed from any chart or subchart by exactly the same name.",
+      "required": [],
+      "title": "global",
+      "type": "object"
+    },
+    "image": {
+      "additionalProperties": true,
+      "properties": {
+        "pullPolicy": {
+          "default": "",
+          "description": "Image pull policy. Empty derives it from the tag: pinned digests and versions get\n`IfNotPresent`, `latest` gets `Always`.",
+          "enum": [
+            "",
+            "Always",
+            "IfNotPresent",
+            "Never"
+          ],
+          "required": [],
+          "title": "pullPolicy"
+        },
+        "registry": {
+          "default": "",
+          "description": "Registry host shared by every TankoVault image. Empty means Docker Hub.",
+          "required": [],
+          "title": "registry",
+          "type": "string"
+        }
+      },
+      "required": [],
+      "title": "image"
+    },
+    "imagePullSecrets": {
+      "description": "Image pull secrets for private registries.",
+      "items": {
+        "required": [],
+        "type": "string"
+      },
+      "required": [],
+      "title": "imagePullSecrets",
+      "type": "array"
+    },
+    "ingress": {
+      "additionalProperties": true,
+      "description": "Ingress. Only the frontend is exposed by default; it serves the SPA and proxies `/v1/*`\nto the API, so one origin covers the whole application and same-origin cookies, SSE and\npasskey origins all line up without extra configuration.",
+      "properties": {
+        "annotations": {
+          "additionalProperties": true,
+          "description": "Extra Ingress annotations.",
+          "required": [],
+          "title": "annotations",
+          "type": "object"
+        },
+        "api": {
+          "additionalProperties": true,
+          "description": "A second Ingress publishing the API on its own hostname, for split-origin clients.\nEnabling it means the browser origin no longer matches the API origin, so CORS,\n`auth.webauthn_origin` and cookie `SameSite` all have to be set consistently or logins\nbreak in ways that only appear at runtime.",
+          "properties": {
+            "annotations": {
+              "additionalProperties": true,
+              "description": "Extra Ingress annotations.",
+              "required": [],
+              "title": "annotations",
+              "type": "object"
+            },
+            "enabled": {
+              "default": false,
+              "description": "Create the API Ingress.",
+              "required": [],
+              "title": "enabled",
+              "type": "boolean"
+            },
+            "host": {
+              "default": "",
+              "description": "Hostname the API is served on.",
+              "required": [],
+              "title": "host",
+              "type": "string"
+            }
+          },
+          "required": [],
+          "title": "api"
+        },
+        "className": {
+          "default": "",
+          "description": "IngressClass name.",
+          "required": [],
+          "title": "className",
+          "type": "string"
+        },
+        "enabled": {
+          "default": false,
+          "description": "Create an Ingress for the frontend.",
+          "required": [],
+          "title": "enabled",
+          "type": "boolean"
+        },
+        "host": {
+          "default": "",
+          "description": "Hostname the application is served on.",
+          "required": [],
+          "title": "host",
+          "type": "string"
+        },
+        "path": {
+          "default": "/",
+          "description": "Path prefix.",
+          "required": [],
+          "title": "path",
+          "type": "string"
+        },
+        "pathType": {
+          "default": "Prefix",
+          "description": "Path type.",
+          "enum": [
+            "Prefix",
+            "Exact",
+            "ImplementationSpecific"
+          ],
+          "required": [],
+          "title": "pathType"
+        },
+        "tls": {
+          "additionalProperties": true,
+          "properties": {
+            "enabled": {
+              "default": false,
+              "description": "Terminate TLS. Note `auth.cookie_secure` defaults to true, so sessions are lost over\nplain HTTP on any host other than `localhost`.",
+              "required": [],
+              "title": "enabled",
+              "type": "boolean"
+            },
+            "secretName": {
+              "default": "",
+              "description": "Name of the TLS Secret. Defaults to `\u003cfullname\u003e-tls` when empty.",
+              "required": [],
+              "title": "secretName",
+              "type": "string"
+            }
+          },
+          "required": [],
+          "title": "tls"
+        },
+        "url": {
+          "default": "",
+          "description": "Override the derived external URL used for `anilist.redirect_uri`, `email.base_url` and\n`auth.webauthn_origin`. Set this when TLS terminates on a proxy in front of the ingress.",
+          "required": [],
+          "title": "url",
+          "type": "string"
+        }
+      },
+      "required": [],
+      "title": "ingress"
+    },
+    "internal": {
+      "additionalProperties": true,
+      "properties": {
+        "token": {
+          "default": "",
+          "description": "Shared service-to-service token (`internal.token`), identical across api, control-plane,\nworker, sync, render and challenge-solver. Without it those services accept privileged calls\nfrom anything that can reach the port, so the `production` profile refuses to boot without\none. Left empty in that profile the chart generates a token and remembers it across upgrades,\nwhich is the recommended setting; set one explicitly (minimum 32 characters, e.g.\n`openssl rand -hex 32`) only if it has to be known outside the release.",
+          "required": [],
+          "title": "token",
+          "type": "string"
+        }
+      },
+      "required": [],
+      "title": "internal"
+    },
+    "kubeVersionOverride": {
+      "default": "",
+      "description": "Override the detected Kubernetes version used for API version selection.",
+      "required": [],
+      "title": "kubeVersionOverride",
+      "type": "string"
+    },
+    "metrics": {
+      "additionalProperties": true,
+      "description": "Prometheus integration. Every service serves a scrape on an isolated port, outside the\nrequest-facing listener and outside its own HTTP metrics middleware.",
+      "properties": {
+        "dashboard": {
+          "additionalProperties": true,
+          "properties": {
+            "enabled": {
+              "default": false,
+              "description": "Create a ConfigMap holding the upstream Grafana overview dashboard.",
+              "required": [],
+              "title": "enabled",
+              "type": "boolean"
+            },
+            "label": {
+              "default": "grafana_dashboard",
+              "description": "Label a Grafana sidecar watches for dashboard ConfigMaps.",
+              "required": [],
+              "title": "label",
+              "type": "string"
+            },
+            "labelValue": {
+              "default": "1",
+              "description": "Value for that label.",
+              "required": [],
+              "title": "labelValue",
+              "type": "string"
+            }
+          },
+          "required": [],
+          "title": "dashboard"
+        },
+        "enabled": {
+          "default": true,
+          "description": "Expose the metrics port on each Service.",
+          "required": [],
+          "title": "enabled",
+          "type": "boolean"
+        },
+        "port": {
+          "default": 9090,
+          "description": "Port the Prometheus exposition is served on.",
+          "maximum": 65535,
+          "minimum": 1,
+          "required": [],
+          "title": "port",
+          "type": "integer"
+        },
+        "prometheusRule": {
+          "additionalProperties": true,
+          "properties": {
+            "enabled": {
+              "default": false,
+              "description": "Create a PrometheusRule from the recording and alerting rules vendored from upstream.",
+              "required": [],
+              "title": "enabled",
+              "type": "boolean"
+            },
+            "labels": {
+              "additionalProperties": true,
+              "description": "Extra labels for the PrometheusRule.",
+              "required": [],
+              "title": "labels",
+              "type": "object"
+            }
+          },
+          "required": [],
+          "title": "prometheusRule"
+        },
+        "serviceMonitor": {
+          "additionalProperties": true,
+          "properties": {
+            "enabled": {
+              "default": false,
+              "description": "Create one ServiceMonitor per service. One per service, not one for the release:\nthe `job` label is the sole identifier of which service emitted a metric, and collapsing\nthem would silently break every per-service rule.",
+              "required": [],
+              "title": "enabled",
+              "type": "boolean"
+            },
+            "interval": {
+              "default": "15s",
+              "description": "Scrape interval.",
+              "required": [],
+              "title": "interval",
+              "type": "string"
+            },
+            "labels": {
+              "additionalProperties": true,
+              "description": "Extra labels, e.g. the `release` label a Prometheus Operator selector requires.",
+              "required": [],
+              "title": "labels",
+              "type": "object"
+            },
+            "scrapeTimeout": {
+              "default": "10s",
+              "description": "Scrape timeout.",
+              "required": [],
+              "title": "scrapeTimeout",
+              "type": "string"
+            }
+          },
+          "required": [],
+          "title": "serviceMonitor"
+        }
+      },
+      "required": [],
+      "title": "metrics"
+    },
+    "nameOverride": {
+      "default": "",
+      "description": "Override the chart name used in resource names.",
+      "required": [],
+      "title": "nameOverride",
+      "type": "string"
+    },
+    "namespaceOverride": {
+      "default": "",
+      "description": "Override the namespace objects are created in.",
+      "required": [],
+      "title": "namespaceOverride",
+      "type": "string"
+    },
+    "nats": {
+      "additionalProperties": true,
+      "description": "Bundled NATS JetStream, the task queue and event bus the control plane, worker and\nnotifier are built on: a single instance with a file store on a PVC. Embedded rather than\ntaken from the NATS authors' chart because that chart ships no `values.schema.json`, so\n`helm schema` derives a closed one from its own values.yaml and makes the `container.merge`\nand `podTemplate.merge` patches unsettable — and those patches are the only way to give its\npods the security context and resource requests this repository's policy scan requires.\nEvaluation-tier like the other bundled datastores: no clustering, so no replication and no\nfailover. Use `externalNats` for anything real.",
+      "properties": {
+        "enabled": {
+          "default": false,
+          "description": "Deploy the bundled NATS.",
+          "required": [],
+          "title": "enabled",
+          "type": "boolean"
+        },
+        "image": {
+          "additionalProperties": true,
+          "properties": {
+            "repository": {
+              "default": "nats",
+              "description": "Image repository.",
+              "required": [],
+              "title": "repository",
+              "type": "string"
+            },
+            "tag": {
+              "default": "2-alpine@sha256:f2123f533c2b0cada0a5c5ec434fb2b8cfe1cf220215ef9d7517e1372917ad66",
+              "description": "Image tag, pinned by digest.",
+              "required": [],
+              "title": "tag",
+              "type": "string"
+            }
+          },
+          "required": [],
+          "title": "image"
+        },
+        "persistence": {
+          "additionalProperties": true,
+          "properties": {
+            "enabled": {
+              "default": true,
+              "description": "Persist the JetStream file store. Without it every queued scan task and every\nundelivered event is lost when the pod is rescheduled.",
+              "required": [],
+              "title": "enabled",
+              "type": "boolean"
+            },
+            "existingClaim": {
+              "default": "",
+              "description": "Use an existing claim instead of creating one.",
+              "required": [],
+              "title": "existingClaim",
+              "type": "string"
+            },
+            "size": {
+              "default": "10Gi",
+              "description": "Requested volume size.",
+              "required": [],
+              "title": "size",
+              "type": "string"
+            },
+            "storageClassName": {
+              "default": "",
+              "description": "Storage class. Empty uses the cluster default.",
+              "required": [],
+              "title": "storageClassName",
+              "type": "string"
+            }
+          },
+          "required": [],
+          "title": "persistence"
+        },
+        "resourcesPreset": {
+          "default": "medium",
+          "description": "Resource t-shirt size.",
+          "enum": [
+            "",
+            "nano",
+            "micro",
+            "small",
+            "medium",
+            "large"
+          ],
+          "required": [],
+          "title": "resourcesPreset"
+        }
+      },
+      "required": [],
+      "title": "nats"
+    },
+    "networkPolicy": {
+      "additionalProperties": true,
+      "description": "NetworkPolicies. Default-deny per service, then exactly the peers each one needs. Written\nper service rather than through the `common` builder, which cannot express pod-to-pod rules\nbetween nine workloads.",
+      "properties": {
+        "enabled": {
+          "default": false,
+          "description": "Create NetworkPolicies.",
+          "required": [],
+          "title": "enabled",
+          "type": "boolean"
+        },
+        "extraEgress": {
+          "description": "Extra egress rules appended to every service's policy.",
+          "items": {
+            "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyEgressRule",
+            "required": []
+          },
+          "required": [],
+          "title": "extraEgress",
+          "type": "array"
+        },
+        "extraIngress": {
+          "description": "Extra ingress rules appended to every service's policy.",
+          "items": {
+            "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyIngressRule",
+            "required": []
+          },
+          "required": [],
+          "title": "extraIngress",
+          "type": "array"
+        },
+        "ingressController": {
+          "additionalProperties": true,
+          "properties": {
+            "namespaceSelector": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "description": "Namespace selector matching the ingress controller, allowed to reach the frontend.",
+              "required": [],
+              "title": "namespaceSelector",
+              "type": "object"
+            },
+            "podSelector": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "description": "Pod selector matching the ingress controller.",
+              "required": [],
+              "title": "podSelector",
+              "type": "object"
+            }
+          },
+          "required": [],
+          "title": "ingressController"
+        },
+        "internetCidrs": {
+          "description": "Egress CIDRs treated as \"the internet\". The worker scrapes provider sites, sync talks to\nAniList and the notifier reaches SMTP and webhook endpoints, so these tiers need it.\nRFC1918 ranges and the cloud metadata endpoint are excluded automatically.",
+          "items": {
+            "required": [],
+            "type": "string"
+          },
+          "required": [],
+          "title": "internetCidrs",
+          "type": "array"
+        },
+        "monitoring": {
+          "additionalProperties": true,
+          "properties": {
+            "namespaceSelector": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "description": "Namespace selector matching Prometheus, allowed to reach the metrics port.",
+              "required": [],
+              "title": "namespaceSelector",
+              "type": "object"
+            }
+          },
+          "required": [],
+          "title": "monitoring"
+        }
+      },
+      "required": [],
+      "title": "networkPolicy"
+    },
+    "postgresql": {
+      "additionalProperties": true,
+      "description": "Bundled PostgreSQL. A single instance with a PVC, on the same image the upstream compose\nstack pins. Deliberately not an operator and not a third-party subchart, so `helm install`\nworks on a bare cluster — but equally deliberately **not a production database**: one\nreplica, no failover, no point-in-time recovery. Use `externalDatabase` for anything real.",
+      "properties": {
+        "auth": {
+          "additionalProperties": true,
+          "properties": {
+            "database": {
+              "default": "tankovault",
+              "description": "Database name.",
+              "required": [],
+              "title": "database",
+              "type": "string"
+            },
+            "password": {
+              "default": "",
+              "description": "Database password. Generated and persisted across upgrades when left empty.",
+              "required": [],
+              "title": "password",
+              "type": "string"
+            },
+            "username": {
+              "default": "tankovault",
+              "description": "Database role.",
+              "required": [],
+              "title": "username",
+              "type": "string"
+            }
+          },
+          "required": [],
+          "title": "auth"
+        },
+        "enabled": {
+          "default": false,
+          "description": "Deploy the bundled PostgreSQL.",
+          "required": [],
+          "title": "enabled",
+          "type": "boolean"
+        },
+        "image": {
+          "additionalProperties": true,
+          "properties": {
+            "repository": {
+              "default": "postgres",
+              "description": "Image repository.",
+              "required": [],
+              "title": "repository",
+              "type": "string"
+            },
+            "tag": {
+              "default": "18-alpine@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15",
+              "description": "Image tag, pinned by digest.",
+              "required": [],
+              "title": "tag",
+              "type": "string"
+            }
+          },
+          "required": [],
+          "title": "image"
+        },
+        "persistence": {
+          "additionalProperties": true,
+          "properties": {
+            "enabled": {
+              "default": true,
+              "description": "Persist the data directory on a PersistentVolumeClaim. Turning this off means the\nwhole catalogue is lost when the pod is rescheduled.",
+              "required": [],
+              "title": "enabled",
+              "type": "boolean"
+            },
+            "existingClaim": {
+              "default": "",
+              "description": "Use an existing claim instead of creating one.",
+              "required": [],
+              "title": "existingClaim",
+              "type": "string"
+            },
+            "size": {
+              "default": "20Gi",
+              "description": "Requested volume size.",
+              "required": [],
+              "title": "size",
+              "type": "string"
+            },
+            "storageClassName": {
+              "default": "",
+              "description": "Storage class. Empty uses the cluster default.",
+              "required": [],
+              "title": "storageClassName",
+              "type": "string"
+            }
+          },
+          "required": [],
+          "title": "persistence"
+        },
+        "resourcesPreset": {
+          "default": "large",
+          "description": "Resource t-shirt size.",
+          "enum": [
+            "",
+            "nano",
+            "micro",
+            "small",
+            "medium",
+            "large"
+          ],
+          "required": [],
+          "title": "resourcesPreset"
+        }
+      },
+      "required": [],
+      "title": "postgresql"
+    },
+    "profile": {
+      "default": "production",
+      "description": "Deployment profile, passed as `TANKOVAULT_PROFILE`. This is a process-level key: it is\nread before the layered configuration exists, so it can only ever come from the environment.\n`production` is what turns on the fail-fast secret validation and turns off the API docs\nendpoint; anything other than exactly `production` leaves those safeties off.",
+      "enum": [
+        "production",
+        "staging",
+        "development"
+      ],
+      "required": [],
+      "title": "profile"
+    },
+    "serviceAccount": {
+      "additionalProperties": true,
+      "properties": {
+        "annotations": {
+          "additionalProperties": true,
+          "description": "Additional annotations for the service account.",
+          "required": [],
+          "title": "annotations",
+          "type": "object"
+        },
+        "create": {
+          "default": true,
+          "description": "Whether to create a dedicated service account. One account is shared by every workload:\nnothing in TankoVault talks to the Kubernetes API, so per-service accounts would add\nobjects without reducing any privilege.",
+          "required": [],
+          "title": "create",
+          "type": "boolean"
+        },
+        "name": {
+          "default": "",
+          "description": "Custom service account name (auto-generated if empty).",
+          "required": [],
+          "title": "name",
+          "type": "string"
+        }
+      },
+      "required": [],
+      "title": "serviceAccount"
+    },
+    "services": {
+      "additionalProperties": true,
+      "description": "Per-service settings. Each block is merged over `defaults`, so any key from `defaults`\nmay be repeated here for one service only.",
+      "properties": {
+        "api": {
+          "additionalProperties": true,
+          "description": "The axum REST edge: authentication, read models, write endpoints, administration and\nthe server-sent scan feed.",
+          "properties": {
+            "autoscaling": {
+              "additionalProperties": true,
+              "properties": {
+                "enabled": {
+                  "default": false,
+                  "description": "Enable a HorizontalPodAutoscaler.",
+                  "required": [],
+                  "title": "enabled",
+                  "type": "boolean"
+                },
+                "maxReplicas": {
+                  "default": 10,
+                  "description": "Maximum replicas.",
+                  "minimum": 1,
+                  "required": [],
+                  "title": "maxReplicas",
+                  "type": "integer"
+                },
+                "minReplicas": {
+                  "default": 2,
+                  "description": "Minimum replicas.",
+                  "minimum": 1,
+                  "required": [],
+                  "title": "minReplicas",
+                  "type": "integer"
+                },
+                "targetCPUUtilizationPercentage": {
+                  "default": 80,
+                  "description": "Target average CPU utilisation, percent.",
+                  "required": [],
+                  "title": "targetCPUUtilizationPercentage",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "targetMemoryUtilizationPercentage": {
+                  "default": "null",
+                  "description": "Target average memory utilisation, percent.",
+                  "required": [],
+                  "title": "targetMemoryUtilizationPercentage",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                }
+              },
+              "required": [],
+              "title": "autoscaling"
+            },
+            "config": {
+              "additionalProperties": true,
+              "description": "Service-specific configuration, merged over the global `config` tree.",
+              "required": [],
+              "title": "config",
+              "type": "object"
+            },
+            "enabled": {
+              "default": true,
+              "description": "Deploy the API.",
+              "required": [],
+              "title": "enabled",
+              "type": "boolean"
+            },
+            "image": {
+              "additionalProperties": true,
+              "properties": {
+                "repository": {
+                  "default": "timschoenle/tankovault-api",
+                  "description": "Image repository.",
+                  "required": [],
+                  "title": "repository",
+                  "type": "string"
+                },
+                "tag": {
+                  "default": "v0.4.1@sha256:7748d7ecfaf4b8ebfa1a52f334cf6f56331d12a3520b390ea567985f8b2f315c",
+                  "description": "Image tag, pinned by digest.",
+                  "required": [],
+                  "title": "tag",
+                  "type": "string"
+                }
+              },
+              "required": [],
+              "title": "image"
+            },
+            "podDisruptionBudget": {
+              "additionalProperties": true,
+              "properties": {
+                "enabled": {
+                  "default": false,
+                  "description": "Create a PodDisruptionBudget.",
+                  "required": [],
+                  "title": "enabled",
+                  "type": "boolean"
+                },
+                "maxUnavailable": {
+                  "default": "null",
+                  "description": "Maximum unavailable pods.",
+                  "required": [],
+                  "title": "maxUnavailable",
+                  "type": [
+                    "integer",
+                    "string",
+                    "null"
+                  ]
+                },
+                "minAvailable": {
+                  "default": 1,
+                  "description": "Minimum available pods during voluntary disruption.",
+                  "required": [],
+                  "title": "minAvailable",
+                  "type": [
+                    "integer",
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [],
+              "title": "podDisruptionBudget"
+            },
+            "replicaCount": {
+              "default": 2,
+              "description": "Replica count, ignored when autoscaling is enabled.",
+              "minimum": 0,
+              "required": [],
+              "title": "replicaCount",
+              "type": "integer"
+            },
+            "resourcesPreset": {
+              "default": "large",
+              "description": "Resource t-shirt size.",
+              "enum": [
+                "",
+                "nano",
+                "micro",
+                "small",
+                "medium",
+                "large"
+              ],
+              "required": [],
+              "title": "resourcesPreset"
+            },
+            "service": {
+              "additionalProperties": true,
+              "properties": {
+                "annotations": {
+                  "additionalProperties": true,
+                  "description": "Extra Service annotations.",
+                  "required": [],
+                  "title": "annotations",
+                  "type": "object"
+                },
+                "type": {
+                  "default": "ClusterIP",
+                  "description": "Service type.",
+                  "enum": [
+                    "ClusterIP",
+                    "NodePort",
+                    "LoadBalancer"
+                  ],
+                  "required": [],
+                  "title": "type"
+                }
+              },
+              "required": [],
+              "title": "service"
+            }
+          },
+          "required": [],
+          "title": "api"
+        },
+        "challengeSolver": {
+          "additionalProperties": true,
+          "description": "Modular bot-management bypass tier. Detects Cloudflare, JavaScript and Turnstile\ninterstitials and delegates to a solver backend, FlareSolverr by default.",
+          "properties": {
+            "autoscaling": {
+              "additionalProperties": true,
+              "properties": {
+                "enabled": {
+                  "default": false,
+                  "description": "Enable a HorizontalPodAutoscaler.",
+                  "required": [],
+                  "title": "enabled",
+                  "type": "boolean"
+                },
+                "maxReplicas": {
+                  "default": 4,
+                  "description": "Maximum replicas.",
+                  "minimum": 1,
+                  "required": [],
+                  "title": "maxReplicas",
+                  "type": "integer"
+                },
+                "minReplicas": {
+                  "default": 1,
+                  "description": "Minimum replicas.",
+                  "minimum": 1,
+                  "required": [],
+                  "title": "minReplicas",
+                  "type": "integer"
+                },
+                "targetCPUUtilizationPercentage": {
+                  "default": 80,
+                  "description": "Target average CPU utilisation, percent.",
+                  "required": [],
+                  "title": "targetCPUUtilizationPercentage",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "targetMemoryUtilizationPercentage": {
+                  "default": "null",
+                  "description": "Target average memory utilisation, percent.",
+                  "required": [],
+                  "title": "targetMemoryUtilizationPercentage",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                }
+              },
+              "required": [],
+              "title": "autoscaling"
+            },
+            "config": {
+              "additionalProperties": true,
+              "description": "Service-specific configuration, merged over the global `config` tree.",
+              "required": [],
+              "title": "config",
+              "type": "object"
+            },
+            "enabled": {
+              "default": true,
+              "description": "Deploy the challenge solver.",
+              "required": [],
+              "title": "enabled",
+              "type": "boolean"
+            },
+            "image": {
+              "additionalProperties": true,
+              "properties": {
+                "repository": {
+                  "default": "timschoenle/tankovault-challenge-solver",
+                  "description": "Image repository.",
+                  "required": [],
+                  "title": "repository",
+                  "type": "string"
+                },
+                "tag": {
+                  "default": "v0.4.1@sha256:a269d32dc7588fb2da793f2b7a9b88ddca5a735da21ad3296c9b6828c40b3d36",
+                  "description": "Image tag, pinned by digest.",
+                  "required": [],
+                  "title": "tag",
+                  "type": "string"
+                }
+              },
+              "required": [],
+              "title": "image"
+            },
+            "podDisruptionBudget": {
+              "additionalProperties": true,
+              "properties": {
+                "enabled": {
+                  "default": false,
+                  "description": "Create a PodDisruptionBudget.",
+                  "required": [],
+                  "title": "enabled",
+                  "type": "boolean"
+                },
+                "maxUnavailable": {
+                  "default": "null",
+                  "description": "Maximum unavailable pods.",
+                  "required": [],
+                  "title": "maxUnavailable",
+                  "type": [
+                    "integer",
+                    "string",
+                    "null"
+                  ]
+                },
+                "minAvailable": {
+                  "default": 1,
+                  "description": "Minimum available pods during voluntary disruption.",
+                  "required": [],
+                  "title": "minAvailable",
+                  "type": [
+                    "integer",
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [],
+              "title": "podDisruptionBudget"
+            },
+            "replicaCount": {
+              "default": 1,
+              "description": "Replica count, ignored when autoscaling is enabled.",
+              "minimum": 0,
+              "required": [],
+              "title": "replicaCount",
+              "type": "integer"
+            },
+            "resourcesPreset": {
+              "default": "medium",
+              "description": "Resource t-shirt size.",
+              "enum": [
+                "",
+                "nano",
+                "micro",
+                "small",
+                "medium",
+                "large"
+              ],
+              "required": [],
+              "title": "resourcesPreset"
+            },
+            "service": {
+              "additionalProperties": true,
+              "properties": {
+                "annotations": {
+                  "additionalProperties": true,
+                  "description": "Extra Service annotations.",
+                  "required": [],
+                  "title": "annotations",
+                  "type": "object"
+                },
+                "type": {
+                  "default": "ClusterIP",
+                  "description": "Service type. Publishing this service exposes a privileged contract.",
+                  "enum": [
+                    "ClusterIP",
+                    "NodePort",
+                    "LoadBalancer"
+                  ],
+                  "required": [],
+                  "title": "type"
+                }
+              },
+              "required": [],
+              "title": "service"
+            }
+          },
+          "required": [],
+          "title": "challengeSolver"
+        },
+        "controlPlane": {
+          "additionalProperties": true,
+          "description": "The singleton scheduler: run planning, task distribution and provider health. Safe to\nrun with more than one replica — it elects a leader through Redis, and falls open to\nsole-leader when Redis is absent.",
+          "properties": {
+            "config": {
+              "additionalProperties": true,
+              "description": "Service-specific configuration, merged over the global `config` tree.",
+              "required": [],
+              "title": "config",
+              "type": "object"
+            },
+            "enabled": {
+              "default": true,
+              "description": "Deploy the control plane.",
+              "required": [],
+              "title": "enabled",
+              "type": "boolean"
+            },
+            "image": {
+              "additionalProperties": true,
+              "properties": {
+                "repository": {
+                  "default": "timschoenle/tankovault-control-plane",
+                  "description": "Image repository.",
+                  "required": [],
+                  "title": "repository",
+                  "type": "string"
+                },
+                "tag": {
+                  "default": "v0.4.1@sha256:3f9c2e9b5121d23fa9afa7ff7500253fd16e05963391d73044bac84284f45356",
+                  "description": "Image tag, pinned by digest.",
+                  "required": [],
+                  "title": "tag",
+                  "type": "string"
+                }
+              },
+              "required": [],
+              "title": "image"
+            },
+            "podDisruptionBudget": {
+              "additionalProperties": true,
+              "properties": {
+                "enabled": {
+                  "default": false,
+                  "description": "Create a PodDisruptionBudget.",
+                  "required": [],
+                  "title": "enabled",
+                  "type": "boolean"
+                },
+                "maxUnavailable": {
+                  "default": "null",
+                  "description": "Maximum unavailable pods.",
+                  "required": [],
+                  "title": "maxUnavailable",
+                  "type": [
+                    "integer",
+                    "string",
+                    "null"
+                  ]
+                },
+                "minAvailable": {
+                  "default": 1,
+                  "description": "Minimum available pods during voluntary disruption.",
+                  "required": [],
+                  "title": "minAvailable",
+                  "type": [
+                    "integer",
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [],
+              "title": "podDisruptionBudget"
+            },
+            "replicaCount": {
+              "default": 1,
+              "description": "Replica count.",
+              "minimum": 0,
+              "required": [],
+              "title": "replicaCount",
+              "type": "integer"
+            },
+            "resourcesPreset": {
+              "default": "medium",
+              "description": "Resource t-shirt size.",
+              "enum": [
+                "",
+                "nano",
+                "micro",
+                "small",
+                "medium",
+                "large"
+              ],
+              "required": [],
+              "title": "resourcesPreset"
+            },
+            "service": {
+              "additionalProperties": true,
+              "properties": {
+                "annotations": {
+                  "additionalProperties": true,
+                  "description": "Extra Service annotations.",
+                  "required": [],
+                  "title": "annotations",
+                  "type": "object"
+                },
+                "type": {
+                  "default": "ClusterIP",
+                  "description": "Service type. Publishing this service exposes a privileged contract; the chart\nrefuses anything but `ClusterIP` unless `allowUnsafeExposure` is set.",
+                  "enum": [
+                    "ClusterIP",
+                    "NodePort",
+                    "LoadBalancer"
+                  ],
+                  "required": [],
+                  "title": "type"
+                }
+              },
+              "required": [],
+              "title": "service"
+            }
+          },
+          "required": [],
+          "title": "controlPlane"
+        },
+        "frontend": {
+          "additionalProperties": true,
+          "description": "The Dioxus WASM SPA and its axum server. It serves the client and reverse-proxies\n`/v1/*` to the API, so this single origin is all a browser needs — which is why it is the\nonly service the ingress exposes.",
+          "properties": {
+            "autoscaling": {
+              "additionalProperties": true,
+              "properties": {
+                "enabled": {
+                  "default": false,
+                  "description": "Enable a HorizontalPodAutoscaler.",
+                  "required": [],
+                  "title": "enabled",
+                  "type": "boolean"
+                },
+                "maxReplicas": {
+                  "default": 6,
+                  "description": "Maximum replicas.",
+                  "minimum": 1,
+                  "required": [],
+                  "title": "maxReplicas",
+                  "type": "integer"
+                },
+                "minReplicas": {
+                  "default": 2,
+                  "description": "Minimum replicas.",
+                  "minimum": 1,
+                  "required": [],
+                  "title": "minReplicas",
+                  "type": "integer"
+                },
+                "targetCPUUtilizationPercentage": {
+                  "default": 80,
+                  "description": "Target average CPU utilisation, percent. Null disables the CPU metric.",
+                  "required": [],
+                  "title": "targetCPUUtilizationPercentage",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "targetMemoryUtilizationPercentage": {
+                  "default": "null",
+                  "description": "Target average memory utilisation, percent. Null disables the memory metric.",
+                  "required": [],
+                  "title": "targetMemoryUtilizationPercentage",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                }
+              },
+              "required": [],
+              "title": "autoscaling"
+            },
+            "config": {
+              "additionalProperties": true,
+              "description": "Service-specific configuration, merged over the global `config` tree for this service\nonly. Rendered into this service's own TOML fragment.",
+              "required": [],
+              "title": "config",
+              "type": "object"
+            },
+            "enabled": {
+              "default": true,
+              "description": "Deploy the frontend.",
+              "required": [],
+              "title": "enabled",
+              "type": "boolean"
+            },
+            "image": {
+              "additionalProperties": true,
+              "properties": {
+                "repository": {
+                  "default": "timschoenle/tankovault-frontend",
+                  "description": "Image repository.",
+                  "required": [],
+                  "title": "repository",
+                  "type": "string"
+                },
+                "tag": {
+                  "default": "v0.4.1@sha256:4f0f6d043b37dd5f5604b5feb1d39d73761a2f60d9c835870fc74abbf6af4808",
+                  "description": "Image tag, pinned by digest.",
+                  "required": [],
+                  "title": "tag",
+                  "type": "string"
+                }
+              },
+              "required": [],
+              "title": "image"
+            },
+            "podDisruptionBudget": {
+              "additionalProperties": true,
+              "properties": {
+                "enabled": {
+                  "default": false,
+                  "description": "Create a PodDisruptionBudget.",
+                  "required": [],
+                  "title": "enabled",
+                  "type": "boolean"
+                },
+                "maxUnavailable": {
+                  "default": "null",
+                  "description": "Maximum unavailable pods. Mutually exclusive with `minAvailable`.",
+                  "required": [],
+                  "title": "maxUnavailable",
+                  "type": [
+                    "integer",
+                    "string",
+                    "null"
+                  ]
+                },
+                "minAvailable": {
+                  "default": 1,
+                  "description": "Minimum available pods during voluntary disruption.",
+                  "required": [],
+                  "title": "minAvailable",
+                  "type": [
+                    "integer",
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [],
+              "title": "podDisruptionBudget"
+            },
+            "replicaCount": {
+              "default": 2,
+              "description": "Replica count, ignored when autoscaling is enabled.",
+              "minimum": 0,
+              "required": [],
+              "title": "replicaCount",
+              "type": "integer"
+            },
+            "resourcesPreset": {
+              "default": "small",
+              "description": "Resource t-shirt size.",
+              "enum": [
+                "",
+                "nano",
+                "micro",
+                "small",
+                "medium",
+                "large"
+              ],
+              "required": [],
+              "title": "resourcesPreset"
+            },
+            "service": {
+              "additionalProperties": true,
+              "properties": {
+                "annotations": {
+                  "additionalProperties": true,
+                  "description": "Extra Service annotations.",
+                  "required": [],
+                  "title": "annotations",
+                  "type": "object"
+                },
+                "type": {
+                  "default": "ClusterIP",
+                  "description": "Service type. The frontend is the one service it is safe to publish directly.",
+                  "enum": [
+                    "ClusterIP",
+                    "NodePort",
+                    "LoadBalancer"
+                  ],
+                  "required": [],
+                  "title": "type"
+                }
+              },
+              "required": [],
+              "title": "service"
+            }
+          },
+          "required": [],
+          "title": "frontend"
+        },
+        "notifier": {
+          "additionalProperties": true,
+          "description": "Distributes new-chapter notifications to users over email, Discord and generic webhooks.",
+          "properties": {
+            "config": {
+              "additionalProperties": true,
+              "description": "Service-specific configuration, merged over the global `config` tree.",
+              "required": [],
+              "title": "config",
+              "type": "object"
+            },
+            "enabled": {
+              "default": true,
+              "description": "Deploy the notifier.",
+              "required": [],
+              "title": "enabled",
+              "type": "boolean"
+            },
+            "image": {
+              "additionalProperties": true,
+              "properties": {
+                "repository": {
+                  "default": "timschoenle/tankovault-notifier",
+                  "description": "Image repository.",
+                  "required": [],
+                  "title": "repository",
+                  "type": "string"
+                },
+                "tag": {
+                  "default": "v0.4.1@sha256:25cbbc42f92c65de9c3de13fa42985e6cbad228ab40e64cd02d344c1a1c58495",
+                  "description": "Image tag, pinned by digest.",
+                  "required": [],
+                  "title": "tag",
+                  "type": "string"
+                }
+              },
+              "required": [],
+              "title": "image"
+            },
+            "podDisruptionBudget": {
+              "additionalProperties": true,
+              "properties": {
+                "enabled": {
+                  "default": false,
+                  "description": "Create a PodDisruptionBudget.",
+                  "required": [],
+                  "title": "enabled",
+                  "type": "boolean"
+                },
+                "maxUnavailable": {
+                  "default": "null",
+                  "description": "Maximum unavailable pods.",
+                  "required": [],
+                  "title": "maxUnavailable",
+                  "type": [
+                    "integer",
+                    "string",
+                    "null"
+                  ]
+                },
+                "minAvailable": {
+                  "default": 1,
+                  "description": "Minimum available pods during voluntary disruption.",
+                  "required": [],
+                  "title": "minAvailable",
+                  "type": [
+                    "integer",
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [],
+              "title": "podDisruptionBudget"
+            },
+            "replicaCount": {
+              "default": 1,
+              "description": "Replica count. One by default; upstream runs this tier as a singleton.",
+              "minimum": 0,
+              "required": [],
+              "title": "replicaCount",
+              "type": "integer"
+            },
+            "resourcesPreset": {
+              "default": "medium",
+              "description": "Resource t-shirt size.",
+              "enum": [
+                "",
+                "nano",
+                "micro",
+                "small",
+                "medium",
+                "large"
+              ],
+              "required": [],
+              "title": "resourcesPreset"
+            },
+            "service": {
+              "additionalProperties": true,
+              "properties": {
+                "annotations": {
+                  "additionalProperties": true,
+                  "description": "Extra Service annotations.",
+                  "required": [],
+                  "title": "annotations",
+                  "type": "object"
+                },
+                "type": {
+                  "default": "ClusterIP",
+                  "description": "Service type.",
+                  "enum": [
+                    "ClusterIP",
+                    "NodePort",
+                    "LoadBalancer"
+                  ],
+                  "required": [],
+                  "title": "type"
+                }
+              },
+              "required": [],
+              "title": "service"
+            }
+          },
+          "required": [],
+          "title": "notifier"
+        },
+        "render": {
+          "additionalProperties": true,
+          "description": "Optional headless-browser tier for JavaScript-rendered pages; doubles as a solver\nbackend. This is the one service not built on `scratch`: it is a Debian base driving a real\nChromium, so it needs writable scratch space and a shared-memory volume.",
+          "properties": {
+            "autoscaling": {
+              "additionalProperties": true,
+              "properties": {
+                "enabled": {
+                  "default": false,
+                  "description": "Enable a HorizontalPodAutoscaler.",
+                  "required": [],
+                  "title": "enabled",
+                  "type": "boolean"
+                },
+                "maxReplicas": {
+                  "default": 4,
+                  "description": "Maximum replicas.",
+                  "minimum": 1,
+                  "required": [],
+                  "title": "maxReplicas",
+                  "type": "integer"
+                },
+                "minReplicas": {
+                  "default": 1,
+                  "description": "Minimum replicas.",
+                  "minimum": 1,
+                  "required": [],
+                  "title": "minReplicas",
+                  "type": "integer"
+                },
+                "targetCPUUtilizationPercentage": {
+                  "default": 80,
+                  "description": "Target average CPU utilisation, percent.",
+                  "required": [],
+                  "title": "targetCPUUtilizationPercentage",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "targetMemoryUtilizationPercentage": {
+                  "default": "null",
+                  "description": "Target average memory utilisation, percent.",
+                  "required": [],
+                  "title": "targetMemoryUtilizationPercentage",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                }
+              },
+              "required": [],
+              "title": "autoscaling"
+            },
+            "config": {
+              "additionalProperties": true,
+              "description": "Service-specific configuration, merged over the global `config` tree.",
+              "required": [],
+              "title": "config",
+              "type": "object"
+            },
+            "enabled": {
+              "default": false,
+              "description": "Deploy the render tier.",
+              "required": [],
+              "title": "enabled",
+              "type": "boolean"
+            },
+            "homeDir": {
+              "default": "/home/nonroot",
+              "description": "Home directory of the image's nonroot user, mounted as a writable emptyDir. Chromium\nwrites its profile and crashpad database here; when it is not writable the failure\nsurfaces as a misleading `--database is required` error.",
+              "required": [],
+              "title": "homeDir",
+              "type": "string"
+            },
+            "image": {
+              "additionalProperties": true,
+              "properties": {
+                "repository": {
+                  "default": "timschoenle/tankovault-render",
+                  "description": "Image repository.",
+                  "required": [],
+                  "title": "repository",
+                  "type": "string"
+                },
+                "tag": {
+                  "default": "v0.4.1@sha256:32a70c5cd2296845faeb48d7d1563b819916f02c4f464f62508474c43e4a3fe5",
+                  "description": "Image tag, pinned by digest.",
+                  "required": [],
+                  "title": "tag",
+                  "type": "string"
+                }
+              },
+              "required": [],
+              "title": "image"
+            },
+            "podDisruptionBudget": {
+              "additionalProperties": true,
+              "properties": {
+                "enabled": {
+                  "default": false,
+                  "description": "Create a PodDisruptionBudget.",
+                  "required": [],
+                  "title": "enabled",
+                  "type": "boolean"
+                },
+                "maxUnavailable": {
+                  "default": "null",
+                  "description": "Maximum unavailable pods.",
+                  "required": [],
+                  "title": "maxUnavailable",
+                  "type": [
+                    "integer",
+                    "string",
+                    "null"
+                  ]
+                },
+                "minAvailable": {
+                  "default": 1,
+                  "description": "Minimum available pods during voluntary disruption.",
+                  "required": [],
+                  "title": "minAvailable",
+                  "type": [
+                    "integer",
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [],
+              "title": "podDisruptionBudget"
+            },
+            "replicaCount": {
+              "default": 1,
+              "description": "Replica count, ignored when autoscaling is enabled.",
+              "minimum": 0,
+              "required": [],
+              "title": "replicaCount",
+              "type": "integer"
+            },
+            "resources": {
+              "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.ResourceRequirements",
+              "required": []
+            },
+            "service": {
+              "additionalProperties": true,
+              "properties": {
+                "annotations": {
+                  "additionalProperties": true,
+                  "description": "Extra Service annotations.",
+                  "required": [],
+                  "title": "annotations",
+                  "type": "object"
+                },
+                "type": {
+                  "default": "ClusterIP",
+                  "description": "Service type. Publishing this service exposes a privileged contract.",
+                  "enum": [
+                    "ClusterIP",
+                    "NodePort",
+                    "LoadBalancer"
+                  ],
+                  "required": [],
+                  "title": "type"
+                }
+              },
+              "required": [],
+              "title": "service"
+            },
+            "shmSize": {
+              "default": "1Gi",
+              "description": "Size of the `/dev/shm` in-memory volume. Chromium crashes with cryptic renderer\nfailures on the 64Mi Kubernetes default.",
+              "required": [],
+              "title": "shmSize",
+              "type": "string"
+            }
+          },
+          "required": [],
+          "title": "render"
+        },
+        "sync": {
+          "additionalProperties": true,
+          "description": "Bidirectional AniList integration and metadata enrichment.",
+          "properties": {
+            "config": {
+              "additionalProperties": true,
+              "description": "Service-specific configuration, merged over the global `config` tree.",
+              "required": [],
+              "title": "config",
+              "type": "object"
+            },
+            "enabled": {
+              "default": true,
+              "description": "Deploy the sync service. Requires the `anilist` credentials.",
+              "required": [],
+              "title": "enabled",
+              "type": "boolean"
+            },
+            "image": {
+              "additionalProperties": true,
+              "properties": {
+                "repository": {
+                  "default": "timschoenle/tankovault-sync",
+                  "description": "Image repository.",
+                  "required": [],
+                  "title": "repository",
+                  "type": "string"
+                },
+                "tag": {
+                  "default": "v0.4.1@sha256:4ad08ba3b238853b062ce7b8cd784b9877c418e72fb64e0029508a663d870604",
+                  "description": "Image tag, pinned by digest.",
+                  "required": [],
+                  "title": "tag",
+                  "type": "string"
+                }
+              },
+              "required": [],
+              "title": "image"
+            },
+            "podDisruptionBudget": {
+              "additionalProperties": true,
+              "properties": {
+                "enabled": {
+                  "default": false,
+                  "description": "Create a PodDisruptionBudget.",
+                  "required": [],
+                  "title": "enabled",
+                  "type": "boolean"
+                },
+                "maxUnavailable": {
+                  "default": "null",
+                  "description": "Maximum unavailable pods.",
+                  "required": [],
+                  "title": "maxUnavailable",
+                  "type": [
+                    "integer",
+                    "string",
+                    "null"
+                  ]
+                },
+                "minAvailable": {
+                  "default": 1,
+                  "description": "Minimum available pods during voluntary disruption.",
+                  "required": [],
+                  "title": "minAvailable",
+                  "type": [
+                    "integer",
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [],
+              "title": "podDisruptionBudget"
+            },
+            "replicaCount": {
+              "default": 1,
+              "description": "Replica count. One by default: the reconcile loop is interval-driven and has no\nleader election, so extra replicas duplicate outbound AniList calls.",
+              "minimum": 0,
+              "required": [],
+              "title": "replicaCount",
+              "type": "integer"
+            },
+            "resourcesPreset": {
+              "default": "medium",
+              "description": "Resource t-shirt size.",
+              "enum": [
+                "",
+                "nano",
+                "micro",
+                "small",
+                "medium",
+                "large"
+              ],
+              "required": [],
+              "title": "resourcesPreset"
+            },
+            "service": {
+              "additionalProperties": true,
+              "properties": {
+                "annotations": {
+                  "additionalProperties": true,
+                  "description": "Extra Service annotations.",
+                  "required": [],
+                  "title": "annotations",
+                  "type": "object"
+                },
+                "type": {
+                  "default": "ClusterIP",
+                  "description": "Service type. Publishing this service exposes a privileged contract.",
+                  "enum": [
+                    "ClusterIP",
+                    "NodePort",
+                    "LoadBalancer"
+                  ],
+                  "required": [],
+                  "title": "type"
+                }
+              },
+              "required": [],
+              "title": "service"
+            }
+          },
+          "required": [],
+          "title": "sync"
+        },
+        "worker": {
+          "additionalProperties": true,
+          "description": "Fetches and parses provider data through the adapters and upserts chapter and metadata\nchanges. Scales horizontally for free: replicas join one NATS JetStream consumer group.",
+          "properties": {
+            "autoscaling": {
+              "additionalProperties": true,
+              "properties": {
+                "enabled": {
+                  "default": false,
+                  "description": "Enable a HorizontalPodAutoscaler.",
+                  "required": [],
+                  "title": "enabled",
+                  "type": "boolean"
+                },
+                "maxReplicas": {
+                  "default": 10,
+                  "description": "Maximum replicas.",
+                  "minimum": 1,
+                  "required": [],
+                  "title": "maxReplicas",
+                  "type": "integer"
+                },
+                "minReplicas": {
+                  "default": 2,
+                  "description": "Minimum replicas.",
+                  "minimum": 1,
+                  "required": [],
+                  "title": "minReplicas",
+                  "type": "integer"
+                },
+                "targetCPUUtilizationPercentage": {
+                  "default": 80,
+                  "description": "Target average CPU utilisation, percent.",
+                  "required": [],
+                  "title": "targetCPUUtilizationPercentage",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "targetMemoryUtilizationPercentage": {
+                  "default": "null",
+                  "description": "Target average memory utilisation, percent.",
+                  "required": [],
+                  "title": "targetMemoryUtilizationPercentage",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                }
+              },
+              "required": [],
+              "title": "autoscaling"
+            },
+            "config": {
+              "additionalProperties": true,
+              "description": "Service-specific configuration, merged over the global `config` tree.",
+              "required": [],
+              "title": "config",
+              "type": "object"
+            },
+            "enabled": {
+              "default": true,
+              "description": "Deploy the worker.",
+              "required": [],
+              "title": "enabled",
+              "type": "boolean"
+            },
+            "image": {
+              "additionalProperties": true,
+              "properties": {
+                "repository": {
+                  "default": "timschoenle/tankovault-worker",
+                  "description": "Image repository.",
+                  "required": [],
+                  "title": "repository",
+                  "type": "string"
+                },
+                "tag": {
+                  "default": "v0.4.1@sha256:cd1d23f2f327bbb72ec6ec246c8715bb1fd7a9cb02e692850f590b359baf877e",
+                  "description": "Image tag, pinned by digest.",
+                  "required": [],
+                  "title": "tag",
+                  "type": "string"
+                }
+              },
+              "required": [],
+              "title": "image"
+            },
+            "podDisruptionBudget": {
+              "additionalProperties": true,
+              "properties": {
+                "enabled": {
+                  "default": false,
+                  "description": "Create a PodDisruptionBudget.",
+                  "required": [],
+                  "title": "enabled",
+                  "type": "boolean"
+                },
+                "maxUnavailable": {
+                  "default": "null",
+                  "description": "Maximum unavailable pods.",
+                  "required": [],
+                  "title": "maxUnavailable",
+                  "type": [
+                    "integer",
+                    "string",
+                    "null"
+                  ]
+                },
+                "minAvailable": {
+                  "default": 1,
+                  "description": "Minimum available pods during voluntary disruption.",
+                  "required": [],
+                  "title": "minAvailable",
+                  "type": [
+                    "integer",
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [],
+              "title": "podDisruptionBudget"
+            },
+            "replicaCount": {
+              "default": 2,
+              "description": "Replica count, ignored when autoscaling is enabled.",
+              "minimum": 0,
+              "required": [],
+              "title": "replicaCount",
+              "type": "integer"
+            },
+            "resourcesPreset": {
+              "default": "large",
+              "description": "Resource t-shirt size.",
+              "enum": [
+                "",
+                "nano",
+                "micro",
+                "small",
+                "medium",
+                "large"
+              ],
+              "required": [],
+              "title": "resourcesPreset"
+            },
+            "service": {
+              "additionalProperties": true,
+              "properties": {
+                "annotations": {
+                  "additionalProperties": true,
+                  "description": "Extra Service annotations.",
+                  "required": [],
+                  "title": "annotations",
+                  "type": "object"
+                },
+                "type": {
+                  "default": "ClusterIP",
+                  "description": "Service type.",
+                  "enum": [
+                    "ClusterIP",
+                    "NodePort",
+                    "LoadBalancer"
+                  ],
+                  "required": [],
+                  "title": "type"
+                }
+              },
+              "required": [],
+              "title": "service"
+            }
+          },
+          "required": [],
+          "title": "worker"
+        }
+      },
+      "required": [],
+      "title": "services"
+    },
+    "valkey": {
+      "additionalProperties": true,
+      "description": "Bundled Valkey, backing the API rate limiter and the control-plane's leader election.\nEmbedded rather than taken as a subchart: the official Valkey chart defines its own\n`common.image`, and Helm's template namespace is global across dependencies, so it and the\n`common` library overwrite each other. TankoVault degrades gracefully without Valkey — the\nrate limiter falls back to per-replica in-memory counters and the scheduler to sole-leader.",
+      "properties": {
+        "enabled": {
+          "default": false,
+          "description": "Deploy the bundled Valkey.",
+          "required": [],
+          "title": "enabled",
+          "type": "boolean"
+        },
+        "image": {
+          "additionalProperties": true,
+          "properties": {
+            "repository": {
+              "default": "valkey/valkey",
+              "description": "Image repository.",
+              "required": [],
+              "title": "repository",
+              "type": "string"
+            },
+            "tag": {
+              "default": "9.1.1-alpine@sha256:ee91f7a174ac4d6a6b0685b3a60e321f0a9dbbb691f9b0e285be2ba1d1be8328",
+              "description": "Image tag, pinned by digest.",
+              "required": [],
+              "title": "tag",
+              "type": "string"
+            }
+          },
+          "required": [],
+          "title": "image"
+        },
+        "resourcesPreset": {
+          "default": "medium",
+          "description": "Resource t-shirt size.",
+          "enum": [
+            "",
+            "nano",
+            "micro",
+            "small",
+            "medium",
+            "large"
+          ],
+          "required": [],
+          "title": "resourcesPreset"
+        }
+      },
+      "required": [],
+      "title": "valkey"
+    }
+  },
+  "required": [],
+  "type": "object"
+}

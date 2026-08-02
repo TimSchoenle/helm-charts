@@ -1,0 +1,94 @@
+{{- if .Values.postgresql.enabled }}
+{{- $pg := .Values.postgresql }}
+{{- $name := include "common.fullname.suffixed" (dict "ctx" . "suffix" "postgresql") }}
+{{- $probe := dict "enabled" true "exec" (dict "command" (list "pg_isready" "-U" $pg.auth.username "-d" $pg.auth.database)) }}
+{{- $values := include "tankovault.datastore.values" (dict
+      "ctx" .
+      "image" $pg.image
+      "resourcesPreset" $pg.resourcesPreset
+      "runAsUser" 999 "runAsGroup" 999 "fsGroup" 999
+      "livenessProbe" (merge (dict "periodSeconds" 30 "timeoutSeconds" 5 "failureThreshold" 5) (deepCopy $probe))
+      "readinessProbe" (merge (dict "periodSeconds" 10 "timeoutSeconds" 3 "failureThreshold" 3) (deepCopy $probe))
+    ) | fromYaml }}
+{{- $ctx := dict "Values" $values "Chart" $.Chart "Release" $.Release "Capabilities" $.Capabilities "Template" $.Template "Files" $.Files }}
+{{- /*
+  PGDATA points at a subdirectory of the mount: the official image refuses to initialise a
+  data directory that is not empty, and on many storage classes a fresh PVC arrives carrying a
+  lost+found. `/var/run/postgresql` is an emptyDir because the unix socket directory has to be
+  writable under a read-only root filesystem.
+*/ -}}
+{{- $env := list
+      (dict "name" "POSTGRES_USER" "value" $pg.auth.username)
+      (dict "name" "POSTGRES_DB" "value" $pg.auth.database)
+      (dict "name" "PGDATA" "value" "/var/lib/postgresql/data/pgdata")
+      (dict "name" "POSTGRES_PASSWORD" "valueFrom" (dict "secretKeyRef" (dict
+        "name" (include "tankovault.secretName" .)
+        "key" "postgresql__password"))) }}
+{{- $mounts := list
+      (dict "name" "data" "mountPath" "/var/lib/postgresql/data")
+      (dict "name" "run" "mountPath" "/var/run/postgresql") }}
+{{- $volumes := list (dict "name" "run" "emptyDir" dict) }}
+{{- if not $pg.persistence.enabled }}
+{{- $volumes = append $volumes (dict "name" "data" "emptyDir" dict) }}
+{{- else if $pg.persistence.existingClaim }}
+{{- $volumes = append $volumes (dict "name" "data" "persistentVolumeClaim" (dict "claimName" $pg.persistence.existingClaim)) }}
+{{- end }}
+apiVersion: v1
+kind: Service
+metadata:
+  {{- include "tankovault.datastore.metadata" (dict "ctx" . "component" "postgresql") | nindent 2 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: postgresql
+      port: 5432
+      targetPort: postgresql
+      protocol: TCP
+  selector:
+    {{- include "tankovault.datastore.selectorLabels" (dict "ctx" . "component" "postgresql") | nindent 4 }}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  {{- include "tankovault.datastore.metadata" (dict "ctx" . "component" "postgresql") | nindent 2 }}
+spec:
+  replicas: 1
+  serviceName: {{ $name }}
+  selector:
+    matchLabels:
+      {{- include "tankovault.datastore.selectorLabels" (dict "ctx" . "component" "postgresql") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "common.podLabels" $ctx | nindent 8 }}
+        app.kubernetes.io/component: postgresql
+    spec:
+      {{- include "common.podSpec.common" $ctx | nindent 6 }}
+      containers:
+        {{- include "common.container" (dict
+              "ctx" $ctx
+              "name" "postgresql"
+              "ports" (list (dict "name" "postgresql" "containerPort" 5432 "protocol" "TCP"))
+              "env" $env
+              "volumeMounts" $mounts
+            ) | nindent 8 }}
+      volumes:
+        {{- include "common.volumes" (dict "ctx" $ctx "volumes" $volumes) | nindent 8 }}
+  {{- if and $pg.persistence.enabled (not $pg.persistence.existingClaim) }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          {{- include "common.labels" $ctx | nindent 10 }}
+          app.kubernetes.io/component: postgresql
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        {{- with $pg.persistence.storageClassName }}
+        storageClassName: {{ . | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ $pg.persistence.size | quote }}
+  {{- end }}
+{{- end }}

@@ -1,0 +1,34 @@
+{{- /*
+The recording and alerting rules, vendored verbatim from the upstream repository at
+`deploy/observability/prometheus/rules/`.
+
+Read through `.Files.Get` and round-tripped with `fromYaml`/`toYaml` rather than `tpl`: the
+alert annotations contain Prometheus' own `{{ $labels.job }}` and `{{ $value }}` templating,
+which Go would try to evaluate — and either fail on, or worse, quietly resolve to empty
+strings, leaving every alert with an annotation that names nothing.
+*/ -}}
+{{- if and .Values.metrics.enabled .Values.metrics.prometheusRule.enabled }}
+{{- $recording := .Files.Get "rules/tankovault-recording.rules.yml" | fromYaml }}
+{{- $alerts := .Files.Get "rules/tankovault-alerts.rules.yml" | fromYaml }}
+{{- $groups := concat ($recording.groups | default list) ($alerts.groups | default list) }}
+{{- if not $groups }}
+{{- fail "the vendored Prometheus rule files under rules/ are empty or unparseable" }}
+{{- end }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "common.fullname" . }}
+  namespace: {{ include "common.namespace" . }}
+  labels:
+    {{- include "common.labels" . | nindent 4 }}
+    {{- with .Values.metrics.prometheusRule.labels }}
+    {{- include "common.tplvalues.render" (dict "value" . "context" $) | nindent 4 }}
+    {{- end }}
+  {{- with (include "common.annotations" .) }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
+spec:
+  groups:
+    {{- toYaml $groups | nindent 4 }}
+{{- end }}

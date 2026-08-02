@@ -1,0 +1,95 @@
+suite: test exposure and network policy
+templates:
+  - ingress.yaml
+  - networkpolicy.yaml
+  - servicemonitor.yaml
+values:
+  - ../ci/ingress-networkpolicy.yaml
+tests:
+  - it: routes the public ingress to the frontend, not the api
+    # The frontend serves the SPA and proxies /v1/* to the api, so one origin covers the whole
+    # application and cookies, SSE and passkey origins all line up.
+    template: ingress.yaml
+    documentIndex: 0
+    asserts:
+      - equal:
+          path: spec.rules[0].http.paths[0].backend.service.name
+          value: RELEASE-NAME-tankovault-frontend
+      - equal:
+          path: spec.rules[0].http.paths[0].backend.service.port.number
+          value: 3000
+
+  - it: publishes the api only on its own opt-in host
+    template: ingress.yaml
+    documentIndex: 1
+    asserts:
+      - equal:
+          path: spec.rules[0].host
+          value: api.tankovault.example.com
+      - equal:
+          path: spec.rules[0].http.paths[0].backend.service.name
+          value: RELEASE-NAME-tankovault-api
+
+  - it: denies everything not explicitly allowed
+    template: networkpolicy.yaml
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-worker
+    asserts:
+      - equal:
+          path: spec.policyTypes
+          value: [Ingress, Egress]
+
+  - it: lets the frontend reach the api and nothing else
+    template: networkpolicy.yaml
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-frontend
+    asserts:
+      - lengthEqual:
+          path: spec.egress
+          count: 2
+      - equal:
+          path: spec.egress[1].to[0].podSelector.matchLabels["app.kubernetes.io/name"]
+          value: tankovault-api
+
+  - it: gives the scraping tiers internet egress without the metadata endpoint
+    # A tier that fetches attacker-influenced URLs and can also reach 169.254.169.254 is one
+    # SSRF away from the node's instance credentials.
+    template: networkpolicy.yaml
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-worker
+    asserts:
+      - contains:
+          path: spec.egress[?(@.to[0].ipBlock)].to[0].ipBlock.except
+          content: 169.254.0.0/16
+
+  - it: gives the control plane no internet egress at all
+    template: networkpolicy.yaml
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-control-plane
+    asserts:
+      - notExists:
+          path: spec.egress[?(@.to[0].ipBlock)]
+
+  - it: labels the scrape job with the slug the vendored rules match on
+    # Without jobLabel the operator sets `job` to the Service name, while every vendored rule
+    # matches `up{job=~"api|frontend"}`. The rules would load and never fire.
+    template: servicemonitor.yaml
+    values:
+      - ../ci/metrics.yaml
+    capabilities:
+      apiVersions:
+        - monitoring.coreos.com/v1
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-api
+    asserts:
+      - equal:
+          path: spec.jobLabel
+          value: app.kubernetes.io/component
+      - equal:
+          path: spec.endpoints[0].port
+          value: metrics

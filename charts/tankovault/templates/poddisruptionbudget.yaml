@@ -1,0 +1,8 @@
+{{- $specs := include "tankovault.serviceSpecs" . | fromYaml -}}
+{{- range $service, $spec := $specs }}
+{{- $values := index $.Values.services $service }}
+{{- if and $values.enabled $values.podDisruptionBudget $values.podDisruptionBudget.enabled }}
+---
+{{ include "tankovault.pdb" (dict "ctx" $ "service" $service) }}
+{{- end }}
+{{- end }}

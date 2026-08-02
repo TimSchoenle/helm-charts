@@ -1,0 +1,123 @@
+suite: test in-place configuration reload
+templates:
+  - deployment.yaml
+  - configmap.yaml
+values:
+  - ../ci/default.yaml
+tests:
+  - it: carries no config checksum annotation by default
+    # This is the whole point of the chart's configuration design and the one behaviour most
+    # likely to be "helpfully" reverted to the repository-wide convention. Every service
+    # watches the directories its configuration came from and rebuilds its runtime when the
+    # kubelet refreshes them, so a checksum annotation would throw that away and restart the
+    # fleet on every value change.
+    template: deployment.yaml
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-api
+    asserts:
+      - isNull:
+          path: spec.template.metadata.annotations["checksum/config"]
+      - isNull:
+          path: spec.template.metadata.annotations["checksum/secret"]
+
+  - it: adds checksum annotations when rolloutOnChange is requested
+    template: deployment.yaml
+    set:
+      configReload.rolloutOnChange: true
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-api
+    asserts:
+      - isNotNullOrEmpty:
+          path: spec.template.metadata.annotations["checksum/config"]
+      - isNotNullOrEmpty:
+          path: spec.template.metadata.annotations["checksum/secret"]
+
+  - it: passes only process-level keys through the environment
+    # Layers 3, 4 and 5 are mutually exclusive per key: a value supplied both as an environment
+    # variable and as a mounted file fails the boot. Keeping configuration entirely in files
+    # makes that collision structurally impossible.
+    template: deployment.yaml
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-api
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].env
+          value:
+            - name: TANKOVAULT_PROFILE
+              value: production
+            - name: TANKOVAULT_CONFIG
+              value: /etc/tankovault/config
+            - name: TANKOVAULT_SECRETS_DIR
+              value: /etc/tankovault/secrets
+
+  - it: names the secrets directory only where one is actually mounted
+    # A configured `TANKOVAULT_SECRETS_DIR` that cannot be read is a boot failure naming the
+    # path, not an empty layer. A pod projects only its own service's `secretKeys` and the
+    # frontend has none, so naming the directory anyway crash-loops it on
+    # `which could not be read: No such file or directory`.
+    template: deployment.yaml
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-frontend
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].env
+          value:
+            - name: TANKOVAULT_PROFILE
+              value: production
+            - name: TANKOVAULT_CONFIG
+              value: /etc/tankovault/config
+      - notContains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: secrets
+            mountPath: /etc/tankovault/secrets
+            readOnly: true
+      - isNull:
+          path: spec.template.spec.volumes[?(@.name=="secrets")]
+
+  - it: mounts configuration as a whole directory, never a subPath
+    template: deployment.yaml
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-api
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: config
+            mountPath: /etc/tankovault/config
+            readOnly: true
+      - equal:
+          path: spec.template.spec.volumes[?(@.name=="config")].configMap.name
+          value: RELEASE-NAME-tankovault-api-config
+
+  - it: derives the browser-visible origins from the ingress
+    # AniList binds the redirect URI, mail clients the link base and the browser the passkey
+    # origin. All three fail only at runtime when they disagree with the real hostname.
+    template: configmap.yaml
+    set:
+      ingress.enabled: true
+      ingress.host: tanko.example.com
+      ingress.tls.enabled: true
+      anilist.redirectUri: ""
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-sync-config
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: 'redirect_uri = "https://tanko\.example\.com/account/anilist-callback"'
+
+  - it: points the frontend proxy at the api service
+    template: configmap.yaml
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-frontend-config
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: 'api_upstream = "http://RELEASE-NAME-tankovault-api:8080"'

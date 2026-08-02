@@ -58,6 +58,7 @@ so `helm upgrade` never rotates one out from under a running workload.
 | Value | Generated when empty | Read it back with |
 |---|---|---|
 | `auth.jwtSecret` | always | `auth__jwt_secret` |
+| `auth.passwordPepper` | first install only (see below) | `auth__password_pepper` |
 | `internal.token` | `profile=production` | `internal__token` |
 | `anilist.tokenEncryptionKey` | `services.sync.enabled` | `anilist__token_encryption_key` |
 | `bootstrap.seedAdmin.password` | `bootstrap.seedAdmin.enabled` | `seed_admin_password` |
@@ -67,11 +68,21 @@ so `helm upgrade` never rotates one out from under a running workload.
 kubectl get secret tankovault -o jsonpath='{.data.seed_admin_password}' | base64 -d
 ```
 
-Set a value explicitly only when it has to be known outside the release. Two things are **not**
-generated: `auth.passwordPepper`, because an install already running without one would have every
-stored password invalidated the moment it appeared; and anything issued by a third party — the
-AniList application credentials, SMTP and webhook endpoints — which cannot be invented. Generation
-also requires the chart to own the `Secret`: with `existingSecret` set it fills in nothing.
+Set a value explicitly only when it has to be known outside the release. Values issued by a third
+party — the AniList application credentials, SMTP and webhook endpoints — are never generated,
+because they cannot be invented. Generation also requires the chart to own the `Secret`: with
+`existingSecret` set it fills in nothing.
+
+`auth.passwordPepper` is the one exception to "generated when empty": it is generated only when
+this release has no `Secret` yet. Introducing a pepper into a release that has been storing
+unpeppered password hashes would make every one of them unverifiable, so an upgrade never adds
+one — a release running without a pepper keeps running without it until you set the value
+yourself, at which point every existing password is invalidated deliberately rather than by
+surprise.
+
+**Back the `Secret` up.** Losing `auth__password_pepper` invalidates every stored password;
+losing `anilist__token_encryption_key` forces every account to re-link. That is true however
+those values were set, but generated values exist nowhere else.
 
 ## Configuration reloads instead of restarting
 

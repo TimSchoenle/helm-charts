@@ -13,7 +13,14 @@ through `tankovault.secretData`, which resolves each into a variable exactly onc
 Note `helm template` has no cluster to look up, so a generated credential renders differently on
 every invocation. Every `ci/` and test values file sets them explicitly for that reason.
 
-Args: ctx, key (the Secret key it is remembered under), fallback (the value to generate).
+`firstInstallOnly` narrows that to installs this chart has not created a Secret for yet. It is
+for credentials that were optional before they were generated: a release already running without
+one must keep running without it, because introducing the value later is not a no-op — the
+password pepper invalidates every stored password. An absent key next to an existing Secret is
+therefore read as a decision, not as a gap to fill.
+
+Args: ctx, key (the Secret key it is remembered under), fallback (the value to generate),
+firstInstallOnly (optional).
 */}}
 {{- define "tankovault.rememberedSecret" -}}
 {{- $ctx := .ctx -}}
@@ -21,6 +28,8 @@ Args: ctx, key (the Secret key it is remembered under), fallback (the value to g
 {{- $existing := lookup "v1" "Secret" (include "common.namespace" $ctx) $name -}}
 {{- if and $existing $existing.data (hasKey $existing.data .key) -}}
 {{- index $existing.data .key | b64dec -}}
+{{- else if and .firstInstallOnly $existing -}}
+{{- /* The release predates this key and has been running without it. Leave it that way. */ -}}
 {{- else -}}
 {{- .fallback -}}
 {{- end -}}
@@ -38,6 +47,24 @@ why it is looked up rather than regenerated on each upgrade.
 {{- .Values.auth.jwtSecret -}}
 {{- else -}}
 {{- include "tankovault.rememberedSecret" (dict "ctx" . "key" "auth__jwt_secret" "fallback" (randAlphaNum 48)) -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+The password pepper: whatever the operator set, else generated on a first install and remembered.
+
+Every argon2id hash is peppered with it, so a database leak alone cannot be brute-forced offline
+— worth having by default. It is also the one credential whose *appearance* is destructive: a
+release that has been storing unpeppered hashes would find every one of them unverifiable the
+moment a pepper existed. Hence `firstInstallOnly`: a Secret without the key stays without it, and
+only an install that has no Secret at all gets one. The corollary is that losing this Secret
+loses every password with it, which is true of the pepper however it was set.
+*/}}
+{{- define "tankovault.passwordPepper" -}}
+{{- if .Values.auth.passwordPepper -}}
+{{- .Values.auth.passwordPepper -}}
+{{- else -}}
+{{- include "tankovault.rememberedSecret" (dict "ctx" . "key" "auth__password_pepper" "fallback" (randAlphaNum 32) "firstInstallOnly" true) -}}
 {{- end -}}
 {{- end -}}
 
@@ -112,7 +139,7 @@ differently.
 {{- $ctx := . -}}
 {{- $data := dict -}}
 {{- with include "tankovault.jwtSecret" $ctx }}{{- $_ := set $data "auth__jwt_secret" . }}{{- end -}}
-{{- with $ctx.Values.auth.passwordPepper }}{{- $_ := set $data "auth__password_pepper" . }}{{- end -}}
+{{- with include "tankovault.passwordPepper" $ctx }}{{- $_ := set $data "auth__password_pepper" . }}{{- end -}}
 {{- with include "tankovault.internalToken" $ctx }}{{- $_ := set $data "internal__token" . }}{{- end -}}
 {{- with $ctx.Values.anilist.clientId }}{{- $_ := set $data "anilist__client_id" . }}{{- end -}}
 {{- with $ctx.Values.anilist.clientSecret }}{{- $_ := set $data "anilist__client_secret" . }}{{- end -}}

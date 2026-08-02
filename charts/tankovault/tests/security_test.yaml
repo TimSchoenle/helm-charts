@@ -7,6 +7,7 @@ templates:
   - nats.yaml
   - valkey.yaml
   - flaresolverr.yaml
+  - job-seed.yaml
 values:
   - ../ci/bundled-datastores-values.yaml
 tests:
@@ -22,6 +23,24 @@ tests:
       - equal:
           path: spec.template.spec.securityContext.seccompProfile.type
           value: RuntimeDefault
+
+  - it: gives the bootstrap Jobs the same identity, so they can read the projected credentials
+    # The credentials are projected at mode 0400 and owned by root; only `fsGroup` makes them
+    # readable to the image's UID 1001. A Job rendered without it fails on the first key it
+    # opens with `Permission denied (os error 13)`, which is what a missing `fsGroup` looks
+    # like from inside the container.
+    template: job-seed.yaml
+    documentIndex: 0
+    asserts:
+      - equal:
+          path: spec.template.spec.securityContext.runAsUser
+          value: 1001
+      - equal:
+          path: spec.template.spec.securityContext.runAsGroup
+          value: 1001
+      - equal:
+          path: spec.template.spec.securityContext.fsGroup
+          value: 1001
 
   - it: drops every capability and forbids privilege escalation
     template: deployment.yaml

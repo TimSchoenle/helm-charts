@@ -148,11 +148,20 @@ spec:
       restartPolicy: Never
       serviceAccountName: {{ include "tankovault.serviceAccountName" $root }}
       automountServiceAccountToken: false
-      {{- with (include "common.podSecurityContext" $root) }}
+      {{- /*
+        Rendered against `$ctx`, not `$root`: the identity fields — `runAsUser`, `runAsGroup`
+        and above all `fsGroup` — live under `.Values.defaults`, which only the scoped context
+        flattens to the top level. Read from `$root` the helper sees no `podSecurityContext`
+        at all and emits the bare preset, leaving the pod without an `fsGroup`. The projected
+        secrets volume is then owned by root at mode 0400 while the container runs as the
+        image's UID 1001, and every bootstrap command dies on the first credential it opens
+        with `Permission denied (os error 13)`.
+      */}}
+      {{- with (include "common.podSecurityContext" $ctx) }}
       securityContext:
         {{- . | nindent 8 }}
       {{- end }}
-      {{- include "common.imagePullSecrets" $root | nindent 6 }}
+      {{- include "common.imagePullSecrets" $ctx | nindent 6 }}
       containers:
         {{- include "tankovault.bootstrapContainer" (dict "ctx" $root "command" .command "name" .name) | nindent 8 }}
       volumes:

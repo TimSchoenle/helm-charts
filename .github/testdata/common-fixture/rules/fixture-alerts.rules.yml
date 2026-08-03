@@ -1,0 +1,12 @@
+groups:
+  - name: fixture-availability
+    rules:
+      - alert: FixtureDown
+        expr: up == 0
+        for: 5m
+        annotations:
+          # Prometheus' own templating. Go must never evaluate this: a regression that ran the
+          # rule files through `tpl` would resolve it to an empty string and leave the alert
+          # naming nothing.
+          summary: '{{ $labels.job }} is down'
+          description: 'value {{ $value }}'

@@ -1,6 +1,6 @@
 # common
 
-![Version: 1.0.3](https://img.shields.io/badge/Version-1.0.3-informational?style=flat-square) ![Type: library](https://img.shields.io/badge/Type-library-informational?style=flat-square)
+![Version: 1.1.0](https://img.shields.io/badge/Version-1.1.0-informational?style=flat-square) ![Type: library](https://img.shields.io/badge/Type-library-informational?style=flat-square)
 
 Shared template partials for the TimSchoenle Helm charts
 
@@ -91,6 +91,38 @@ spec:
 > cloud instance metadata endpoint at `169.254.169.254`. Rules added through
 > `networkPolicy.egress.customRules` must supply their own `to:`.
 
+### Observability
+
+| Partial | Purpose |
+|---|---|
+| `common.grafana.dashboard.configMap` | Dashboard JSON in a labelled ConfigMap, for a Grafana sidecar |
+| `common.grafana.dashboard.customResources` | One `GrafanaDashboard` per file, for grafana-operator v5 |
+| `common.grafana.dashboard.configMapName` | The ConfigMap name both of the above resolve through |
+| `common.grafana.dashboard.errors` / `.validate` | Misconfiguration as messages, or raised |
+| `common.prometheus.rules.prometheusRule` | Every rule group across the chart's rule files, as one `PrometheusRule` |
+| `common.prometheus.rules.groups` | Just the groups, parsed and re-emitted |
+| `common.prometheus.rules.errors` / `.validate` | Misconfiguration as messages, or raised |
+| `common.prometheus.operatorErrors` | Whether the Prometheus Operator CRDs are missing, as a message |
+
+Grafana ships no Kubernetes-native dashboard type, and the two carriers that exist are not
+equivalent. A sidecar ConfigMap is discovered according to the *Grafana* release's
+`sidecar.dashboards.searchNamespace`, which the chart owning the dashboard cannot influence; a
+`GrafanaDashboard` carries `allowCrossNamespaceImport` and so declares its own reach. Both are
+rendered from the same ConfigMap — the custom resources use `configMapRef` — so the JSON is
+stored once. Rules have only the one carrier, and `ruleNamespaceSelector`/`ruleSelector` on the
+Prometheus custom resource decide what loads them; `labels` is the half of that a chart controls.
+
+> [!IMPORTANT]
+> Dashboard JSON and rule files are read as file data and never passed through the template
+> engine. Grafana legends use `{{ }}` and alert annotations use `{{ $labels.job }}`, both of
+> which Go would either fail on or silently resolve to an empty string.
+
+> [!IMPORTANT]
+> When the required CRDs are absent these partials fail the render instead of skipping. A
+> capability guard that skipped would install cleanly and leave the release unmonitored, which is
+> the failure worth preventing. Offline renders declare the APIs with
+> `--api-versions monitoring.coreos.com/v1 --api-versions grafana.integreatly.org/v1beta1`.
+
 ### Capabilities and utilities
 
 | Partial | Purpose |
@@ -142,6 +174,15 @@ and act as the reference shape for consuming charts.
 | image.registry | string | `""` | Registry host. Left empty, the repository is used as-is (Docker Hub). |
 | image.repository | string | `""` | Image repository. Required. |
 | image.tag | string | `""` | Image tag. Defaults to the chart's `appVersion`. May pin a digest inline (`v1.2.3@sha256:...`): the digest pins the pull, while the tag stays on as the readable version marker. |
+| grafanaDashboard | object | `{"enabled":false,"grafanaOperator":{"allowCrossNamespaceImport":true,"enabled":false,"folder":"","instanceSelector":{"matchLabels":{"dashboards":"grafana"}},"resyncPeriod":"5m"},"label":"grafana_dashboard","labelValue":"1"}` | Grafana dashboard delivery, consumed by `common.grafana.dashboard.*`. A consuming chart exposes this shape wherever it likes — `metrics.dashboard` is the convention — and passes it in as the `values` argument. Grafana has no Kubernetes-native dashboard type, so the partials render both mechanisms: a labelled ConfigMap for the sidecar, and, optionally, one `GrafanaDashboard` per file for grafana-operator v5. |
+| grafanaDashboard.enabled | bool | `false` | Create the ConfigMap holding the dashboard JSON. Required by the operator path too, which references it rather than duplicating the JSON into the custom resources. |
+| grafanaDashboard.grafanaOperator.allowCrossNamespaceImport | bool | `true` | Let the resources bind to Grafana instances outside the release namespace. With `false` the operator only considers Grafana custom resources in the same namespace. |
+| grafanaDashboard.grafanaOperator.enabled | bool | `false` | Also create one `GrafanaDashboard` per dashboard file. This is the only delivery path a chart can make cross-namespace on its own terms. Requires the `grafana.integreatly.org/v1beta1` CRDs; `common.grafana.dashboard.errors` fails the render loudly rather than silently dropping the objects when they are absent. |
+| grafanaDashboard.grafanaOperator.folder | string | `""` | Folder to file the dashboards under. Empty leaves them at the Grafana root. |
+| grafanaDashboard.grafanaOperator.instanceSelector | object | `{"matchLabels":{"dashboards":"grafana"}}` | Label selector for the Grafana instances to import into. Must select something: unlike a Kubernetes label selector, an empty `instanceSelector` matches no instance at all. |
+| grafanaDashboard.grafanaOperator.resyncPeriod | string | `"5m"` | How often the operator re-reconciles the dashboard, undoing edits made in the Grafana UI. A Go duration. |
+| grafanaDashboard.label | string | `"grafana_dashboard"` | Label a Grafana sidecar watches for dashboard ConfigMaps. Discovery is a property of the *Grafana* release: the sidecar only sees this ConfigMap if `sidecar.dashboards.searchNamespace` covers the namespace it lands in, which a chart cannot influence from its own side. |
+| grafanaDashboard.labelValue | string | `"1"` | Value for that label. |
 | imagePullSecrets | list | `[]` | Pull secrets for private registries. Accepts `- name: regcred` or the shorthand `- regcred`. |
 | kubeVersionOverride | string | `""` | Kubernetes version to target when branching on API availability. Lets `helm template` render for a specific cluster version without a live connection. Leave empty to detect from the cluster. |
 | livenessProbe | object | `{"enabled":false}` | Liveness probe. See `startupProbe` for the accepted shape. |
@@ -186,6 +227,9 @@ and act as the reference shape for consuming charts.
 | podSecurityContext | object | `{}` | Pod security context, merged over the preset. |
 | podSecurityContextPreset | string | `"restricted"` | Baseline for the pod security context. `restricted` applies the Pod Security Standards restricted profile (`runAsNonRoot`, `seccompProfile: RuntimeDefault`, `fsGroupChangePolicy: OnRootMismatch`); `none` applies nothing. Identity fields (`runAsUser`, `runAsGroup`, `fsGroup`) are always left to the chart, since they must match the UID baked into the image. |
 | priorityClassName | string | `""` | PriorityClass for the pod. |
+| prometheusRule | object | `{"enabled":false,"labels":{}}` | Prometheus recording and alerting rules, consumed by `common.prometheus.rules.*`. Unlike the dashboards there is only one carrier — `PrometheusRule` is already the operator's own CRD — and no per-object cross-namespace grant: which namespaces a Prometheus loads rules from is decided by `ruleNamespaceSelector` and `ruleSelector` on the Prometheus custom resource. |
+| prometheusRule.enabled | bool | `false` | Create a PrometheusRule from the chart's rule files. Requires the `monitoring.coreos.com/v1` CRDs; `common.prometheus.rules.errors` fails the render loudly rather than silently dropping the object when they are absent. |
+| prometheusRule.labels | object | `{}` | Extra labels, templated. This is the only half of rule discovery a chart controls: a cluster whose Prometheus selects `release: kube-prometheus-stack` needs that label here, or the rules are created and never loaded. |
 | readinessProbe | object | `{"enabled":false}` | Readiness probe. See `startupProbe` for the accepted shape. |
 | readinessProbe.enabled | bool | `false` | Enable the readiness probe. |
 | resources | object | `{}` | Explicit resource requests and limits. Wins over `resourcesPreset`. |

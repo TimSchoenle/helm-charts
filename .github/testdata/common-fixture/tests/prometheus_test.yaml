@@ -1,0 +1,86 @@
+# `PrometheusRule` is already the Prometheus Operator's CRD, so unlike the dashboards there is no
+# second delivery mechanism to choose between — and no per-object cross-namespace grant either.
+# What is shared with the dashboard partials is the refusal to render silently: a missing CRD
+# stops the render rather than dropping the object.
+suite: common.prometheus.rules partials
+templates:
+  - prometheusrule.yaml
+tests:
+  - it: ships nothing unless asked
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: collects every group from every rule file
+    capabilities:
+      apiVersions:
+        - monitoring.coreos.com/v1
+    set:
+      prometheusRule.enabled: true
+    asserts:
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-common-fixture
+      - lengthEqual:
+          path: spec.groups
+          count: 2
+      - contains:
+          path: spec.groups
+          content:
+            name: fixture-recording
+            interval: 30s
+            rules:
+              - expr: sum by (job) (rate(http_requests_total[5m]))
+                record: job:http_requests:rate5m
+
+  - it: leaves Prometheus' own templating untouched
+    # Go would either fail on `{{ $labels.job }}` or, worse, resolve it to an empty string and
+    # leave every alert with an annotation that names nothing.
+    capabilities:
+      apiVersions:
+        - monitoring.coreos.com/v1
+    set:
+      prometheusRule.enabled: true
+    asserts:
+      - equal:
+          path: spec.groups[0].rules[0].annotations.summary
+          value: '{{ $labels.job }} is down'
+      - equal:
+          path: spec.groups[0].rules[0].annotations.description
+          value: 'value {{ $value }}'
+
+  - it: carries the labels a ruleSelector matches on
+    # Which namespaces a Prometheus loads rules from is decided by `ruleNamespaceSelector` and
+    # `ruleSelector` on the Prometheus custom resource. Carrying the label is the only part of
+    # that a chart controls.
+    capabilities:
+      apiVersions:
+        - monitoring.coreos.com/v1
+    set:
+      prometheusRule.enabled: true
+      prometheusRule.labels:
+        release: kube-prometheus-stack
+    asserts:
+      - equal:
+          path: metadata.labels["release"]
+          value: kube-prometheus-stack
+
+  - it: templates those labels
+    capabilities:
+      apiVersions:
+        - monitoring.coreos.com/v1
+    set:
+      prometheusRule.enabled: true
+      prometheusRule.labels:
+        release: '{{ .Release.Name }}'
+    asserts:
+      - equal:
+          path: metadata.labels["release"]
+          value: RELEASE-NAME
+
+  - it: refuses to render when the Prometheus Operator CRDs are absent
+    set:
+      prometheusRule.enabled: true
+    asserts:
+      - failedTemplate:
+          errorPattern: "registers no `monitoring.coreos.com/v1` API"

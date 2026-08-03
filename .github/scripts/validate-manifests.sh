@@ -14,6 +14,15 @@ kube_version="${KUBE_VERSION:?KUBE_VERSION must be set}"
 # schemas come from the community catalog.
 crd_schema='https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json'
 
+# Charts that ship custom resources refuse to render when the API is missing, rather than
+# dropping the objects silently, so an offline render has to declare the CRD APIs the target
+# cluster is assumed to have. Without this the objects would never reach kubeconform.
+# shellcheck disable=SC2054 # not a list literal
+api_versions=(
+  --api-versions monitoring.coreos.com/v1
+  --api-versions grafana.integreatly.org/v1beta1
+)
+
 failed=0
 
 for chart in charts/*/; do
@@ -27,6 +36,7 @@ for chart in charts/*/; do
     if ! helm template "$name" "$chart" \
           --namespace default \
           --kube-version "${kube_version}" \
+          "${api_versions[@]}" \
           --values "$values" |
         kubeconform \
           -strict \

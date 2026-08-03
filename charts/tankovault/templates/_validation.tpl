@@ -87,6 +87,48 @@ cannot generate one, so the Secret must already carry `seed_admin_password`.
 {{- $errors = append $errors "services.controlPlane.enabled requires NATS JetStream: set `nats.enabled=true` or point `externalNats.url` at one." -}}
 {{- end -}}
 
+{{- /*
+Grafana dashboards. The rules are the library's, because the value contract and the CRD it
+depends on are — messages are collected rather than raised there so they land in this one report
+alongside everything else. Prefixed here, since the library cannot know which key path the
+consuming chart exposed them under.
+*/ -}}
+{{- $dashboard := $ctx.Values.metrics.dashboard -}}
+{{- if and $dashboard.enabled (not $ctx.Values.metrics.enabled) -}}
+{{- $errors = append $errors "metrics.dashboard.enabled has no effect while metrics.enabled=false: nothing scrapes the services, so the dashboard would render against an empty datasource. Enable metrics, or turn the dashboard off." -}}
+{{- end -}}
+{{- $dashboardErrors := include "common.grafana.dashboard.errors" (dict "ctx" $ctx "values" $dashboard) -}}
+{{- if $dashboardErrors -}}
+{{- range splitList "\n" $dashboardErrors -}}
+{{- $errors = append $errors (printf "under `metrics.dashboard`, %s" .) -}}
+{{- end -}}
+{{- end -}}
+
+{{- /*
+Prometheus Operator objects. Same contract as the dashboards: a missing CRD is refused here
+rather than silently dropped, so an operator who forgot to install the Prometheus Operator finds
+out now instead of discovering an unmonitored release weeks later.
+*/ -}}
+{{- if and $ctx.Values.metrics.enabled $ctx.Values.metrics.serviceMonitor.enabled -}}
+{{- with (include "common.prometheus.operatorErrors" (dict "ctx" $ctx "feature" "metrics.serviceMonitor.enabled")) -}}
+{{- $errors = append $errors . -}}
+{{- end -}}
+{{- end -}}
+{{- if $ctx.Values.metrics.enabled -}}
+{{- $ruleErrors := include "common.prometheus.rules.errors" (dict "ctx" $ctx "values" $ctx.Values.metrics.prometheusRule "feature" "metrics.prometheusRule.enabled") -}}
+{{- if $ruleErrors -}}
+{{- range splitList "\n" $ruleErrors -}}
+{{- $errors = append $errors . -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- if and $ctx.Values.metrics.prometheusRule.enabled (not $ctx.Values.metrics.enabled) -}}
+{{- $errors = append $errors "metrics.prometheusRule.enabled has no effect while metrics.enabled=false: no service exposes a scrape port, so every rule would evaluate against no data and the `up`-based alerts would fire immediately. Enable metrics, or turn the rules off." -}}
+{{- end -}}
+{{- if and $ctx.Values.metrics.serviceMonitor.enabled (not $ctx.Values.metrics.enabled) -}}
+{{- $errors = append $errors "metrics.serviceMonitor.enabled has no effect while metrics.enabled=false: the Services carry no metrics port for the ServiceMonitor to select. Enable metrics, or turn the ServiceMonitors off." -}}
+{{- end -}}
+
 {{- if $errors -}}
 {{- fail (printf "\n\nTankoVault chart configuration is invalid:\n\n  - %s\n" (join "\n  - " $errors)) -}}
 {{- end -}}

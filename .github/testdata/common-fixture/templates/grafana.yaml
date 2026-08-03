@@ -1,0 +1,14 @@
+{{- /*
+Instantiates `common.grafana.dashboard.*` exactly as a consuming chart would: the ConfigMap
+always, the custom resources only when the operator path is on, and validation folded in ahead of
+both. The fixture's `dashboards/*.json` deliberately contains Grafana's `{{ }}` legend syntax, so
+a regression that pushed the JSON through the template engine would fail here rather than in
+somebody's cluster.
+*/ -}}
+{{- include "common.grafana.dashboard.validate" (dict "ctx" . "values" .Values.grafanaDashboard) }}
+{{- if .Values.grafanaDashboard.enabled }}
+{{- include "common.grafana.dashboard.configMap" (dict "ctx" . "values" .Values.grafanaDashboard) }}
+{{- if .Values.grafanaDashboard.grafanaOperator.enabled }}
+{{- include "common.grafana.dashboard.customResources" (dict "ctx" . "values" .Values.grafanaDashboard) }}
+{{- end }}
+{{- end }}

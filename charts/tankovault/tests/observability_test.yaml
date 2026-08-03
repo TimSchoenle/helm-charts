@@ -1,0 +1,154 @@
+# The mechanics of the dashboards and the rules belong to the library and are covered against
+# `.github/testdata/common-fixture`. What is tested here is the wiring this chart owns: which
+# values gate which objects, that this chart's own rule files survive the round trip intact, and
+# that the validator folds the library's complaints into the single aggregated report rather than
+# failing somewhere else with its own format.
+suite: test observability objects
+templates:
+  - dashboard-configmap.yaml
+  - grafanadashboard.yaml
+  - prometheusrule.yaml
+  - serviceaccount.yaml
+values:
+  - ../ci/default.yaml
+tests:
+  - it: ships no dashboard unless asked
+    asserts:
+      - hasDocuments:
+          count: 0
+        template: dashboard-configmap.yaml
+      - hasDocuments:
+          count: 0
+        template: grafanadashboard.yaml
+
+  - it: labels the ConfigMap for the sidecar to find
+    set:
+      metrics.dashboard.enabled: true
+    template: dashboard-configmap.yaml
+    asserts:
+      - equal:
+          path: metadata.labels["grafana_dashboard"]
+          value: "1"
+      - exists:
+          path: data["tankovault-overview.json"]
+
+  - it: keeps the sidecar ConfigMap alone when the operator path is off
+    set:
+      metrics.dashboard.enabled: true
+    template: grafanadashboard.yaml
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: adds a GrafanaDashboard per dashboard, referencing the ConfigMap
+    # Cross-namespace import is the point of this path: a Grafana in another namespace can pick
+    # these up without `sidecar.dashboards.searchNamespace` being widened cluster-wide.
+    capabilities:
+      apiVersions:
+        - grafana.integreatly.org/v1beta1
+    set:
+      metrics.dashboard.enabled: true
+      metrics.dashboard.grafanaOperator.enabled: true
+    template: grafanadashboard.yaml
+    asserts:
+      - hasDocuments:
+          count: 1
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-tankovault-overview
+      - equal:
+          path: spec.allowCrossNamespaceImport
+          value: true
+      - equal:
+          path: spec.configMapRef.name
+          value: RELEASE-NAME-tankovault-dashboards
+      - equal:
+          path: spec.configMapRef.key
+          value: tankovault-overview.json
+
+  - it: reports the library's dashboard complaints through the chart's own validator
+    capabilities:
+      apiVersions:
+        - grafana.integreatly.org/v1beta1
+    set:
+      metrics.dashboard.enabled: false
+      metrics.dashboard.grafanaOperator.enabled: true
+    template: serviceaccount.yaml
+    asserts:
+      - failedTemplate:
+          errorPattern: "TankoVault chart configuration is invalid[\\s\\S]*under `metrics.dashboard`, the Grafana Operator dashboards need the dashboard ConfigMap"
+
+  - it: refuses the operator path when the CRD is absent rather than dropping the objects
+    set:
+      metrics.dashboard.enabled: true
+      metrics.dashboard.grafanaOperator.enabled: true
+    template: serviceaccount.yaml
+    asserts:
+      - failedTemplate:
+          errorPattern: "registers no `grafana.integreatly.org/v1beta1` API"
+
+  - it: refuses a dashboard that nothing would ever populate
+    set:
+      metrics.enabled: false
+      metrics.dashboard.enabled: true
+    template: serviceaccount.yaml
+    asserts:
+      - failedTemplate:
+          errorPattern: "metrics.dashboard.enabled has no effect while metrics.enabled=false"
+
+  # The rules have only ever had one carrier — `PrometheusRule` is the operator's own CRD — so
+  # what is checked here is the same refusal contract the dashboards got, not a second path.
+
+  - it: ships the vendored rules as a PrometheusRule
+    capabilities:
+      apiVersions:
+        - monitoring.coreos.com/v1
+    set:
+      metrics.prometheusRule.enabled: true
+      metrics.prometheusRule.labels:
+        release: kube-prometheus-stack
+    template: prometheusrule.yaml
+    asserts:
+      - equal:
+          path: metadata.labels["release"]
+          value: kube-prometheus-stack
+      - lengthEqual:
+          path: spec.groups
+          count: 11
+
+  - it: keeps Prometheus' alert templating out of the template engine
+    capabilities:
+      apiVersions:
+        - monitoring.coreos.com/v1
+    set:
+      metrics.prometheusRule.enabled: true
+    template: prometheusrule.yaml
+    asserts:
+      - matchRegex:
+          path: spec.groups[0].rules[0].annotations.description
+          pattern: '\{\{ \$labels\.job \}\}'
+
+  - it: refuses the rules when the Prometheus Operator CRDs are absent
+    set:
+      metrics.prometheusRule.enabled: true
+    template: serviceaccount.yaml
+    asserts:
+      - failedTemplate:
+          errorPattern: "metrics.prometheusRule.enabled is enabled, but the cluster registers no `monitoring.coreos.com/v1` API"
+
+  - it: refuses the ServiceMonitors when the Prometheus Operator CRDs are absent
+    set:
+      metrics.serviceMonitor.enabled: true
+    template: serviceaccount.yaml
+    asserts:
+      - failedTemplate:
+          errorPattern: "metrics.serviceMonitor.enabled is enabled, but the cluster registers no `monitoring.coreos.com/v1` API"
+
+  - it: refuses rules that would evaluate against no data
+    set:
+      metrics.enabled: false
+      metrics.prometheusRule.enabled: true
+    template: serviceaccount.yaml
+    asserts:
+      - failedTemplate:
+          errorPattern: "metrics.prometheusRule.enabled has no effect while metrics.enabled=false"

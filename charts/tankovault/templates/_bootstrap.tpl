@@ -114,18 +114,86 @@ Args: ctx (root), command (bootstrap subcommand), name (container name).
 {{- end -}}
 
 {{/*
-A one-shot bootstrap Job.
+The pod template of a bootstrap Job.
 
-Args: ctx (root), command, name (resource name suffix), hook, weight.
+Split out from the Job itself so it can be rendered once and used twice — emitted, and hashed
+into the Job's name under `ordering: argoSyncWave`. Hashing is only sound because nothing on
+this path is non-deterministic: `tankovault.bootstrapValues` and `tankovault.secretSources`
+resolve names and keys, never values, so `tankovault.rememberedSecret` and its `randAlphaNum`
+fallback are never reached and two renders of the same values agree byte for byte.
+
+Emitted at column zero and re-indented by the caller, so the nesting lives in one place.
+
+Args: ctx (root), command, name (container name).
 */}}
-{{- define "tankovault.bootstrapJob" -}}
+{{- define "tankovault.bootstrapPodTemplate" -}}
 {{- $root := .ctx -}}
 {{- $values := include "tankovault.bootstrapValues" $root | fromYaml -}}
 {{- $ctx := dict "Values" $values "Chart" $root.Chart "Release" $root.Release "Capabilities" $root.Capabilities "Template" $root.Template "Files" $root.Files -}}
+metadata:
+  labels:
+    {{- include "common.podLabels" $root | nindent 4 }}
+    app.kubernetes.io/component: bootstrap
+spec:
+  restartPolicy: Never
+  serviceAccountName: {{ include "tankovault.serviceAccountName" $root }}
+  automountServiceAccountToken: false
+  {{- /*
+    Rendered against `$ctx`, not `$root`: the identity fields — `runAsUser`, `runAsGroup`
+    and above all `fsGroup` — live under `.Values.defaults`, which only the scoped context
+    flattens to the top level. Read from `$root` the helper sees no `podSecurityContext`
+    at all and emits the bare preset, leaving the pod without an `fsGroup`. The projected
+    secrets volume is then owned by root at mode 0400 while the container runs as the
+    image's UID 1001, and every bootstrap command dies on the first credential it opens
+    with `Permission denied (os error 13)`.
+  */}}
+  {{- with (include "common.podSecurityContext" $ctx) }}
+  securityContext:
+    {{- . | nindent 4 }}
+  {{- end }}
+  {{- include "common.imagePullSecrets" $ctx | nindent 2 }}
+  containers:
+    {{- include "tankovault.bootstrapContainer" (dict "ctx" $root "command" .command "name" .name) | nindent 4 }}
+  volumes:
+    {{- include "common.volumes" (dict
+          "ctx" $ctx
+          "volumes" (include "tankovault.bootstrapVolumes" $root | fromYamlArray)
+        ) | nindent 4 }}
+{{- end -}}
+
+{{/*
+A one-shot bootstrap Job.
+
+`ordering` selects how the Job is sequenced and defaults to `helmHook`, the shape every seed
+step keeps: the Helm hook annotations, byte for byte what this chart has always emitted.
+
+`argoSyncWave` is for the migration under Argo CD, and is a different kind of object entirely.
+Dropping the hook annotations makes the Job a tracked resource that is re-applied on every
+sync — but `spec.template` and `spec.selector` are immutable, so a re-apply under a stable name
+either fails with `field is immutable` or is accepted as a no-op that silently never re-runs
+the migration. The name therefore carries a digest of the pod template: a new image or spec is
+a new object that runs, an unchanged one resolves to the Job already sitting there Complete,
+which Argo reads as healthy. All three `helm.sh/hook*` annotations have to go together — Argo
+classifies a resource as a hook on the presence of `helm.sh/hook` alone, so a stray
+`hook-weight` or `hook-delete-policy` left behind would put the Job back in PreSync and restore
+the deadlock this mode exists to avoid. Deliberately no `ttlSecondsAfterFinished`: deleting a
+completed Job whose name is stable is precisely what makes the next sync run it again.
+
+Args: ctx (root), command, name (resource name suffix), hook, weight,
+      ordering (optional, `helmHook` or `argoSyncWave`).
+*/}}
+{{- define "tankovault.bootstrapJob" -}}
+{{- $root := .ctx -}}
+{{- $ordering := .ordering | default "helmHook" -}}
+{{- $podTemplate := include "tankovault.bootstrapPodTemplate" (dict "ctx" $root "command" .command "name" .name) -}}
+{{- $name := include "common.fullname.suffixed" (dict "ctx" $root "suffix" .name) -}}
+{{- if eq $ordering "argoSyncWave" -}}
+{{- $name = include "common.fullname.hashed" (dict "ctx" $root "suffix" .name "content" $podTemplate) -}}
+{{- end -}}
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ include "common.fullname.suffixed" (dict "ctx" $root "suffix" .name) }}
+  name: {{ $name }}
   namespace: {{ include "common.namespace" $root }}
   labels:
     {{- include "common.labels" $root | nindent 4 }}
@@ -134,39 +202,15 @@ metadata:
     {{- with (include "common.annotations" $root) }}
     {{- . | nindent 4 }}
     {{- end }}
+    {{- if eq $ordering "argoSyncWave" }}
+    "argocd.argoproj.io/sync-wave": {{ $root.Values.bootstrap.migrate.argoSyncWaveBase | quote }}
+    {{- else }}
     "helm.sh/hook": {{ .hook }}
     "helm.sh/hook-weight": {{ .weight | quote }}
     "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+    {{- end }}
 spec:
   backoffLimit: {{ $root.Values.bootstrap.migrate.backoffLimit }}
   template:
-    metadata:
-      labels:
-        {{- include "common.podLabels" $root | nindent 8 }}
-        app.kubernetes.io/component: bootstrap
-    spec:
-      restartPolicy: Never
-      serviceAccountName: {{ include "tankovault.serviceAccountName" $root }}
-      automountServiceAccountToken: false
-      {{- /*
-        Rendered against `$ctx`, not `$root`: the identity fields — `runAsUser`, `runAsGroup`
-        and above all `fsGroup` — live under `.Values.defaults`, which only the scoped context
-        flattens to the top level. Read from `$root` the helper sees no `podSecurityContext`
-        at all and emits the bare preset, leaving the pod without an `fsGroup`. The projected
-        secrets volume is then owned by root at mode 0400 while the container runs as the
-        image's UID 1001, and every bootstrap command dies on the first credential it opens
-        with `Permission denied (os error 13)`.
-      */}}
-      {{- with (include "common.podSecurityContext" $ctx) }}
-      securityContext:
-        {{- . | nindent 8 }}
-      {{- end }}
-      {{- include "common.imagePullSecrets" $ctx | nindent 6 }}
-      containers:
-        {{- include "tankovault.bootstrapContainer" (dict "ctx" $root "command" .command "name" .name) | nindent 8 }}
-      volumes:
-        {{- include "common.volumes" (dict
-              "ctx" $ctx
-              "volumes" (include "tankovault.bootstrapVolumes" $root | fromYamlArray)
-            ) | nindent 8 }}
+    {{- $podTemplate | nindent 4 }}
 {{- end -}}

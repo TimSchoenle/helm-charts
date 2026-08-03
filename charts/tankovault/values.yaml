@@ -1528,6 +1528,32 @@ bootstrap:
     mode: auto
 
     # @schema
+    # enum: [helmHook, argoSyncWave]
+    # @schema
+    # -- How the migration Job is ordered against the workloads. Ignored unless `mode` resolves
+    # to `job`, and irrelevant under plain `helm install`, which has no phases to order across.
+    # `helmHook` is the `pre-install,pre-upgrade` hook, which Argo CD compiles to the PreSync
+    # phase — and PreSync runs before **every** Sync-phase resource, with sync waves ordering
+    # only within a phase. So when `database__url` arrives from an ExternalSecret, a first
+    # install deadlocks and never recovers: the Job's projected secrets volume names a Secret
+    # that does not exist yet, the pod sits in ContainerCreating on FailedMount, the Job never
+    # completes, PreSync never finishes, Sync never starts, and the ExternalSecret that would
+    # have created that Secret is therefore never applied. Nothing inside PreSync can break the
+    # cycle. `argoSyncWave` drops the hook annotations entirely and orders the Job by sync wave
+    # inside the Sync phase instead, where the ExternalSecret reconciles alongside it.
+    ordering: helmHook
+
+    # @schema
+    # type: integer
+    # @schema
+    # -- Sync wave the migration Job takes under `ordering: argoSyncWave`; the workloads take
+    # this plus one, which is what reproduces the `pre-upgrade` guarantee — Argo CD holds a wave
+    # until the previous one is healthy, and a Job is healthy only once it is Complete. Anything
+    # the migration itself depends on — the ExternalSecret carrying `database__url`, a database
+    # some operator provisions — must be given a wave strictly below this one.
+    argoSyncWaveBase: 0
+
+    # @schema
     # type: integer
     # minimum: 0
     # @schema

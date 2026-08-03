@@ -151,6 +151,122 @@ tests:
       - hasDocuments:
           count: 0
 
+  - it: drops every Helm hook annotation under sync-wave ordering
+    # Argo CD classifies a resource as a hook on the presence of `helm.sh/hook` alone, so one
+    # left behind puts the Job back in PreSync — which runs to completion before any Sync-phase
+    # resource — and an ExternalSecret carrying `database__url` can then never be applied in
+    # time to unblock it. The weight and delete-policy go with it because a hook annotation the
+    # resource is no longer a hook for is a trap for the next reader.
+    template: job-migrate.yaml
+    set:
+      bootstrap.migrate.ordering: argoSyncWave
+    asserts:
+      - isNull:
+          path: metadata.annotations["helm.sh/hook"]
+      - isNull:
+          path: metadata.annotations["helm.sh/hook-weight"]
+      - isNull:
+          path: metadata.annotations["helm.sh/hook-delete-policy"]
+      - equal:
+          path: metadata.annotations["argocd.argoproj.io/sync-wave"]
+          value: "0"
+
+  - it: names the sync-wave Job after its pod spec, within the 63 character limit
+    # Without the hook annotations the Job is a tracked resource re-applied on every sync, and
+    # `spec.template` is immutable: a stable name means either `field is immutable` or a silent
+    # no-op that never re-runs the migration. The digest makes a changed spec a different object.
+    template: job-migrate.yaml
+    set:
+      bootstrap.migrate.ordering: argoSyncWave
+    asserts:
+      - matchRegex:
+          path: metadata.name
+          pattern: ^RELEASE-NAME-tankovault-migrate-[0-9a-f]{8}$
+      - matchRegex:
+          path: metadata.name
+          pattern: ^.{1,63}$
+
+  - it: keeps the seed steps on their post-install hooks under sync-wave ordering
+    # PostSync runs after Sync, so the secrets the seed steps mount already exist and the hook
+    # never had the deadlock the migration does. Only the migrate call site passes `ordering`.
+    template: job-seed.yaml
+    set:
+      bootstrap.migrate.ordering: argoSyncWave
+      bootstrap.seedAdmin.enabled: true
+      bootstrap.seedAdmin.password: seed-password
+    documentIndex: 0
+    asserts:
+      - equal:
+          path: metadata.annotations["helm.sh/hook"]
+          value: post-install
+      - isNull:
+          path: metadata.annotations["argocd.argoproj.io/sync-wave"]
+
+  - it: puts the workloads one wave above the migration
+    # Argo CD holds a wave until the previous one is healthy and a Job is healthy only once it
+    # is Complete, which is the whole of what `pre-upgrade` used to guarantee.
+    template: deployment.yaml
+    set:
+      bootstrap.migrate.ordering: argoSyncWave
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-api
+    asserts:
+      - equal:
+          path: metadata.annotations["argocd.argoproj.io/sync-wave"]
+          value: "1"
+
+  - it: offsets both waves from the configured base
+    templates:
+      - job-migrate.yaml
+    set:
+      bootstrap.migrate.ordering: argoSyncWave
+      bootstrap.migrate.argoSyncWaveBase: 5
+    asserts:
+      - equal:
+          path: metadata.annotations["argocd.argoproj.io/sync-wave"]
+          value: "5"
+
+  - it: offsets the workloads from the configured base too
+    template: deployment.yaml
+    set:
+      bootstrap.migrate.ordering: argoSyncWave
+      bootstrap.migrate.argoSyncWaveBase: 5
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-api
+    asserts:
+      - equal:
+          path: metadata.annotations["argocd.argoproj.io/sync-wave"]
+          value: "6"
+
+  - it: annotates no wave at all under the default ordering
+    # The default has to render exactly what it rendered before this knob existed, so an empty
+    # wave means the annotation block is omitted rather than emitted with a placeholder.
+    template: deployment.yaml
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-api
+    asserts:
+      - isNull:
+          path: metadata.annotations["argocd.argoproj.io/sync-wave"]
+
+  - it: annotates no wave when the migration runs as an initContainer
+    # There is no Job to sequence against, and the pod that carries the migration is the pod
+    # that would be waiting on it.
+    template: deployment.yaml
+    set:
+      bootstrap.migrate.ordering: argoSyncWave
+      postgresql.enabled: true
+      postgresql.auth.password: test-password
+      externalDatabase.url: ""
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-api
+    asserts:
+      - isNull:
+          path: metadata.annotations["argocd.argoproj.io/sync-wave"]
+
   - it: seeds only on install, after the schema exists
     template: job-seed.yaml
     set:

@@ -175,6 +175,38 @@ reverted by `helm rollback`, and **survive `helm uninstall`** — delete the lef
 `<release>` Secret, `<release>` ServiceAccount and `<release>-bootstrap-config` ConfigMap by hand
 if you want the namespace empty.
 
+### Argo CD and `bootstrap.migrate.ordering`
+
+Argo CD compiles a `pre-install,pre-upgrade` hook into its PreSync phase, and PreSync runs to
+completion before **any** Sync-phase resource is applied. Sync waves only order within a phase, so
+no weight can place a PreSync hook after something in Sync.
+
+That is fatal in one specific setup: `database__url` supplied from an ExternalSecret. On a first
+install the migration Job mounts a Secret that does not exist yet, the pod sits in
+`ContainerCreating` on `FailedMount`, the Job never completes, PreSync never finishes, Sync never
+starts — and the ExternalSecret that would have created the Secret is therefore never applied. The
+deadlock does not resolve on its own, and nothing inside PreSync can break it: marking the source
+optional or adding a wait-for-secret initContainer only changes which step hangs.
+
+Set `bootstrap.migrate.ordering=argoSyncWave` for that case. The Job drops its hook annotations
+entirely and becomes an ordinary tracked resource at `bootstrap.migrate.argoSyncWaveBase` (default
+`0`), with the workloads one wave above it. Argo holds a wave until the previous one is healthy and
+a Job is healthy only once it is Complete, so the ordering `pre-upgrade` used to guarantee is
+recovered inside the Sync phase, where the ExternalSecret reconciles alongside it.
+
+Two things follow from the Job no longer being a hook:
+
+- Its name carries a short digest of the pod spec (`<release>-tankovault-migrate-1a2b3c4d`),
+  because `spec.template` is immutable and re-applying a Job under a stable name would either be
+  rejected or silently do nothing. A changed image or spec is a new Job that runs; an unchanged one
+  resolves to the Job already sitting there Complete. Superseded names are left for Argo to prune.
+- Anything the migration depends on — the ExternalSecret itself, a database provisioned by an
+  operator — must be given a sync wave **strictly below** `argoSyncWaveBase`.
+
+The default is unchanged, so `helm install` consumers and anyone happy with the hook are unaffected.
+Only `bootstrap.migrate.mode: job` is affected; the seed steps stay `post-install` because PostSync
+runs after Sync and their secrets already exist.
+
 ## Exposure
 
 Only the frontend is published. It serves the SPA and reverse-proxies `/v1/*` to the API, so one

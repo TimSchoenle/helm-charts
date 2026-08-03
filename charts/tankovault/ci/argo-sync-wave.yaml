@@ -1,0 +1,34 @@
+# The Argo CD posture: the migration is ordered by sync wave inside the Sync phase instead of by
+# a Helm hook, because `database__url` arrives from an ExternalSecret that only exists once Sync
+# starts. See `bootstrap.migrate.ordering` for the deadlock the default ordering produces here.
+#
+# A render fixture, not an install fixture — the Secret it names is created by an external-secrets
+# controller nobody installed, and the database endpoint does not resolve. Hence the name:
+# `ct install` takes every `ci/*-values.yaml`, while the render and policy jobs glob `ci/*.yaml`.
+postgresql:
+  enabled: false
+externalDatabase:
+  existingSecret: tankovault-database
+  urlKey: url
+externalRedis:
+  url: redis://valkey.example.com:6379
+externalNats:
+  url: nats://nats.example.com:4222
+externalFlaresolverr:
+  url: http://flaresolverr.example.com:8191
+anilist:
+  clientId: "12345"
+  clientSecret: example-anilist-client-secret
+  redirectUri: https://tankovault.example.com/account/anilist-callback
+auth:
+  jwtSecret: example-jwt-secret-value-at-least-32-chars
+  passwordPepper: example-password-pepper-value-32ch
+bootstrap:
+  seedAdmin:
+    enabled: true
+    password: example-admin-password
+  seedProviders:
+    enabled: true
+  migrate:
+    mode: job
+    ordering: argoSyncWave

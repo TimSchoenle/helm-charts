@@ -1,0 +1,19 @@
+{{- /*
+Exercises `common.fullname.hashed`. The hashed content is a value rather than the rendered pod
+spec the real callers pass, so a test can vary it independently of everything else the fixture
+renders and prove the name tracks the content and nothing but the content.
+*/ -}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "common.fullname.hashed" (dict "ctx" . "suffix" "migrate" "content" .Values.hashedContent) }}
+  namespace: {{ include "common.namespace" . }}
+  labels:
+    {{- include "common.labels" . | nindent 4 }}
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          image: {{ include "common.image" . | quote }}

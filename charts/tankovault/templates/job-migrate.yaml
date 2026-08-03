@@ -1,8 +1,12 @@
 {{- /*
 Schema migration as a discrete pre-rollout step, which is how upstream ships it: no service
-migrates at startup. Runs as a `pre-install,pre-upgrade` hook so the new schema is in place
-before any new code sees it — the expand half of the expand/contract convention migrations
-here follow.
+migrates at startup. The new schema has to be in place before any new code sees it — the expand
+half of the expand/contract convention migrations here follow — and `bootstrap.migrate.ordering`
+decides how that is arranged: a `pre-install,pre-upgrade` hook, or an Argo CD sync wave for
+installations where the hook's PreSync phase would deadlock on a Secret it cannot wait for.
+
+The hook and weight are passed either way and simply go unused under `argoSyncWave`, so the two
+orderings stay one call site rather than two that can drift.
 
 Not used when `bootstrap.migrate.mode` resolves to `initContainer`; see
 `tankovault.migrateMode` for why the bundled PostgreSQL forces that.
@@ -13,5 +17,6 @@ Not used when `bootstrap.migrate.mode` resolves to `initContainer`; see
      "command" "migrate"
      "name" "migrate"
      "hook" "pre-install,pre-upgrade"
-     "weight" "-5") }}
+     "weight" "-5"
+     "ordering" .Values.bootstrap.migrate.ordering) }}
 {{- end }}

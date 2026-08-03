@@ -93,6 +93,13 @@
         "migrate": {
           "additionalProperties": true,
           "properties": {
+            "argoSyncWaveBase": {
+              "default": 0,
+              "description": "Sync wave the migration Job takes under `ordering: argoSyncWave`; the workloads take\nthis plus one, which is what reproduces the `pre-upgrade` guarantee — Argo CD holds a wave\nuntil the previous one is healthy, and a Job is healthy only once it is Complete. Anything\nthe migration itself depends on — the ExternalSecret carrying `database__url`, a database\nsome operator provisions — must be given a wave strictly below this one.",
+              "required": [],
+              "title": "argoSyncWaveBase",
+              "type": "integer"
+            },
             "backoffLimit": {
               "default": 3,
               "description": "Retries before the migration Job is considered failed.",
@@ -112,6 +119,16 @@
               ],
               "required": [],
               "title": "mode"
+            },
+            "ordering": {
+              "default": "helmHook",
+              "description": "How the migration Job is ordered against the workloads. Ignored unless `mode` resolves\nto `job`, and irrelevant under plain `helm install`, which has no phases to order across.\n`helmHook` is the `pre-install,pre-upgrade` hook, which Argo CD compiles to the PreSync\nphase — and PreSync runs before **every** Sync-phase resource, with sync waves ordering\nonly within a phase. So when `database__url` arrives from an ExternalSecret, a first\ninstall deadlocks and never recovers: the Job's projected secrets volume names a Secret\nthat does not exist yet, the pod sits in ContainerCreating on FailedMount, the Job never\ncompletes, PreSync never finishes, Sync never starts, and the ExternalSecret that would\nhave created that Secret is therefore never applied. Nothing inside PreSync can break the\ncycle. `argoSyncWave` drops the hook annotations entirely and orders the Job by sync wave\ninside the Sync phase instead, where the ExternalSecret reconciles alongside it.",
+              "enum": [
+                "helmHook",
+                "argoSyncWave"
+              ],
+              "required": [],
+              "title": "ordering"
             }
           },
           "required": [],

@@ -6,7 +6,7 @@ templates:
   - postgresql.yaml
   - nats.yaml
   - valkey.yaml
-  - flaresolverr.yaml
+  - trawl.yaml
   - job-seed.yaml
 values:
   - ../ci/bundled-datastores-values.yaml
@@ -91,10 +91,10 @@ tests:
           path: spec.template.spec.securityContext.seccompProfile.type
           value: RuntimeDefault
 
-  - it: gives FlareSolverr an explicit numeric UID
-    # Its image's USER directive names a user rather than a UID, and the kubelet cannot verify
-    # runAsNonRoot against a non-numeric user — it refuses to start the pod outright.
-    template: flaresolverr.yaml
+  - it: gives TRAWL an explicit numeric UID
+    # Its image declares no USER at all, so it would run as root and the kubelet would refuse
+    # the pod outright on runAsNonRoot.
+    template: trawl.yaml
     documentIndex: 1
     asserts:
       - equal:
@@ -104,37 +104,37 @@ tests:
           path: spec.template.spec.securityContext.runAsNonRoot
           value: true
 
-  - it: gives FlareSolverr a writable chromedriver without giving up the read-only root filesystem
-    # undetected-chromedriver patches /app/chromedriver in place on every start, so that one
-    # file is staged into an emptyDir by an initContainer and mounted back over the image's copy.
-    template: flaresolverr.yaml
+  - it: gives TRAWL a writable HOME and /dev/shm without giving up the read-only root filesystem
+    # Camoufox is a full Firefox: it writes its profile and caches under HOME, and needs far
+    # more shared memory than the 64Mi Kubernetes provides by default.
+    template: trawl.yaml
     documentIndex: 1
     asserts:
       - equal:
           path: spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem
           value: true
-      - equal:
-          path: spec.template.spec.initContainers[0].name
-          value: copy-chromedriver
-      - equal:
-          path: spec.template.spec.initContainers[0].command
-          value: [/bin/sh, -c, cp -p /app/chromedriver /driver/chromedriver]
       - contains:
-          path: spec.template.spec.initContainers[0].volumeMounts
+          path: spec.template.spec.containers[0].env
           content:
-            name: driver
-            mountPath: /driver
+            name: HOME
+            value: /home/trawl
       - contains:
           path: spec.template.spec.containers[0].volumeMounts
           content:
-            name: driver
-            mountPath: /app/chromedriver
-            subPath: chromedriver
+            name: home
+            mountPath: /home/trawl
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: dshm
+            mountPath: /dev/shm
       - contains:
           path: spec.template.spec.volumes
           content:
-            name: driver
-            emptyDir: {}
+            name: dshm
+            emptyDir:
+              medium: Memory
+              sizeLimit: 1Gi
 
   - it: gives the render tier the writable paths Chromium needs
     template: deployment.yaml

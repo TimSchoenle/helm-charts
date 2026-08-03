@@ -77,15 +77,15 @@ helm uninstall my-release
 
 | Chart | Description | Chart Version | App Version |
 |-------|-------------|---------------|-------------|
-| [cloudflare-access-webhook-redirect](./charts/cloudflare-access-webhook-redirect) | A Helm chart for deploying the Cloudflare Access Webhook Redirect service. This service acts as an authentication proxy that validates requests using Cloudflare Access Service Auth tokens before forwarding them to target backend services. | `3.0.3` | `v0.3.21` |
-| [mp-stats-legacy-viewer](./charts/mp-stats-legacy-viewer) | MP Stats Legacy Viewer | `1.0.5` | `v0.14.0` |
-| [netcup-offer-bot](./charts/netcup-offer-bot) | This chart deploys the Netcup Offer Bot, which monitors https://www.netcup-sonderangebote.de/ RSS feed and sends notifications to Discord webhooks when new offers are available. | `3.0.4` | `v1.5.22` |
-| [portfolio](./charts/portfolio) | Personal portfolio built with Rust (Yew frontend, Axum server). | `3.0.5` | `v2.2.1` |
-| [s3-bucket-perma-link](./charts/s3-bucket-perma-link) | This chart deploys a simple web server that provides permanent links to specific S3 bucket resources. It allows you to define static URL paths that always point to specific files in your S3 buckets. | `2.0.4` | `v0.3.23` |
-| [tankovault](./charts/tankovault) | This chart deploys the full TankoVault manga aggregator stack — frontend, api, control-plane, worker, notifier, sync, challenge-solver and render — hardened to the restricted Pod Security Standard, with file-backed configuration that reloads in place instead of restarting pods, optional bundled PostgreSQL, Valkey, NATS JetStream and FlareSolverr, and optional Prometheus metrics, alerting rules and Grafana dashboards. | `1.1.0` | `0.4.1` |
-| [teamspeak](./charts/teamspeak) | This chart deploys a TeamSpeak 3 server hardened to the restricted Pod Security Standard, with optional persistence, an optional Prometheus metrics exporter sidecar, Grafana dashboards and Prometheus alerting rules. | `1.0.1` | `3.13.8` |
+| [cloudflare-access-webhook-redirect](./charts/cloudflare-access-webhook-redirect) | A Helm chart for deploying the Cloudflare Access Webhook Redirect service. This service acts as an authentication proxy that validates requests using Cloudflare Access Service Auth tokens before forwarding them to target backend services. | `3.0.4` | `v0.3.21` |
+| [mp-stats-legacy-viewer](./charts/mp-stats-legacy-viewer) | MP Stats Legacy Viewer | `1.0.6` | `v0.14.0` |
+| [netcup-offer-bot](./charts/netcup-offer-bot) | This chart deploys the Netcup Offer Bot, which monitors https://www.netcup-sonderangebote.de/ RSS feed and sends notifications to Discord webhooks when new offers are available. | `3.0.5` | `v1.5.22` |
+| [portfolio](./charts/portfolio) | Personal portfolio built with Rust (Yew frontend, Axum server). | `3.0.6` | `v2.2.1` |
+| [s3-bucket-perma-link](./charts/s3-bucket-perma-link) | This chart deploys a simple web server that provides permanent links to specific S3 bucket resources. It allows you to define static URL paths that always point to specific files in your S3 buckets. | `2.0.5` | `v0.3.23` |
+| [tankovault](./charts/tankovault) | This chart deploys the full TankoVault manga aggregator stack — frontend, api, control-plane, worker, notifier, sync, challenge-solver and render — hardened to the restricted Pod Security Standard, with file-backed configuration that reloads in place instead of restarting pods, optional bundled PostgreSQL, Valkey, NATS JetStream and FlareSolverr, and optional Prometheus metrics, alerting rules and Grafana dashboards. | `1.2.1` | `1.0.0` |
+| [teamspeak](./charts/teamspeak) | This chart deploys a TeamSpeak 3 server hardened to the restricted Pod Security Standard, with optional persistence, an optional Prometheus metrics exporter sidecar, Grafana dashboards and Prometheus alerting rules. | `1.0.2` | `3.13.8` |
 
-The [`common`](./charts/common) library chart (`1.0.3`) is not published. It holds the
+The [`common`](./charts/common) library chart (`1.1.0`) is not published. It holds the
 shared template partials every chart above composes, and is consumed locally via
 `file://../common`.
 

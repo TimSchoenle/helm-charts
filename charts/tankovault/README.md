@@ -1,6 +1,6 @@
 # tankovault
 
-![Version: 1.0.0](https://img.shields.io/badge/Version-1.0.0-informational?style=flat-square) ![AppVersion: 0.4.1](https://img.shields.io/badge/AppVersion-0.4.1-informational?style=flat-square)
+![Version: 1.1.0](https://img.shields.io/badge/Version-1.1.0-informational?style=flat-square) ![AppVersion: 0.4.1](https://img.shields.io/badge/AppVersion-0.4.1-informational?style=flat-square)
 
 This chart deploys the full TankoVault manga aggregator stack — frontend, api, control-plane, worker, notifier, sync, challenge-solver and render — hardened to the restricted Pod Security Standard, with file-backed configuration that reloads in place instead of restarting pods, optional bundled PostgreSQL, Valkey, NATS JetStream and FlareSolverr, and optional Prometheus metrics, alerting rules and Grafana dashboards.
 
@@ -173,6 +173,38 @@ reverted by `helm rollback`, and **survive `helm uninstall`** — delete the lef
 `<release>` Secret, `<release>` ServiceAccount and `<release>-bootstrap-config` ConfigMap by hand
 if you want the namespace empty.
 
+### Argo CD and `bootstrap.migrate.ordering`
+
+Argo CD compiles a `pre-install,pre-upgrade` hook into its PreSync phase, and PreSync runs to
+completion before **any** Sync-phase resource is applied. Sync waves only order within a phase, so
+no weight can place a PreSync hook after something in Sync.
+
+That is fatal in one specific setup: `database__url` supplied from an ExternalSecret. On a first
+install the migration Job mounts a Secret that does not exist yet, the pod sits in
+`ContainerCreating` on `FailedMount`, the Job never completes, PreSync never finishes, Sync never
+starts — and the ExternalSecret that would have created the Secret is therefore never applied. The
+deadlock does not resolve on its own, and nothing inside PreSync can break it: marking the source
+optional or adding a wait-for-secret initContainer only changes which step hangs.
+
+Set `bootstrap.migrate.ordering=argoSyncWave` for that case. The Job drops its hook annotations
+entirely and becomes an ordinary tracked resource at `bootstrap.migrate.argoSyncWaveBase` (default
+`0`), with the workloads one wave above it. Argo holds a wave until the previous one is healthy and
+a Job is healthy only once it is Complete, so the ordering `pre-upgrade` used to guarantee is
+recovered inside the Sync phase, where the ExternalSecret reconciles alongside it.
+
+Two things follow from the Job no longer being a hook:
+
+- Its name carries a short digest of the pod spec (`<release>-tankovault-migrate-1a2b3c4d`),
+  because `spec.template` is immutable and re-applying a Job under a stable name would either be
+  rejected or silently do nothing. A changed image or spec is a new Job that runs; an unchanged one
+  resolves to the Job already sitting there Complete. Superseded names are left for Argo to prune.
+- Anything the migration depends on — the ExternalSecret itself, a database provisioned by an
+  operator — must be given a sync wave **strictly below** `argoSyncWaveBase`.
+
+The default is unchanged, so `helm install` consumers and anyone happy with the hook are unaffected.
+Only `bootstrap.migrate.mode: job` is affected; the seed steps stay `post-install` because PostSync
+runs after Sync and their secrets already exist.
+
 ## Exposure
 
 Only the frontend is published. It serves the SPA and reverse-proxies `/v1/*` to the API, so one
@@ -226,11 +258,13 @@ still describe `docker compose` remediation steps, because that is what upstream
 | anilist.tokenEncryptionKey | string | `""` | Base64 of exactly 32 bytes, sealing every user's AniList token at rest. Left empty the chart generates one when `services.sync` is enabled and remembers it across upgrades, which is the recommended setting; set one explicitly (`openssl rand -base64 32`) only if it has to be known outside the release. Losing it forces every account to re-link; leaking it exposes every stored token. Rotating it does not re-seal tokens already stored. |
 | auth.jwtSecret | string | `""` | Token signing secret (`auth.jwt_secret`). Left empty the chart generates one and remembers it across upgrades, which is the recommended setting; set one explicitly (minimum 32 characters, e.g. `openssl rand -hex 32`) only if it has to be known outside the release. The known upstream placeholder is refused at boot in every profile, and rotating the value signs every user out. |
 | auth.passwordPepper | string | `""` | Server-side pepper mixed into every argon2id hash, so a database leak alone cannot be brute-forced offline. Left empty the chart generates one **on a first install only** and remembers it across upgrades; a release that already exists without a pepper keeps running without one, because every password stored unpeppered would stop verifying the moment one appeared. For the same reason it must never change once set: rotating or losing it invalidates every stored password, so back the Secret up. The `seed-admin` step receives the identical value, or the administrator it creates could never log in. |
-| bootstrap | object | `{"image":{"repository":"timschoenle/tankovault-bootstrap","tag":"v0.4.1@sha256:3ee5cc7763db38db5f37d2ae82127428edb6bf8cb4ede4689cc4d7a8c71d86ea"},"migrate":{"backoffLimit":3,"mode":"auto"},"resourcesPreset":"small","seedAdmin":{"email":"","enabled":false,"password":"","username":"admin"},"seedProviders":{"enabled":false}}` | Schema migration and first-install seeding, all from the `bootstrap` image. Nothing published carries a destructive command; resetting the schema is not available in any image. |
+| bootstrap | object | `{"image":{"repository":"timschoenle/tankovault-bootstrap","tag":"v0.4.1@sha256:3ee5cc7763db38db5f37d2ae82127428edb6bf8cb4ede4689cc4d7a8c71d86ea"},"migrate":{"argoSyncWaveBase":0,"backoffLimit":3,"mode":"auto","ordering":"helmHook"},"resourcesPreset":"small","seedAdmin":{"email":"","enabled":false,"password":"","username":"admin"},"seedProviders":{"enabled":false}}` | Schema migration and first-install seeding, all from the `bootstrap` image. Nothing published carries a destructive command; resetting the schema is not available in any image. |
 | bootstrap.image.repository | string | `"timschoenle/tankovault-bootstrap"` | Image repository. |
 | bootstrap.image.tag | string | `"v0.4.1@sha256:3ee5cc7763db38db5f37d2ae82127428edb6bf8cb4ede4689cc4d7a8c71d86ea"` | Image tag, pinned by digest. |
+| bootstrap.migrate.argoSyncWaveBase | int | `0` | Sync wave the migration Job takes under `ordering: argoSyncWave`; the workloads take this plus one, which is what reproduces the `pre-upgrade` guarantee — Argo CD holds a wave until the previous one is healthy, and a Job is healthy only once it is Complete. Anything the migration itself depends on — the ExternalSecret carrying `database__url`, a database some operator provisions — must be given a wave strictly below this one. |
 | bootstrap.migrate.backoffLimit | int | `3` | Retries before the migration Job is considered failed. |
 | bootstrap.migrate.mode | string | `"auto"` | How `bootstrap migrate` runs. `job` is a `pre-install,pre-upgrade` Helm hook, correct when the database already exists. `initContainer` runs it in every service pod, which is what the bundled PostgreSQL needs — a pre-install hook would run before the StatefulSet exists and could only ever fail. Concurrent runs are safe: sqlx takes a Postgres advisory lock. `auto` picks `initContainer` when `postgresql.enabled`, otherwise `job`. |
+| bootstrap.migrate.ordering | string | `"helmHook"` | How the migration Job is ordered against the workloads. Ignored unless `mode` resolves to `job`, and irrelevant under plain `helm install`, which has no phases to order across. `helmHook` is the `pre-install,pre-upgrade` hook, which Argo CD compiles to the PreSync phase — and PreSync runs before **every** Sync-phase resource, with sync waves ordering only within a phase. So when `database__url` arrives from an ExternalSecret, a first install deadlocks and never recovers: the Job's projected secrets volume names a Secret that does not exist yet, the pod sits in ContainerCreating on FailedMount, the Job never completes, PreSync never finishes, Sync never starts, and the ExternalSecret that would have created that Secret is therefore never applied. Nothing inside PreSync can break the cycle. `argoSyncWave` drops the hook annotations entirely and orders the Job by sync wave inside the Sync phase instead, where the ExternalSecret reconciles alongside it. |
 | bootstrap.resourcesPreset | string | `"small"` | Resource t-shirt size for the bootstrap containers. |
 | bootstrap.seedAdmin.email | string | `""` | Administrator email address. |
 | bootstrap.seedAdmin.enabled | bool | `false` | Create the first administrator on install. Create-only: re-running changes nothing. This is the only account privilege is ever minted for, since registration confers none. |

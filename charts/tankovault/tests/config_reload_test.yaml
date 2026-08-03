@@ -121,3 +121,20 @@ tests:
       - matchRegex:
           path: data["config.toml"]
           pattern: 'api_upstream = "http://RELEASE-NAME-tankovault-api:8080"'
+
+  - it: points the challenge solver at the bundled TRAWL under the key the service reads
+    # `trawl_endpoint` is TankoVault 1.0.0's spelling; 0.4.x read `flaresolverr_endpoint` and a
+    # release mixing the two boots with no solver configured at all.
+    template: configmap.yaml
+    set:
+      trawl.enabled: true
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-challenge-solver-config
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: 'trawl_endpoint = "http://RELEASE-NAME-tankovault-trawl:8191"'
+      - notMatchRegex:
+          path: data["config.toml"]
+          pattern: flaresolverr

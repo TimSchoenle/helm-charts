@@ -1,0 +1,99 @@
+{{- if .Values.trawl.enabled }}
+{{- $trawl := .Values.trawl }}
+{{- $redis := include "tankovault.trawlRedisUrl" . }}
+{{- /*
+  `runAsUser` is set explicitly and cannot be dropped. The upstream image declares no `USER`
+  at all, so it would run as root, and the restricted Pod Security Standard's `runAsNonRoot`
+  refuses the pod outright. Everything the image ships is world-readable, so any non-root UID
+  works — 1000 is only a conventional one, not a UID the image knows about.
+
+  Camoufox is a full Firefox. It needs a writable HOME for its profile, caches and crashpad
+  database, and far more shared memory than the 64Mi Kubernetes gives `/dev/shm` by default.
+  Both are emptyDirs so the root filesystem can stay read-only; `/tmp`, where Playwright
+  stages each launch's throwaway profile, is already provisioned by `common.volumes` for
+  exactly that reason. Nothing under `/app` or `/opt/camoufox` is written at runtime — the
+  image bakes the GeoLite2 database that `camoufox-js` would otherwise download into
+  `CAMOUFOX_INSTALL_DIR` on first launch — so no other path needs to be writable.
+
+  `/health` returns 503 until at least one browser is *live* and keeps returning 200 while the
+  pool is merely saturated, so it is safe as all three probes: readiness gates the Service on
+  "can actually solve" rather than "process started", and liveness restarts a pod whose every
+  browser has wedged. The startup budget is deliberately large — a cold launch waits on a
+  public-IP lookup for the geoip fingerprint before Firefox even starts, and the image's own
+  browser-launch timeout is 90s on its own.
+*/ -}}
+{{- $probe := dict "enabled" true "httpGet" (dict "path" "/health" "port" "http") }}
+{{- $values := include "tankovault.datastore.values" (dict
+      "ctx" .
+      "image" $trawl.image
+      "resources" $trawl.resources
+      "runAsUser" $trawl.runAsUser "runAsGroup" $trawl.runAsUser "fsGroup" $trawl.runAsUser
+      "startupProbe" (merge (dict "periodSeconds" 10 "timeoutSeconds" 5 "failureThreshold" 30) (deepCopy $probe))
+      "livenessProbe" (merge (dict "periodSeconds" 30 "timeoutSeconds" 5 "failureThreshold" 5) (deepCopy $probe))
+      "readinessProbe" (merge (dict "periodSeconds" 10 "timeoutSeconds" 5 "failureThreshold" 3) (deepCopy $probe))
+    ) | fromYaml }}
+{{- $ctx := dict "Values" $values "Chart" $.Chart "Release" $.Release "Capabilities" $.Capabilities "Template" $.Template "Files" $.Files }}
+{{- $home := "/home/trawl" }}
+{{- $mounts := list
+      (dict "name" "home" "mountPath" $home)
+      (dict "name" "dshm" "mountPath" "/dev/shm") }}
+{{- $volumes := list
+      (dict "name" "home" "emptyDir" dict)
+      (dict "name" "dshm" "emptyDir" (dict "medium" "Memory" "sizeLimit" $trawl.shmSize)) }}
+{{- /*
+  `BROWSER_POOL_SIZE` is always emitted: the image defaults to 3 warm Firefoxes, which does not
+  fit any resource preset this chart offers.
+
+  `REDIS_URL` is emitted only when one resolves. TRAWL keeps its per-domain solved-cookie jar
+  there, and without it every request re-solves from a cold browser — slow, not broken. It
+  defaults to the same Valkey the services use, which is safe because the two namespaces cannot
+  collide: TankoVault prefixes every key with `tankovault:`, TRAWL uses `session:<domain>`.
+*/ -}}
+{{- $env := list
+      (dict "name" "HOME" "value" $home)
+      (dict "name" "BROWSER_POOL_SIZE" "value" ($trawl.browserPoolSize | toString)) }}
+{{- with $redis }}
+{{- $env = append $env (dict "name" "REDIS_URL" "value" .) }}
+{{- end }}
+apiVersion: v1
+kind: Service
+metadata:
+  {{- include "tankovault.datastore.metadata" (dict "ctx" . "component" "trawl") | nindent 2 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8191
+      targetPort: http
+      protocol: TCP
+  selector:
+    {{- include "tankovault.datastore.selectorLabels" (dict "ctx" . "component" "trawl") | nindent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  {{- include "tankovault.datastore.metadata" (dict "ctx" . "component" "trawl") | nindent 2 }}
+spec:
+  replicas: 1
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      {{- include "tankovault.datastore.selectorLabels" (dict "ctx" . "component" "trawl") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "common.podLabels" $ctx | nindent 8 }}
+        app.kubernetes.io/component: trawl
+    spec:
+      {{- include "common.podSpec.common" $ctx | nindent 6 }}
+      containers:
+        {{- include "common.container" (dict
+              "ctx" $ctx
+              "name" "trawl"
+              "ports" (list (dict "name" "http" "containerPort" 8191 "protocol" "TCP"))
+              "env" $env
+              "volumeMounts" $mounts
+            ) | nindent 8 }}
+      volumes:
+        {{- include "common.volumes" (dict "ctx" $ctx "volumes" $volumes) | nindent 8 }}
+{{- end }}

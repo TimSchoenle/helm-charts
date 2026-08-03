@@ -65,8 +65,8 @@ cannot generate one, so the Secret must already carry `seed_admin_password`.
 */ -}}
 
 {{- /* The challenge solver is useless without a backend to delegate to. */ -}}
-{{- if and $ctx.Values.services.challengeSolver.enabled (not (include "tankovault.flaresolverrUrl" $ctx)) -}}
-{{- $errors = append $errors "services.challengeSolver.enabled requires a solver backend: set `flaresolverr.enabled=true` or point `externalFlaresolverr.url` at one." -}}
+{{- if and $ctx.Values.services.challengeSolver.enabled (not (include "tankovault.trawlUrl" $ctx)) -}}
+{{- $errors = append $errors "services.challengeSolver.enabled requires a solver backend: set `trawl.enabled=true` or point `externalTrawl.url` at one." -}}
 {{- end -}}
 
 {{- /* Publishing a privileged service is a security defect, not a preference. */ -}}

@@ -42,7 +42,7 @@ helm install tankovault timschoenle/tankovault \
   --set postgresql.enabled=true \
   --set nats.enabled=true \
   --set valkey.enabled=true \
-  --set flaresolverr.enabled=true \
+  --set trawl.enabled=true \
   --set bootstrap.seedAdmin.enabled=true
 ```
 
@@ -223,10 +223,17 @@ fail in ways that only show up in a browser.
 
 ## The bundled datastores are evaluation-tier
 
-`postgresql`, `valkey`, `nats` and `flaresolverr` exist so that `helm install` produces a working
+`postgresql`, `valkey`, `nats` and `trawl` exist so that `helm install` produces a working
 stack on a bare cluster. Each is a single instance with no replication and no failover, and the
 bundled PostgreSQL has no point-in-time recovery. Before this carries anything you care about,
 move to `externalDatabase`, `externalRedis` and `externalNats`.
+
+`trawl` is the exception to "evaluation-tier": it is the solver back-end upstream ships and there
+is no managed alternative to graduate to. Size it with `trawl.resources` rather than a t-shirt
+preset — each entry in `trawl.browserPoolSize` is a full Firefox, and the largest preset this
+repository offers caps memory below what one of them needs. It keeps its per-domain solved-session
+cache in the Redis the services already use; `trawl.redis.enabled=false` turns that off, at the
+cost of re-solving from a cold browser on every request.
 
 They are embedded rather than pulled in as subcharts for concrete reasons, recorded in
 `Chart.yaml`: the official Valkey chart defines its own `common.image`, which collides with this
@@ -278,6 +285,29 @@ says which API is absent, rather than dropping the objects and leaving you with 
 installed cleanly and is not monitored. Rendering offline — `helm template` reports the built-in
 API surface but no CRDs — needs
 `--api-versions monitoring.coreos.com/v1 --api-versions grafana.integreatly.org/v1beta1`.
+
+## Upgrading to 2.0.0
+
+TankoVault 1.0.0 replaced FlareSolverr with [TRAWL](https://github.com/germondai/trawl) as its
+solver back-end, and this chart follows. The rename is mechanical:
+
+| 1.x | 2.0.0 |
+|---|---|
+| `flaresolverr.enabled` | `trawl.enabled` |
+| `flaresolverr.image.*` | `trawl.image.*` (now `ghcr.io/germondai/trawl`) |
+| `flaresolverr.runAsUser` | `trawl.runAsUser` |
+| `flaresolverr.shmSize` | `trawl.shmSize` |
+| `flaresolverr.resourcesPreset` | `trawl.resources` (no preset fits a browser tier) |
+| `externalFlaresolverr.url` | `externalTrawl.url` |
+| — | `trawl.browserPoolSize`, `trawl.redis.*` (new) |
+
+There is no compatibility shim: the old keys are rejected by `values.schema.json`, so an upgrade
+that missed one fails at render rather than quietly dropping the solver.
+
+Order matters in one direction only. TRAWL serves FlareSolverr's `/v1` API as well as its own, so
+a TankoVault 0.4.x release keeps working once the container behind `externalTrawl.url` is swapped;
+the reverse is not true. The chart emits `solver.trawl_endpoint`, which only TankoVault 1.0.0 and
+later read — upgrade the application first, or in the same step.
 
 {{ template "chart.valuesSection" . }}
 

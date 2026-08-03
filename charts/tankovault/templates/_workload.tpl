@@ -18,6 +18,25 @@ advisory lock for the duration.
 {{- end -}}
 
 {{/*
+The Argo CD sync wave a resource takes, or nothing at all when the release is not being ordered
+by waves.
+
+Empty is the load-bearing case: it is what every caller tests to decide whether to emit the
+annotation, so `helm install` consumers and `ordering: helmHook` consumers keep rendering
+exactly the manifests they rendered before this knob existed. Only `mode` resolving to `job`
+qualifies — an `initContainer` migration is ordered by the pod it lives in and has no Job to
+sequence against.
+
+Args: ctx (root), offset (added to `argoSyncWaveBase`; 0 for the Job, 1 for the workloads).
+*/}}
+{{- define "tankovault.migrateSyncWave" -}}
+{{- $migrate := .ctx.Values.bootstrap.migrate -}}
+{{- if and (eq (include "tankovault.migrateMode" .ctx) "job") (eq $migrate.ordering "argoSyncWave") -}}
+{{- add $migrate.argoSyncWaveBase .offset -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
 Container ports for one service: the request-facing listener, plus the Prometheus scrape on
 its own isolated port. The scrape is a separate listener in the application, not a path on the
 main one, so it has to be a separate container port too.
@@ -123,9 +142,20 @@ metadata:
   namespace: {{ include "common.namespace" $ctx }}
   labels:
     {{- include "common.labels" $ctx | nindent 4 }}
-  {{- with (include "common.annotations" $ctx) }}
+  {{- /*
+    One wave above the migration Job, so Argo CD holds the rollout until the Job reports
+    Complete. That is the whole of what `pre-upgrade` used to buy, recovered inside the Sync
+    phase — see `bootstrap.migrate.ordering` for why the hook itself cannot stay.
+  */}}
+  {{- $syncWave := include "tankovault.migrateSyncWave" (dict "ctx" $root "offset" 1) }}
+  {{- if or (include "common.annotations" $ctx) $syncWave }}
   annotations:
+    {{- with (include "common.annotations" $ctx) }}
     {{- . | nindent 4 }}
+    {{- end }}
+    {{- with $syncWave }}
+    "argocd.argoproj.io/sync-wave": {{ . | quote }}
+    {{- end }}
   {{- end }}
 spec:
   {{- if not (and $values.autoscaling $values.autoscaling.enabled) }}

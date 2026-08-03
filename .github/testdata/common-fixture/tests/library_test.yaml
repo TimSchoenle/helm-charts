@@ -2,6 +2,7 @@ suite: common library partials
 templates:
   - deployment.yaml
   - configmap.yaml
+  - job.yaml
 tests:
   - it: derives names and namespace
     documentSelector:
@@ -247,3 +248,38 @@ tests:
       - equal:
           path: spec.template.metadata.annotations["checksum/configmap"]
           value: pinned
+
+  - it: appends a digest of the content to a hashed name
+    # A golden digest rather than a pattern: the whole point of the helper is that the same
+    # content always resolves to the same name, so a value that drifts between Helm builds
+    # would defeat it silently.
+    template: job.yaml
+    asserts:
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-common-fixture-migrate-c37240a5
+
+  - it: resolves changed content to a different name
+    # This is what makes an immutable resource re-appliable: a new spec is a new object rather
+    # than a rejected update or a no-op that never re-runs.
+    template: job.yaml
+    set:
+      hashedContent: changed-content
+    asserts:
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-common-fixture-migrate-aa7da6b4
+
+  - it: truncates the name rather than the digest
+    # `common.fullname.suffixed` cuts the fullname to make room for the suffix, so the digest —
+    # the only part that carries meaning — always survives intact.
+    template: job.yaml
+    set:
+      fullnameOverride: a-very-long-release-name-that-will-not-fit-inside-sixty-three-characters
+    asserts:
+      - equal:
+          path: metadata.name
+          value: a-very-long-release-name-that-will-not-fit-ins-migrate-c37240a5
+      - matchRegex:
+          path: metadata.name
+          pattern: ^.{1,63}$

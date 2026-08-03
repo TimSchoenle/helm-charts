@@ -11,7 +11,8 @@ concurrency:
 permissions: {}
 
 jobs:
-  # `values.schema.json` and `README.md` are generated from `values.yaml` and `README.md.gotmpl`.
+  # Every chart's `values.schema.json` and `README.md` are generated from `values.yaml` and
+  # `README.md.gotmpl`, and the root `README.md` from `.github/templates/README.md.hbs`.
   # This job regenerates them and commits the result back to the PR branch, so contributors
   # never have to run the toolchain locally. The other jobs deliberately do not gate on it:
   # the follow-up push re-runs the whole workflow against the corrected tree anyway, and
@@ -68,17 +69,52 @@ jobs:
           commit_message: "docs: update Helm chart documentation and schemas"
           token: ${{ steps.generate_token.outputs.token }}
 
+      # The chart table in the root README is rendered from every chart's Chart.yaml, so a new
+      # chart or a version bump cannot leave the index stale. Deliberately placed after the
+      # commit above, whose `.` file pattern would otherwise sweep the rendered README into the
+      # helm-docs commit; the render commits only its own output path.
+      #
+      # PyYAML ships with the runner image's system `python3`. `actions/setup-python` is not used
+      # here on purpose: the interpreter it installs would not have it.
+      - name: Collect chart metadata
+        id: chart-index
+        run: |
+          set -euo pipefail
+          index="$(python3 ./.github/scripts/chart-index.py)"
+          echo "variables=${index}" >> "$GITHUB_OUTPUT"
+
+      - name: Render and commit the root README
+        id: readme
+        uses: TimSchoenle/actions/actions/common/render-template-and-commit@7036b316c73d401f531468d09f391a76a4ab4b3f # tag=actions-common-render-template-and-commit-v1.1.1
+        with:
+          template: .github/templates/README.md.hbs
+          output: README.md
+          variables: ${{ steps.chart-index.outputs.variables }}
+          token: ${{ steps.generate_token.outputs.token }}
+          commit_message: "docs: update chart index in README"
+
       - name: Comment on PR
-        if: steps.auto-commit.outputs.changes_detected == 'true'
+        if: steps.auto-commit.outputs.changes_detected == 'true' || steps.readme.outputs.changes_detected == 'true'
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
+        env:
+          DOCS_CHANGED: ${{ steps.auto-commit.outputs.changes_detected }}
+          README_CHANGED: ${{ steps.readme.outputs.changes_detected }}
         with:
           github-token: ${{ steps.generate_token.outputs.token }}
           script: |
-            github.rest.issues.createComment({
+            const updated = [];
+            if (process.env.DOCS_CHANGED === 'true') {
+              updated.push('chart documentation and schemas');
+            }
+            if (process.env.README_CHANGED === 'true') {
+              updated.push('the README chart index');
+            }
+
+            await github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: '📚 Helm chart documentation and schema have been automatically updated.'
+              body: `📚 Automatically updated ${updated.join(' and ')}.`
             })
 
   unit-test:

@@ -1,28 +1,10 @@
 {{- /*
-The upstream Grafana overview dashboard, loaded from a file via `.Files.Glob` rather than
-inlined. Grafana's own legend syntax uses `{{ }}`, which collides with Go's delimiters, so the
-JSON has to arrive as data and never pass through the template engine.
+The upstream Grafana overview dashboard, for a Grafana sidecar to discover.
+
+Both this ConfigMap and the optional `GrafanaDashboard` resources beside it come from
+`common.grafana.dashboard.*`, which documents why Grafana needs two delivery mechanisms and why
+the JSON is loaded from a file rather than inlined. Nothing here is chart-specific.
 */ -}}
 {{- if and .Values.metrics.enabled .Values.metrics.dashboard.enabled }}
-{{- $dashboards := .Files.Glob "dashboards/*.json" }}
-{{- if not $dashboards }}
-{{- fail "metrics.dashboard.enabled is set but no dashboards were found under dashboards/*.json" }}
-{{- end }}
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: {{ include "common.fullname.suffixed" (dict "ctx" . "suffix" "dashboards") }}
-  namespace: {{ include "common.namespace" . }}
-  labels:
-    {{- include "common.labels" . | nindent 4 }}
-    {{ .Values.metrics.dashboard.label }}: {{ .Values.metrics.dashboard.labelValue | quote }}
-  {{- with (include "common.annotations" .) }}
-  annotations:
-    {{- . | nindent 4 }}
-  {{- end }}
-data:
-  {{- range $path, $_ := $dashboards }}
-  {{ base $path }}: |
-    {{- $.Files.Get $path | nindent 4 }}
-  {{- end }}
+{{- include "common.grafana.dashboard.configMap" (dict "ctx" . "values" .Values.metrics.dashboard) }}
 {{- end }}

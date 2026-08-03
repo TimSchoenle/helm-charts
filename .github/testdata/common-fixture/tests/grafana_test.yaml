@@ -1,0 +1,183 @@
+# Grafana ships no Kubernetes-native dashboard type, so the library renders both delivery
+# mechanisms. The sidecar ConfigMap cannot decide its own reach — that is configured on the
+# Grafana release, out of reach of the chart that owns the dashboard — while the operator's
+# custom resources can, which is the whole reason the second path exists.
+suite: common.grafana.dashboard partials
+templates:
+  - grafana.yaml
+tests:
+  - it: ships the dashboard JSON verbatim, Grafana legend syntax and all
+    # The JSON must arrive as file data. Grafana's `{{ }}` legends collide with Go's delimiters,
+    # so a regression that inlined it through the template engine breaks here.
+    template: grafana.yaml
+    set:
+      grafanaDashboard.enabled: true
+    asserts:
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-common-fixture-dashboards
+      - equal:
+          path: metadata.labels["grafana_dashboard"]
+          value: "1"
+      - matchRegex:
+          path: data["common-fixture-overview.json"]
+          pattern: '\{\{job\}\}'
+
+  - it: honours a custom sidecar label
+    template: grafana.yaml
+    set:
+      grafanaDashboard.enabled: true
+      grafanaDashboard.label: dashboards.grafana.com/enabled
+      grafanaDashboard.labelValue: "true"
+    asserts:
+      - equal:
+          path: metadata.labels["dashboards.grafana.com/enabled"]
+          value: "true"
+
+  - it: renders no custom resources while the operator path is off
+    template: grafana.yaml
+    set:
+      grafanaDashboard.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 1
+
+  - it: points the custom resource at the ConfigMap rather than duplicating the JSON
+    template: grafana.yaml
+    capabilities:
+      apiVersions:
+        - grafana.integreatly.org/v1beta1
+    documentSelector:
+      path: kind
+      value: GrafanaDashboard
+    set:
+      grafanaDashboard.enabled: true
+      grafanaDashboard.grafanaOperator.enabled: true
+    asserts:
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-common-fixture-overview
+      - equal:
+          path: spec.configMapRef.name
+          value: RELEASE-NAME-common-fixture-dashboards
+      - equal:
+          path: spec.configMapRef.key
+          value: common-fixture-overview.json
+      - notExists:
+          path: spec.json
+
+  - it: grants cross-namespace import by default, and withdraws it on request
+    template: grafana.yaml
+    capabilities:
+      apiVersions:
+        - grafana.integreatly.org/v1beta1
+    documentSelector:
+      path: kind
+      value: GrafanaDashboard
+    set:
+      grafanaDashboard.enabled: true
+      grafanaDashboard.grafanaOperator.enabled: true
+    asserts:
+      - equal:
+          path: spec.allowCrossNamespaceImport
+          value: true
+
+  - it: does not let an explicit false be swallowed by the default
+    # `default true` on a boolean turns a deliberate `false` back into `true`, which would
+    # silently widen the dashboard's reach beyond what the operator asked for.
+    template: grafana.yaml
+    capabilities:
+      apiVersions:
+        - grafana.integreatly.org/v1beta1
+    documentSelector:
+      path: kind
+      value: GrafanaDashboard
+    set:
+      grafanaDashboard.enabled: true
+      grafanaDashboard.grafanaOperator.enabled: true
+      grafanaDashboard.grafanaOperator.allowCrossNamespaceImport: false
+    asserts:
+      - equal:
+          path: spec.allowCrossNamespaceImport
+          value: false
+
+  - it: files the dashboards under a folder when one is set, and omits the field otherwise
+    template: grafana.yaml
+    capabilities:
+      apiVersions:
+        - grafana.integreatly.org/v1beta1
+    documentSelector:
+      path: kind
+      value: GrafanaDashboard
+    set:
+      grafanaDashboard.enabled: true
+      grafanaDashboard.grafanaOperator.enabled: true
+      grafanaDashboard.grafanaOperator.folder: Fixtures
+    asserts:
+      - equal:
+          path: spec.folder
+          value: Fixtures
+
+  - it: omits the folder when it is empty
+    template: grafana.yaml
+    capabilities:
+      apiVersions:
+        - grafana.integreatly.org/v1beta1
+    documentSelector:
+      path: kind
+      value: GrafanaDashboard
+    set:
+      grafanaDashboard.enabled: true
+      grafanaDashboard.grafanaOperator.enabled: true
+    asserts:
+      - notExists:
+          path: spec.folder
+
+  - it: refuses the operator path when the CRD is absent
+    # A capability guard that dropped the objects instead would install cleanly and produce no
+    # dashboard, which is the failure this check exists to prevent.
+    template: grafana.yaml
+    set:
+      grafanaDashboard.enabled: true
+      grafanaDashboard.grafanaOperator.enabled: true
+    asserts:
+      - failedTemplate:
+          errorPattern: "registers no `grafana.integreatly.org/v1beta1` API"
+
+  - it: refuses the operator path without the ConfigMap it references
+    template: grafana.yaml
+    capabilities:
+      apiVersions:
+        - grafana.integreatly.org/v1beta1
+    set:
+      grafanaDashboard.enabled: false
+      grafanaDashboard.grafanaOperator.enabled: true
+    asserts:
+      - failedTemplate:
+          errorPattern: "need the dashboard ConfigMap as well"
+
+  - it: refuses an instanceSelector that selects nothing
+    template: grafana.yaml
+    capabilities:
+      apiVersions:
+        - grafana.integreatly.org/v1beta1
+    set:
+      grafanaDashboard.enabled: true
+      grafanaDashboard.grafanaOperator.enabled: true
+      grafanaDashboard.grafanaOperator.instanceSelector: null
+    asserts:
+      - failedTemplate:
+          errorPattern: "instanceSelector` selects nothing"
+
+  - it: refuses a resyncPeriod the operator cannot parse
+    template: grafana.yaml
+    capabilities:
+      apiVersions:
+        - grafana.integreatly.org/v1beta1
+    set:
+      grafanaDashboard.enabled: true
+      grafanaDashboard.grafanaOperator.enabled: true
+      grafanaDashboard.grafanaOperator.resyncPeriod: 5 minutes
+    asserts:
+      - failedTemplate:
+          errorPattern: "is not a Go duration"

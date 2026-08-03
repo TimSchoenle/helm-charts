@@ -2093,7 +2093,10 @@ metrics:
     # @schema
     # type: string
     # @schema
-    # -- Label a Grafana sidecar watches for dashboard ConfigMaps.
+    # -- Label a Grafana sidecar watches for dashboard ConfigMaps. The sidecar only picks the
+    # ConfigMap up if Grafana is configured to look in this namespace — its own by default.
+    # Either set `sidecar.dashboards.searchNamespace` to `ALL` on the Grafana release, or use
+    # `grafanaOperator` below, which carries the cross-namespace grant on the dashboard itself.
     label: grafana_dashboard
 
     # @schema
@@ -2101,6 +2104,53 @@ metrics:
     # @schema
     # -- Value for that label.
     labelValue: "1"
+
+    # @schema
+    # additionalProperties: true
+    # @schema
+    grafanaOperator:
+      # @schema
+      # type: boolean
+      # @schema
+      # -- Also create one `GrafanaDashboard` per dashboard, for clusters running grafana-operator
+      # v5. Unlike the sidecar ConfigMap, whose discovery is a property of the *Grafana* release,
+      # a `GrafanaDashboard` declares its own reach, so a Grafana in another namespace can import
+      # it without cluster-wide sidecar configuration. The CRs reference the ConfigMap through
+      # `configMapRef` rather than inlining the JSON, so `dashboard.enabled` must stay true.
+      # Requires the `grafana.integreatly.org/v1beta1` CRDs; rendering fails loudly without them.
+      enabled: false
+
+      # @schema
+      # type: boolean
+      # @schema
+      # -- Let the CRs bind to Grafana instances outside this namespace. This is the entire point
+      # of the operator path: with `false` the operator only considers Grafana CRs in this
+      # release's own namespace, and a Grafana living elsewhere never imports the dashboard.
+      allowCrossNamespaceImport: true
+
+      # @schema
+      # type: object
+      # additionalProperties: true
+      # @schema
+      # -- Label selector for the Grafana instances to import into. Must select something: an
+      # empty selector matches no instance, which the chart refuses rather than rendering a CR
+      # that reconciles into nothing.
+      instanceSelector:
+        matchLabels:
+          dashboards: grafana
+
+      # @schema
+      # type: string
+      # @schema
+      # -- Folder to file the dashboards under. Empty leaves them at the Grafana root.
+      folder: ""
+
+      # @schema
+      # type: string
+      # @schema
+      # -- How often the operator re-reconciles the dashboard, undoing edits made in the Grafana
+      # UI. A Go duration.
+      resyncPeriod: 5m
 
 # @schema
 # additionalProperties: true

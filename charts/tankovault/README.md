@@ -1,6 +1,6 @@
 # tankovault
 
-![Version: 1.1.0](https://img.shields.io/badge/Version-1.1.0-informational?style=flat-square) ![AppVersion: 0.4.1](https://img.shields.io/badge/AppVersion-0.4.1-informational?style=flat-square)
+![Version: 1.2.0](https://img.shields.io/badge/Version-1.2.0-informational?style=flat-square) ![AppVersion: 0.4.1](https://img.shields.io/badge/AppVersion-0.4.1-informational?style=flat-square)
 
 This chart deploys the full TankoVault manga aggregator stack — frontend, api, control-plane, worker, notifier, sync, challenge-solver and render — hardened to the restricted Pod Security Standard, with file-backed configuration that reloads in place instead of restarting pods, optional bundled PostgreSQL, Valkey, NATS JetStream and FlareSolverr, and optional Prometheus metrics, alerting rules and Grafana dashboards.
 
@@ -247,6 +247,36 @@ The recording rules, alerting rules and Grafana dashboard under `rules/` and `da
 vendored verbatim from the upstream repository's `deploy/observability/`. Some alert annotations
 still describe `docker compose` remediation steps, because that is what upstream ships.
 
+### Getting the dashboard into a Grafana in another namespace
+
+Grafana has no Kubernetes-native dashboard type, so there are two ways to deliver one and they
+differ in exactly the way that matters here.
+
+`metrics.dashboard.enabled` writes a labelled ConfigMap for a Grafana sidecar to discover. The
+sidecar decides which namespaces it watches, not this chart: unless the Grafana release sets
+`sidecar.dashboards.searchNamespace` to `ALL` or to a list including this namespace — and the
+default is Grafana's own — the ConfigMap is created and nothing ever reads it.
+
+`metrics.dashboard.grafanaOperator.enabled` additionally creates a `GrafanaDashboard` per file for
+clusters running [grafana-operator](https://github.com/grafana/grafana-operator) v5. That resource
+carries `allowCrossNamespaceImport`, so the dashboard declares its own reach and a Grafana
+elsewhere can import it without any cluster-wide sidecar configuration. Point `instanceSelector`
+at the labels on your `Grafana` custom resource. The resources reference the ConfigMap through
+`configMapRef` rather than inlining the JSON, so the ConfigMap stays enabled and the dashboard is
+stored once.
+
+The rules have no such choice. `PrometheusRule` is already the Prometheus Operator's own CRD and
+has no per-object cross-namespace grant — a Prometheus decides what it loads through
+`ruleNamespaceSelector` and `ruleSelector`. `metrics.prometheusRule.labels` is the half of that a
+chart can influence; on a kube-prometheus-stack cluster it usually has to carry
+`release: kube-prometheus-stack` or the rules are created and never loaded.
+
+Every one of these objects needs its CRDs. When they are missing the chart refuses to render and
+says which API is absent, rather than dropping the objects and leaving you with a release that
+installed cleanly and is not monitored. Rendering offline — `helm template` reports the built-in
+API surface but no CRDs — needs
+`--api-versions monitoring.coreos.com/v1 --api-versions grafana.integreatly.org/v1beta1`.
+
 ## Values
 
 | Key | Type | Default | Description |
@@ -379,9 +409,14 @@ still describe `docker compose` remediation steps, because that is what upstream
 | ingress.url | string | `""` | Override the derived external URL used for `anilist.redirect_uri`, `email.base_url` and `auth.webauthn_origin`. Set this when TLS terminates on a proxy in front of the ingress. |
 | internal.token | string | `""` | Shared service-to-service token (`internal.token`), identical across api, control-plane, worker, sync, render and challenge-solver. Without it those services accept privileged calls from anything that can reach the port, so the `production` profile refuses to boot without one. Left empty in that profile the chart generates a token and remembers it across upgrades, which is the recommended setting; set one explicitly (minimum 32 characters, e.g. `openssl rand -hex 32`) only if it has to be known outside the release. |
 | kubeVersionOverride | string | `""` | Override the detected Kubernetes version used for API version selection. |
-| metrics | object | `{"dashboard":{"enabled":false,"label":"grafana_dashboard","labelValue":"1"},"enabled":true,"port":9090,"prometheusRule":{"enabled":false,"labels":{}},"serviceMonitor":{"enabled":false,"interval":"15s","labels":{},"scrapeTimeout":"10s"}}` | Prometheus integration. Every service serves a scrape on an isolated port, outside the request-facing listener and outside its own HTTP metrics middleware. |
+| metrics | object | `{"dashboard":{"enabled":false,"grafanaOperator":{"allowCrossNamespaceImport":true,"enabled":false,"folder":"","instanceSelector":{"matchLabels":{"dashboards":"grafana"}},"resyncPeriod":"5m"},"label":"grafana_dashboard","labelValue":"1"},"enabled":true,"port":9090,"prometheusRule":{"enabled":false,"labels":{}},"serviceMonitor":{"enabled":false,"interval":"15s","labels":{},"scrapeTimeout":"10s"}}` | Prometheus integration. Every service serves a scrape on an isolated port, outside the request-facing listener and outside its own HTTP metrics middleware. |
 | metrics.dashboard.enabled | bool | `false` | Create a ConfigMap holding the upstream Grafana overview dashboard. |
-| metrics.dashboard.label | string | `"grafana_dashboard"` | Label a Grafana sidecar watches for dashboard ConfigMaps. |
+| metrics.dashboard.grafanaOperator.allowCrossNamespaceImport | bool | `true` | Let the CRs bind to Grafana instances outside this namespace. This is the entire point of the operator path: with `false` the operator only considers Grafana CRs in this release's own namespace, and a Grafana living elsewhere never imports the dashboard. |
+| metrics.dashboard.grafanaOperator.enabled | bool | `false` | Also create one `GrafanaDashboard` per dashboard, for clusters running grafana-operator v5. Unlike the sidecar ConfigMap, whose discovery is a property of the *Grafana* release, a `GrafanaDashboard` declares its own reach, so a Grafana in another namespace can import it without cluster-wide sidecar configuration. The CRs reference the ConfigMap through `configMapRef` rather than inlining the JSON, so `dashboard.enabled` must stay true. Requires the `grafana.integreatly.org/v1beta1` CRDs; rendering fails loudly without them. |
+| metrics.dashboard.grafanaOperator.folder | string | `""` | Folder to file the dashboards under. Empty leaves them at the Grafana root. |
+| metrics.dashboard.grafanaOperator.instanceSelector | object | `{"matchLabels":{"dashboards":"grafana"}}` | Label selector for the Grafana instances to import into. Must select something: an empty selector matches no instance, which the chart refuses rather than rendering a CR that reconciles into nothing. |
+| metrics.dashboard.grafanaOperator.resyncPeriod | string | `"5m"` | How often the operator re-reconciles the dashboard, undoing edits made in the Grafana UI. A Go duration. |
+| metrics.dashboard.label | string | `"grafana_dashboard"` | Label a Grafana sidecar watches for dashboard ConfigMaps. The sidecar only picks the ConfigMap up if Grafana is configured to look in this namespace — its own by default. Either set `sidecar.dashboards.searchNamespace` to `ALL` on the Grafana release, or use `grafanaOperator` below, which carries the cross-namespace grant on the dashboard itself. |
 | metrics.dashboard.labelValue | string | `"1"` | Value for that label. |
 | metrics.enabled | bool | `true` | Expose the metrics port on each Service. |
 | metrics.port | int | `9090` | Port the Prometheus exposition is served on. |

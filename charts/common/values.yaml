@@ -528,3 +528,101 @@ networkPolicy:
   # @schema
   # -- Extra egress rules appended regardless of `egress.enabled`.
   extraEgress: []
+
+# @schema
+# additionalProperties: true
+# @schema
+# -- Prometheus recording and alerting rules, consumed by `common.prometheus.rules.*`. Unlike the
+# dashboards there is only one carrier — `PrometheusRule` is already the operator's own CRD — and
+# no per-object cross-namespace grant: which namespaces a Prometheus loads rules from is decided
+# by `ruleNamespaceSelector` and `ruleSelector` on the Prometheus custom resource.
+prometheusRule:
+  # @schema
+  # type: boolean
+  # @schema
+  # -- Create a PrometheusRule from the chart's rule files. Requires the `monitoring.coreos.com/v1`
+  # CRDs; `common.prometheus.rules.errors` fails the render loudly rather than silently dropping
+  # the object when they are absent.
+  enabled: false
+
+  # @schema
+  # type: object
+  # additionalProperties: true
+  # @schema
+  # -- Extra labels, templated. This is the only half of rule discovery a chart controls: a
+  # cluster whose Prometheus selects `release: kube-prometheus-stack` needs that label here, or
+  # the rules are created and never loaded.
+  labels: {}
+
+# @schema
+# additionalProperties: true
+# @schema
+# -- Grafana dashboard delivery, consumed by `common.grafana.dashboard.*`. A consuming chart
+# exposes this shape wherever it likes — `metrics.dashboard` is the convention — and passes it in
+# as the `values` argument. Grafana has no Kubernetes-native dashboard type, so the partials
+# render both mechanisms: a labelled ConfigMap for the sidecar, and, optionally, one
+# `GrafanaDashboard` per file for grafana-operator v5.
+grafanaDashboard:
+  # @schema
+  # type: boolean
+  # @schema
+  # -- Create the ConfigMap holding the dashboard JSON. Required by the operator path too, which
+  # references it rather than duplicating the JSON into the custom resources.
+  enabled: false
+
+  # @schema
+  # type: string
+  # @schema
+  # -- Label a Grafana sidecar watches for dashboard ConfigMaps. Discovery is a property of the
+  # *Grafana* release: the sidecar only sees this ConfigMap if `sidecar.dashboards.searchNamespace`
+  # covers the namespace it lands in, which a chart cannot influence from its own side.
+  label: grafana_dashboard
+
+  # @schema
+  # type: string
+  # @schema
+  # -- Value for that label.
+  labelValue: "1"
+
+  # @schema
+  # additionalProperties: true
+  # @schema
+  grafanaOperator:
+    # @schema
+    # type: boolean
+    # @schema
+    # -- Also create one `GrafanaDashboard` per dashboard file. This is the only delivery path a
+    # chart can make cross-namespace on its own terms. Requires the `grafana.integreatly.org/v1beta1`
+    # CRDs; `common.grafana.dashboard.errors` fails the render loudly rather than silently
+    # dropping the objects when they are absent.
+    enabled: false
+
+    # @schema
+    # type: boolean
+    # @schema
+    # -- Let the resources bind to Grafana instances outside the release namespace. With `false`
+    # the operator only considers Grafana custom resources in the same namespace.
+    allowCrossNamespaceImport: true
+
+    # @schema
+    # type: object
+    # additionalProperties: true
+    # @schema
+    # -- Label selector for the Grafana instances to import into. Must select something: unlike a
+    # Kubernetes label selector, an empty `instanceSelector` matches no instance at all.
+    instanceSelector:
+      matchLabels:
+        dashboards: grafana
+
+    # @schema
+    # type: string
+    # @schema
+    # -- Folder to file the dashboards under. Empty leaves them at the Grafana root.
+    folder: ""
+
+    # @schema
+    # type: string
+    # @schema
+    # -- How often the operator re-reconciles the dashboard, undoing edits made in the Grafana UI.
+    # A Go duration.
+    resyncPeriod: 5m

@@ -199,6 +199,93 @@
           "title": "global",
           "type": "object"
         },
+        "grafanaDashboard": {
+          "additionalProperties": true,
+          "description": "Grafana dashboard delivery, consumed by `common.grafana.dashboard.*`. A consuming chart\nexposes this shape wherever it likes — `metrics.dashboard` is the convention — and passes it in\nas the `values` argument. Grafana has no Kubernetes-native dashboard type, so the partials\nrender both mechanisms: a labelled ConfigMap for the sidecar, and, optionally, one\n`GrafanaDashboard` per file for grafana-operator v5.",
+          "properties": {
+            "enabled": {
+              "default": false,
+              "description": "Create the ConfigMap holding the dashboard JSON. Required by the operator path too, which\nreferences it rather than duplicating the JSON into the custom resources.",
+              "required": [],
+              "title": "enabled",
+              "type": "boolean"
+            },
+            "grafanaOperator": {
+              "additionalProperties": true,
+              "properties": {
+                "allowCrossNamespaceImport": {
+                  "default": true,
+                  "description": "Let the resources bind to Grafana instances outside the release namespace. With `false`\nthe operator only considers Grafana custom resources in the same namespace.",
+                  "required": [],
+                  "title": "allowCrossNamespaceImport",
+                  "type": "boolean"
+                },
+                "enabled": {
+                  "default": false,
+                  "description": "Also create one `GrafanaDashboard` per dashboard file. This is the only delivery path a\nchart can make cross-namespace on its own terms. Requires the `grafana.integreatly.org/v1beta1`\nCRDs; `common.grafana.dashboard.errors` fails the render loudly rather than silently\ndropping the objects when they are absent.",
+                  "required": [],
+                  "title": "enabled",
+                  "type": "boolean"
+                },
+                "folder": {
+                  "default": "",
+                  "description": "Folder to file the dashboards under. Empty leaves them at the Grafana root.",
+                  "required": [],
+                  "title": "folder",
+                  "type": "string"
+                },
+                "instanceSelector": {
+                  "additionalProperties": true,
+                  "description": "Label selector for the Grafana instances to import into. Must select something: unlike a\nKubernetes label selector, an empty `instanceSelector` matches no instance at all.",
+                  "properties": {
+                    "matchLabels": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "dashboards": {
+                          "default": "grafana",
+                          "required": [],
+                          "title": "dashboards",
+                          "type": "string"
+                        }
+                      },
+                      "required": [],
+                      "title": "matchLabels",
+                      "type": "object"
+                    }
+                  },
+                  "required": [],
+                  "title": "instanceSelector",
+                  "type": "object"
+                },
+                "resyncPeriod": {
+                  "default": "5m",
+                  "description": "How often the operator re-reconciles the dashboard, undoing edits made in the Grafana UI.\nA Go duration.",
+                  "required": [],
+                  "title": "resyncPeriod",
+                  "type": "string"
+                }
+              },
+              "required": [],
+              "title": "grafanaOperator"
+            },
+            "label": {
+              "default": "grafana_dashboard",
+              "description": "Label a Grafana sidecar watches for dashboard ConfigMaps. Discovery is a property of the\n*Grafana* release: the sidecar only sees this ConfigMap if `sidecar.dashboards.searchNamespace`\ncovers the namespace it lands in, which a chart cannot influence from its own side.",
+              "required": [],
+              "title": "label",
+              "type": "string"
+            },
+            "labelValue": {
+              "default": "1",
+              "description": "Value for that label.",
+              "required": [],
+              "title": "labelValue",
+              "type": "string"
+            }
+          },
+          "required": [],
+          "title": "grafanaDashboard"
+        },
         "hostAliases": {
           "description": "Host aliases injected into the pod's /etc/hosts.",
           "items": {
@@ -635,6 +722,28 @@
           "required": [],
           "title": "priorityClassName",
           "type": "string"
+        },
+        "prometheusRule": {
+          "additionalProperties": true,
+          "description": "Prometheus recording and alerting rules, consumed by `common.prometheus.rules.*`. Unlike the\ndashboards there is only one carrier — `PrometheusRule` is already the operator's own CRD — and\nno per-object cross-namespace grant: which namespaces a Prometheus loads rules from is decided\nby `ruleNamespaceSelector` and `ruleSelector` on the Prometheus custom resource.",
+          "properties": {
+            "enabled": {
+              "default": false,
+              "description": "Create a PrometheusRule from the chart's rule files. Requires the `monitoring.coreos.com/v1`\nCRDs; `common.prometheus.rules.errors` fails the render loudly rather than silently dropping\nthe object when they are absent.",
+              "required": [],
+              "title": "enabled",
+              "type": "boolean"
+            },
+            "labels": {
+              "additionalProperties": true,
+              "description": "Extra labels, templated. This is the only half of rule discovery a chart controls: a\ncluster whose Prometheus selects `release: kube-prometheus-stack` needs that label here, or\nthe rules are created and never loaded.",
+              "required": [],
+              "title": "labels",
+              "type": "object"
+            }
+          },
+          "required": [],
+          "title": "prometheusRule"
         },
         "readinessProbe": {
           "additionalProperties": true,

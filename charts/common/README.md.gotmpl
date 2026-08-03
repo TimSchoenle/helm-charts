@@ -91,6 +91,38 @@ spec:
 > cloud instance metadata endpoint at `169.254.169.254`. Rules added through
 > `networkPolicy.egress.customRules` must supply their own `to:`.
 
+### Observability
+
+| Partial | Purpose |
+|---|---|
+| `common.grafana.dashboard.configMap` | Dashboard JSON in a labelled ConfigMap, for a Grafana sidecar |
+| `common.grafana.dashboard.customResources` | One `GrafanaDashboard` per file, for grafana-operator v5 |
+| `common.grafana.dashboard.configMapName` | The ConfigMap name both of the above resolve through |
+| `common.grafana.dashboard.errors` / `.validate` | Misconfiguration as messages, or raised |
+| `common.prometheus.rules.prometheusRule` | Every rule group across the chart's rule files, as one `PrometheusRule` |
+| `common.prometheus.rules.groups` | Just the groups, parsed and re-emitted |
+| `common.prometheus.rules.errors` / `.validate` | Misconfiguration as messages, or raised |
+| `common.prometheus.operatorErrors` | Whether the Prometheus Operator CRDs are missing, as a message |
+
+Grafana ships no Kubernetes-native dashboard type, and the two carriers that exist are not
+equivalent. A sidecar ConfigMap is discovered according to the *Grafana* release's
+`sidecar.dashboards.searchNamespace`, which the chart owning the dashboard cannot influence; a
+`GrafanaDashboard` carries `allowCrossNamespaceImport` and so declares its own reach. Both are
+rendered from the same ConfigMap — the custom resources use `configMapRef` — so the JSON is
+stored once. Rules have only the one carrier, and `ruleNamespaceSelector`/`ruleSelector` on the
+Prometheus custom resource decide what loads them; `labels` is the half of that a chart controls.
+
+> [!IMPORTANT]
+> Dashboard JSON and rule files are read as file data and never passed through the template
+> engine. Grafana legends use `{{ }}` and alert annotations use `{{ $labels.job }}`, both of
+> which Go would either fail on or silently resolve to an empty string.
+
+> [!IMPORTANT]
+> When the required CRDs are absent these partials fail the render instead of skipping. A
+> capability guard that skipped would install cleanly and leave the release unmonitored, which is
+> the failure worth preventing. Offline renders declare the APIs with
+> `--api-versions monitoring.coreos.com/v1 --api-versions grafana.integreatly.org/v1beta1`.
+
 ### Capabilities and utilities
 
 | Partial | Purpose |

@@ -14,10 +14,11 @@ this chart already sets to the slug, makes `job` come out as `api`, `worker`, `c
 and so on, exactly as the rules and the dashboard expect.
 */ -}}
 {{- /*
-Rendered whenever it is enabled, without probing `.Capabilities` for the CRD. The Prometheus
-Operator CRDs are a documented prerequisite, and `helm template` — which the repository's policy
-scan and manifest validation both run — reports no API versions at all, so a capability guard
-here would silently drop these objects from every CI render rather than validate them.
+The CRD is not probed here. A capability guard in a template can only *skip*, and skipping is the
+one behaviour that must not happen: a release that quietly drops its ServiceMonitors installs
+cleanly and is never scraped. The check therefore lives in `tankovault.validateValues`, via
+`common.prometheus.operatorErrors`, where it can fail the render with an actionable message
+instead. CI renders declare the CRD APIs with `--api-versions`.
 */ -}}
 {{- if and .Values.metrics.enabled .Values.metrics.serviceMonitor.enabled }}
 {{- $specs := include "tankovault.serviceSpecs" . | fromYaml }}

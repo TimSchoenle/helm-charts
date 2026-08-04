@@ -1,0 +1,67 @@
+suite: common.immutableLabels
+templates:
+  - statefulset.yaml
+tests:
+  # The whole point of the helper. `helm.sh/chart` carries the chart version and
+  # `app.kubernetes.io/version` the app version; both move on every release, and both land in
+  # a field the API server refuses to update. A release that ships either one here cannot be
+  # upgraded in place again — the failure appears on a cluster, at sync time, never in review.
+  - it: emits exactly the labels that are stable for the life of a release
+    asserts:
+      - equal:
+          path: spec.volumeClaimTemplates[0].metadata.labels
+          value:
+            app.kubernetes.io/name: common-fixture
+            app.kubernetes.io/instance: RELEASE-NAME
+            app.kubernetes.io/managed-by: Helm
+
+  - it: never carries the chart or version labels
+    asserts:
+      - notExists:
+          path: spec.volumeClaimTemplates[0].metadata.labels["helm.sh/chart"]
+      - notExists:
+          path: spec.volumeClaimTemplates[0].metadata.labels["app.kubernetes.io/version"]
+
+  # `component` and `partOf` reach object metadata and pod labels through
+  # `common.versionLabels`, which the helper deliberately does not include — not because they
+  # carry a version, but because they share a helper with the labels that do. Pinning the
+  # behaviour so a later edit to `common.versionLabels` cannot leak a version label in here.
+  - it: ignores the version-label block even when its inputs are set
+    set:
+      component: api
+      partOf: platform
+    asserts:
+      - equal:
+          path: spec.volumeClaimTemplates[0].metadata.labels
+          value:
+            app.kubernetes.io/name: common-fixture
+            app.kubernetes.io/instance: RELEASE-NAME
+            app.kubernetes.io/managed-by: Helm
+
+  # Operator-settable, therefore excluded on purpose: folding `commonLabels` in would re-open
+  # the trap the first time someone adds a label to a running release.
+  - it: excludes operator-settable commonLabels
+    set:
+      commonLabels:
+        team: platform
+    asserts:
+      - notExists:
+          path: spec.volumeClaimTemplates[0].metadata.labels.team
+      # Proof the value really was plumbed through — otherwise the assertion above passes for
+      # the wrong reason and would keep passing if the helper were deleted entirely.
+      - equal:
+          path: metadata.labels.team
+          value: platform
+
+  # The immutable labels must be a superset of the selector, or the PVCs a StatefulSet creates
+  # stop being attributable to the release that owns them.
+  - it: keeps the selector labels intact under nameOverride
+    set:
+      nameOverride: renamed
+    asserts:
+      - equal:
+          path: spec.volumeClaimTemplates[0].metadata.labels["app.kubernetes.io/name"]
+          value: renamed
+      - equal:
+          path: spec.selector.matchLabels["app.kubernetes.io/name"]
+          value: renamed

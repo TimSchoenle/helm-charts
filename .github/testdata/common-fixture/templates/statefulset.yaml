@@ -1,0 +1,44 @@
+{{- /*
+Exercises `common.immutableLabels` in the field it exists for.
+
+A `volumeClaimTemplate` is part of the StatefulSet *spec*, so its labels are immutable once
+the object is created. Rendering them through `common.labels` folds in `helm.sh/chart` and
+`app.kubernetes.io/version`, both of which move on every release, and the next upgrade is
+rejected outright. The suite asserts the emitted set carries neither.
+*/ -}}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "common.fullname" . }}
+  namespace: {{ include "common.namespace" . }}
+  labels:
+    {{- include "common.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  serviceName: {{ include "common.fullname" . }}
+  selector:
+    matchLabels:
+      {{- include "common.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "common.podLabels" . | nindent 8 }}
+    spec:
+      {{- include "common.podSpec.common" . | nindent 6 }}
+      containers:
+        {{- include "common.container" (dict
+              "ctx" $
+              "ports" (list (dict "name" "http" "containerPort" .Values.containerPort "protocol" "TCP"))
+              "volumeMounts" (list (dict "name" "data" "mountPath" "/data"))
+            ) | nindent 8 }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          {{- include "common.immutableLabels" . | nindent 10 }}
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 1Gi

@@ -1,0 +1,134 @@
+suite: immutable fields of the bundled datastores
+templates:
+  - nats.yaml
+  - postgresql.yaml
+values:
+  - ../ci/bundled-datastores-values.yaml
+tests:
+  # `volumeClaimTemplates` is part of the StatefulSet spec, which the API server refuses to
+  # update for any field outside `replicas`, `ordinals`, `template`, `updateStrategy`,
+  # `revisionHistoryLimit`, `persistentVolumeClaimRetentionPolicy` and `minReadySeconds`. Its
+  # labels are therefore immutable too. `common.labels` would stamp `helm.sh/chart` and
+  # `app.kubernetes.io/version` onto them, both of which move on every release — so a chart
+  # bump that changes nothing else still renders a diff the API server rejects, and the
+  # release can never be upgraded in place again. This must stay `common.immutableLabels`.
+  - it: gives the NATS claim template only labels that are stable across releases
+    documentSelector:
+      path: kind
+      value: StatefulSet
+    asserts:
+      - equal:
+          path: spec.volumeClaimTemplates[0].metadata.labels
+          value:
+            app.kubernetes.io/name: tankovault
+            app.kubernetes.io/instance: RELEASE-NAME
+            app.kubernetes.io/managed-by: Helm
+            app.kubernetes.io/component: nats
+    template: nats.yaml
+
+  - it: gives the PostgreSQL claim template only labels that are stable across releases
+    documentSelector:
+      path: kind
+      value: StatefulSet
+    asserts:
+      - equal:
+          path: spec.volumeClaimTemplates[0].metadata.labels
+          value:
+            app.kubernetes.io/name: tankovault
+            app.kubernetes.io/instance: RELEASE-NAME
+            app.kubernetes.io/managed-by: Helm
+            app.kubernetes.io/component: postgresql
+    template: postgresql.yaml
+
+  # Asserted separately from the exact-set checks above: those would also fail on an unrelated
+  # label being added, which is a legitimate change. These two never are.
+  - it: keeps the chart and version labels off the NATS claim template
+    documentSelector:
+      path: kind
+      value: StatefulSet
+    asserts:
+      - notExists:
+          path: spec.volumeClaimTemplates[0].metadata.labels["helm.sh/chart"]
+      - notExists:
+          path: spec.volumeClaimTemplates[0].metadata.labels["app.kubernetes.io/version"]
+    template: nats.yaml
+
+  - it: keeps the chart and version labels off the PostgreSQL claim template
+    documentSelector:
+      path: kind
+      value: StatefulSet
+    asserts:
+      - notExists:
+          path: spec.volumeClaimTemplates[0].metadata.labels["helm.sh/chart"]
+      - notExists:
+          path: spec.volumeClaimTemplates[0].metadata.labels["app.kubernetes.io/version"]
+    template: postgresql.yaml
+
+  # The object metadata is a different matter entirely: labels there are mutable, so the
+  # version labels belong on it and must not be stripped by an over-eager fix to the above.
+  - it: still carries the version labels on the mutable object metadata
+    documentSelector:
+      path: kind
+      value: StatefulSet
+    asserts:
+      - exists:
+          path: metadata.labels["helm.sh/chart"]
+      - exists:
+          path: metadata.labels["app.kubernetes.io/version"]
+    template: nats.yaml
+
+  # `nameOverride` reaches the selector and the object metadata through the root context, but
+  # the pod template and the claim template through the datastore's scoped context. Unless
+  # that scope pins `nameOverride`, `common.name` falls back to the chart name, the selector
+  # stops matching the pod template it ships, and the API server rejects the StatefulSet with
+  # "`selector` does not match template `labels`" — so the setting breaks the datastore rather
+  # than renaming it. Only reachable under an override, which no ci/ fixture sets.
+  - it: resolves one name across selector, pod template and claim template under nameOverride
+    set:
+      nameOverride: renamed
+    documentSelector:
+      path: kind
+      value: StatefulSet
+    asserts:
+      - equal:
+          path: spec.selector.matchLabels["app.kubernetes.io/name"]
+          value: renamed
+      - equal:
+          path: spec.template.metadata.labels["app.kubernetes.io/name"]
+          value: renamed
+      - equal:
+          path: spec.volumeClaimTemplates[0].metadata.labels["app.kubernetes.io/name"]
+          value: renamed
+    template: nats.yaml
+
+  - it: resolves one name for the PostgreSQL StatefulSet under nameOverride
+    set:
+      nameOverride: renamed
+    documentSelector:
+      path: kind
+      value: StatefulSet
+    asserts:
+      - equal:
+          path: spec.selector.matchLabels["app.kubernetes.io/name"]
+          value: renamed
+      - equal:
+          path: spec.template.metadata.labels["app.kubernetes.io/name"]
+          value: renamed
+      - equal:
+          path: spec.volumeClaimTemplates[0].metadata.labels["app.kubernetes.io/name"]
+          value: renamed
+    template: postgresql.yaml
+
+  # `existingClaim` takes the volumeClaimTemplates branch away entirely. Guards against a
+  # future refactor that emits an empty or partial claim template on that path — which would
+  # be just as immutable, and just as fatal, as a wrong label.
+  - it: emits no claim template when an existing claim is supplied
+    set:
+      nats.persistence.existingClaim: my-claim
+    documentSelector:
+      path: kind
+      value: StatefulSet
+    asserts:
+      - notExists:
+          path: spec.volumeClaimTemplates
+    template: nats.yaml

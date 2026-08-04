@@ -356,6 +356,69 @@ Documents supplied through `content` are read on demand behind an mtime check, s
 policy is a values change and the kubelet's ConfigMap refresh, never a restart. That ConfigMap is
 deliberately excluded from the pod's `checksum/config` annotation for exactly that reason.
 
+## Upgrading to 3.0.3
+
+**Read this before upgrading any release that runs a bundled datastore with persistence.** The
+fix in this version is complete for new installs and requires one manual step for existing ones.
+
+Until 3.0.3 the chart stamped the full label set — including `helm.sh/chart` and
+`app.kubernetes.io/version` — onto the `volumeClaimTemplates` of the bundled NATS and
+PostgreSQL StatefulSets. That block is part of the StatefulSet **spec**, which Kubernetes
+refuses to update for any field other than `replicas`, `ordinals`, `template`,
+`updateStrategy`, `revisionHistoryLimit`, `persistentVolumeClaimRetentionPolicy` and
+`minReadySeconds`. Both of those labels move on every release, so any version bump of this
+chart made the next in-place upgrade fail:
+
+```
+StatefulSet.apps "tankovault-nats" is invalid: spec: Forbidden: updates to statefulset spec
+for fields other than 'replicas', 'ordinals', 'template', 'updateStrategy',
+'revisionHistoryLimit', 'persistentVolumeClaimRetentionPolicy' and 'minReadySeconds' are
+forbidden
+```
+
+The claim templates now carry only labels that are stable for the lifetime of a release
+(`name`, `instance`, `managed-by`, `component`), so this cannot recur.
+
+**It does not repair an existing install.** The StatefulSet already running still carries the
+old labels, and the corrected render still differs from them — so the upgrade is rejected on
+exactly the same field until the object is recreated once:
+
+```shell
+kubectl delete statefulset <release>-nats -n <namespace> --cascade=orphan
+```
+
+Repeat for `<release>-postgresql` if the bundled database is in use. If you are unsure of the
+names:
+
+```shell
+kubectl get statefulset -n <namespace> -l app.kubernetes.io/instance=<release>
+```
+
+Then upgrade as usual. This is safe, and it is worth knowing exactly why rather than having to
+reason it out under a failing sync:
+
+- **The data survives.** The chart sets no `persistentVolumeClaimRetentionPolicy`, so it
+  defaults to `Retain`/`Retain` and the PVCs carry no owner reference to the StatefulSet. The
+  JetStream and PostgreSQL volumes are untouched however the StatefulSet is deleted.
+- **The service stays up.** `--cascade=orphan` deletes only the StatefulSet object; the pod
+  keeps running throughout.
+- **No second pod appears.** The recreated StatefulSet's selector is `name`/`instance`/
+  `component` only and is unchanged between versions, so it adopts the orphaned pod rather
+  than starting a rival. It then rolls it once to pick up the new image — which the upgrade
+  was going to do anyway.
+
+Argo CD users: perform the delete manually, then sync. Do not add the StatefulSet to a
+`Replace=true` sync policy — that would delete the pod along with it.
+
+### `nameOverride` on the bundled datastores
+
+Also fixed here, and unrelated to the above. The bundled datastores rendered their selector and
+their pod template against two different contexts, so under `nameOverride` the two disagreed on
+`app.kubernetes.io/name` and the API server rejected the workload outright with "`selector` does
+not match template `labels`". `nameOverride` broke the bundled NATS, PostgreSQL, Valkey, TRAWL
+and NATS exporter rather than renaming them. If you were affected you will not have a running
+release to upgrade — install normally.
+
 ## Upgrading to 3.0.2
 
 Three corrections to the rules 3.0.0 introduced, all found by evaluating them against synthetic

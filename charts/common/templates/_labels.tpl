@@ -57,6 +57,28 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end }}
 
 {{/*
+Labels for metadata that cannot be updated after creation — currently
+`volumeClaimTemplates`, whose entries are part of the StatefulSet *spec* and are therefore
+immutable down to their labels.
+
+Excludes `helm.sh/chart` and every version label: an otherwise no-op chart bump would
+render a diff the API server rejects outright with "updates to statefulset spec for fields
+other than ... are forbidden", breaking in-place upgrades of every persistent datastore the
+chart ships. Same reasoning as `common.podLabels`, one step further — there a version label
+costs a rollout, here it costs the upgrade.
+
+`.Values.commonLabels` is deliberately excluded as well. It is operator-settable, so folding
+it in would re-open this trap the first time someone adds a label to a running release.
+
+Anything added here must be stable for the entire lifetime of a release. If it can change,
+it does not belong in an immutable field.
+*/}}
+{{- define "common.immutableLabels" -}}
+{{ include "common.selectorLabels" . }}
+app.kubernetes.io/managed-by: {{ .Release.Service }}
+{{- end }}
+
+{{/*
 Annotations applied to every object this chart creates.
 */}}
 {{- define "common.annotations" -}}

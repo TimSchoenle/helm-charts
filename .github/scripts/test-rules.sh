@@ -15,8 +15,8 @@
 #             different string — so validating only the raw form leaves the substitution untested.
 #
 # Charts are discovered, not listed: any chart with a `rules/` directory is picked up, and
-# `audit-observability.py` fails the run if one grows rules without a matching test suite under
-# `.github/testdata/<chart>-rules/`.
+# `audit-observability.py` fails the run if one grows rules without a matching test suite at
+# `charts/<chart>/rules-tests/`.
 #
 # promtool comes from the official Prometheus image, so there is no binary to pin a checksum for.
 #
@@ -25,7 +25,6 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-testdata="${repo_root}/.github/testdata"
 prom_image="${PROM_IMAGE:-prom/prometheus:v3.7.3}"
 
 # CI runners ship `python3`; a Git Bash shell on Windows commonly has only `python`, and often
@@ -44,22 +43,22 @@ if [ -z "${python_bin}" ]; then
   exit 1
 fi
 
-# The namespace the rendered rules are scoped to. `scoping_test.yml` asserts that series from any
-# other namespace are ignored, so this value is part of the contract and is named there too.
-render_namespace="tankovault-test"
+# The namespace the rendered rules are scoped to. Every suite's `scoping_test.yml` asserts that
+# series from any other namespace are ignored, so this value is part of the contract between this
+# runner and every chart's tests, and is named in them too.
+render_namespace="rules-test"
 
 # The static audit covers every chart at once, including those with dashboards but no rules.
 echo "==> Auditing rules, runbooks, dashboards and test coverage"
 "${python_bin}" "${repo_root}/.github/scripts/audit-observability.py" \
-  --charts "${repo_root}/charts" \
-  --testdata "${testdata}"
+  --charts "${repo_root}/charts"
 
 found_any=0
 for chart_dir in "${repo_root}"/charts/*/; do
   chart="$(basename "${chart_dir}")"
   compgen -G "${chart_dir}rules/*.yml" >/dev/null || continue
   found_any=1
-  suite="${testdata}/${chart}-rules"
+  suite="${chart_dir}rules-tests"
 
   echo "==> ${chart}: staging rules"
   work="$(mktemp -d)"
@@ -68,33 +67,49 @@ for chart_dir in "${repo_root}"/charts/*/; do
 
   cp "${chart_dir}"rules/*.yml "${work}/"
 
-  # `helm template` needs the library dependency resolved and the operator CRD declared, since the
-  # chart refuses to render its Prometheus objects rather than dropping them silently.
+  # How to render *this* chart with its rules enabled is the chart's business, not this script's:
+  # which values switch the PrometheusRule on, and which credentials a validator insists on before
+  # it will render at all, differ per chart. The suite supplies them, so nothing chart-specific
+  # lives here.
+  render_values="${suite}/render-values.yaml"
+  values_args=()
+  if [ -f "${render_values}" ]; then
+    values_args=(--values "${render_values}")
+  fi
+
+  # The library dependency has to be resolved, and the operator CRD declared, since a chart that
+  # ships Prometheus objects is expected to refuse to render rather than drop them silently.
   helm dependency build "${chart_dir}" >/dev/null 2>&1 || true
   helm template "${chart}" "${chart_dir}" \
     --namespace "${render_namespace}" \
     --api-versions monitoring.coreos.com/v1 \
-    --set metrics.enabled=true \
-    --set metrics.prometheusRule.enabled=true \
-    --set postgresql.enabled=true \
-    --set nats.enabled=true \
-    --set services.sync.enabled=false \
-    --set services.challengeSolver.enabled=false \
+    "${values_args[@]}" \
     > "${work}/rendered-manifest.yaml"
 
-  "${python_bin}" - "${work}/rendered-manifest.yaml" "${work}/rendered.rules.yml" <<'PY'
+  "${python_bin}" - "${work}/rendered-manifest.yaml" "${work}/rendered.rules.yml" \
+    "${render_values}" <<'PY'
 import sys, yaml
 
 docs = [d for d in yaml.safe_load_all(open(sys.argv[1], encoding="utf-8")) if d]
 rules = [d for d in docs if d.get("kind") == "PrometheusRule"]
 if len(rules) != 1:
-    sys.exit(f"expected exactly one PrometheusRule in the render, found {len(rules)}")
+    sys.exit(
+        f"expected exactly one PrometheusRule in the render, found {len(rules)}. "
+        f"Add or correct {sys.argv[3]}, which supplies the values this chart needs in order to "
+        f"render its rules — typically whatever switches the PrometheusRule on, plus any "
+        f"credentials the chart's validator refuses to render without."
+    )
 with open(sys.argv[2], "w", encoding="utf-8") as fh:
     yaml.safe_dump({"groups": rules[0]["spec"]["groups"]}, fh,
                    sort_keys=False, width=10**6, allow_unicode=True)
 PY
 
-  cp "${suite}"/*.yml "${work}/"
+  cp "${suite}"/*_test.yml "${work}/"
+
+  # The Prometheus image runs as `nobody`, while `mktemp -d` creates a directory only its owner
+  # can enter. Docker Desktop's bind mounts ignore unix permissions, so this is invisible on
+  # Windows and macOS and fails on a Linux CI runner with `permission denied`.
+  chmod -R a+rX "${work}"
 
   # Docker needs a native path for the bind mount. Under Git Bash the staging directory is an
   # MSYS path (`/tmp/...`) that the daemon cannot resolve, so it is translated; on Linux
@@ -112,7 +127,7 @@ PY
   echo "==> ${chart}: evaluating rules against synthetic series"
   # shellcheck disable=SC2046 # deliberate word splitting: one argument per test file
   MSYS_NO_PATHCONV=1 docker run --rm --entrypoint /bin/promtool -v "${mount}:/w" -w /w "${prom_image}" \
-    test rules $(cd "${suite}" && ls -1 ./*.yml | tr '\n' ' ')
+    test rules $(cd "${suite}" && ls -1 ./*_test.yml | tr '\n' ' ')
 
   rm -rf "${work}"
 done

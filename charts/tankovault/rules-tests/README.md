@@ -59,11 +59,23 @@ matters about them — that every `{{ $labels.X }}` names a label the alert can 
 | `delivery_test.yml` | notifications, SSE, the fetch tier, AniList |
 | `scoping_test.yml` | namespace isolation, against the **rendered** rules |
 
+Test files are `*_test.yml`. Anything else in this directory is configuration, not a suite.
+
 `scoping_test.yml` is the odd one out: it declares `rule_files: [rendered.rules.yml]`, a file the
-runner produces by `helm template`-ing the chart into the namespace `tankovault-test`. The scope
+runner produces by `helm template`-ing the chart into the namespace `rules-test`. The scope
 substitution rewrites every expression in the chart, so it is a different string from the one the
 other files exercise — validating only the committed form would leave the mechanism untested. If
 you change that namespace in the runner, change it here too.
+
+### `render-values.yaml`
+
+The values the runner passes to `helm template` to produce that rendered form. It lives here
+rather than in the runner because *which* values switch a chart's PrometheusRule on, and which
+credentials its validator refuses to render without, are facts about the chart — a generic runner
+has no business knowing them. Every chart's suite supplies its own; a chart whose rules render
+under plain defaults needs no such file at all.
+
+Nothing in it has to resolve at runtime, since no pod is ever started.
 
 ## Adding a rule
 

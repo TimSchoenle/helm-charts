@@ -24,7 +24,8 @@ catches the ways a rule set rots quietly, and all of these have been real in thi
    release's rules evaluate against every namespace in the cluster.
 
 Everything is discovered rather than configured: any chart with a `rules/` or `dashboards/`
-directory is audited, and a chart that grows rules without growing tests fails this gate.
+directory is audited, its test suite is expected at `charts/<chart>/rules-tests/`, and a chart
+that grows rules without growing tests fails this gate.
 
 Usage: audit-rules.py --charts charts --testdata .github/testdata
 """
@@ -54,10 +55,12 @@ ALERT_REF = re.compile(r"\b([A-Z][A-Za-z0-9]{4,})\b")
 class Chart:
     """One chart's rules, dashboards, and the conventions derived from them."""
 
-    def __init__(self, path: pathlib.Path, testdata: pathlib.Path):
+    def __init__(self, path: pathlib.Path):
         self.path = path
         self.name = path.name
-        self.suite = testdata / f"{self.name}-rules"
+        # Co-located with the rules, alongside the chart's `tests/` and `ci/` directories, so a
+        # rule and its test are edited together rather than a directory apart.
+        self.suite = path / "rules-tests"
         self.groups = self._load_groups()
         self.scope_label = self._scope_label()
         # Multi-word label names (`consumer_name`) would otherwise be split into two labels when a
@@ -235,11 +238,11 @@ def audit(chart: Chart) -> list[str]:
         problems.append(
             f"{chart.name} ships {len(chart.alerts)} alert(s) but has no test suite at "
             f"{chart.suite}. Every chart with rules needs one; see the README in an existing "
-            f"suite for the shape."
+            f"chart's `rules-tests/` for the shape."
         )
     elif chart.alerts:
         tested: set[str] = set()
-        for path in sorted(chart.suite.glob("*.yml")):
+        for path in sorted(chart.suite.glob("*_test.yml")):
             tested.update(ALERT_REF.findall(path.read_text(encoding="utf-8")))
         untested = sorted({rule["alert"] for _f, rule in chart.alerts} - tested)
         if untested:
@@ -418,11 +421,10 @@ def audit_dashboards(chart: Chart) -> list[str]:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--charts", required=True, type=pathlib.Path)
-    parser.add_argument("--testdata", required=True, type=pathlib.Path)
     args = parser.parse_args()
 
     charts = [
-        Chart(path, args.testdata)
+        Chart(path)
         for path in sorted(args.charts.iterdir())
         if path.is_dir() and ((path / "rules").is_dir() or (path / "dashboards").is_dir())
     ]

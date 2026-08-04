@@ -1,0 +1,283 @@
+# The scan pipeline: scheduling, per-provider throughput and backlog, and the outbound fetches
+# that feed it.
+#
+# Several of these rules encode invariants rather than thresholds — a fast run enqueues at most
+# one task per provider, exactly one control-plane replica holds the lease — and an invariant that
+# nobody exercises is a comment. These tests are what make them assertions.
+rule_files:
+  - tankovault-recording.rules.yml
+  - tankovault-alerts.rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  # A provider that is down (5xx) against one that is merely serving removed chapters (4xx). Only
+  # the first is a fault; treating a 404 as a failure would alert on normal operation.
+  - interval: 1m
+    input_series:
+      - series: 'provider_fetch_total{namespace="tv", job="worker", pod="w-1", provider="broken", outcome="5xx"}'
+        values: '0+60x180'
+      - series: 'provider_fetch_total{namespace="tv", job="worker", pod="w-1", provider="broken", outcome="2xx"}'
+        values: '0+6x180'
+      - series: 'provider_fetch_total{namespace="tv", job="worker", pod="w-1", provider="gone404", outcome="4xx"}'
+        values: '0+60x180'
+      - series: 'provider_fetch_total{namespace="tv", job="worker", pod="w-1", provider="gone404", outcome="2xx"}'
+        values: '0+6x180'
+    promql_expr_test:
+      # `gone404` produces no ratio at all: it has no 5xx or error series, so the division has
+      # no numerator. Absent, not zero — and either way the alert cannot fire for it.
+      - expr: namespace_provider:provider_fetch_failures:ratio_rate15m
+        eval_time: 60m
+        exp_samples:
+          - labels: 'namespace_provider:provider_fetch_failures:ratio_rate15m{namespace="tv", provider="broken"}'
+            value: 0.9090909090909091
+      - expr: ALERTS{alertname="TankoVaultProviderFetchFailing", alertstate="firing"}
+        eval_time: 60m
+        exp_samples:
+          - labels: 'ALERTS{alertname="TankoVaultProviderFetchFailing", alertstate="firing", namespace="tv", provider="broken", severity="warning"}'
+            value: 1
+
+  # Backoff as a duty cycle: 42 seconds accrued per 60 seconds of wall time is 0.7, meaning the
+  # crawler spends 70% of its time parked on this provider. Comparable against the worker replica
+  # count without any baseline.
+  - interval: 1m
+    input_series:
+      - series: 'provider_backoff_wait_seconds_sum{namespace="tv", job="worker", pod="w-1", provider="throttled"}'
+        values: '0+42x180'
+      - series: 'provider_backoff_waits_total{namespace="tv", job="worker", pod="w-1", provider="throttled"}'
+        values: '0+2x180'
+    promql_expr_test:
+      - expr: namespace_provider:provider_backoff_wait_seconds:rate15m
+        eval_time: 60m
+        exp_samples:
+          - labels: 'namespace_provider:provider_backoff_wait_seconds:rate15m{namespace="tv", provider="throttled"}'
+            value: 0.7
+      - expr: ALERTS{alertname="TankoVaultProviderThrottlingHeavily", alertstate="firing"}
+        eval_time: 70m
+        exp_samples:
+          - labels: 'ALERTS{alertname="TankoVaultProviderThrottlingHeavily", alertstate="firing", namespace="tv", provider="throttled", severity="warning"}'
+            value: 1
+
+  # Full tasks flowing with no fast task served. `unless` matches identical label sets, so the
+  # aggregation to `namespace` on both sides is what makes the comparison mean anything — without
+  # it the alert fires on any full task at all.
+  - interval: 1m
+    input_series:
+      - series: 'scan_tasks_served_total{namespace="tv", job="worker", pod="w-1", provider="a", scan="full"}'
+        values: '0+10x180'
+    promql_expr_test:
+      - expr: ALERTS{alertname="TankoVaultFastScanLanesStarved", alertstate="firing"}
+        eval_time: 60m
+        exp_samples:
+          - labels: 'ALERTS{alertname="TankoVaultFastScanLanesStarved", alertstate="firing", namespace="tv", severity="warning"}'
+            value: 1
+
+  # Once fast tasks flow it must go quiet, which is the regression a missing `sum by (namespace)`
+  # would introduce.
+  - interval: 1m
+    input_series:
+      - series: 'scan_tasks_served_total{namespace="tv", job="worker", pod="w-1", provider="a", scan="full"}'
+        values: '0+10x180'
+      - series: 'scan_tasks_served_total{namespace="tv", job="worker", pod="w-1", provider="a", scan="fast"}'
+        values: '0+1x180'
+    promql_expr_test:
+      - expr: ALERTS{alertname="TankoVaultFastScanLanesStarved"}
+        eval_time: 60m
+        exp_samples: []
+
+  # Queue depth, redelivery and the notifier backlog, all of which reach Prometheus only through
+  # the bundled NATS exporter. Two providers with a fast backlog of 3 each: six tasks across two
+  # lanes, which a fast run cannot produce, since it enqueues at most one task per provider.
+  - interval: 1m
+    input_series:
+      - series: 'jetstream_consumer_num_pending{namespace="tv", job="nats-exporter", pod="ne-1", stream_name="TANKOVAULT_TASKS", consumer_name="tankovault-workers-fast-a", provider="a", scan="fast"}'
+        values: '3x60'
+      - series: 'jetstream_consumer_num_pending{namespace="tv", job="nats-exporter", pod="ne-1", stream_name="TANKOVAULT_TASKS", consumer_name="tankovault-workers-fast-b", provider="b", scan="fast"}'
+        values: '3x60'
+      - series: 'jetstream_consumer_num_redelivered{namespace="tv", job="nats-exporter", pod="ne-1", stream_name="TANKOVAULT_TASKS", consumer_name="tankovault-workers-full-a", provider="a", scan="full"}'
+        values: '2x60'
+      - series: 'jetstream_consumer_num_pending{namespace="tv", job="nats-exporter", pod="ne-1", stream_name="TANKOVAULT_EVENTS", consumer_name="tankovault-notifier"}'
+        values: '500x60'
+    promql_expr_test:
+      - expr: namespace_scan:scan_queue_depth:sum
+        eval_time: 20m
+        exp_samples:
+          - labels: 'namespace_scan:scan_queue_depth:sum{namespace="tv", scan="fast"}'
+            value: 6
+      # The notifier's consumer carries no `scan`, so `scan!=""` keeps the two streams apart.
+      - expr: namespace_consumer_name:events_queue_depth:current
+        eval_time: 20m
+        exp_samples:
+          - labels: 'namespace_consumer_name:events_queue_depth:current{namespace="tv", consumer_name="tankovault-notifier"}'
+            value: 500
+      - expr: ALERTS{alertname="TankoVaultFastScanBacklogImpossible", alertstate="firing"}
+        eval_time: 20m
+        exp_samples:
+          - labels: 'ALERTS{alertname="TankoVaultFastScanBacklogImpossible", alertstate="firing", namespace="tv", severity="warning"}'
+            value: 1
+      - expr: ALERTS{alertname="TankoVaultScanTaskRetryStorm", alertstate="firing"}
+        eval_time: 40m
+        exp_samples:
+          - labels: 'ALERTS{alertname="TankoVaultScanTaskRetryStorm", alertstate="firing", namespace="tv", provider="a", scan="full", severity="warning"}'
+            value: 1
+      - expr: ALERTS{alertname="TankoVaultNotificationBacklogNotDraining", alertstate="firing"}
+        eval_time: 40m
+        exp_samples:
+          - labels: 'ALERTS{alertname="TankoVaultNotificationBacklogNotDraining", alertstate="firing", namespace="tv", consumer_name="tankovault-notifier", severity="warning"}'
+            value: 1
+
+  # One task per provider is the designed fast backlog, and a draining notifier queue is healthy.
+  # Neither may fire, or the invariant alerts become noise on a working system.
+  - interval: 1m
+    input_series:
+      - series: 'jetstream_consumer_num_pending{namespace="tv", job="nats-exporter", pod="ne-1", stream_name="TANKOVAULT_TASKS", consumer_name="tankovault-workers-fast-a", provider="a", scan="fast"}'
+        values: '1x60'
+      - series: 'jetstream_consumer_num_pending{namespace="tv", job="nats-exporter", pod="ne-1", stream_name="TANKOVAULT_TASKS", consumer_name="tankovault-workers-fast-b", provider="b", scan="fast"}'
+        values: '1x60'
+      - series: 'jetstream_consumer_num_pending{namespace="tv", job="nats-exporter", pod="ne-1", stream_name="TANKOVAULT_EVENTS", consumer_name="tankovault-notifier"}'
+        values: '600-10x59'
+    promql_expr_test:
+      - expr: ALERTS{alertname="TankoVaultFastScanBacklogImpossible"}
+        eval_time: 40m
+        exp_samples: []
+      - expr: ALERTS{alertname="TankoVaultNotificationBacklogNotDraining"}
+        eval_time: 40m
+        exp_samples: []
+
+  # Terminal outcomes. `requeued` stays out of the numerator — a requeue is the retry mechanism
+  # working, and the task is counted once when it finally settles.
+  - interval: 1m
+    input_series:
+      - series: 'scan_tasks_settled_total{namespace="tv", job="worker", pod="w-1", provider="p", scan="full", outcome="failed"}'
+        values: '0+6x180'
+      - series: 'scan_tasks_settled_total{namespace="tv", job="worker", pod="w-1", provider="p", scan="full", outcome="requeued"}'
+        values: '0+3x180'
+      - series: 'scan_tasks_settled_total{namespace="tv", job="worker", pod="w-1", provider="p", scan="full", outcome="completed"}'
+        values: '0+1x180'
+    promql_expr_test:
+      - expr: namespace_provider_scan:scan_tasks_failed:ratio_rate15m
+        eval_time: 60m
+        exp_samples:
+          - labels: 'namespace_provider_scan:scan_tasks_failed:ratio_rate15m{namespace="tv", provider="p", scan="full"}'
+            value: 0.6
+      - expr: ALERTS{alertname="TankoVaultScanTasksFailing", alertstate="firing"}
+        eval_time: 70m
+        exp_samples:
+          - labels: 'ALERTS{alertname="TankoVaultScanTasksFailing", alertstate="firing", namespace="tv", provider="p", scan="full", severity="warning"}'
+            value: 1
+
+  # Scheduler leadership: nobody holding it is a silent outage with every service up.
+  - interval: 1m
+    input_series:
+      - series: 'scheduler_leader{namespace="tv", job="control-plane", pod="cp-1"}'
+        values: '0x60'
+      - series: 'scheduler_leader{namespace="tv", job="control-plane", pod="cp-2"}'
+        values: '0x60'
+    promql_expr_test:
+      - expr: ALERTS{alertname="TankoVaultNoSchedulerLeader", alertstate="firing"}
+        eval_time: 20m
+        exp_samples:
+          - labels: 'ALERTS{alertname="TankoVaultNoSchedulerLeader", alertstate="firing", namespace="tv", severity="critical"}'
+            value: 1
+      - expr: ALERTS{alertname="TankoVaultSplitBrainScheduler"}
+        eval_time: 20m
+        exp_samples: []
+
+  # Two replicas both believing they are leader.
+  - interval: 1m
+    input_series:
+      - series: 'scheduler_leader{namespace="tv", job="control-plane", pod="cp-1"}'
+        values: '1x60'
+      - series: 'scheduler_leader{namespace="tv", job="control-plane", pod="cp-2"}'
+        values: '1x60'
+    promql_expr_test:
+      - expr: ALERTS{alertname="TankoVaultSplitBrainScheduler", alertstate="firing"}
+        eval_time: 20m
+        exp_samples:
+          - labels: 'ALERTS{alertname="TankoVaultSplitBrainScheduler", alertstate="firing", namespace="tv", severity="warning"}'
+            value: 1
+      - expr: ALERTS{alertname="TankoVaultNoSchedulerLeader"}
+        eval_time: 20m
+        exp_samples: []
+
+  # Exactly one leader is the healthy state and must produce neither alert.
+  - interval: 1m
+    input_series:
+      - series: 'scheduler_leader{namespace="tv", job="control-plane", pod="cp-1"}'
+        values: '1x60'
+      - series: 'scheduler_leader{namespace="tv", job="control-plane", pod="cp-2"}'
+        values: '0x60'
+    promql_expr_test:
+      - expr: ALERTS{alertname=~"TankoVaultNoSchedulerLeader|TankoVaultSplitBrainScheduler"}
+        eval_time: 20m
+        exp_samples: []
+
+  # The exporter itself going down disarms every backlog alert above, so it has its own.
+  - interval: 1m
+    input_series:
+      - series: 'up{namespace="tv", job="nats-exporter", pod="ne-1"}'
+        values: '0x60'
+    promql_expr_test:
+      - expr: ALERTS{alertname="TankoVaultNatsExporterDown", alertstate="firing"}
+        eval_time: 20m
+        exp_samples:
+          - labels: 'ALERTS{alertname="TankoVaultNatsExporterDown", alertstate="firing", namespace="tv", job="nats-exporter", pod="ne-1", severity="warning"}'
+            value: 1
+
+  # A dropped slow consumer is a live notification nobody receives; core NATS is fire-and-forget,
+  # so "more than none" is the threshold.
+  - interval: 1m
+    input_series:
+      - series: 'gnatsd_varz_slow_consumers{namespace="tv", job="nats-exporter", pod="ne-1", server_id="NA"}'
+        values: '0+1x60'
+    promql_expr_test:
+      - expr: ALERTS{alertname="TankoVaultNatsSlowConsumers", alertstate="firing"}
+        eval_time: 20m
+        exp_samples:
+          - labels: 'ALERTS{alertname="TankoVaultNatsSlowConsumers", alertstate="firing", namespace="tv", job="nats-exporter", pod="ne-1", server_id="NA", severity="warning"}'
+            value: 1
+
+  # One provider taking 99% of served tasks across three lanes, past the volume floor.
+  - interval: 1m
+    input_series:
+      - series: 'scan_tasks_served_total{namespace="tv", job="worker", pod="w-1", provider="hog", scan="full"}'
+        values: '0+100x200'
+      - series: 'scan_tasks_served_total{namespace="tv", job="worker", pod="w-1", provider="b", scan="full"}'
+        values: '0+1x200'
+      - series: 'scan_tasks_served_total{namespace="tv", job="worker", pod="w-1", provider="c", scan="full"}'
+        values: '0+1x200'
+    promql_expr_test:
+      - expr: ALERTS{alertname="TankoVaultScanLaneUnfair", alertstate="firing"}
+        eval_time: 130m
+        exp_samples:
+          - labels: 'ALERTS{alertname="TankoVaultScanLaneUnfair", alertstate="firing", namespace="tv", severity="info"}'
+            value: 1
+
+  # A provider whose adapter no longer matches its markup: scans succeed, every listing entry is
+  # rejected, and nothing else in the pipeline reports a problem.
+  - interval: 1m
+    input_series:
+      - series: 'chapters_rejected_total{namespace="tv", job="worker", pod="w-1", provider="redesigned"}'
+        values: '0+60x200'
+      - series: 'scan_tasks_served_total{namespace="tv", job="worker", pod="w-1", provider="redesigned", scan="full"}'
+        values: '0+60x200'
+      - series: 'chapters_discovered_total{namespace="tv", job="worker", pod="w-1", provider="healthy"}'
+        values: '0+60x200'
+      - series: 'chapters_rejected_total{namespace="tv", job="worker", pod="w-1", provider="healthy"}'
+        values: '0+1x200'
+    promql_expr_test:
+      # The `or ... * 0` fallback in the ratio is what keeps `redesigned` in the result at all:
+      # it has no `chapters_discovered_total` series, and a plain `+` between two different
+      # counters would drop it — losing exactly the provider this alert exists to find.
+      - expr: namespace_provider:chapters_rejected:ratio_rate1h
+        eval_time: 130m
+        exp_samples:
+          - labels: 'namespace_provider:chapters_rejected:ratio_rate1h{namespace="tv", provider="redesigned"}'
+            value: 1
+          - labels: 'namespace_provider:chapters_rejected:ratio_rate1h{namespace="tv", provider="healthy"}'
+            value: 0.01639344262295082
+      - expr: ALERTS{alertname="TankoVaultChaptersAllRejected", alertstate="firing"}
+        eval_time: 130m
+        exp_samples:
+          - labels: 'ALERTS{alertname="TankoVaultChaptersAllRejected", alertstate="firing", namespace="tv", provider="redesigned", severity="info"}'
+            value: 1

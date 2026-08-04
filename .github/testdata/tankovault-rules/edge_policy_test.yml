@@ -1,0 +1,146 @@
+# Edge policy — rate limiting, feature gating, authentication — and the database pool behind it.
+#
+# The distinction these tests pin is between a control *working* and a service *failing*. A 429
+# is the limiter enforcing policy and a 404 is a switched-off feature; neither is a defect, and a
+# rule that treats them as one trains an operator to ignore the channel.
+rule_files:
+  - tankovault-recording.rules.yml
+  - tankovault-alerts.rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  # The limiter cannot reach Redis. It fails open by design, so while this fires the configured
+  # limits are not being enforced at all — which is why any non-zero rate is the threshold.
+  - interval: 1m
+    input_series:
+      - series: 'rate_limit_store_errors_total{namespace="tv", job="api", pod="api-1", backend="redis"}'
+        values: '0+1x60'
+    promql_expr_test:
+      - expr: ALERTS{alertname="TankoVaultRateLimiterFailingOpen", alertstate="firing"}
+        eval_time: 20m
+        exp_samples:
+          - labels: 'ALERTS{alertname="TankoVaultRateLimiterFailingOpen", alertstate="firing", namespace="tv", job="api", backend="redis", severity="warning"}'
+            value: 1
+
+  # Sustained refusals on the auth class: 0.2/s, far past any legitimate client, since the only
+  # automated caller refreshes about once per 15-minute token lifetime.
+  - interval: 1m
+    input_series:
+      - series: 'http_rate_limited_total{namespace="tv", job="api", pod="api-1", class="auth"}'
+        values: '0+12x120'
+      - series: 'http_rate_limited_total{namespace="tv", job="api", pod="api-1", class="global"}'
+        values: '0+12x120'
+    promql_expr_test:
+      - expr: ALERTS{alertname="TankoVaultAuthRateLimitSurge", alertstate="firing"}
+        eval_time: 30m
+        exp_samples:
+          # Only the auth class. A busy global class is ordinary traffic shaping.
+          - labels: 'ALERTS{alertname="TankoVaultAuthRateLimitSurge", alertstate="firing", namespace="tv", job="api", class="auth", severity="warning"}'
+            value: 1
+
+  # Five failures per success. `denied` is deliberately excluded from the numerator, so a
+  # permissions bug cannot masquerade as a credential attack.
+  - interval: 1m
+    input_series:
+      - series: 'auth_attempts_total{namespace="tv", job="api", pod="api-1", operation="login", result="failure"}'
+        values: '0+5x120'
+      - series: 'auth_attempts_total{namespace="tv", job="api", pod="api-1", operation="login", result="success"}'
+        values: '0+1x120'
+    promql_expr_test:
+      - expr: namespace_job:auth_attempts_failed:ratio_rate15m
+        eval_time: 40m
+        exp_samples:
+          - labels: 'namespace_job:auth_attempts_failed:ratio_rate15m{namespace="tv", job="api"}'
+            value: 0.8333333333333334
+      - expr: ALERTS{alertname="TankoVaultAuthFailureSurge", alertstate="firing"}
+        eval_time: 40m
+        exp_samples:
+          - labels: 'ALERTS{alertname="TankoVaultAuthFailureSurge", alertstate="firing", namespace="tv", job="api", severity="warning"}'
+            value: 1
+
+  # A wave of `denied` is an authorisation problem, not a credential attack, and must stay silent
+  # on this alert. This is the assertion that pins the numerator's exclusion.
+  - interval: 1m
+    input_series:
+      - series: 'auth_attempts_total{namespace="tv", job="api", pod="api-1", operation="admin", result="denied"}'
+        values: '0+30x120'
+      - series: 'auth_attempts_total{namespace="tv", job="api", pod="api-1", operation="login", result="success"}'
+        values: '0+1x120'
+    promql_expr_test:
+      # No `failure` series at all, so the ratio records nothing rather than a fabricated 0 —
+      # the same behaviour that keeps an idle service from tripping a threshold.
+      - expr: namespace_job:auth_attempts_failed:ratio_rate15m
+        eval_time: 40m
+        exp_samples: []
+      - expr: ALERTS{alertname="TankoVaultAuthFailureSurge"}
+        eval_time: 40m
+        exp_samples: []
+
+  # Clients still calling a switched-off feature an hour after the flag changed: a frontend that
+  # is not reading /v1/me/capabilities, not an outage. Hence `info` and a one-hour fuse.
+  - interval: 1m
+    input_series:
+      - series: 'http_feature_disabled_total{namespace="tv", job="api", pod="api-1", feature="sync"}'
+        values: '0+1x180'
+    promql_expr_test:
+      - expr: ALERTS{alertname="TankoVaultDisabledFeatureStillCalled", alertstate="pending"}
+        eval_time: 30m
+        exp_samples:
+          - labels: 'ALERTS{alertname="TankoVaultDisabledFeatureStillCalled", alertstate="pending", namespace="tv", job="api", feature="sync", severity="info"}'
+            value: 1
+      - expr: ALERTS{alertname="TankoVaultDisabledFeatureStillCalled", alertstate="firing"}
+        eval_time: 100m
+        exp_samples:
+          - labels: 'ALERTS{alertname="TankoVaultDisabledFeatureStillCalled", alertstate="firing", namespace="tv", job="api", feature="sync", severity="info"}'
+            value: 1
+
+  # The pool at 95%: in-use over configured maximum, summed across replicas rather than per pod,
+  # because one replica briefly at its own ceiling while the others idle is normal.
+  - interval: 1m
+    input_series:
+      - series: 'db_pool_connections{namespace="tv", job="api", pod="api-1", state="in_use"}'
+        values: '10x60'
+      - series: 'db_pool_connections{namespace="tv", job="api", pod="api-1", state="idle"}'
+        values: '0x60'
+      - series: 'db_pool_max_connections{namespace="tv", job="api", pod="api-1"}'
+        values: '10x60'
+      - series: 'db_pool_connections{namespace="tv", job="api", pod="api-2", state="in_use"}'
+        values: '9x60'
+      - series: 'db_pool_connections{namespace="tv", job="api", pod="api-2", state="idle"}'
+        values: '1x60'
+      - series: 'db_pool_max_connections{namespace="tv", job="api", pod="api-2"}'
+        values: '10x60'
+    promql_expr_test:
+      - expr: namespace_job:db_pool_saturation:ratio
+        eval_time: 20m
+        exp_samples:
+          - labels: 'namespace_job:db_pool_saturation:ratio{namespace="tv", job="api"}'
+            value: 0.95
+      - expr: ALERTS{alertname="TankoVaultDatabasePoolSaturated", alertstate="firing"}
+        eval_time: 20m
+        exp_samples:
+          - labels: 'ALERTS{alertname="TankoVaultDatabasePoolSaturated", alertstate="firing", namespace="tv", job="api", severity="warning"}'
+            value: 1
+
+  # One replica at its ceiling while the other idles is exactly the case the fleet-level sum
+  # exists to tolerate: half the pool is free, so nothing should fire.
+  - interval: 1m
+    input_series:
+      - series: 'db_pool_connections{namespace="tv", job="api", pod="api-1", state="in_use"}'
+        values: '10x60'
+      - series: 'db_pool_max_connections{namespace="tv", job="api", pod="api-1"}'
+        values: '10x60'
+      - series: 'db_pool_connections{namespace="tv", job="api", pod="api-2", state="in_use"}'
+        values: '0x60'
+      - series: 'db_pool_max_connections{namespace="tv", job="api", pod="api-2"}'
+        values: '10x60'
+    promql_expr_test:
+      - expr: namespace_job:db_pool_saturation:ratio
+        eval_time: 20m
+        exp_samples:
+          - labels: 'namespace_job:db_pool_saturation:ratio{namespace="tv", job="api"}'
+            value: 0.5
+      - expr: ALERTS{alertname="TankoVaultDatabasePoolSaturated"}
+        eval_time: 20m
+        exp_samples: []

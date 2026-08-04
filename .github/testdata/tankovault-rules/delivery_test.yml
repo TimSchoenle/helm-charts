@@ -1,0 +1,173 @@
+# Everything between a discovered chapter and a user finding out: notification fan-out, the live
+# SSE push, the fetch tier that feeds the pipeline, and AniList synchronisation.
+#
+# The distinction worth pinning here is between losing a notification and delaying one. A failed
+# channel delivery costs the email; a failed SSE push costs only the toast, because the durable
+# row was written before fan-out. The two therefore have different severities, and a test that
+# did not separate them would let that collapse.
+rule_files:
+  - tankovault-recording.rules.yml
+  - tankovault-alerts.rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  # One channel failing outright while another is healthy. `skipped` stays in the denominator: a
+  # channel a user has not configured is skipped, and excluding those would make a channel with
+  # two subscribers and one failure read as 50% broken.
+  - interval: 1m
+    input_series:
+      - series: 'notifications_delivered_total{namespace="tv", job="notifier", pod="nf-1", channel="email", result="error"}'
+        values: '0+8x180'
+      - series: 'notifications_delivered_total{namespace="tv", job="notifier", pod="nf-1", channel="email", result="ok"}'
+        values: '0+2x180'
+      - series: 'notifications_delivered_total{namespace="tv", job="notifier", pod="nf-1", channel="webhook", result="ok"}'
+        values: '0+10x180'
+      - series: 'notifications_delivered_total{namespace="tv", job="notifier", pod="nf-1", channel="discord", result="skipped"}'
+        values: '0+10x180'
+    promql_expr_test:
+      # Only `email` produces a ratio at all. A channel with no `error` series has no numerator,
+      # so the division yields nothing rather than a fabricated 0 — which is why a healthy channel
+      # cannot cross a threshold and why the panel shows a gap rather than a reassuring zero.
+      - expr: namespace_channel:notifications_delivered_errors:ratio_rate15m
+        eval_time: 60m
+        exp_samples:
+          - labels: 'namespace_channel:notifications_delivered_errors:ratio_rate15m{namespace="tv", channel="email"}'
+            value: 0.8
+      - expr: ALERTS{alertname="TankoVaultNotificationDeliveryFailing", alertstate="firing"}
+        eval_time: 60m
+        exp_samples:
+          # Only email. A skipped channel is not a broken one.
+          - labels: 'ALERTS{alertname="TankoVaultNotificationDeliveryFailing", alertstate="firing", namespace="tv", channel="email", severity="warning"}'
+            value: 1
+
+  # The notifier failing to process the event at all. Nothing is written — not even the durable
+  # in-app row — so the loss is permanent, which is why the threshold is a tenth of the delivery
+  # one rather than the same.
+  - interval: 1m
+    input_series:
+      - series: 'notification_events_total{namespace="tv", job="notifier", pod="nf-1", result="error"}'
+        values: '0+2x180'
+      - series: 'notification_events_total{namespace="tv", job="notifier", pod="nf-1", result="ok"}'
+        values: '0+8x180'
+    promql_expr_test:
+      - expr: namespace:notification_events_errors:ratio_rate15m
+        eval_time: 60m
+        exp_samples:
+          - labels: 'namespace:notification_events_errors:ratio_rate15m{namespace="tv"}'
+            value: 0.2
+      - expr: ALERTS{alertname="TankoVaultNotificationEventsFailing", alertstate="firing"}
+        eval_time: 60m
+        exp_samples:
+          - labels: 'ALERTS{alertname="TankoVaultNotificationEventsFailing", alertstate="firing", namespace="tv", severity="warning"}'
+            value: 1
+
+  # The live push. `undecodable` counts alongside `error`: from a subscriber's point of view a
+  # frame that could not be decoded and one that could not be sent are the same missing toast.
+  - interval: 1m
+    input_series:
+      - series: 'sse_events_pushed_total{namespace="tv", job="api", pod="api-1", result="error"}'
+        values: '0+2x180'
+      - series: 'sse_events_pushed_total{namespace="tv", job="api", pod="api-1", result="undecodable"}'
+        values: '0+2x180'
+      - series: 'sse_events_pushed_total{namespace="tv", job="api", pod="api-1", result="ok"}'
+        values: '0+6x180'
+    promql_expr_test:
+      - expr: namespace_job:sse_events_pushed_errors:ratio_rate15m
+        eval_time: 60m
+        exp_samples:
+          - labels: 'namespace_job:sse_events_pushed_errors:ratio_rate15m{namespace="tv", job="api"}'
+            value: 0.4
+      - expr: ALERTS{alertname="TankoVaultSseEventsUndeliverable", alertstate="firing"}
+        eval_time: 60m
+        exp_samples:
+          # `info`, not `warning`: the durable row survives, so nothing is lost, only delayed.
+          - labels: 'ALERTS{alertname="TankoVaultSseEventsUndeliverable", alertstate="firing", namespace="tv", job="api", severity="info"}'
+            value: 1
+
+  # The fetch tier. `solve_attempts_total` is emitted by the shared handler that both
+  # challenge-solver and render mount, hence the job dimension on every rule.
+  - interval: 1m
+    input_series:
+      - series: 'solve_attempts_total{namespace="tv", job="challenge-solver", pod="cs-1", result="error"}'
+        values: '0+8x180'
+      - series: 'solve_attempts_total{namespace="tv", job="challenge-solver", pod="cs-1", result="ok"}'
+        values: '0+2x180'
+      - series: 'render_requests_total{namespace="tv", job="render", pod="rd-1", result="error"}'
+        values: '0+8x180'
+      - series: 'render_requests_total{namespace="tv", job="render", pod="rd-1", result="ok"}'
+        values: '0+2x180'
+    promql_expr_test:
+      - expr: ALERTS{alertname="TankoVaultChallengeSolvingFailing", alertstate="firing"}
+        eval_time: 60m
+        exp_samples:
+          - labels: 'ALERTS{alertname="TankoVaultChallengeSolvingFailing", alertstate="firing", namespace="tv", job="challenge-solver", severity="warning"}'
+            value: 1
+      - expr: ALERTS{alertname="TankoVaultRenderTierFailing", alertstate="firing"}
+        eval_time: 60m
+        exp_samples:
+          - labels: 'ALERTS{alertname="TankoVaultRenderTierFailing", alertstate="firing", namespace="tv", job="render", severity="warning"}'
+            value: 1
+
+  # An SSRF refusal. Both endpoints hand back the fetched DOM and the cookies collected, so a
+  # successful request to a private address would be a full internal-network read — any occurrence
+  # is worth waking someone. The two series are kept apart because challenge-solver emits only the
+  # first, so an `or` over one summed series would drop a side.
+  - interval: 1m
+    input_series:
+      - series: 'solve_attempts_total{namespace="tv", job="challenge-solver", pod="cs-1", result="rejected"}'
+        values: '0+1x60'
+      - series: 'solve_attempts_total{namespace="tv", job="challenge-solver", pod="cs-1", result="ok"}'
+        values: '0+50x60'
+    promql_expr_test:
+      - expr: ALERTS{alertname="TankoVaultRefusedFetchTargets", alertstate="firing"}
+        eval_time: 30m
+        exp_samples:
+          - labels: 'ALERTS{alertname="TankoVaultRefusedFetchTargets", alertstate="firing", namespace="tv", job="challenge-solver", severity="warning"}'
+            value: 1
+      # A healthy solver at the same volume must not trip the error-ratio alert.
+      - expr: ALERTS{alertname="TankoVaultChallengeSolvingFailing"}
+        eval_time: 30m
+        exp_samples: []
+
+  # AniList rationing the deployment's shared budget. The alert exists because `sync` deliberately
+  # does not probe AniList in its readiness check, so this is the only place it becomes visible.
+  - interval: 1m
+    input_series:
+      - series: 'anilist_requests_total{namespace="tv", job="sync", pod="sy-1", operation="media_list", result="rate_limited"}'
+        values: '0+5x180'
+      - series: 'anilist_requests_total{namespace="tv", job="sync", pod="sy-1", operation="media_list", result="ok"}'
+        values: '0+5x180'
+    promql_expr_test:
+      - expr: namespace:anilist_requests_rate_limited:ratio_rate15m
+        eval_time: 60m
+        exp_samples:
+          - labels: 'namespace:anilist_requests_rate_limited:ratio_rate15m{namespace="tv"}'
+            value: 0.5
+      - expr: ALERTS{alertname="TankoVaultAniListRateLimited", alertstate="firing"}
+        eval_time: 70m
+        exp_samples:
+          - labels: 'ALERTS{alertname="TankoVaultAniListRateLimited", alertstate="firing", namespace="tv", severity="warning"}'
+            value: 1
+
+  # A healthy delivery path must produce nothing at all.
+  - interval: 1m
+    input_series:
+      - series: 'notifications_delivered_total{namespace="tv", job="notifier", pod="nf-1", channel="email", result="ok"}'
+        values: '0+10x180'
+      - series: 'notification_events_total{namespace="tv", job="notifier", pod="nf-1", result="ok"}'
+        values: '0+10x180'
+      - series: 'sse_events_pushed_total{namespace="tv", job="api", pod="api-1", result="ok"}'
+        values: '0+10x180'
+      - series: 'solve_attempts_total{namespace="tv", job="challenge-solver", pod="cs-1", result="ok"}'
+        values: '0+10x180'
+      - series: 'render_requests_total{namespace="tv", job="render", pod="rd-1", result="ok"}'
+        values: '0+10x180'
+      - series: 'anilist_requests_total{namespace="tv", job="sync", pod="sy-1", operation="viewer", result="ok"}'
+        values: '0+10x180'
+      - series: 'up{namespace="tv", job="worker", pod="w-1"}'
+        values: '1x180'
+    promql_expr_test:
+      - expr: ALERTS
+        eval_time: 90m
+        exp_samples: []

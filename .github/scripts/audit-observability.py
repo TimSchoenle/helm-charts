@@ -286,6 +286,44 @@ def audit(chart: Chart) -> list[str]:
                 )
 
     problems.extend(audit_dashboards(chart))
+    problems.extend(audit_readme_template(chart))
+    return problems
+
+
+# A correctly escaped literal: the whole action is one raw or quoted string, whatever is inside
+# it. Removed before scanning, since the text it protects is exactly the text that would
+# otherwise look like a defect.
+ESCAPED_LITERAL = re.compile(r"\{\{-?\s*(?:`[^`]*`|\"[^\"]*\")\s*-?\}\}")
+
+# A Go action whose body is empty or reaches for Prometheus' own `$labels`/`$value`.
+UNESCAPED_ACTION = re.compile(r"\{\{-?\s*(\$(?:labels|value)\b[^}]*?|)\s*-?\}\}")
+
+
+def audit_readme_template(chart: Chart) -> list[str]:
+    """`README.md.gotmpl` must not contain Go actions it does not mean.
+
+    helm-docs renders these files as Go templates, and documentation *about* alerting inevitably
+    quotes the two syntaxes Go would try to evaluate: a Grafana legend `{{ }}` and a Prometheus
+    annotation `{{ $labels.job }}`. Go answers the first with "missing value for command" and the
+    second with "undefined variable", and helm-docs downgrades both to a **warning** — so the
+    chart's README is silently left at whatever it said before, which is how a version badge ends
+    up describing a release two versions old.
+
+    The escape is a raw string: {{ `{{ $labels.job }}` }}.
+    """
+    template = chart.path / "README.md.gotmpl"
+    if not template.exists():
+        return []
+    problems = []
+    for number, line in enumerate(template.read_text(encoding="utf-8").splitlines(), 1):
+        for match in UNESCAPED_ACTION.finditer(ESCAPED_LITERAL.sub("", line)):
+            body = match.group(1).strip() or "(empty)"
+            problems.append(
+                f"{chart.name}/README.md.gotmpl:{number}: `{match.group(0)}` is a Go template "
+                f"action, not the literal text {body}. helm-docs fails this chart with a warning "
+                f"rather than an error, leaving its README stale. Escape it as a raw string: "
+                f"{{{{ `{match.group(0)}` }}}}."
+            )
     return problems
 
 

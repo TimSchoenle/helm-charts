@@ -289,6 +289,44 @@ jobs:
           KUBE_VERSION: ${{ matrix.kubernetes }}
         run: bash ./.github/scripts/validate-manifests.sh
 
+  # Immutable fields are the one class of defect that renders, lints and installs cleanly and
+  # only fails on an upgrade of an already-running release — on a cluster, during a sync, long
+  # after review. `ct install` cannot see it either: it installs fresh, and a fresh install of
+  # a broken chart succeeds. This job is the only thing standing between a version bump and a
+  # release that cannot be upgraded in place.
+  immutable-fields:
+    name: Immutable Fields
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # to checkout code
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Setup Helm Environment
+        uses: ./.github/actions/setup-helm
+
+      - name: Build Helm dependencies
+        uses: ./.github/actions/build-deps
+
+      # PyYAML ships with the runner image's system `python3`, matching the `chart-index.py`
+      # step above. `actions/setup-python` is deliberately not used: the interpreter it
+      # installs would not have it.
+      #
+      # KUBE_VERSION pins which StatefulSet schema the mutable-field list is cross-checked
+      # against; kept in step with the highest version in the validate-manifests matrix.
+      - name: Check immutable fields
+        env:
+          KUBE_VERSION: 1.34.0
+        run: python3 ./.github/scripts/check-immutable-fields.py
+
   policy-scan:
     name: Policy Scan
     runs-on: ubuntu-latest

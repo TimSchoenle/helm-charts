@@ -41,7 +41,16 @@ Args: ctx (root), component, runAsUser, readOnlyRootFilesystem.
 */}}
 {{- define "tankovault.datastore.values" -}}
 {{- $ctx := .ctx -}}
+{{- /*
+  `nameOverride` is pinned to the root context's resolved name, exactly as
+  `tankovault.serviceValues` pins it for the services. Without it the scoped context has no
+  `nameOverride` at all and `common.name` falls back to the chart name, while the selector
+  and the object metadata are rendered against the root. Under `nameOverride` the two
+  disagree and the API server rejects the workload outright — `selector` does not match
+  template `labels` — so the setting breaks every bundled datastore rather than renaming it.
+*/ -}}
 {{- $values := dict
+      "nameOverride" (include "common.name" $ctx)
       "image" (merge (deepCopy .image) (deepCopy ($ctx.Values.image | default dict)))
       "imagePullSecrets" ($ctx.Values.imagePullSecrets | default list)
       "resourcesPreset" (.resourcesPreset | default "medium")

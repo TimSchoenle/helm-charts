@@ -1,0 +1,35 @@
+# Values the runner passes to `helm template` when producing `rendered.rules.yml`, the
+# namespace-scoped form of the rules that `scoping_test.yml` evaluates.
+#
+# This file exists so that `test-rules.sh` stays chart-agnostic: which values switch a chart's
+# PrometheusRule on, and which credentials its validator refuses to render without, are facts
+# about the chart, not about the test runner. Every chart's suite supplies its own.
+#
+# Nothing here needs to resolve at runtime — no pod is ever started. These are the minimum values
+# that get `helm template` to emit a PrometheusRule without the chart's validator objecting.
+metrics:
+  enabled: true
+  prometheusRule:
+    enabled: true
+
+# `tankovault.validateValues` requires a database, a broker for the tiers that consume one, and a
+# solver backend for the challenge solver. External endpoints are used rather than the bundled
+# datastores so the render stays small.
+externalDatabase:
+  url: postgres://tankovault:ci@postgresql.example.com:5432/tankovault
+externalNats:
+  url: nats://nats.example.com:4222
+externalTrawl:
+  url: http://trawl.example.com:8191
+
+auth:
+  jwtSecret: ci-jwt-secret-0123456789abcdef0123
+internal:
+  token: ci-internal-token-0123456789abcdef01
+
+# AniList issues its application credentials by hand, so the chart refuses to render `sync`
+# without them. The rules are static files and identical either way, so the tier is simply
+# switched off rather than given fabricated credentials.
+services:
+  sync:
+    enabled: false

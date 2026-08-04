@@ -166,6 +166,40 @@ jobs:
       - name: Run common library tests
         run: helm unittest .github/testdata/common-fixture
 
+  rule-test:
+    name: Rule & Dashboard Tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # to checkout code
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup Helm Environment
+        uses: ./.github/actions/setup-helm
+
+      - name: Build Helm dependencies
+        uses: ./.github/actions/build-deps
+
+      # `helm unittest` proves a chart emits a PrometheusRule; it cannot prove the PromQL inside
+      # it is correct. This evaluates the rules against synthetic series with promtool — in both
+      # the committed form and the namespace-scoped form a cluster actually receives — and audits
+      # the runbooks, dashboards and test coverage that promtool has no opinion about.
+      #
+      # promtool comes from the official Prometheus image, so there is no binary to pin a checksum
+      # for. PyYAML ships with the runner image's system `python3`; `actions/setup-python` is
+      # deliberately not used here, for the same reason as in the docs job.
+      - name: Run rule and dashboard tests
+        run: bash ./.github/scripts/test-rules.sh
+
   lint:
     name: Lint Charts
     runs-on: ubuntu-latest

@@ -64,6 +64,13 @@ groups:
       # The worker is the one tier whose absence looks like silence rather than a failed scrape:
       # if every replica is gone there is no target left to report `up == 0`. `absent()` is the
       # only construction that fires on nothing at all.
+      #
+      # It is also the only alert here whose runbook cannot name its own namespace. `absent()`
+      # synthesises a series from the *equality* matchers in its argument, and `tankovault_scope`
+      # is a regex matcher — so with `metrics.prometheusRule.scope=namespace` the substituted
+      # `namespace="..."` does come through, but with `scope=none` there is no namespace label at
+      # all and `{{ $labels.namespace }}` would render as nothing. The runbook is written to be
+      # correct in both cases rather than correct in the common one.
       - alert: TankoVaultWorkerTargetsAbsent
         expr: absent(up{tankovault_scope=~".*", job="worker"})
         for: 5m
@@ -74,7 +81,7 @@ groups:
           description: >-
             Scan tasks are published and nothing is executing them; the JetStream work queue is
             filling. Either every replica is down or the ServiceMonitor has stopped selecting
-            them. Check `kubectl -n {{ $labels.namespace }} get pods -l
+            them. In the release's namespace, check `kubectl get pods -l
             app.kubernetes.io/component=worker` first; if pods are running, the target list in
             Prometheus is the next place to look, since a `metrics.serviceMonitor.labels` that no
             longer matches the Prometheus `serviceMonitorSelector` produces exactly this. A queue
@@ -196,12 +203,19 @@ groups:
             per-request and is why `sync` deliberately does not probe it in its readiness check —
             `namespace_operation:anilist_request_duration_seconds:p95_15m` confirms it.
 
-      # 10s is the top finite histogram bucket; past it the quantile stops being informative, and
-      # a request is already a third of the way to the 30s timeout.
+      # 10s is the top finite bucket in LATENCY_BUCKETS; past it the quantile stops being
+      # informative, and a request is already a third of the way to the 30s timeout.
+      #
+      # `>=`, not `>`, and that is not a style choice. `histogram_quantile` cannot return a value
+      # above the highest finite bucket boundary: when the quantile falls into the `+Inf` bucket
+      # it returns that boundary, so a service whose every request takes a minute reports exactly
+      # 10, not more. `> 10` is therefore unsatisfiable — a critical alert that looks reasonable
+      # and can never fire. `>= 10` is the reachable spelling of "at or past the top bucket".
+      # `tests/latency` pins this; do not "tidy" it back to `>`.
       - alert: TankoVaultLatencyCritical
         expr: >-
           namespace_job:http_request_duration_seconds:p99_5m{tankovault_scope=~".*",
-                                                             job=~"api|control-plane|sync"} > 10
+                                                             job=~"api|control-plane|sync"} >= 10
         for: 5m
         labels:
           severity: critical
@@ -477,9 +491,9 @@ groups:
       # behind it; a non-shrinking backlog over 30m is the signal, not its size.
       - alert: TankoVaultNotificationBacklogNotDraining
         expr: >-
-          namespace_consumer:events_queue_depth:current{tankovault_scope=~".*"} > 0
+          namespace_consumer_name:events_queue_depth:current{tankovault_scope=~".*"} > 0
             and deriv(
-              namespace_consumer:events_queue_depth:current{tankovault_scope=~".*"}[30m]) >= 0
+              namespace_consumer_name:events_queue_depth:current{tankovault_scope=~".*"}[30m]) >= 0
         for: 30m
         labels:
           severity: warning

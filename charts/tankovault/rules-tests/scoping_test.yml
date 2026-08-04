@@ -1,0 +1,101 @@
+# Namespace scoping, evaluated against the rules as a cluster actually receives them.
+#
+# Every other file here runs the rules as committed, carrying the `tankovault_scope=~".*"`
+# placeholder. This one runs `rendered.rules.yml` — the `PrometheusRule` as `helm template`
+# produces it, with the placeholder replaced by `namespace="rules-test"` — because the
+# substitution rewrites every expression in the chart and is therefore a different string from the
+# one the other tests exercise. Validating only the committed form would leave the mechanism that
+# rewrites it completely untested.
+#
+# `.github/scripts/test-rules.sh` stages that file and pins the namespace; the two must agree.
+#
+# What this proves is the property the scoping exists for: a `PrometheusRule` is not confined to
+# its own namespace, so an unscoped `up{job="api"} == 0` matches an `api` job belonging to another
+# release entirely — and two installs of this chart then page each other for outages neither of
+# them had.
+rule_files:
+  - rendered.rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  # The same outage, in two namespaces. Only the release's own may alert.
+  - interval: 1m
+    input_series:
+      - series: 'up{namespace="rules-test", job="api", pod="api-1"}'
+        values: '0x30'
+      - series: 'up{namespace="someone-elses-release", job="api", pod="api-1"}'
+        values: '0x30'
+    promql_expr_test:
+      - expr: ALERTS{alertname="TankoVaultRequestPathDown", alertstate="firing"}
+        eval_time: 10m
+        exp_samples:
+          - labels: 'ALERTS{alertname="TankoVaultRequestPathDown", alertstate="firing", namespace="rules-test", job="api", pod="api-1", severity="critical"}'
+            value: 1
+
+  # A neighbouring release failing on its own must produce nothing here at all. This is the
+  # assertion that would have caught the unscoped rules: without substitution both namespaces
+  # match and this returns a sample.
+  - interval: 1m
+    input_series:
+      - series: 'up{namespace="someone-elses-release", job="api", pod="api-1"}'
+        values: '0x30'
+      - series: 'up{namespace="someone-elses-release", job="frontend", pod="fe-1"}'
+        values: '0x30'
+      - series: 'service_ready{namespace="someone-elses-release", job="api", pod="api-1"}'
+        values: '0x30'
+      - series: 'service_dependency_up{namespace="someone-elses-release", job="api", pod="api-1", dependency="postgres"}'
+        values: '0x30'
+      # A worker in this release's own namespace, so the discovery alert is satisfied and what
+      # remains under test is purely whether the neighbour's outage leaks in.
+      - series: 'up{namespace="rules-test", job="worker", pod="w-1"}'
+        values: '1x30'
+    promql_expr_test:
+      - expr: ALERTS
+        eval_time: 15m
+        exp_samples: []
+
+  # Scoping must not leak into the recording rules either: a neighbour's traffic may not be summed
+  # into this release's series.
+  - interval: 1m
+    input_series:
+      - series: 'http_requests_total{namespace="rules-test", job="api", method="GET", route="/v1/series", status="200"}'
+        values: '0+60x60'
+      - series: 'http_requests_total{namespace="someone-elses-release", job="api", method="GET", route="/v1/series", status="200"}'
+        values: '0+600x60'
+    promql_expr_test:
+      - expr: namespace_job:http_requests:rate5m
+        eval_time: 30m
+        exp_samples:
+          # 60/min = 1/s. The neighbour's tenfold traffic contributes nothing and produces no
+          # series of its own.
+          - labels: 'namespace_job:http_requests:rate5m{namespace="rules-test", job="api"}'
+            value: 1
+
+  # The one alert whose labels change shape under scoping. `absent()` synthesises its series from
+  # the *equality* matchers in its argument: unscoped there are none but `job`, while the rendered
+  # form has a real `namespace="..."` and carries it through. The runbook is written not to depend
+  # on it either way — see the note on the alert.
+  - interval: 1m
+    input_series:
+      - series: 'up{namespace="rules-test", job="api", pod="api-1"}'
+        values: '1x30'
+    promql_expr_test:
+      - expr: ALERTS{alertname="TankoVaultWorkerTargetsAbsent", alertstate="firing"}
+        eval_time: 10m
+        exp_samples:
+          - labels: 'ALERTS{alertname="TankoVaultWorkerTargetsAbsent", alertstate="firing", namespace="rules-test", job="worker", severity="critical"}'
+            value: 1
+
+  # A neighbour running a healthy worker must not satisfy this release's discovery check: the
+  # alert still fires, because no worker exists in *this* namespace.
+  - interval: 1m
+    input_series:
+      - series: 'up{namespace="someone-elses-release", job="worker", pod="w-1"}'
+        values: '1x30'
+    promql_expr_test:
+      - expr: ALERTS{alertname="TankoVaultWorkerTargetsAbsent", alertstate="firing"}
+        eval_time: 10m
+        exp_samples:
+          - labels: 'ALERTS{alertname="TankoVaultWorkerTargetsAbsent", alertstate="firing", namespace="rules-test", job="worker", severity="critical"}'
+            value: 1

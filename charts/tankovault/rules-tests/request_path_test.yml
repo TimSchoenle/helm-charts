@@ -1,0 +1,173 @@
+# The HTTP request path: error ratios, latency quantiles and concurrency.
+#
+# The latency tests are the reason this file exists. `histogram_quantile` cannot return a value
+# above the highest finite bucket, so a threshold written just above that boundary is
+# unsatisfiable — a critical alert that reads as reasonable and can never fire. That is asserted
+# below rather than left to a reviewer's memory of Prometheus internals.
+rule_files:
+  - tankovault-recording.rules.yml
+  - tankovault-alerts.rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  # 1 error in 6 requests: past the 5% floor but under the 25% critical threshold, so exactly one
+  # of the two alerts must fire. Traffic is 0.1 req/s, clearing the low-traffic guard that stops a
+  # single failed request on an idle service reading as 100%.
+  - interval: 1m
+    input_series:
+      - series: 'http_requests_total{namespace="tv", job="api", method="GET", route="/v1/series", status="500"}'
+        values: '0+1x60'
+      - series: 'http_requests_total{namespace="tv", job="api", method="GET", route="/v1/series", status="200"}'
+        values: '0+5x60'
+    promql_expr_test:
+      - expr: namespace_job:http_requests_server_errors:ratio_rate5m
+        eval_time: 30m
+        exp_samples:
+          - labels: 'namespace_job:http_requests_server_errors:ratio_rate5m{namespace="tv", job="api"}'
+            value: 0.16666666666666669
+      - expr: ALERTS{alertname="TankoVaultHighServerErrorRatio", alertstate="firing"}
+        eval_time: 30m
+        exp_samples:
+          - labels: 'ALERTS{alertname="TankoVaultHighServerErrorRatio", alertstate="firing", namespace="tv", job="api", severity="warning"}'
+            value: 1
+      - expr: ALERTS{alertname="TankoVaultServerErrorsCritical"}
+        eval_time: 30m
+        exp_samples: []
+
+  # Two requests in three failing: a whole-tier outage, so both fire. The critical one is on the
+  # shorter fuse.
+  - interval: 1m
+    input_series:
+      - series: 'http_requests_total{namespace="tv", job="api", method="GET", route="/v1/series", status="500"}'
+        values: '0+4x60'
+      - series: 'http_requests_total{namespace="tv", job="api", method="GET", route="/v1/series", status="200"}'
+        values: '0+2x60'
+    promql_expr_test:
+      - expr: ALERTS{alertname="TankoVaultServerErrorsCritical", alertstate="firing"}
+        eval_time: 30m
+        exp_samples:
+          - labels: 'ALERTS{alertname="TankoVaultServerErrorsCritical", alertstate="firing", namespace="tv", job="api", severity="critical"}'
+            value: 1
+      - expr: ALERTS{alertname="TankoVaultHighServerErrorRatio", alertstate="firing"}
+        eval_time: 30m
+        exp_samples:
+          - labels: 'ALERTS{alertname="TankoVaultHighServerErrorRatio", alertstate="firing", namespace="tv", job="api", severity="warning"}'
+            value: 1
+
+  # A trickle of errors on an otherwise idle service must not page. The ratio alone would read
+  # 100%; the traffic guard is what keeps this quiet.
+  - interval: 1m
+    input_series:
+      - series: 'http_requests_total{namespace="tv", job="api", method="GET", route="/v1/series", status="500"}'
+        values: '0+1x60'
+    promql_expr_test:
+      - expr: namespace_job:http_requests_server_errors:ratio_rate5m
+        eval_time: 30m
+        exp_samples:
+          - labels: 'namespace_job:http_requests_server_errors:ratio_rate5m{namespace="tv", job="api"}'
+            value: 1
+      - expr: ALERTS{alertname="TankoVaultHighServerErrorRatio"}
+        eval_time: 30m
+        exp_samples: []
+      - expr: ALERTS{alertname="TankoVaultServerErrorsCritical"}
+        eval_time: 30m
+        exp_samples: []
+
+  # p99 interpolated into the (2.5, 5] bucket: degraded, not critical. 98 of 100 requests under
+  # 1s, 2 between 2.5s and 5s.
+  - interval: 1m
+    input_series:
+      - series: 'http_request_duration_seconds_bucket{namespace="tv", job="api", method="GET", route="/v1/series", le="0.001"}'
+        values: '0x60'
+      - series: 'http_request_duration_seconds_bucket{namespace="tv", job="api", method="GET", route="/v1/series", le="0.005"}'
+        values: '0x60'
+      - series: 'http_request_duration_seconds_bucket{namespace="tv", job="api", method="GET", route="/v1/series", le="0.01"}'
+        values: '0x60'
+      - series: 'http_request_duration_seconds_bucket{namespace="tv", job="api", method="GET", route="/v1/series", le="0.025"}'
+        values: '0x60'
+      - series: 'http_request_duration_seconds_bucket{namespace="tv", job="api", method="GET", route="/v1/series", le="0.05"}'
+        values: '0x60'
+      - series: 'http_request_duration_seconds_bucket{namespace="tv", job="api", method="GET", route="/v1/series", le="0.1"}'
+        values: '0x60'
+      - series: 'http_request_duration_seconds_bucket{namespace="tv", job="api", method="GET", route="/v1/series", le="0.25"}'
+        values: '0x60'
+      - series: 'http_request_duration_seconds_bucket{namespace="tv", job="api", method="GET", route="/v1/series", le="0.5"}'
+        values: '0x60'
+      - series: 'http_request_duration_seconds_bucket{namespace="tv", job="api", method="GET", route="/v1/series", le="1"}'
+        values: '0+98x60'
+      - series: 'http_request_duration_seconds_bucket{namespace="tv", job="api", method="GET", route="/v1/series", le="2.5"}'
+        values: '0+98x60'
+      - series: 'http_request_duration_seconds_bucket{namespace="tv", job="api", method="GET", route="/v1/series", le="5"}'
+        values: '0+100x60'
+      - series: 'http_request_duration_seconds_bucket{namespace="tv", job="api", method="GET", route="/v1/series", le="10"}'
+        values: '0+100x60'
+      - series: 'http_request_duration_seconds_bucket{namespace="tv", job="api", method="GET", route="/v1/series", le="+Inf"}'
+        values: '0+100x60'
+    promql_expr_test:
+      - expr: namespace_job:http_request_duration_seconds:p99_5m
+        eval_time: 30m
+        exp_samples:
+          - labels: 'namespace_job:http_request_duration_seconds:p99_5m{namespace="tv", job="api"}'
+            value: 3.7500000000000084
+      - expr: ALERTS{alertname="TankoVaultLatencyDegraded", alertstate="firing"}
+        eval_time: 30m
+        exp_samples:
+          - labels: 'ALERTS{alertname="TankoVaultLatencyDegraded", alertstate="firing", namespace="tv", job="api", severity="warning"}'
+            value: 1
+      - expr: ALERTS{alertname="TankoVaultLatencyCritical"}
+        eval_time: 30m
+        exp_samples: []
+
+  # Every request beyond the top finite bucket. `histogram_quantile` returns exactly 10 — the
+  # highest finite boundary — never more, which is why the critical alert is `>= 10` and not
+  # `> 10`. Change it back and this test fails, which is the entire point of it.
+  - interval: 1m
+    input_series:
+      - series: 'http_request_duration_seconds_bucket{namespace="tv", job="api", method="GET", route="/v1/series", le="0.001"}'
+        values: '0x60'
+      - series: 'http_request_duration_seconds_bucket{namespace="tv", job="api", method="GET", route="/v1/series", le="1"}'
+        values: '0x60'
+      - series: 'http_request_duration_seconds_bucket{namespace="tv", job="api", method="GET", route="/v1/series", le="2.5"}'
+        values: '0x60'
+      - series: 'http_request_duration_seconds_bucket{namespace="tv", job="api", method="GET", route="/v1/series", le="5"}'
+        values: '0x60'
+      - series: 'http_request_duration_seconds_bucket{namespace="tv", job="api", method="GET", route="/v1/series", le="10"}'
+        values: '0x60'
+      - series: 'http_request_duration_seconds_bucket{namespace="tv", job="api", method="GET", route="/v1/series", le="+Inf"}'
+        values: '0+100x60'
+    promql_expr_test:
+      - expr: namespace_job:http_request_duration_seconds:p99_5m
+        eval_time: 30m
+        exp_samples:
+          - labels: 'namespace_job:http_request_duration_seconds:p99_5m{namespace="tv", job="api"}'
+            value: 10
+      - expr: ALERTS{alertname="TankoVaultLatencyCritical", alertstate="firing"}
+        eval_time: 30m
+        exp_samples:
+          - labels: 'ALERTS{alertname="TankoVaultLatencyCritical", alertstate="firing", namespace="tv", job="api", severity="critical"}'
+            value: 1
+
+  # The concurrency gauge. Its threshold is an admitted placeholder, so the test pins the shape of
+  # the rule rather than endorsing the number.
+  - interval: 1m
+    input_series:
+      - series: 'http_requests_in_flight{namespace="tv", job="api", pod="api-1"}'
+        values: '250x60'
+      - series: 'http_requests_in_flight{namespace="tv", job="api", pod="api-2"}'
+        values: '250x60'
+      - series: 'http_requests_in_flight{namespace="tv", job="frontend", pod="fe-1"}'
+        values: '10x60'
+    promql_expr_test:
+      - expr: namespace_job:http_requests_in_flight:avg
+        eval_time: 20m
+        exp_samples:
+          - labels: 'namespace_job:http_requests_in_flight:avg{namespace="tv", job="api"}'
+            value: 250
+          - labels: 'namespace_job:http_requests_in_flight:avg{namespace="tv", job="frontend"}'
+            value: 10
+      - expr: ALERTS{alertname="TankoVaultConcurrencyUnusuallyHigh", alertstate="firing"}
+        eval_time: 20m
+        exp_samples:
+          - labels: 'ALERTS{alertname="TankoVaultConcurrencyUnusuallyHigh", alertstate="firing", namespace="tv", job="api", severity="info"}'
+            value: 1

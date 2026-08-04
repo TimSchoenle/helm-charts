@@ -1,0 +1,166 @@
+# Liveness, readiness and rollout state.
+#
+# Every assertion queries `ALERTS`, which the rule manager writes as the alerts evaluate. That
+# matters: it means these tests exercise the rule exactly as shipped — its expression, its `for`
+# duration and its labels — rather than a copy of the expression pasted into the test, which would
+# still pass after someone broke the real one. Runbook prose is deliberately not asserted here;
+# `audit-rules.py` checks that separately, so a wording change does not break a logic test.
+rule_files:
+  - tankovault-recording.rules.yml
+  - tankovault-alerts.rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  # The request path, and the `for` duration that keeps a single failed scrape from paging.
+  - interval: 1m
+    input_series:
+      - series: 'up{namespace="tv", job="api", pod="api-1"}'
+        values: '1 1 0x20'
+      - series: 'up{namespace="tv", job="frontend", pod="fe-1"}'
+        values: '1x22'
+    promql_expr_test:
+      # Two minutes into the outage the alert is pending, not firing: `for: 3m` has not elapsed.
+      - expr: ALERTS{alertname="TankoVaultRequestPathDown"}
+        eval_time: 4m
+        exp_samples:
+          - labels: 'ALERTS{alertname="TankoVaultRequestPathDown", alertstate="pending", namespace="tv", job="api", pod="api-1", severity="critical"}'
+            value: 1
+      - expr: ALERTS{alertname="TankoVaultRequestPathDown", alertstate="firing"}
+        eval_time: 6m
+        exp_samples:
+          - labels: 'ALERTS{alertname="TankoVaultRequestPathDown", alertstate="firing", namespace="tv", job="api", pod="api-1", severity="critical"}'
+            value: 1
+      # frontend is up, so only the api target alerts — the job matcher is not a whole-tier switch.
+      - expr: count(ALERTS{alertname="TankoVaultRequestPathDown", alertstate="firing"})
+        eval_time: 6m
+        exp_samples:
+          - labels: '{}'
+            value: 1
+
+  # A background tier going down is a warning on a longer fuse, and must not be mistaken for the
+  # request path.
+  - interval: 1m
+    input_series:
+      - series: 'up{namespace="tv", job="notifier", pod="nf-1"}'
+        values: '0x20'
+    promql_expr_test:
+      - expr: ALERTS{alertname="TankoVaultServiceDown", alertstate="firing"}
+        eval_time: 8m
+        exp_samples:
+          - labels: 'ALERTS{alertname="TankoVaultServiceDown", alertstate="firing", namespace="tv", job="notifier", pod="nf-1", severity="warning"}'
+            value: 1
+      - expr: ALERTS{alertname="TankoVaultRequestPathDown"}
+        eval_time: 8m
+        exp_samples: []
+
+  # The worker fleet vanishing entirely. `up == 0` cannot express this — there is no target left
+  # to report it — so `absent()` is the only construction that fires on nothing at all.
+  - interval: 1m
+    input_series:
+      - series: 'up{namespace="tv", job="api", pod="api-1"}'
+        values: '1x20'
+    promql_expr_test:
+      - expr: ALERTS{alertname="TankoVaultWorkerTargetsAbsent", alertstate="firing"}
+        eval_time: 8m
+        exp_samples:
+          # No `namespace`: `absent()` synthesises its series from the equality matchers only, and
+          # the scope placeholder is a regex. The runbook is written not to depend on it.
+          - labels: 'ALERTS{alertname="TankoVaultWorkerTargetsAbsent", alertstate="firing", job="worker", severity="critical"}'
+            value: 1
+
+  # A worker that is being scraped must silence it, including when the worker itself is down —
+  # `absent` is about discovery, `up == 0` is about health.
+  - interval: 1m
+    input_series:
+      - series: 'up{namespace="tv", job="worker", pod="w-1"}'
+        values: '0x20'
+    promql_expr_test:
+      - expr: ALERTS{alertname="TankoVaultWorkerTargetsAbsent"}
+        eval_time: 8m
+        exp_samples: []
+
+  # Readiness, and the dependency that explains it. `min` across replicas is load-bearing: one
+  # unready replica out of three is still a replica serving errors, and `avg` would dilute it to
+  # 0.67 and never reach the `== 0` threshold.
+  - interval: 1m
+    input_series:
+      - series: 'service_ready{namespace="tv", job="api", pod="api-1"}'
+        values: '0x20'
+      - series: 'service_ready{namespace="tv", job="api", pod="api-2"}'
+        values: '1x20'
+      - series: 'service_ready{namespace="tv", job="worker", pod="w-1"}'
+        values: '1x20'
+      - series: 'service_dependency_up{namespace="tv", job="api", pod="api-1", dependency="postgres"}'
+        values: '0x20'
+      - series: 'service_dependency_up{namespace="tv", job="api", pod="api-1", dependency="nats"}'
+        values: '1x20'
+    promql_expr_test:
+      - expr: namespace_job:service_ready:min
+        eval_time: 10m
+        exp_samples:
+          - labels: 'namespace_job:service_ready:min{namespace="tv", job="api"}'
+            value: 0
+          - labels: 'namespace_job:service_ready:min{namespace="tv", job="worker"}'
+            value: 1
+      - expr: ALERTS{alertname="TankoVaultServiceNotReady", alertstate="firing"}
+        eval_time: 8m
+        exp_samples:
+          - labels: 'ALERTS{alertname="TankoVaultServiceNotReady", alertstate="firing", namespace="tv", job="api", severity="critical"}'
+            value: 1
+      # The dependency alert names which one, which is the whole reason it replaced a blackbox
+      # probe: `postgres` fires, `nats` does not.
+      - expr: ALERTS{alertname="TankoVaultDependencyDown", alertstate="firing"}
+        eval_time: 8m
+        exp_samples:
+          - labels: 'ALERTS{alertname="TankoVaultDependencyDown", alertstate="firing", namespace="tv", job="api", dependency="postgres", severity="critical"}'
+            value: 1
+
+  # A rollout that never converged. Counts distinct label values, not series: three pods, two
+  # versions.
+  - interval: 1m
+    input_series:
+      - series: 'tankovault_build_info{namespace="tv", job="api", pod="api-1", service="api", version="1.2.0"}'
+        values: '1x60'
+      - series: 'tankovault_build_info{namespace="tv", job="api", pod="api-2", service="api", version="1.1.1"}'
+        values: '1x60'
+      - series: 'tankovault_build_info{namespace="tv", job="worker", pod="w-1", service="worker", version="1.2.0"}'
+        values: '1x60'
+    promql_expr_test:
+      - expr: namespace:tankovault_versions:count
+        eval_time: 10m
+        exp_samples:
+          - labels: 'namespace:tankovault_versions:count{namespace="tv"}'
+            value: 2
+      - expr: ALERTS{alertname="TankoVaultVersionSkew", alertstate="firing"}
+        eval_time: 40m
+        exp_samples:
+          - labels: 'ALERTS{alertname="TankoVaultVersionSkew", alertstate="firing", namespace="tv", severity="info"}'
+            value: 1
+
+  # A settled fleet must produce no alert at all. This is the assertion that catches a rule which
+  # fires on healthy data — the failure mode that trains an operator to ignore the alert channel.
+  - interval: 1m
+    input_series:
+      - series: 'up{namespace="tv", job="api", pod="api-1"}'
+        values: '1x60'
+      - series: 'up{namespace="tv", job="frontend", pod="fe-1"}'
+        values: '1x60'
+      - series: 'up{namespace="tv", job="worker", pod="w-1"}'
+        values: '1x60'
+      - series: 'up{namespace="tv", job="control-plane", pod="cp-1"}'
+        values: '1x60'
+      - series: 'up{namespace="tv", job="nats-exporter", pod="ne-1"}'
+        values: '1x60'
+      - series: 'service_ready{namespace="tv", job="api", pod="api-1"}'
+        values: '1x60'
+      - series: 'service_dependency_up{namespace="tv", job="api", pod="api-1", dependency="postgres"}'
+        values: '1x60'
+      - series: 'tankovault_build_info{namespace="tv", job="api", pod="api-1", service="api", version="1.2.0"}'
+        values: '1x60'
+      - series: 'scheduler_leader{namespace="tv", job="control-plane", pod="cp-1"}'
+        values: '1x60'
+    promql_expr_test:
+      - expr: ALERTS
+        eval_time: 45m
+        exp_samples: []

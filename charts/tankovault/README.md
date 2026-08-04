@@ -1,6 +1,6 @@
 # tankovault
 
-![Version: 3.0.0](https://img.shields.io/badge/Version-3.0.0-informational?style=flat-square) ![AppVersion: 1.2.0](https://img.shields.io/badge/AppVersion-1.2.0-informational?style=flat-square)
+![Version: 3.0.2](https://img.shields.io/badge/Version-3.0.2-informational?style=flat-square) ![AppVersion: 1.2.0](https://img.shields.io/badge/AppVersion-1.2.0-informational?style=flat-square)
 
 This chart deploys the full TankoVault manga aggregator stack — frontend, api, control-plane, worker, notifier, sync, challenge-solver and render — hardened to the restricted Pod Security Standard, with file-backed configuration that reloads in place instead of restarting pods, optional bundled PostgreSQL, Valkey, NATS JetStream and TRAWL, and optional Prometheus metrics, alerting rules and Grafana dashboards.
 
@@ -353,6 +353,24 @@ service would otherwise refuse to boot on the same condition at container start.
 Documents supplied through `content` are read on demand behind an mtime check, so correcting a
 policy is a values change and the kubelet's ConfigMap refresh, never a restart. That ConfigMap is
 deliberately excluded from the pod's `checksum/config` annotation for exactly that reason.
+
+## Upgrading to 3.0.2
+
+Three corrections to the rules 3.0.0 introduced, all found by evaluating them against synthetic
+series rather than only checking that they parse.
+
+- **`TankoVaultLatencyCritical` could never fire.** It compared p99 against `> 10`, and
+  `histogram_quantile` cannot return a value above the highest finite bucket — a service whose
+  every request takes a minute reports exactly `10`. The threshold is now `>= 10`.
+- **`namespace_consumer:events_queue_depth:current` is renamed to
+  `namespace_consumer_name:events_queue_depth:current`**, because it groups by `consumer_name` and
+  a recorded series' level prefix is meant to be its label set. If you referenced the old name in a
+  query of your own, update it; nothing inside the chart still does.
+- **`TankoVaultWorkerTargetsAbsent`'s runbook** no longer interpolates
+  `{{ $labels.namespace }}`.
+  `absent()` builds its series from equality matchers only, so under
+  `metrics.prometheusRule.scope=none` that label does not exist and the runbook rendered a
+  `kubectl -n  ...` command with a hole in it.
 
 ## Upgrading to 3.0.0
 

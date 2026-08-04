@@ -1,6 +1,6 @@
 # tankovault
 
-![Version: 2.0.2](https://img.shields.io/badge/Version-2.0.2-informational?style=flat-square) ![AppVersion: 1.1.1](https://img.shields.io/badge/AppVersion-1.1.1-informational?style=flat-square)
+![Version: 3.0.0](https://img.shields.io/badge/Version-3.0.0-informational?style=flat-square) ![AppVersion: 1.2.0](https://img.shields.io/badge/AppVersion-1.2.0-informational?style=flat-square)
 
 This chart deploys the full TankoVault manga aggregator stack — frontend, api, control-plane, worker, notifier, sync, challenge-solver and render — hardened to the restricted Pod Security Standard, with file-backed configuration that reloads in place instead of restarting pods, optional bundled PostgreSQL, Valkey, NATS JetStream and TRAWL, and optional Prometheus metrics, alerting rules and Grafana dashboards.
 
@@ -250,11 +250,51 @@ label is the sole identifier of which service emitted a series.
 Operator sets `job` to the Service name, while the vendored rules match on the bare slug
 (`up{job=~"api|frontend"}`). The rules would load without error and simply never fire.
 
-The recording rules, alerting rules and Grafana dashboard under `rules/` and `dashboards/` are
-vendored verbatim from the upstream repository's `deploy/observability/`. Some alert annotations
-still describe `docker compose` remediation steps, because that is what upstream ships.
+The recording rules, alerting rules and dashboards under `rules/` and `dashboards/` are this
+chart's own, written against upstream's metric catalogue (`docs/OBSERVABILITY.md`) and against a
+Kubernetes deployment of it: every runbook is a `kubectl` command built from labels the alert
+itself carries, so it needs no knowledge of the release name.
 
-### Getting the dashboard into a Grafana in another namespace
+Readiness is taken from the services' own `service_ready` and `service_dependency_up` gauges. No
+blackbox prober is involved, and `TankoVaultDependencyDown` names the failing dependency —
+postgres, nats or redis — in the alert rather than sending you to `curl /ready`.
+
+Two alerts that a chart should not reinvent are deliberately absent, because the Prometheus
+Operator this chart already requires ships both: `KubeDeploymentReplicasMismatch` for replica
+shortfalls (it reads kube-state-metrics, which knows the desired count; nothing this chart emits
+does), and `PrometheusRuleFailures` for the case where these rule groups stop evaluating.
+
+### Queue depth needs the NATS exporter
+
+NATS speaks its own monitoring protocol and publishes no Prometheus exposition, so the scan
+pipeline's backlog — tasks waiting per provider lane, tasks being redelivered, whether the
+notifier's fan-out queue is draining — is invisible without a translator. `metrics.natsExporter`
+deploys one and relabels the opaque JetStream `consumer_name` into `provider` and `scan`, so
+backlog and throughput can be read on the same axis.
+
+It is off by default. While it is off those series simply do not exist: the panels are empty and
+the alerts built on them never fire, rather than a missing exporter reading as a healthy queue.
+The exporter scrapes NATS' **monitoring** listener on `:8222`, which is a different port and
+protocol from the client URL, so an external NATS needs `metrics.natsExporter.url` set explicitly.
+
+### Confining the rules to this release
+
+A `PrometheusRule` is not scoped to the namespace it lives in. Left alone, `up{job="api"} == 0`
+matches an `api` job anywhere Prometheus can see it, so a second TankoVault release — or anyone
+else's service that happens to produce the same `job` label — makes both alert on each other's
+outages.
+
+`metrics.prometheusRule.scope` defaults to `namespace` and rewrites every expression to match only
+series from this release's namespace. Set it to `none` when the Prometheus already sets
+`enforcedNamespaceLabel` and would perform the same rewrite itself. The mechanism is a placeholder
+substitution rather than PromQL parsing: every selector in `rules/*.yml` carries
+`tankovault_scope=~".*"`, an always-true matcher on a label nothing emits, and the chart swaps it
+for a real one — so the files are valid, loadable PromQL before and after, and a new rule that
+forgets the token fails the render instead of quietly escaping the scope.
+
+Two releases in the *same* namespace cannot be told apart by this or by `enforcedNamespaceLabel`.
+
+### Getting the dashboards into a Grafana in another namespace
 
 Grafana has no Kubernetes-native dashboard type, so there are two ways to deliver one and they
 differ in exactly the way that matters here.
@@ -263,6 +303,12 @@ differ in exactly the way that matters here.
 sidecar decides which namespaces it watches, not this chart: unless the Grafana release sets
 `sidecar.dashboards.searchNamespace` to `ALL` or to a list including this namespace — and the
 default is Grafana's own — the ConfigMap is created and nothing ever reads it.
+
+There are two dashboards: a service overview (liveness, readiness and its dependencies, the
+request path, the database pool, edge policy) and a scan pipeline (scheduling, per-provider
+throughput and backlog, outbound fetches and throttling, notifications, AniList). Neither pins a
+datasource UID — both expose a `Data source` picker and a `Namespace` picker, so one copy works
+for every release in the cluster.
 
 `metrics.dashboard.grafanaOperator.enabled` additionally creates a `GrafanaDashboard` per file for
 clusters running [grafana-operator](https://github.com/grafana/grafana-operator) v5. That resource
@@ -283,6 +329,68 @@ says which API is absent, rather than dropping the objects and leaving you with 
 installed cleanly and is not monitored. Rendering offline — `helm template` reports the built-in
 API surface but no CRDs — needs
 `--api-versions monitoring.coreos.com/v1 --api-versions grafana.integreatly.org/v1beta1`.
+
+## Legal documents
+
+TankoVault 1.2.0 lets an operator publish terms, a privacy policy and an imprint, served
+unauthenticated by the API at `/v1/legal` and `/v1/legal/{slug}`; the frontend builds its footer's
+Legal column from that index. Upstream ships none of the texts, because every deployment is a
+different operator under different law and an imprint is a statutory requirement in some
+jurisdictions and meaningless in others. With no documents configured the index is empty and the
+footer publishes no Legal column at all, rather than links that 404.
+
+Each document under `legal.documents.<slug>` names its body exactly once:
+
+| Key | Who owns the file | Use it when |
+|---|---|---|
+| `content` | This chart, via a ConfigMap mounted into the API pod | The default. Locale-keyed text written inline in your values. |
+| `sources` | You, via `extraVolumes`/`extraVolumeMounts` | The texts live in a Secret, a PVC, or another chart. |
+| `url` | Nobody — it is a link | The document is hosted elsewhere. |
+
+The chart refuses a document that sets more than one of these, or none, naming the slug — the
+service would otherwise refuse to boot on the same condition at container start.
+
+Documents supplied through `content` are read on demand behind an mtime check, so correcting a
+policy is a values change and the kubelet's ConfigMap refresh, never a restart. That ConfigMap is
+deliberately excluded from the pod's `checksum/config` annotation for exactly that reason.
+
+## Upgrading to 3.0.0
+
+The observability surface was rebuilt for Kubernetes. Nothing outside `metrics.*` changed, and a
+release that does not enable metrics is unaffected.
+
+**The alerting and recording rules are new.** The previous set was carried over from a
+docker-compose stack and large parts of it could never fire in a cluster: readiness came from a
+blackbox exporter this chart does not deploy, the replica count aggregated every scrape job in the
+cluster, the JetStream queue-depth series had no producer, and the runbooks gave
+`docker compose logs` commands.
+
+- **Recorded series are renamed.** Every rule now aggregates by `namespace` as well as `job`, and
+  the names say so: `job:http_requests:rate5m` is now `namespace_job:http_requests:rate5m`, and so
+  on for all of them. Without namespace in the aggregation the recorded series lose the label and
+  nothing downstream can be scoped. Saved Grafana queries and any downstream rules of your own
+  need updating.
+- **Alerts removed:** `TankoVaultReadinessProberDown` (no prober any more),
+  `TankoVaultWorkerFleetIncomplete` (hardcoded compose's `replicas: 2`; use
+  `KubeDeploymentReplicasMismatch`), `TankoVaultPrometheusRuleEvaluationFailing` (use
+  `PrometheusRuleFailures`).
+- **Alerts added:** `TankoVaultDependencyDown`, `TankoVaultVersionSkew`,
+  `TankoVaultAuthFailureSurge`, `TankoVaultDatabasePoolSaturated`,
+  `TankoVaultProviderFetchFailing`, `TankoVaultProviderThrottlingHeavily`,
+  `TankoVaultScanTasksFailing`, `TankoVaultNoSchedulerLeader`, `TankoVaultSplitBrainScheduler`,
+  `TankoVaultChaptersAllRejected`, `TankoVaultNotificationDeliveryFailing`,
+  `TankoVaultNotificationEventsFailing`, `TankoVaultSseEventsUndeliverable`,
+  `TankoVaultAniListRateLimited`.
+- **`metrics.prometheusRule.scope` is new and defaults to `namespace`**, which rewrites every
+  expression to match only this release's series. Set it to `none` to keep the previous
+  cluster-wide behaviour.
+- **The dashboards no longer pin a datasource UID.** The old one referenced
+  `tankovault-prometheus`, a name provisioned by upstream's compose stack and absent from every
+  cluster; both dashboards now expose a `Data source` picker and a `Namespace` picker. A second
+  dashboard, `tankovault-scan-pipeline`, is added, so `metrics.dashboard.enabled` now produces two
+  ConfigMap keys and, on the operator path, two `GrafanaDashboard` resources.
+- **`metrics.natsExporter` is new**, off by default. The queue-depth alerts and the pipeline
+  dashboard's backlog row need it; see above.
 
 ## Upgrading to 2.0.0
 
@@ -432,7 +540,10 @@ later read — upgrade the application first, or in the same step.
 | ingress.url | string | `""` | Override the derived external URL used for `anilist.redirect_uri`, `email.base_url` and `auth.webauthn_origin`. Set this when TLS terminates on a proxy in front of the ingress. |
 | internal.token | string | `""` | Shared service-to-service token (`internal.token`), identical across api, control-plane, worker, sync, render and challenge-solver. Without it those services accept privileged calls from anything that can reach the port, so the `production` profile refuses to boot without one. Left empty in that profile the chart generates a token and remembers it across upgrades, which is the recommended setting; set one explicitly (minimum 32 characters, e.g. `openssl rand -hex 32`) only if it has to be known outside the release. |
 | kubeVersionOverride | string | `""` | Override the detected Kubernetes version used for API version selection. |
-| metrics | object | `{"dashboard":{"enabled":false,"grafanaOperator":{"allowCrossNamespaceImport":true,"enabled":false,"folder":"","instanceSelector":{"matchLabels":{"dashboards":"grafana"}},"resyncPeriod":"5m"},"label":"grafana_dashboard","labelValue":"1"},"enabled":true,"port":9090,"prometheusRule":{"enabled":false,"labels":{}},"serviceMonitor":{"enabled":false,"interval":"15s","labels":{},"scrapeTimeout":"10s"}}` | Prometheus integration. Every service serves a scrape on an isolated port, outside the request-facing listener and outside its own HTTP metrics middleware. |
+| legal | object | `{"dir":"/etc/tankovault/legal","documents":{}}` | Operator-published legal documents, served unauthenticated by the API at `/v1/legal` and `/v1/legal/{slug}`; the frontend's footer builds its Legal column from that index. Upstream ships none of these on purpose — every deployment is a different operator under different law, and an imprint is a statutory requirement in some jurisdictions and meaningless in others. With no documents the index is empty and the footer publishes no Legal column at all, rather than links that 404. |
+| legal.dir | string | `"/etc/tankovault/legal"` | Directory relative `sources` paths resolve against, and where the chart mounts any document supplied through `content`. An absolute `sources` path ignores it. |
+| legal.documents | object | `{}` | Published documents, keyed by the URL slug they are served under. Each document names its body exactly once, in one of three ways, and the chart refuses a document that names it twice or not at all:  - `content`: a locale-keyed map of the text itself. The chart writes it into a ConfigMap as   `<slug>.<locale>.md` and mounts it into the API pod. Edits are picked up without a restart —   the service re-reads behind an mtime check — so this is the option to reach for by default. - `sources`: a locale-keyed map of file paths you have arranged to mount yourself, through   `extraVolumes`/`extraVolumeMounts`. Use this when the texts belong to a Secret, a PVC or   another chart. - `url`: an absolute `http(s)` link to a document hosted elsewhere. Mounts nothing.  `title` is a locale-keyed display name, and `updated` a free-form date shown alongside it. Both are optional and independent of how the body is supplied.  <details><summary>Example</summary>  ```yaml legal:   documents:     terms:       updated: "2026-08-04"       title:         en: Terms of Service         de: Nutzungsbedingungen       content:         en: |           # Terms of Service           ...         de: |           # Nutzungsbedingungen           ...     imprint:       title:         de: Impressum       url: https://example.org/impressum ```  </details> |
+| metrics | object | `{"dashboard":{"enabled":false,"grafanaOperator":{"allowCrossNamespaceImport":true,"enabled":false,"folder":"","instanceSelector":{"matchLabels":{"dashboards":"grafana"}},"resyncPeriod":"5m"},"label":"grafana_dashboard","labelValue":"1"},"enabled":true,"natsExporter":{"enabled":false,"image":{"repository":"natsio/prometheus-nats-exporter","tag":"0.20.1@sha256:4fbf6dacb84780a45a1c3af9b1080c69451a288d20902deae671b80717bb8f61"},"resourcesPreset":"nano","url":""},"port":9090,"prometheusRule":{"enabled":false,"labels":{},"scope":"namespace"},"serviceMonitor":{"enabled":false,"interval":"15s","labels":{},"scrapeTimeout":"10s"}}` | Prometheus integration. Every service serves a scrape on an isolated port, outside the request-facing listener and outside its own HTTP metrics middleware. |
 | metrics.dashboard.enabled | bool | `false` | Create a ConfigMap holding the upstream Grafana overview dashboard. |
 | metrics.dashboard.grafanaOperator.allowCrossNamespaceImport | bool | `true` | Let the CRs bind to Grafana instances outside this namespace. This is the entire point of the operator path: with `false` the operator only considers Grafana CRs in this release's own namespace, and a Grafana living elsewhere never imports the dashboard. |
 | metrics.dashboard.grafanaOperator.enabled | bool | `false` | Also create one `GrafanaDashboard` per dashboard, for clusters running grafana-operator v5. Unlike the sidecar ConfigMap, whose discovery is a property of the *Grafana* release, a `GrafanaDashboard` declares its own reach, so a Grafana in another namespace can import it without cluster-wide sidecar configuration. The CRs reference the ConfigMap through `configMapRef` rather than inlining the JSON, so `dashboard.enabled` must stay true. Requires the `grafana.integreatly.org/v1beta1` CRDs; rendering fails loudly without them. |
@@ -442,9 +553,15 @@ later read — upgrade the application first, or in the same step.
 | metrics.dashboard.label | string | `"grafana_dashboard"` | Label a Grafana sidecar watches for dashboard ConfigMaps. The sidecar only picks the ConfigMap up if Grafana is configured to look in this namespace — its own by default. Either set `sidecar.dashboards.searchNamespace` to `ALL` on the Grafana release, or use `grafanaOperator` below, which carries the cross-namespace grant on the dashboard itself. |
 | metrics.dashboard.labelValue | string | `"1"` | Value for that label. |
 | metrics.enabled | bool | `true` | Expose the metrics port on each Service. |
+| metrics.natsExporter.enabled | bool | `false` | Deploy `prometheus-nats-exporter` next to NATS. NATS speaks its own monitoring protocol and no Prometheus exposition, so without this the scan pipeline's queue depth — tasks waiting per provider lane, tasks being redelivered, whether the notifier backlog is draining — is invisible. Nothing the services emit substitutes: they can report tasks handed out, not tasks still sitting in the broker. The rules and dashboard panels that need it are simply empty while it is off, never falsely green. |
+| metrics.natsExporter.image.repository | string | `"natsio/prometheus-nats-exporter"` | Image repository. |
+| metrics.natsExporter.image.tag | string | `"0.20.1@sha256:4fbf6dacb84780a45a1c3af9b1080c69451a288d20902deae671b80717bb8f61"` | Image tag, pinned by digest. |
+| metrics.natsExporter.resourcesPreset | string | `"nano"` | Resource t-shirt size. The exporter polls two JSON endpoints and re-serves them; it does no work proportional to traffic. |
+| metrics.natsExporter.url | string | `""` | NATS monitoring endpoint to scrape. Defaults to the bundled NATS' `:8222`. This is not the client URL: `externalNats.url` points at 4222 and speaks the NATS protocol, while the exporter reads HTTP on the monitoring listener, so an external NATS needs this set explicitly — e.g. `http://nats.example.com:8222`. |
 | metrics.port | int | `9090` | Port the Prometheus exposition is served on. |
-| metrics.prometheusRule.enabled | bool | `false` | Create a PrometheusRule from the recording and alerting rules vendored from upstream. |
+| metrics.prometheusRule.enabled | bool | `false` | Create a PrometheusRule from the recording and alerting rules under `rules/`. |
 | metrics.prometheusRule.labels | object | `{}` | Extra labels for the PrometheusRule. |
+| metrics.prometheusRule.scope | string | `"namespace"` | Confine the rules to this release's namespace. A `PrometheusRule` is not scoped to the namespace it lives in, so an unscoped `up{job="api"} == 0` matches an `api` job anywhere Prometheus can see — a second TankoVault release, or anyone else's service that happens to produce the same `job` label, and the two then alert on each other. `namespace` rewrites every rule expression to match only series from this namespace; `none` installs them as written, which is correct when a Prometheus already sets `enforcedNamespaceLabel` and would do the same rewrite itself, and wrong otherwise. Two releases of this chart in *one* namespace cannot be told apart by either mechanism. |
 | metrics.serviceMonitor.enabled | bool | `false` | Create one ServiceMonitor per service. One per service, not one for the release: the `job` label is the sole identifier of which service emitted a metric, and collapsing them would silently break every per-service rule. |
 | metrics.serviceMonitor.interval | string | `"15s"` | Scrape interval. |
 | metrics.serviceMonitor.labels | object | `{}` | Extra labels, e.g. the `release` label a Prometheus Operator selector requires. |

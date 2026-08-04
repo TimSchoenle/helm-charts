@@ -11,9 +11,17 @@
   database, and far more shared memory than the 64Mi Kubernetes gives `/dev/shm` by default.
   Both are emptyDirs so the root filesystem can stay read-only; `/tmp`, where Playwright
   stages each launch's throwaway profile, is already provisioned by `common.volumes` for
-  exactly that reason. Nothing under `/app` or `/opt/camoufox` is written at runtime — the
-  image bakes the GeoLite2 database that `camoufox-js` would otherwise download into
-  `CAMOUFOX_INSTALL_DIR` on first launch — so no other path needs to be writable.
+  exactly that reason.
+
+  `/opt/camoufox/addons` is writable for a third reason. `camoufox-js` resolves its addons
+  under `CAMOUFOX_INSTALL_DIR` and, on *every* launch, downloads uBlock Origin into
+  `<install dir>/addons/UBO` unless that directory already exists. The image does not bake it,
+  so on a read-only root every launch fails the `mkdir` with `EROFS` and runs without the
+  blocker it was configured with. An emptyDir at exactly that path lets the first launch fetch
+  it — the pod already has the internet egress the NetworkPolicy grants it — and every later
+  launch reuse it. Nothing else under `/app` or `/opt/camoufox` is written at runtime: the
+  image does bake the GeoLite2 database `camoufox-js` would otherwise download into the same
+  install directory on first launch.
 
   `/health` returns 503 until at least one browser is *live* and keeps returning 200 while the
   pool is merely saturated, so it is safe as all three probes: readiness gates the Service on
@@ -34,11 +42,14 @@
     ) | fromYaml }}
 {{- $ctx := dict "Values" $values "Chart" $.Chart "Release" $.Release "Capabilities" $.Capabilities "Template" $.Template "Files" $.Files }}
 {{- $home := "/home/trawl" }}
+{{- $addons := "/opt/camoufox/addons" }}
 {{- $mounts := list
       (dict "name" "home" "mountPath" $home)
+      (dict "name" "addons" "mountPath" $addons)
       (dict "name" "dshm" "mountPath" "/dev/shm") }}
 {{- $volumes := list
       (dict "name" "home" "emptyDir" dict)
+      (dict "name" "addons" "emptyDir" (dict "sizeLimit" "64Mi"))
       (dict "name" "dshm" "emptyDir" (dict "medium" "Memory" "sizeLimit" $trawl.shmSize)) }}
 {{- /*
   `BROWSER_POOL_SIZE` is always emitted: the image defaults to 3 warm Firefoxes, which does not

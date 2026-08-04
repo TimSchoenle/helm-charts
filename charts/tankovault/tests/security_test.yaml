@@ -136,6 +136,25 @@ tests:
               medium: Memory
               sizeLimit: 1Gi
 
+  - it: gives TRAWL a writable addons directory inside its install directory
+    # `camoufox-js` downloads uBlock Origin into `CAMOUFOX_INSTALL_DIR/addons` on every launch
+    # unless the directory is already there. Without this the mkdir fails with EROFS on the
+    # read-only root and the browser runs without the blocker.
+    template: trawl.yaml
+    documentIndex: 1
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: addons
+            mountPath: /opt/camoufox/addons
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: addons
+            emptyDir:
+              sizeLimit: 64Mi
+
   - it: gives the render tier the writable paths Chromium needs
     template: deployment.yaml
     documentSelector:

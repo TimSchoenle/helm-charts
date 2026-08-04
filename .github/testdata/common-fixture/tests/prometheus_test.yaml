@@ -30,7 +30,7 @@ tests:
             name: fixture-recording
             interval: 30s
             rules:
-              - expr: sum by (job) (rate(http_requests_total[5m]))
+              - expr: sum by (job) (rate(http_requests_total{fixture_scope=~".*"}[5m]))
                 record: job:http_requests:rate5m
 
   - it: leaves Prometheus' own templating untouched
@@ -47,7 +47,7 @@ tests:
           value: '{{ $labels.job }} is down'
       - equal:
           path: spec.groups[0].rules[0].annotations.description
-          value: 'value {{ $value }}'
+          value: 'value {{ $value }}, scoped by fixture_scope=~".*"'
 
   - it: carries the labels a ruleSelector matches on
     # Which namespaces a Prometheus loads rules from is decided by `ruleNamespaceSelector` and
@@ -77,6 +77,78 @@ tests:
       - equal:
           path: metadata.labels["release"]
           value: RELEASE-NAME
+
+  - it: leaves the rule files alone when no scope is configured
+    # The placeholder is a genuine no-op matcher, so "unscoped" means shipping it as written
+    # rather than stripping it back out and risking an empty or dangling matcher list.
+    capabilities:
+      apiVersions:
+        - monitoring.coreos.com/v1
+    set:
+      prometheusRule.enabled: true
+    asserts:
+      - equal:
+          path: spec.groups[0].rules[0].expr
+          value: up{fixture_scope=~".*"} == 0
+
+  - it: swaps the placeholder for the configured matcher
+    capabilities:
+      apiVersions:
+        - monitoring.coreos.com/v1
+    set:
+      prometheusRule.enabled: true
+      prometheusRule.scope.placeholder: 'fixture_scope=~".*"'
+      prometheusRule.scope.matcher: 'namespace="prod"'
+    asserts:
+      - equal:
+          path: spec.groups[0].rules[0].expr
+          value: up{namespace="prod"} == 0
+      - equal:
+          path: spec.groups[1].rules[0].expr
+          value: sum by (job) (rate(http_requests_total{namespace="prod"}[5m]))
+
+  - it: substitutes into expressions only, never into annotations
+    # An annotation is prose an operator reads. A placeholder-shaped substring in prose that
+    # turned into a label matcher would corrupt the runbook the alert exists to deliver.
+    capabilities:
+      apiVersions:
+        - monitoring.coreos.com/v1
+    set:
+      prometheusRule.enabled: true
+      prometheusRule.scope.placeholder: 'fixture_scope=~".*"'
+      prometheusRule.scope.matcher: 'namespace="prod"'
+    asserts:
+      - equal:
+          path: spec.groups[0].rules[0].annotations.description
+          value: 'value {{ $value }}, scoped by fixture_scope=~".*"'
+
+  - it: needs both halves before it substitutes anything
+    # A placeholder with no matcher has nothing to swap in; the files must survive untouched
+    # rather than being half-rewritten.
+    capabilities:
+      apiVersions:
+        - monitoring.coreos.com/v1
+    set:
+      prometheusRule.enabled: true
+      prometheusRule.scope.placeholder: 'fixture_scope=~".*"'
+    asserts:
+      - equal:
+          path: spec.groups[0].rules[0].expr
+          value: up{fixture_scope=~".*"} == 0
+
+  - it: refuses a scope the rule files do not carry
+    # The failure this prevents is silent: the substitution would find nothing, the render would
+    # succeed, and the rules would install matching every namespace in the cluster.
+    capabilities:
+      apiVersions:
+        - monitoring.coreos.com/v1
+    set:
+      prometheusRule.enabled: true
+      prometheusRule.scope.placeholder: 'typo_scope=~".*"'
+      prometheusRule.scope.matcher: 'namespace="prod"'
+    asserts:
+      - failedTemplate:
+          errorPattern: "not one expression in .* contains the placeholder"
 
   - it: refuses to render when the Prometheus Operator CRDs are absent
     set:

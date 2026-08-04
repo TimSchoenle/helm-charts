@@ -1,14 +1,22 @@
 {{- /*
-The recording and alerting rules, vendored verbatim from the upstream repository at
-`deploy/observability/prometheus/rules/`.
+The recording and alerting rules under `rules/`, written against the metric catalogue in
+upstream's `docs/OBSERVABILITY.md` and against a Kubernetes deployment of it — these are the
+chart's own, not a vendored copy of a compose stack's, and their runbooks say `kubectl`.
 
 `PrometheusRule` is already the Prometheus Operator's own CRD, so unlike the dashboards there is
 no sidecar path to graduate from — but there is also no per-object cross-namespace grant either.
 Which namespaces a Prometheus loads rules from is decided by `ruleNamespaceSelector` and
 `ruleSelector` on the Prometheus custom resource, and `metrics.prometheusRule.labels` is what
-lets this object match the latter. The rest, including why the rule files are parsed rather than
-templated, lives in `common.prometheus.rules.*`.
+lets this object match the latter.
+
+Which *series* those rules then match is a separate problem with a separate answer: see
+`tankovault.rules.scopePlaceholder` for why every selector in the files carries a placeholder
+matcher, and `common.prometheus.rules.*` for why the files are parsed rather than templated.
 */ -}}
 {{- if and .Values.metrics.enabled .Values.metrics.prometheusRule.enabled }}
-{{- include "common.prometheus.rules.prometheusRule" (dict "ctx" . "values" .Values.metrics.prometheusRule) }}
+{{- include "common.prometheus.rules.prometheusRule" (dict
+      "ctx" .
+      "values" .Values.metrics.prometheusRule
+      "scopePlaceholder" (include "tankovault.rules.scopePlaceholder" .)
+      "scopeMatcher" (include "tankovault.rules.scopeMatcher" .)) }}
 {{- end }}

@@ -554,6 +554,30 @@ prometheusRule:
   # the rules are created and never loaded.
   labels: {}
 
+  # @schema
+  # additionalProperties: true
+  # @schema
+  # -- Confine the rules to a subset of the cluster's series. A `PrometheusRule` is not scoped to
+  # the namespace it lives in, so `up{job="api"} == 0` matches somebody else's `api` job in
+  # another namespace and two installs of one chart alert on each other. Rather than parse PromQL
+  # in a Go template, the rule files mark every selector with an always-true placeholder matcher
+  # and the library swaps it for a real one — see the note in `_prometheus.tpl`. Consuming charts
+  # normally derive `matcher` rather than exposing it raw.
+  scope:
+    # @schema
+    # type: string
+    # @schema
+    # -- The literal placeholder written into the rule files, e.g. `myapp_scope=~".*"`. Empty
+    # disables the substitution and the files install exactly as vendored.
+    placeholder: ""
+
+    # @schema
+    # type: string
+    # @schema
+    # -- What to swap it for, e.g. `namespace="prod"`. Empty disables the substitution; the
+    # placeholder is left in place, which is correct, because it is already a no-op matcher.
+    matcher: ""
+
 # @schema
 # additionalProperties: true
 # @schema

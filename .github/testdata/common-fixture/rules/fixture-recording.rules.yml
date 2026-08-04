@@ -2,5 +2,8 @@ groups:
   - interval: 30s
     name: fixture-recording
     rules:
-      - expr: sum by (job) (rate(http_requests_total[5m]))
+      # `fixture_scope=~".*"` is the scope placeholder: an always-true matcher (a regex match on
+      # an absent label matches every series) that `common.prometheus.rules.*` swaps for a real
+      # one. The file is valid PromQL either way, which is the point of the token.
+      - expr: sum by (job) (rate(http_requests_total{fixture_scope=~".*"}[5m]))
         record: job:http_requests:rate5m

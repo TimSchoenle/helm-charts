@@ -21,6 +21,46 @@ live stream degrades, rather than the service refusing to boot.
 {{- end -}}
 {{- end -}}
 
+{{/*
+Where the bundled NATS exporter reads from: NATS' monitoring listener, not its client port.
+
+A separate value from `natsUrl` because they are different protocols on different ports — the
+services speak the NATS protocol on 4222, the exporter scrapes HTTP on 8222 — and an operator
+running an external NATS commonly publishes only one of the two. Empty when neither the bundled
+NATS nor an explicit URL is available, which `tankovault.validateValues` refuses rather than
+letting an exporter start and fail to connect forever.
+*/}}
+{{- define "tankovault.natsMonitoringUrl" -}}
+{{- if .Values.metrics.natsExporter.url -}}
+{{- .Values.metrics.natsExporter.url -}}
+{{- else if .Values.nats.enabled -}}
+{{- printf "http://%s:8222" (include "common.fullname.suffixed" (dict "ctx" . "suffix" "nats")) -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+The scope placeholder the rule files carry, and what it is swapped for.
+
+A `PrometheusRule` is not confined to its own namespace: `up{job="api"} == 0` matches an `api`
+job in every namespace Prometheus scrapes, so a second release — of this chart or anyone else's —
+makes both alert on each other's outages. Every selector in `rules/*.yml` therefore carries
+`tankovault_scope=~".*"`, an always-true matcher on a label nothing emits, which
+`common.prometheus.rules.*` replaces with a real one. See the note in the library's
+`_prometheus.tpl` for why the substitution runs in that direction.
+
+The matcher is empty for `scope: none`, which leaves the placeholder in place — it is already a
+no-op, so unscoped rules are the vendored files unchanged.
+*/}}
+{{- define "tankovault.rules.scopePlaceholder" -}}
+tankovault_scope=~".*"
+{{- end -}}
+
+{{- define "tankovault.rules.scopeMatcher" -}}
+{{- if eq .Values.metrics.prometheusRule.scope "namespace" -}}
+{{- printf "namespace=%q" (include "common.namespace" .) -}}
+{{- end -}}
+{{- end -}}
+
 {{- define "tankovault.trawlUrl" -}}
 {{- if .Values.trawl.enabled -}}
 {{- printf "http://%s:8191" (include "common.fullname.suffixed" (dict "ctx" . "suffix" "trawl")) -}}
@@ -138,6 +178,77 @@ channels:
     {{- toYaml . | nindent 4 }}
 {{- end }}
 {{- end }}
+{{- if eq $service "api" }}
+{{- with (include "tankovault.legal.config" $ctx) }}
+legal:
+  {{- . | nindent 2 }}
+{{- end }}
+{{- end }}
+{{- end -}}
+
+{{/*
+The `[legal]` block, or empty when the operator has published nothing.
+
+Only `api` gets it: `api` is the one service that reads it, serving the index unauthenticated at
+`GET /v1/legal` and each document at `GET /v1/legal/{slug}` — the frontend's footer is built from
+that index, so it needs the API, not the files. Emitting the block on the other seven would give
+them a configuration key they never read and a volume they never open.
+
+`sources` is a path, `content` is the text itself, and both arrive here as `sources` because that
+is the only shape the service understands. The difference is who owns the file: `content` is
+written into a ConfigMap by this chart under `<slug>.<locale>.md`, `sources` names a path the
+operator has mounted some other way. Both resolve against `legal.dir` unless absolute, and both
+are read on demand behind an mtime check — so correcting a policy is `kubectl edit configmap`
+plus the kubelet's refresh interval, never a restart. `content` therefore deliberately does not
+feed the pod's `checksum/config` annotation.
+
+A document carrying `url` instead is a link to something hosted elsewhere and mounts nothing.
+*/}}
+{{- define "tankovault.legal.config" -}}
+{{- $ctx := . -}}
+{{- $documents := dict -}}
+{{- range $slug, $doc := $ctx.Values.legal.documents -}}
+{{- $doc = $doc | default dict -}}
+{{- $entry := dict -}}
+{{- with $doc.title }}{{- $_ := set $entry "title" . }}{{- end -}}
+{{- with $doc.updated }}{{- $_ := set $entry "updated" . }}{{- end -}}
+{{- if $doc.url -}}
+{{- $_ := set $entry "url" $doc.url -}}
+{{- else -}}
+{{- $sources := dict -}}
+{{- range $locale, $_body := ($doc.content | default dict) -}}
+{{- $_ := set $sources $locale (printf "%s.%s.md" $slug $locale) -}}
+{{- end -}}
+{{- /* An explicit `sources` path wins: it names a file the operator mounted deliberately. */ -}}
+{{- range $locale, $path := ($doc.sources | default dict) -}}
+{{- $_ := set $sources $locale $path -}}
+{{- end -}}
+{{- $_ := set $entry "sources" $sources -}}
+{{- end -}}
+{{- $_ := set $documents $slug $entry -}}
+{{- end -}}
+{{- if $documents -}}
+dir: {{ $ctx.Values.legal.dir | quote }}
+documents:
+  {{- toYaml $documents | nindent 2 }}
+{{- end -}}
+{{- end -}}
+
+{{/*
+The inline document bodies, as ConfigMap `data`. Empty when every published document is a `url`
+or points at a path the operator mounts themselves, in which case no ConfigMap is created and no
+volume is added.
+*/}}
+{{- define "tankovault.legal.files" -}}
+{{- range $slug, $doc := .Values.legal.documents -}}
+{{- $doc = $doc | default dict -}}
+{{- if not $doc.url -}}
+{{- range $locale, $body := ($doc.content | default dict) }}
+{{ printf "%s.%s.md" $slug $locale }}: |
+  {{- $body | nindent 2 }}
+{{- end -}}
+{{- end -}}
+{{- end -}}
 {{- end -}}
 
 {{/*
@@ -225,6 +336,11 @@ Args: ctx (root), service.
     sources:
       {{- $sources | nindent 6 }}
 {{- end }}
+{{- if and (eq $service "api") (include "tankovault.legal.files" $ctx | trim) }}
+- name: legal
+  configMap:
+    name: {{ include "common.fullname.suffixed" (dict "ctx" $ctx "suffix" "legal") }}
+{{- end }}
 {{- end -}}
 
 {{- define "tankovault.volumeMounts" -}}
@@ -236,6 +352,11 @@ Args: ctx (root), service.
 {{- if include "tankovault.hasSecrets" (dict "ctx" $ctx "service" $service) }}
 - name: secrets
   mountPath: {{ $ctx.Values.configReload.secretsDir | quote }}
+  readOnly: true
+{{- end }}
+{{- if and (eq $service "api") (include "tankovault.legal.files" $ctx | trim) }}
+- name: legal
+  mountPath: {{ $ctx.Values.legal.dir | quote }}
   readOnly: true
 {{- end }}
 {{- end -}}

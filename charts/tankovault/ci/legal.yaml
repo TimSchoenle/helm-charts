@@ -1,0 +1,59 @@
+# Operator-published legal documents, one of each of the three ways a document can name its body,
+# plus the unscoped rule variant that `ci/metrics.yaml` does not cover.
+#
+# A render fixture, not an install fixture — it runs on external datastores whose endpoints do not
+# resolve. Hence the name: `ct install` takes every `ci/*-values.yaml`, while the render and
+# policy jobs glob `ci/*.yaml`.
+auth:
+  jwtSecret: ci-jwt-secret-0123456789abcdef0123
+internal:
+  token: ci-internal-token-0123456789abcdef01
+anilist:
+  clientId: "12345"
+  clientSecret: ci-anilist-client-secret
+  tokenEncryptionKey: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
+  redirectUri: https://tankovault.example.com/account/anilist-callback
+externalDatabase:
+  url: postgres://tankovault:ci@postgresql.example.com:5432/tankovault
+externalNats:
+  url: nats://nats.example.com:4222
+externalTrawl:
+  url: http://trawl.example.com:8191
+
+metrics:
+  enabled: true
+  prometheusRule:
+    enabled: true
+    # The other half of the scoping switch. `ci/metrics.yaml` exercises the default, where every
+    # selector is rewritten; here the rule files must install exactly as vendored, placeholder
+    # matcher and all.
+    scope: none
+
+legal:
+  documents:
+    # Written by the chart into a ConfigMap and mounted into the api pod.
+    terms:
+      updated: "2026-08-04"
+      title:
+        en: Terms of Service
+        de: Nutzungsbedingungen
+      content:
+        en: |
+          # Terms of Service
+
+          Placeholder text for a render fixture. Not suitable for a real deployment.
+        de: |
+          # Nutzungsbedingungen
+
+          Platzhaltertext für ein Render-Fixture. Nicht für den Produktivbetrieb geeignet.
+    # A path the operator mounts themselves; the chart passes it through and creates nothing.
+    privacy:
+      title:
+        en: Privacy Policy
+      sources:
+        en: /mnt/legal/privacy.en.md
+    # Hosted elsewhere: a link, with nothing to mount.
+    imprint:
+      title:
+        de: Impressum
+      url: https://example.org/impressum

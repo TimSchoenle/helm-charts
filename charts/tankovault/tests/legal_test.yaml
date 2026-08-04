@@ -1,0 +1,162 @@
+# Operator-published legal documents. Three ways to name a document's body, one of which the
+# chart materialises as a mounted file, and a validator that rejects the combinations the service
+# would refuse to boot on.
+suite: test legal documents
+templates:
+  - configmap-legal.yaml
+  - configmap.yaml
+  - deployment.yaml
+  - serviceaccount.yaml
+values:
+  - ../ci/default.yaml
+tests:
+  - it: publishes nothing, and mounts nothing, by default
+    # An empty index is the designed state: the frontend then shows no Legal column at all,
+    # rather than a column of links that 404.
+    asserts:
+      - hasDocuments:
+          count: 0
+        template: configmap-legal.yaml
+
+  - it: writes inline bodies as <slug>.<locale>.md
+    set:
+      legal.documents.terms.content.en: "# Terms\n"
+      legal.documents.terms.content.de: "# Nutzungsbedingungen\n"
+    template: configmap-legal.yaml
+    asserts:
+      - equal:
+          path: data["terms.en.md"]
+          value: "# Terms\n"
+      - equal:
+          path: data["terms.de.md"]
+          value: "# Nutzungsbedingungen\n"
+
+  - it: points the config at the files it just wrote
+    set:
+      legal.documents.terms.content.en: "# Terms\n"
+      legal.documents.terms.title.en: Terms of Service
+      legal.documents.terms.updated: "2026-08-04"
+    template: configmap.yaml
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-api-config
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: 'dir = "/etc/tankovault/legal"'
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\[legal\.documents\.terms\.sources\]\nen = "terms\.en\.md"'
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: 'updated = "2026-08-04"'
+
+  - it: passes an operator-mounted path through untouched
+    # `sources` names a file the operator arranged themselves, so the chart creates no ConfigMap
+    # and adds no volume — it only has to agree with them about the path.
+    set:
+      legal.documents.privacy.sources.en: /mnt/legal/privacy.en.md
+    asserts:
+      - hasDocuments:
+          count: 0
+        template: configmap-legal.yaml
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: 'en = "/mnt/legal/privacy\.en\.md"'
+        template: configmap.yaml
+        documentSelector:
+          path: metadata.name
+          value: RELEASE-NAME-tankovault-api-config
+
+  - it: emits a linked document as a url with no sources
+    set:
+      legal.documents.imprint.url: https://example.org/impressum
+    asserts:
+      - hasDocuments:
+          count: 0
+        template: configmap-legal.yaml
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: 'url = "https://example\.org/impressum"'
+        template: configmap.yaml
+        documentSelector:
+          path: metadata.name
+          value: RELEASE-NAME-tankovault-api-config
+
+  - it: mounts the documents into the api and nowhere else
+    # `api` is the only service that reads them: it serves the index and each document, and the
+    # frontend's footer is built from that index rather than from the files.
+    set:
+      legal.documents.terms.content.en: "# Terms\n"
+    template: deployment.yaml
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: legal
+            mountPath: /etc/tankovault/legal
+            readOnly: true
+        documentSelector:
+          path: metadata.name
+          value: RELEASE-NAME-tankovault-api
+      - notContains:
+          path: spec.template.spec.volumes
+          content:
+            name: legal
+            configMap:
+              name: RELEASE-NAME-tankovault-legal
+        documentSelector:
+          path: metadata.name
+          value: RELEASE-NAME-tankovault-frontend
+
+  - it: keeps the document text out of the checksummed config
+    # `checksum/config` is a digest of this file, so a body that appeared here would turn every
+    # policy correction into a rolling restart of the API tier. The service re-reads the mounted
+    # files behind an mtime check instead, which is the whole reason they are a separate object.
+    set:
+      legal.documents.terms.content.en: "SENTINEL-BODY-TEXT"
+    template: configmap.yaml
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-api-config
+    asserts:
+      - notMatchRegex:
+          path: data["config.toml"]
+          pattern: 'SENTINEL-BODY-TEXT'
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: 'en = "terms\.en\.md"'
+
+  - it: refuses a document that names its body twice
+    set:
+      legal.documents.terms.url: https://example.org/terms
+      legal.documents.terms.content.en: "# Terms\n"
+    template: serviceaccount.yaml
+    asserts:
+      - failedTemplate:
+          errorPattern: "legal.documents.terms sets content and url"
+
+  - it: refuses a document with no body at all
+    set:
+      legal.documents.terms.title.en: Terms of Service
+    template: serviceaccount.yaml
+    asserts:
+      - failedTemplate:
+          errorPattern: "legal.documents.terms publishes no body"
+
+  - it: refuses a url that is not http(s)
+    set:
+      legal.documents.terms.url: ftp://example.org/terms
+    template: serviceaccount.yaml
+    asserts:
+      - failedTemplate:
+          errorPattern: "Only absolute http\\(s\\) URLs are accepted"
+
+  - it: refuses documents nothing would serve
+    set:
+      legal.documents.terms.url: https://example.org/terms
+      services.api.enabled: false
+    template: serviceaccount.yaml
+    asserts:
+      - failedTemplate:
+          errorPattern: "The API is the only service that reads them"

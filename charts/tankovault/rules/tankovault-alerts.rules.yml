@@ -1,31 +1,51 @@
-# Alerts an operator would actually want to be woken by, each grounded in a metric this workspace
-# emits (full inventory: docs/OBSERVABILITY.md). Undocumented failure modes get no alert here
-# rather than a misleading approximation; thresholds without a documented basis are labelled
-# `grounding: baseline-needed`.
+# Alerts an operator would actually want to be woken by, each grounded in a metric this chart can
+# see in a Kubernetes deployment (full inventory: upstream docs/OBSERVABILITY.md). Undocumented
+# failure modes get no alert here rather than a misleading approximation; thresholds without a
+# documented basis are labelled `grounding: baseline-needed`.
+#
+# Every runbook uses `kubectl` against labels the alert itself carries. That works because `job`
+# is the ServiceMonitor's `jobLabel` — `app.kubernetes.io/component`, which is the service slug —
+# and the pods carry the same label, so `-l app.kubernetes.io/component={{ $labels.job }}` selects
+# exactly the workload that fired without the runbook needing to know the release name.
+#
+# `tankovault_scope=~".*"` is the scope placeholder; see the header of the recording rules for
+# what it is and why every new selector must carry one.
+#
+# Two things are deliberately *not* alerted on here, because the Prometheus Operator this chart
+# already requires ships them done properly:
+#
+#   - Deployment replica shortfalls. `KubeDeploymentReplicasMismatch` reads kube-state-metrics,
+#     which knows the desired count; nothing this chart emits does, and a self-baselining
+#     approximation would fire on every legitimate autoscaler scale-down.
+#   - Rule evaluation failures. `PrometheusRuleFailures` covers the case where the groups below
+#     stop evaluating and every alert in this file is silently disarmed.
 
 groups:
   - name: tankovault-availability
     rules:
-      # Container healthcheck+restart takes ~70s; 3m past that means the restart didn't help — the
-      # signature of a boot refusal (missing/placeholder secret) rather than a crash.
+      # A pod that cannot boot is restarted by the kubelet within ~70s; 3m past that means the
+      # restart did not help — the signature of a boot refusal (a missing or placeholder secret)
+      # rather than a crash.
       - alert: TankoVaultRequestPathDown
-        expr: up{job=~"api|frontend"} == 0
+        expr: up{tankovault_scope=~".*", job=~"api|frontend"} == 0
         for: 3m
         labels:
           severity: critical
         annotations:
           summary: "{{ $labels.job }} has not answered a scrape for 3 minutes"
           description: >-
-            The user-facing path is down; nothing loads. Past 3m the container's own restart cycle
-            has already failed, so treat this as a boot refusal before a crash: run
-            `docker compose logs --tail=50 {{ $labels.job }}` and look for a refused secret. The
-            gates that stop a boot on purpose are the internal-tier token, the JWT secret, the
-            AniList token-encryption key, and any value on the placeholder deny list — each logs
-            the key it wanted. If the log instead shows repeated panics, check the memory limit
-            (`deploy.resources.limits.memory`) for an OOM kill.
+            The user-facing path is down; nothing loads. Past 3m the kubelet's own restart cycle
+            has already failed, so treat this as a boot refusal before a crash:
+            `kubectl -n {{ $labels.namespace }} logs -l app.kubernetes.io/component={{ $labels.job }}
+            --tail=50` and look for a refused secret. The gates that stop a boot on purpose are
+            the internal-tier token, the JWT secret, the AniList token-encryption key, and any
+            value on the placeholder deny list — each logs the key it wanted. If the pod is in
+            `CrashLoopBackOff` with no such line, check
+            `kubectl -n {{ $labels.namespace }} describe pod` for `OOMKilled` against the
+            service's memory limit.
 
       - alert: TankoVaultServiceDown
-        expr: up{job=~"control-plane|notifier|sync|challenge-solver|render"} == 0
+        expr: up{tankovault_scope=~".*", job=~"control-plane|notifier|sync|challenge-solver|render"} == 0
         for: 5m
         labels:
           severity: warning
@@ -36,14 +56,16 @@ groups:
             control-plane = no scans are planned, notifier = no notifications are delivered,
             sync = AniList push/pull returns 502 through the api, challenge-solver or render =
             challenge-protected providers stop being scannable. Same first step as the request
-            path: `docker compose logs --tail=50 {{ $labels.job }}`, looking for a refused secret
-            before assuming a crash. Longer `for` than the request path because none of these is
-            in a user's critical path for a read.
+            path:
+            `kubectl -n {{ $labels.namespace }} logs -l app.kubernetes.io/component={{ $labels.job }}
+            --tail=50`, looking for a refused secret before assuming a crash. Longer `for` than
+            the request path because none of these is in a user's critical path for a read.
 
-      # worker is DNS-discovered, so a dead replica disappears instead of reporting up==0; absent()
-      # is correct only because the compose file always declares at least one replica.
+      # The worker is the one tier whose absence looks like silence rather than a failed scrape:
+      # if every replica is gone there is no target left to report `up == 0`. `absent()` is the
+      # only construction that fires on nothing at all.
       - alert: TankoVaultWorkerTargetsAbsent
-        expr: absent(up{job="worker"})
+        expr: absent(up{tankovault_scope=~".*", job="worker"})
         for: 5m
         labels:
           severity: critical
@@ -51,69 +73,66 @@ groups:
           summary: "No worker replica is being discovered at all"
           description: >-
             Scan tasks are published and nothing is executing them; the JetStream work queue is
-            filling. Either every replica is down or the compose network no longer resolves
-            `worker`. Check `docker compose ps worker` and `docker compose logs --tail=50 worker`.
-            A queue that has been filling for hours is not lost — the work-queue stream drops a
-            message on ack, not on consumer loss — but the backlog will take as long to drain as
-            it took to accumulate.
+            filling. Either every replica is down or the ServiceMonitor has stopped selecting
+            them. Check `kubectl -n {{ $labels.namespace }} get pods -l
+            app.kubernetes.io/component=worker` first; if pods are running, the target list in
+            Prometheus is the next place to look, since a `metrics.serviceMonitor.labels` that no
+            longer matches the Prometheus `serviceMonitorSelector` produces exactly this. A queue
+            that has been filling for hours is not lost — the work-queue stream drops a message on
+            ack, not on consumer loss — but the backlog will take as long to drain as it took to
+            accumulate.
 
-      # docker-compose.yml declares replicas: 2; below that throughput halves. 10m not 3m: a
-      # rolling restart legitimately drops to one replica briefly.
-      - alert: TankoVaultWorkerFleetIncomplete
-        expr: job:replicas:count{job="worker"} < 2
-        for: 10m
-        labels:
-          severity: warning
-        annotations:
-          summary: "Only {{ $value }} of 2 declared worker replicas are answering"
-          description: >-
-            Scan throughput is reduced but nothing is broken. If this is not a deploy in progress,
-            check `docker compose ps worker` for a replica in a restart loop and its memory limit
-            (768m) for an OOM kill during a large catalogue fan-out.
-
-      # Readiness is the only dependency signal. 5m clears a genuine blip (each check bounded at
-      # 2s) while an exhausted pool or unreachable dependency stays down.
+      # Readiness comes from the service's own `service_ready` gauge, so it is scraped on the same
+      # request that proves the pod is alive. No external prober is involved and none is needed.
       - alert: TankoVaultServiceNotReady
-        expr: service:ready:min == 0
+        expr: namespace_job:service_ready:min{tankovault_scope=~".*"} == 0
         for: 5m
         labels:
           severity: critical
         annotations:
-          summary: "{{ $labels.service }} reports itself not ready"
+          summary: "{{ $labels.job }} reports itself not ready"
           description: >-
-            A dependency this service registered is unreachable. `curl -s
-            http://{{ $labels.service }}:PORT/ready | jq` names which one — the body is
-            per-dependency, so this is one command away from a diagnosis. postgres down = check
-            the postgres container and its `pg_isready` healthcheck; postgres up but the check
-            failing = connection-pool exhaustion, look for a slow query holding connections;
-            nats down = the scan pipeline and live notifications are both stalled; api (on the
-            frontend) = the api is up but not answering `/health`.
+            At least one replica of {{ $labels.job }} considers itself unable to serve, and
+            Kubernetes has therefore taken it out of the Service. `TankoVaultDependencyDown` names
+            the specific dependency if one is the cause; if it has not fired, the readiness check
+            is failing for a reason the per-dependency gauges do not cover, and
+            `kubectl -n {{ $labels.namespace }} logs -l app.kubernetes.io/component={{ $labels.job }}`
+            is the next step. 5m rather than something shorter because each dependency check is
+            bounded at 2s and a single slow round-trip should not page.
 
-      - alert: TankoVaultReadinessProberDown
-        expr: up{job="blackbox-exporter"} == 0
-        for: 10m
-        labels:
-          severity: warning
-        annotations:
-          summary: "The readiness prober is down, so readiness is unmonitored"
-          description: >-
-            `probe_success` has gone stale, which is indistinguishable from every service being
-            healthy — so TankoVaultServiceNotReady cannot fire while this is true. Restart
-            `blackbox-exporter`. If it will not start, check
-            `deploy/observability/blackbox/blackbox.yml` parses.
-
-      - alert: TankoVaultPrometheusRuleEvaluationFailing
-        expr: increase(prometheus_rule_evaluation_failures_total[15m]) > 0
+      # The alert the old blackbox-based readiness check could only gesture at: this one names the
+      # dependency, so the diagnosis is in the alert rather than one `curl /ready` away.
+      - alert: TankoVaultDependencyDown
+        expr: namespace_job_dependency:service_dependency_up:min{tankovault_scope=~".*"} == 0
         for: 5m
         labels:
-          severity: warning
+          severity: critical
         annotations:
-          summary: "Prometheus is failing to evaluate a rule group"
+          summary: "{{ $labels.job }} cannot reach its {{ $labels.dependency }} dependency"
           description: >-
-            One of the recording or alerting groups is erroring, so the series it produces are
-            stale and any alert built on them is silently disarmed. Open Prometheus' Status ->
-            Rules page to see which group. This is the alert that keeps the rest of this file
-            from failing quietly.
+            postgres = check the database pod and, if it is up, suspect connection-pool exhaustion
+            rather than the database itself — `namespace_job:db_pool_saturation:ratio` for this job
+            settles it, and `TankoVaultDatabasePoolSaturated` may already have fired. nats = the
+            scan pipeline and live notifications are both stalled; check the NATS pod and, if it is
+            running, whether its JetStream store is out of disk. redis = the rate limiter has
+            fallen back to failing open, which `TankoVaultRateLimiterFailingOpen` reports
+            separately and which is the more urgent framing of the same outage.
+
+      # A rollout that is half-applied for half an hour is not a rollout any more.
+      - alert: TankoVaultVersionSkew
+        expr: namespace:tankovault_versions:count{tankovault_scope=~".*"} > 1
+        for: 30m
+        labels:
+          severity: info
+        annotations:
+          summary: "{{ $value }} TankoVault versions are running side by side"
+          description: >-
+            An upgrade has not converged. The services share a database whose schema is migrated
+            once, ahead of the rollout, so a mixed fleet is supported but not indefinitely: the
+            older replicas are running against a schema they were not built for. Find the stuck
+            workload with `kubectl -n {{ $labels.namespace }} rollout status deploy -l
+            app.kubernetes.io/part-of=tankovault`, then its pods' events — an unschedulable pod or
+            an image pull failure is the usual cause.
 
   - name: tankovault-http
     rules:
@@ -122,8 +141,8 @@ groups:
       # where one failed request would otherwise read as 100%.
       - alert: TankoVaultHighServerErrorRatio
         expr: >-
-          job:http_requests_server_errors:ratio_rate5m > 0.05
-            and job:http_requests:rate5m > 0.05
+          namespace_job:http_requests_server_errors:ratio_rate5m{tankovault_scope=~".*"} > 0.05
+            and namespace_job:http_requests:rate5m{tankovault_scope=~".*"} > 0.05
         for: 10m
         labels:
           severity: warning
@@ -133,32 +152,35 @@ groups:
             A server-side defect, not a client one — every client-side outcome in this API is a
             4xx. Find the route on the dashboard's "5xx by route" panel, then pull the matching
             logs: every response carries `x-request-id` and the logs are JSON, so
-            `docker compose logs {{ $labels.job }} | grep <request-id>` gives the full span. If
-            the route is a `/v1/me/sync/*` path the failure is probably downstream in `sync`;
-            check that job's own error ratio before reading api code.
+            `kubectl -n {{ $labels.namespace }} logs -l app.kubernetes.io/component={{ $labels.job }}
+            | grep <request-id>` gives the full span. If the route is a `/v1/me/sync/*` path the
+            failure is probably downstream in `sync`; check that job's own error ratio before
+            reading api code.
 
       - alert: TankoVaultServerErrorsCritical
         expr: >-
-          job:http_requests_server_errors:ratio_rate5m > 0.25
-            and job:http_requests:rate5m > 0.05
+          namespace_job:http_requests_server_errors:ratio_rate5m{tankovault_scope=~".*"} > 0.25
+            and namespace_job:http_requests:rate5m{tankovault_scope=~".*"} > 0.05
         for: 5m
         labels:
           severity: critical
         annotations:
           summary: "{{ $labels.job }} is failing one request in four or worse"
           description: >-
-            Treat as an outage of that tier rather than a defect in one handler. Check `/ready`
-            first (`TankoVaultServiceNotReady` may not have fired yet if the dependency is only
-            intermittently answering), then the dependency it names. A whole-tier 5xx rate with a
+            Treat as an outage of that tier rather than a defect in one handler. Check
+            `TankoVaultDependencyDown` first — it may not have fired yet if the dependency is only
+            intermittently answering — then the dependency it names. A whole-tier 5xx rate with a
             ready service points at something shared: the database, or a config value every
             handler reads.
 
-      # 2.5s is a bucket boundary in LATENCY_BUCKETS (crates/service/src/metrics.rs) —
+      # 2.5s is a bucket boundary in LATENCY_BUCKETS (upstream crates/service/src/metrics.rs) —
       # histogram_quantile interpolates within a bucket, so an off-boundary threshold alerts on an
       # interpolated number rather than an observed one. `frontend` is excluded: its one route
       # (/v1/{*rest}) can't separate a server-closed SSE stream from real latency.
       - alert: TankoVaultLatencyDegraded
-        expr: job:http_request_duration_seconds:p99_5m{job=~"api|control-plane|sync"} > 2.5
+        expr: >-
+          namespace_job:http_request_duration_seconds:p99_5m{tankovault_scope=~".*",
+                                                             job=~"api|control-plane|sync"} > 2.5
         for: 15m
         labels:
           severity: warning
@@ -168,15 +190,18 @@ groups:
             One in a hundred requests takes over 2.5s, which is roughly an order of magnitude
             above where these handlers are designed to sit. Use the dashboard's per-route p95
             panel to find whether it is one route or all of them. All routes = a shared
-            dependency, usually the database (check for a missing index after a migration, or a
-            table that has outgrown one). One route = that handler. On `sync`, a slow route is
-            most often AniList itself, which is expected to degrade per-request and is why `sync`
-            deliberately does not probe it in `/ready`.
+            dependency, usually the database: check `TankoVaultDatabasePoolSaturated` and, if the
+            pool is fine, look for a missing index after a migration. One route = that handler.
+            On `sync`, a slow route is most often AniList itself, which is expected to degrade
+            per-request and is why `sync` deliberately does not probe it in its readiness check —
+            `namespace_operation:anilist_request_duration_seconds:p95_15m` confirms it.
 
       # 10s is the top finite histogram bucket; past it the quantile stops being informative, and
       # a request is already a third of the way to the 30s timeout.
       - alert: TankoVaultLatencyCritical
-        expr: job:http_request_duration_seconds:p99_5m{job=~"api|control-plane|sync"} > 10
+        expr: >-
+          namespace_job:http_request_duration_seconds:p99_5m{tankovault_scope=~".*",
+                                                             job=~"api|control-plane|sync"} > 10
         for: 5m
         labels:
           severity: critical
@@ -184,17 +209,17 @@ groups:
           summary: "{{ $labels.job }} p99 latency has passed the top histogram bucket"
           description: >-
             Requests are approaching `security.request_timeout_secs` (30s), after which clients
-            get `408` and the work is wasted. Check `/ready` and the database first. If the
-            database is healthy, look at `job:http_requests_in_flight:avg` for the same job: a
-            climbing concurrency with flat throughput is queueing, which on this stack means the
-            connection pool.
+            get `408` and the work is wasted. Check the database first. If it is healthy, look at
+            `namespace_job:http_requests_in_flight:avg` for the same job: a climbing concurrency
+            with flat throughput is queueing, which on this stack means the connection pool.
 
   - name: tankovault-edge-policy
     rules:
-      # The Redis limiter fails open by design (crates/service/src/ratelimit/redis.rs) — while
-      # this fires, the auth class is enforcing nothing. 10m avoids paging on a single reconnect.
+      # The Redis limiter fails open by design — while this fires, the auth class is enforcing
+      # nothing. 10m avoids paging on a single reconnect.
       - alert: TankoVaultRateLimiterFailingOpen
-        expr: increase(rate_limit_store_errors_total[10m]) > 0
+        expr: >-
+          namespace_job_backend:rate_limit_store_errors:rate5m{tankovault_scope=~".*"} > 0
         for: 10m
         labels:
           severity: warning
@@ -203,15 +228,17 @@ groups:
           description: >-
             Rate limiting is **not being enforced** while this fires: the backend fails open on
             purpose so a Redis outage cannot take the edge down, which means login attempts are
-            currently unlimited. Restore Redis (`docker compose ps redis`, then its logs). If it
-            will be down for a while, either accept the exposure knowingly or set
-            `TANKOVAULT_RATE_LIMIT__BACKEND=memory` to get per-replica limiting back — the
+            currently unlimited. Restore Redis
+            (`kubectl -n {{ $labels.namespace }} get pods -l app.kubernetes.io/component=valkey`,
+            then its logs). If it will be down for a while, either accept the exposure knowingly
+            or set the rate-limit backend to `memory` to get per-replica limiting back — the
             effective limit then becomes N times the configured one, which is still finite.
 
       # auth is 10/min burst 5, and the only automated caller (token refresh) runs about once per
       # 15-minute access-token lifetime — 0.1/s sustained for 15m is far past any legitimate client.
       - alert: TankoVaultAuthRateLimitSurge
-        expr: job_class:http_rate_limited:rate5m{class="auth"} > 0.1
+        expr: >-
+          namespace_job_class:http_rate_limited:rate5m{tankovault_scope=~".*", class="auth"} > 0.1
         for: 15m
         labels:
           severity: warning
@@ -220,17 +247,36 @@ groups:
           description: >-
             Most likely credential stuffing. The limiter is doing its job, so this is not an
             outage — but confirm it is not self-inflicted first: a client looping on a failed
-            refresh produces the same shape. Check `auth.login` and `auth.refresh` entries in the
-            audit log for whether the attempts name one account or many. Many accounts from few
-            addresses is an attack; one account looping is a client bug. If it is an attack,
-            consider lowering `TANKOVAULT_RATE_LIMIT__AUTH__PER_MINUTE` and confirm
-            `TANKOVAULT_RATE_LIMIT__TRUST_FORWARDED_FOR` is only set where a proxy really does
-            overwrite the header.
+            refresh produces the same shape. `TankoVaultAuthFailureSurge` firing alongside means
+            the attempts are being rejected on credentials, which points at an attack; this alert
+            alone, with a normal failure ratio, points at a client bug. If it is an attack,
+            consider lowering the auth rate limit and confirm the trust-forwarded-for setting is
+            only enabled where a proxy really does overwrite the header.
 
-      # Other replicas converge within features.refresh_secs (15s); traffic an hour later means a
-      # client isn't reading /v1/me/capabilities — a frontend defect, not an operational one.
+      # Separate from the rate-limit surge above: an attacker who stays under the limiter still
+      # shows up here, and a broken client that loops on valid credentials does not.
+      - alert: TankoVaultAuthFailureSurge
+        expr: >-
+          namespace_job:auth_attempts_failed:ratio_rate15m{tankovault_scope=~".*"} > 0.5
+            and namespace_job:auth_attempts:rate5m{tankovault_scope=~".*"} > 0.05
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $value | humanizePercentage }} of authentication attempts are being rejected"
+          description: >-
+            More than half of all authentication attempts are failing on credentials, sustained.
+            `denied` outcomes are excluded from this ratio, so this is not a permissions problem:
+            the credentials themselves are wrong. Check the `auth.login` and `auth.refresh`
+            entries in the audit log for whether the attempts name one account or many — many
+            accounts from few addresses is credential stuffing, one account looping is usually a
+            client that has cached a stale refresh token.
+
+      # Other replicas converge within the feature-flag refresh interval (15s); traffic an hour
+      # later means a client isn't reading /v1/me/capabilities — a frontend defect, not an
+      # operational one.
       - alert: TankoVaultDisabledFeatureStillCalled
-        expr: job_feature:http_feature_disabled:rate15m > 0
+        expr: namespace_job_feature:http_feature_disabled:rate15m{tankovault_scope=~".*"} > 0
         for: 1h
         labels:
           severity: info
@@ -243,18 +289,84 @@ groups:
             `/v1/me/capabilities` before rendering that surface — which is a frontend fix, not a
             flag change.
 
+  - name: tankovault-database
+    rules:
+      # The pool is the shared resource behind most "everything is slow at once" incidents. 90%
+      # rather than 100% because the tail matters: a pool at its ceiling is already queueing, and
+      # the queueing is what the user experiences.
+      - alert: TankoVaultDatabasePoolSaturated
+        expr: namespace_job:db_pool_saturation:ratio{tankovault_scope=~".*"} > 0.9
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.job }} is holding {{ $value | humanizePercentage }} of its database pool"
+          description: >-
+            Requests are queueing for a connection, which surfaces as latency on every route at
+            once rather than on one handler. Two causes, and they need opposite fixes: a slow
+            query holding connections (find it in `pg_stat_activity`, usually a sequential scan
+            after a migration added a table or dropped an index), or genuinely more concurrency
+            than the pool is sized for (raise the pool maximum, but check the database's own
+            `max_connections` first — every replica opens its own pool, so the fleet total is
+            what has to fit).
+
+  - name: tankovault-providers
+    rules:
+      # 4xx is excluded from the failure ratio upstream of this: a removed chapter answering 404
+      # is normal operation. Only server faults and transport errors count, so 0.5 sustained means
+      # the provider is unusable rather than merely unreliable.
+      - alert: TankoVaultProviderFetchFailing
+        expr: >-
+          namespace_provider:provider_fetch_failures:ratio_rate15m{tankovault_scope=~".*"} > 0.5
+            and namespace_provider:provider_fetch:rate5m{tankovault_scope=~".*"} > 0.01
+        for: 20m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.provider }} is failing {{ $value | humanizePercentage }} of fetches"
+          description: >-
+            One provider's scans will fail while this holds; the others are unaffected, which is
+            what distinguishes this from a worker problem. Check
+            `TankoVaultChallengeSolvingFailing` first — a broken solver reads as a fetch failure
+            on every challenge-protected provider at once, and fixing it fixes all of them. If
+            only this provider is affected, it is either down, or it has started refusing the
+            crawler: `namespace_provider:provider_backoff_waits:rate15m` for the same provider
+            separates the two, since a refusal that comes with 429/503 shows up there and an
+            outage does not.
+
+      # A duty cycle, not a count: 0.5 means the crawler spends half its wall time parked waiting
+      # out this provider's throttling. Sustained for 30m that is a rate limit the configured
+      # crawl rate is not respecting, not a transient burst.
+      - alert: TankoVaultProviderThrottlingHeavily
+        expr: >-
+          namespace_provider:provider_backoff_wait_seconds:rate15m{tankovault_scope=~".*"} > 0.5
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "The crawler is spending {{ $value | humanizePercentage }} of its time backing off {{ $labels.provider }}"
+          description: >-
+            Scans for this provider are not failing, they are crawling — the backoff is working,
+            which is why nothing else fires. The fix is to ask for less rather than to retry more:
+            lower the provider's configured request rate in the console so the crawler stops
+            earning the throttle in the first place. Left alone, this provider's full scans will
+            take proportionally longer and can start overlapping their own schedule.
+
   - name: tankovault-scan
     rules:
       # Self-gating: requires full tasks flowing (worker demonstrably alive) while no fast task has
       # served in 15m. Fast scans have strict priority, so a fast task can never queue behind a
       # full backlog — full-without-fast means the fast lanes didn't open. 30m clears the window
-      # before the next lane refresh (worker.provider_refresh_secs, 60s).
+      # before the next lane refresh (60s).
       - alert: TankoVaultFastScanLanesStarved
-        # sum() on both sides is load-bearing: `unless` matches identical label sets, and these two
-        # series differ only in `scan` — without the aggregation the alert fires on any full task.
+        # `sum by (namespace)` on both sides is load-bearing: `unless` matches identical label
+        # sets, and these two series differ only in `scan` — without the aggregation the alert
+        # fires on any full task.
         expr: >-
-          sum(scan:scan_tasks_served:rate15m{scan="full"}) > 0
-            unless sum(scan:scan_tasks_served:rate15m{scan="fast"}) > 0
+          sum by (namespace) (
+            namespace_scan:scan_tasks_served:rate15m{tankovault_scope=~".*", scan="full"}) > 0
+            unless sum by (namespace) (
+              namespace_scan:scan_tasks_served:rate15m{tankovault_scope=~".*", scan="fast"}) > 0
         for: 30m
         labels:
           severity: warning
@@ -264,19 +376,23 @@ groups:
             New chapters are not being picked up even though the worker is consuming: fast scans
             are what surface a new release, full scans only rebuild the catalogue. Strict priority
             means a fast task cannot be queued behind a full backlog, so the lanes themselves are
-            the suspect. Grep the worker log for `could not open provider task lane`. If the lanes
-            are open, check the control-plane is still planning fast runs at all —
-            `TankoVaultServiceDown` for control-plane would have fired, but a scheduler wedged
-            without dying would not.
+            the suspect. Grep the worker log for `could not open provider task lane`:
+            `kubectl -n {{ $labels.namespace }} logs -l app.kubernetes.io/component=worker |
+            grep 'task lane'`. If the lanes are open, check the control-plane is still planning
+            fast runs at all — `TankoVaultNoSchedulerLeader` covers a scheduler that has lost its
+            lease, but not one that is wedged while holding it.
 
-      # Derived from a documented invariant (OPERATIONS.md §7): a fast run enqueues at most one
-      # task per provider, so total fast backlog can't exceed the provider count unless tasks are
-      # enqueued and not consumed. If fast scans are ever changed to fan out, this invariant — and
-      # this alert — lapse; it would need a real threshold.
+      # Derived from a documented invariant: a fast run enqueues at most one task per provider, so
+      # total fast backlog can't exceed the provider count unless tasks are enqueued and not
+      # consumed. If fast scans are ever changed to fan out, this invariant — and this alert —
+      # lapse; it would need a real threshold.
       - alert: TankoVaultFastScanBacklogImpossible
         expr: >-
-          sum(provider_scan:scan_queue_depth:current{scan="fast"})
-            > count(provider_scan:scan_queue_depth:current{scan="fast"})
+          sum by (namespace) (
+            namespace_provider_scan:scan_queue_depth:current{tankovault_scope=~".*", scan="fast"})
+            > count by (namespace) (
+                namespace_provider_scan:scan_queue_depth:current{tankovault_scope=~".*",
+                                                                 scan="fast"})
         for: 15m
         labels:
           severity: warning
@@ -284,17 +400,17 @@ groups:
           summary: "The fast scan tier is holding more tasks than it can by design"
           description: >-
             Fast tasks are being enqueued and not consumed, so new chapters are not being surfaced.
-            By construction a fast run enqueues one task per provider, so this backlog can only mean
-            the fast lanes are not being drained: check the worker is consuming at all
-            (`provider_scan:scan_tasks_served:rate5m`), then the lanes (`could not open provider
-            task lane` in the worker log). If a fast scan has recently been changed to fan out,
-            this alert's premise is gone and it needs a real threshold instead — see OPERATIONS.md
-            §7, which warns about exactly that change.
+            By construction a fast run enqueues one task per provider, so this backlog can only
+            mean the fast lanes are not being drained: check the worker is consuming at all
+            (`namespace_provider_scan:scan_tasks_served:rate5m`), then the lanes (`could not open
+            provider task lane` in the worker log). If a fast scan has recently been changed to
+            fan out, this alert's premise is gone and it needs a real threshold instead.
 
       # MAX_TASK_DELIVERIES is 3, so a lane holding redelivered messages for 30m means work is
-      # failing and retrying repeatedly, not hiccupping — no rate of persistent redelivery is normal.
+      # failing and retrying repeatedly, not hiccupping — no rate of persistent redelivery is
+      # normal.
       - alert: TankoVaultScanTaskRetryStorm
-        expr: provider_scan:scan_tasks_redelivered:current > 0
+        expr: namespace_provider_scan:scan_tasks_redelivered:current{tankovault_scope=~".*"} > 0
         for: 30m
         labels:
           severity: warning
@@ -302,19 +418,68 @@ groups:
           summary: "{{ $labels.provider }} {{ $labels.scan }} tasks are being redelivered continuously"
           description: >-
             Tasks for this lane keep failing and being retried, and each one burns its delivery
-            budget before being recorded as failed. The worker log names the error; the provider's
-            recent run states in the console show whether every task or only some are failing. The
-            usual causes are the provider having changed its markup (the adapter's selectors no
-            longer match), the provider rate-limiting or challenging the crawler, or the challenge
-            solver being broken — check `TankoVaultChallengeSolvingFailing` first, since one broken
-            solver produces this on every challenge-protected provider at once.
+            budget before being recorded as failed. Start with
+            `TankoVaultProviderFetchFailing` and `TankoVaultChallengeSolvingFailing` for this
+            provider — one broken solver produces this on every challenge-protected provider at
+            once. If neither has fired, the provider has probably changed its markup and the
+            adapter's selectors no longer match, which
+            `namespace_provider:chapters_rejected:ratio_rate1h` confirms.
 
-      # The notifier acks only after fan-out completes (OPERATIONS.md §6), so one hanging channel
-      # blocks the queue behind it; a non-shrinking backlog over 30m is the signal, not its size.
+      # Counts terminal outcomes, so unlike the redelivery gauge it is unaffected by retries: a
+      # task that is retried twice and then succeeds contributes one `completed`, not three.
+      - alert: TankoVaultScanTasksFailing
+        expr: >-
+          namespace_provider_scan:scan_tasks_failed:ratio_rate15m{tankovault_scope=~".*"} > 0.5
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.provider }} {{ $labels.scan }} tasks are failing outright"
+          description: >-
+            More than half of this lane's tasks are reaching a terminal failure rather than being
+            retried into success, so the catalogue for this provider is going stale. The worker log
+            names the error; the provider's recent run states in the console show whether every
+            task or only some are failing. Every task failing points at the provider or its
+            adapter, some tasks failing points at particular series — often ones whose pages have
+            been removed.
+
+      # Exactly one control-plane replica should hold the lease.
+      - alert: TankoVaultNoSchedulerLeader
+        expr: namespace:scheduler_leader:sum{tankovault_scope=~".*"} == 0
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "No control-plane replica is holding scheduler leadership"
+          description: >-
+            Nothing is planning scan runs, so the catalogue stops updating even though every
+            service is up and no scan is failing — a silent outage that no other alert here
+            reaches. If `TankoVaultServiceDown` has not fired for control-plane, the replicas are
+            running but none has acquired the lease: check
+            `kubectl -n {{ $labels.namespace }} logs -l app.kubernetes.io/component=control-plane`
+            for lease errors, and the database, since the lease lives there.
+
+      - alert: TankoVaultSplitBrainScheduler
+        expr: namespace:scheduler_leader:sum{tankovault_scope=~".*"} > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $value }} control-plane replicas each believe they are the scheduler"
+          description: >-
+            Two schedulers plan the same runs, which the planner deduplicates — watch
+            `namespace_provider_scan_result:scan_runs_planned:rate15m` with `result="duplicate"`
+            climbing — so this wastes work rather than corrupting anything. It nearly always means
+            clock skew or a lease TTL shorter than the sweep it protects. Check node clocks before
+            changing any configuration.
+
+      # The notifier acks only after fan-out completes, so one hanging channel blocks the queue
+      # behind it; a non-shrinking backlog over 30m is the signal, not its size.
       - alert: TankoVaultNotificationBacklogNotDraining
         expr: >-
-          consumer:events_queue_depth:current > 0
-            and deriv(consumer:events_queue_depth:current[30m]) >= 0
+          namespace_consumer:events_queue_depth:current{tankovault_scope=~".*"} > 0
+            and deriv(
+              namespace_consumer:events_queue_depth:current{tankovault_scope=~".*"}[30m]) >= 0
         for: 30m
         labels:
           severity: warning
@@ -322,15 +487,15 @@ groups:
           summary: "The {{ $labels.consumer_name }} event backlog is not draining"
           description: >-
             Notification events are queueing and the queue is not shrinking. Because the notifier
-            acks only after fan-out, one hanging channel stalls everything behind it — an SMTP relay
-            that accepts the connection and never answers is the classic case, and it produces no
-            error to log. Check the notifier log for the last event it handled, then the configured
-            channels: `TANKOVAULT_EMAIL__*` for the relay, and the webhook and Discord features
-            (both off by default). Switching the suspect channel off via its feature flag is the
-            fastest way to confirm and to unblock the queue.
+            acks only after fan-out, one hanging channel stalls everything behind it — an SMTP
+            relay that accepts the connection and never answers is the classic case, and it
+            produces no error to log, so `TankoVaultNotificationDeliveryFailing` will *not* fire
+            for it. Check the notifier log for the last event it handled, then the configured
+            channels. Switching the suspect channel off via its feature flag is the fastest way to
+            confirm and to unblock the queue.
 
       - alert: TankoVaultNatsExporterDown
-        expr: up{job="nats"} == 0
+        expr: up{tankovault_scope=~".*", job="nats-exporter"} == 0
         for: 10m
         labels:
           severity: warning
@@ -338,16 +503,18 @@ groups:
           summary: "Queue depth is unmonitored: the NATS exporter is down"
           description: >-
             Every backlog alert above is disarmed while this holds, because their series have gone
-            stale rather than gone to zero. Restart `nats-exporter`. If it will not start, check
-            that NATS still has `-m 8222` in its compose command — the exporter reads the monitoring
-            port, which is the same one the NATS healthcheck uses, so a healthy NATS implies the
-            port is there.
+            stale rather than gone to zero. Check
+            `kubectl -n {{ $labels.namespace }} logs -l app.kubernetes.io/component=nats-exporter`.
+            The usual cause is that it cannot reach NATS' monitoring listener: the exporter reads
+            HTTP on `:8222`, not the client port, so an external NATS that does not publish `-m
+            8222` cannot be scraped at all, and a NetworkPolicy that grants only 4222 produces the
+            same symptom.
 
       # A dropped "slow consumer" is recoverable for durable JetStream lanes but not for
       # /v1/me/stream, published over core NATS as fire-and-forget — a drop there is a silently
       # lost notification, hence "more than none".
       - alert: TankoVaultNatsSlowConsumers
-        expr: increase(gnatsd_varz_slow_consumers[15m]) > 0
+        expr: increase(gnatsd_varz_slow_consumers{tankovault_scope=~".*"}[15m]) > 0
         for: 5m
         labels:
           severity: warning
@@ -357,9 +524,8 @@ groups:
             Live notifications delivered over core NATS are lost when this happens (the durable
             `notifications` row survives, so the bell icon still fills in on the next page load —
             only the push is lost). The client that fell behind is almost always `api` relaying to
-            SSE subscribers: check its in-flight gauge and CPU, and whether one subscriber is
-            consuming very slowly. If this recurs, the relay's buffer sizing is the thing to look
-            at, not NATS.
+            SSE subscribers: check `namespace_job:sse_streams_active:sum` and the api's CPU against
+            its limit. If this recurs, the relay's buffer sizing is the thing to look at, not NATS.
 
       # scan_tasks_served_total counts hand-outs, and JetStream redelivery (max 3 attempts)
       # double-counts retries, so a failing/retrying lane can look busy too.
@@ -368,11 +534,15 @@ groups:
       - alert: TankoVaultScanLaneUnfair
         expr: >-
           (
-            max(provider:scan_tasks_served:increase1h)
-              / sum(provider:scan_tasks_served:increase1h)
+            max by (namespace) (
+              namespace_provider:scan_tasks_served:increase1h{tankovault_scope=~".*"})
+              / sum by (namespace) (
+                  namespace_provider:scan_tasks_served:increase1h{tankovault_scope=~".*"})
           ) > 0.9
-            and count(provider:scan_tasks_served:increase1h) >= 3
-            and sum(provider:scan_tasks_served:increase1h) > 100
+            and count by (namespace) (
+              namespace_provider:scan_tasks_served:increase1h{tankovault_scope=~".*"}) >= 3
+            and sum by (namespace) (
+              namespace_provider:scan_tasks_served:increase1h{tankovault_scope=~".*"}) > 100
         for: 1h
         labels:
           severity: info
@@ -385,14 +555,90 @@ groups:
             console. A provider with queued runs and a flat counter has a lane problem; grep the
             worker log for `could not open provider task lane`. Remember a retried task counts
             again, so a single failing provider can also produce this shape by retrying — check
-            its recent run states before concluding the others are starved.
+            `namespace_provider_scan:scan_tasks_failed:ratio_rate15m` before concluding the others
+            are starved.
+
+      # Rejections mean the adapter could not make sense of a listing entry. A handful is routine;
+      # nearly all of them is the shape of a site that has been redesigned.
+      # grounding: baseline-needed — 0.9 is judgement, and the volume floor exists only to keep a
+      # provider with three chapters an hour from tripping it.
+      - alert: TankoVaultChaptersAllRejected
+        expr: >-
+          namespace_provider:chapters_rejected:ratio_rate1h{tankovault_scope=~".*"} > 0.9
+            and namespace_provider:scan_tasks_served:increase1h{tankovault_scope=~".*"} > 20
+        for: 1h
+        labels:
+          severity: info
+        annotations:
+          summary: "{{ $labels.provider }} is having nearly every listing entry rejected"
+          description: >-
+            Scans are succeeding and finding nothing usable, which is what a provider redesign
+            looks like from here: the fetch works, the page parses, and none of the adapter's
+            selectors match any more. Nothing is broken operationally and no other alert will
+            fire — the catalogue for this provider simply stops growing. This needs an adapter
+            change upstream, not an operational one.
+
+  - name: tankovault-notifications
+    rules:
+      # A channel failing outright, as opposed to hanging — the hanging case shows up as a
+      # backlog that stops draining and is covered separately.
+      - alert: TankoVaultNotificationDeliveryFailing
+        expr: >-
+          namespace_channel:notifications_delivered_errors:ratio_rate15m{tankovault_scope=~".*"}
+            > 0.5
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "The {{ $labels.channel }} notification channel is failing {{ $value | humanizePercentage }} of deliveries"
+          description: >-
+            Users subscribed to this channel are not being told about new chapters; other channels
+            and the in-app bell are unaffected, since the durable notification row is written
+            before fan-out. `email` = the SMTP relay is refusing (credentials, or a sending-domain
+            policy that has changed); `webhook` or `discord` = the endpoint is answering an error,
+            usually a revoked or rotated webhook URL. The notifier log carries the remote's own
+            response.
+
+      # Distinct from a delivery failure: this is the notifier failing to process the event at
+      # all, so nothing is written and no channel is attempted. A much lower threshold is right,
+      # because unlike a flaky third-party endpoint there is no benign cause.
+      - alert: TankoVaultNotificationEventsFailing
+        expr: namespace:notification_events_errors:ratio_rate15m{tankovault_scope=~".*"} > 0.1
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "The notifier is failing {{ $value | humanizePercentage }} of chapter events"
+          description: >-
+            Chapters are being discovered and no notification is being produced for them — not
+            even the durable in-app row, so nothing surfaces on a later page load either and the
+            loss is permanent for those events. This is the notifier's own processing, not a
+            channel: check its database access first
+            (`TankoVaultDependencyDown` for the notifier), then its log for the failing event.
+
+      # SSE is the live push; a failure here costs the toast, not the notification.
+      - alert: TankoVaultSseEventsUndeliverable
+        expr: >-
+          namespace_job:sse_events_pushed_errors:ratio_rate15m{tankovault_scope=~".*"} > 0.25
+        for: 15m
+        labels:
+          severity: info
+        annotations:
+          summary: "{{ $labels.job }} cannot push {{ $value | humanizePercentage }} of live notification frames"
+          description: >-
+            Signed-in users are not seeing notifications appear without a reload; the durable row
+            is unaffected, so nothing is lost, only delayed until the next page load. Counted here
+            alongside send failures is `undecodable`, which is a different bug with the same
+            symptom: a frame the api could not decode is one the publisher and the relay disagree
+            about, and that points at a version skew — check `TankoVaultVersionSkew`.
 
   - name: tankovault-fetch-tier
     rules:
       # A solve failure is almost always the back end wholly broken (TRAWL down / Chromium
-      # failing to launch), which shows as near-100% errors, not drift — 0.5 clears provider quirks.
+      # failing to launch), which shows as near-100% errors, not drift — 0.5 clears provider
+      # quirks.
       - alert: TankoVaultChallengeSolvingFailing
-        expr: job:solve_attempts_errors:ratio_rate15m > 0.5
+        expr: namespace_job:solve_attempts_errors:ratio_rate15m{tankovault_scope=~".*"} > 0.5
         for: 15m
         labels:
           severity: warning
@@ -400,15 +646,15 @@ groups:
           summary: "{{ $labels.job }} is failing {{ $value | humanizePercentage }} of solve attempts"
           description: >-
             Every challenge-protected provider stops being scannable while this holds, and the
-            scan tasks fail rather than queue. On `challenge-solver`, check the TRAWL container
-            (`docker compose logs --tail=50 trawl`, and `curl -sf trawl:8191/health` for live
-            browser-pool capacity) — a saturated pool answers `429` and reads as a solve failure
-            here. On `render`, this is Chromium:
-            check for OOM against the 2g memory limit and that `shm_size: 1gb` is still set, since
-            Chrome fails in confusing ways with a small `/dev/shm`.
+            scan tasks fail rather than queue. On `challenge-solver`, check the TRAWL pod
+            (`kubectl -n {{ $labels.namespace }} logs -l app.kubernetes.io/component=trawl
+            --tail=50`) — a saturated browser pool answers `429` and reads as a solve failure
+            here, so `trawl.browserPoolSize` against its memory limit is the thing to look at. On
+            `render`, this is Chromium: check for an OOM kill and that the `/dev/shm` volume is
+            still sized, since Chrome fails in confusing ways with a small `/dev/shm`.
 
       - alert: TankoVaultRenderTierFailing
-        expr: job:render_requests_errors:ratio_rate15m > 0.5
+        expr: namespace_job:render_requests_errors:ratio_rate15m{tankovault_scope=~".*"} > 0.5
         for: 15m
         labels:
           severity: warning
@@ -416,17 +662,17 @@ groups:
           summary: "The render tier is failing {{ $value | humanizePercentage }} of renders"
           description: >-
             Providers that need a real browser stop yielding chapters; others are unaffected. Same
-            checks as above: OOM against the 2g limit, `shm_size`, and whether Chromium is
-            launching at all. `render` is deliberately not `read_only`, so a full disk is also a
-            candidate — it writes a browser profile and cache.
+            checks as above: an OOM kill against the memory limit, the `/dev/shm` volume, and
+            whether Chromium is launching at all. `render` is deliberately not read-only, so a
+            full ephemeral volume is also a candidate — it writes a browser profile and cache.
 
-      # tankovault_domain::ssrf::validate_str refused a target after write-time validation already
-      # passed — a refusal here means a redirect to a private range, a hand-edited row, or an
-      # internal-network read probe. Any occurrence is worth a look.
+      # SSRF validation refused a target after write-time validation already passed — a refusal
+      # here means a redirect to a private range, a hand-edited row, or an internal-network read
+      # probe. Any occurrence is worth a look.
       - alert: TankoVaultRefusedFetchTargets
         expr: >-
-          job:solve_targets_refused:increase15m > 0
-            or job:render_targets_refused:increase15m > 0
+          namespace_job:solve_targets_refused:increase15m{tankovault_scope=~".*"} > 0
+            or namespace_job:render_targets_refused:increase15m{tankovault_scope=~".*"} > 0
         for: 5m
         labels:
           severity: warning
@@ -439,8 +685,29 @@ groups:
             `refused a render target` and it names the URL and the rule that refused it. A
             provider URL means a bad provider row or a redirect to a private range. Anything else
             means something is calling these endpoints that should not reach them, in which case
-            verify `TANKOVAULT_INTERNAL__TOKEN` is set on both the service and its callers and
-            that no `ports:` entry publishes them to the host.
+            verify the internal token is set on both the service and its callers, that
+            `networkPolicy.enabled` is true, and that no Service publishes them outside the
+            cluster.
+
+  - name: tankovault-anilist
+    rules:
+      # AniList publishes a request budget and answers 429 past it. A quarter of calls throttled
+      # for half an hour is a sync that is asking for more than its share, not a blip.
+      - alert: TankoVaultAniListRateLimited
+        expr: >-
+          namespace:anilist_requests_rate_limited:ratio_rate15m{tankovault_scope=~".*"} > 0.25
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "AniList is rate limiting {{ $value | humanizePercentage }} of sync's calls"
+          description: >-
+            List synchronisation is falling behind: pushes and pulls are being refused and retried
+            rather than failing, so users see stale AniList state rather than an error. Nothing
+            here is broken and restarting `sync` will not help — the budget is per application
+            token and is shared by every user of this deployment, so the cause is usually a burst
+            of users connecting their accounts at once, or a pull interval set faster than the
+            budget allows.
 
   - name: tankovault-saturation
     rules:
@@ -448,7 +715,7 @@ groups:
       # from, and an open SSE stream counts as one in-flight request for its life, so this gauge
       # scales with user count as much as load. 200 is a placeholder pending a week of real data.
       - alert: TankoVaultConcurrencyUnusuallyHigh
-        expr: job:http_requests_in_flight:avg > 200
+        expr: namespace_job:http_requests_in_flight:avg{tankovault_scope=~".*"} > 200
         for: 15m
         labels:
           severity: info
@@ -456,8 +723,9 @@ groups:
           summary: "{{ $labels.job }} is holding {{ $value }} concurrent requests"
           description: >-
             Threshold is a placeholder pending baseline data, so read the graph rather than the
-            alert. Concurrency rising while `job:http_requests:rate5m` stays flat is queueing —
-            on this stack that almost always means the database connection pool, and
-            `TankoVaultLatencyDegraded` should be firing too. Concurrency and throughput rising
-            together is just traffic. On `api` and `frontend`, remember that every open
-            `/v1/me/stream` counts here for as long as the browser tab is open.
+            alert. Concurrency rising while `namespace_job:http_requests:rate5m` stays flat is
+            queueing — on this stack that almost always means the database connection pool, so
+            check `TankoVaultDatabasePoolSaturated`, and `TankoVaultLatencyDegraded` should be
+            firing too. Concurrency and throughput rising together is just traffic. On `api` and
+            `frontend`, remember that every open `/v1/me/stream` counts here for as long as the
+            browser tab is open.

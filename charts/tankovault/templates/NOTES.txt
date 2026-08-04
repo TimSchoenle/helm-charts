@@ -58,3 +58,21 @@ period (~1 minute), with the restart count unchanged. The exceptions are `teleme
 
   kubectl --namespace {{ include "common.namespace" . }} rollout restart deployment \
     --selector app.kubernetes.io/part-of={{ include "common.name" . }}
+
+Legal documents supplied through `legal.documents.<slug>.content` are the same story: the API
+re-reads them behind an mtime check, so correcting a policy is a `helm upgrade` and a kubelet
+sync, not a restart.
+{{- if and .Values.metrics.enabled .Values.metrics.prometheusRule.enabled (not .Values.metrics.natsExporter.enabled) }}
+
+NOTE: the scan-pipeline backlog alerts are installed but cannot fire. NATS publishes no
+Prometheus exposition of its own, so without `metrics.natsExporter.enabled=true` the queue-depth
+series have no producer and TankoVaultFastScanBacklogImpossible, TankoVaultScanTaskRetryStorm,
+TankoVaultNotificationBacklogNotDraining and TankoVaultNatsSlowConsumers stay dark — a stalled
+work queue would look exactly like an idle one.
+{{- end }}
+{{- if and .Values.metrics.enabled .Values.metrics.prometheusRule.enabled (eq .Values.metrics.prometheusRule.scope "none") }}
+
+NOTE: `metrics.prometheusRule.scope=none` installs the rules unscoped, so they match series from
+every namespace this Prometheus scrapes — including another release's `job="api"`. That is only
+correct if the Prometheus sets `enforcedNamespaceLabel` and performs the same rewrite itself.
+{{- end }}

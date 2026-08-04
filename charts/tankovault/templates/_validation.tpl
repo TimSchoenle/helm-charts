@@ -88,6 +88,31 @@ cannot generate one, so the Secret must already carry `seed_admin_password`.
 {{- end -}}
 
 {{- /*
+Legal documents. The service refuses to boot on a document that names its body twice or not at
+all, so these are caught here where the message can name the slug and the keys rather than at
+container start. The API is the only reader; publishing documents without it is a no-op that
+would otherwise look like a working configuration.
+*/ -}}
+{{- range $slug, $doc := $ctx.Values.legal.documents -}}
+{{- $doc = $doc | default dict -}}
+{{- $ways := list -}}
+{{- if $doc.content -}}{{- $ways = append $ways "content" -}}{{- end -}}
+{{- if $doc.sources -}}{{- $ways = append $ways "sources" -}}{{- end -}}
+{{- if $doc.url -}}{{- $ways = append $ways "url" -}}{{- end -}}
+{{- if gt (len $ways) 1 -}}
+{{- $errors = append $errors (printf "legal.documents.%s sets %s, but a document carries its body exactly once. `content` and `sources` are two ways to point at a file and `url` means the document lives elsewhere entirely; the service refuses to boot on a document that sets more than one." $slug (join " and " $ways)) -}}
+{{- else if eq (len $ways) 0 -}}
+{{- $errors = append $errors (printf "legal.documents.%s publishes no body. Set `content` (the text itself, mounted by this chart), `sources` (paths you mount yourself), or `url` (a document hosted elsewhere)." $slug) -}}
+{{- end -}}
+{{- if and $doc.url (not (regexMatch "^https?://" $doc.url)) -}}
+{{- $errors = append $errors (printf "legal.documents.%s.url is %q. Only absolute http(s) URLs are accepted." $slug $doc.url) -}}
+{{- end -}}
+{{- end -}}
+{{- if and $ctx.Values.legal.documents (not $ctx.Values.services.api.enabled) -}}
+{{- $errors = append $errors "legal.documents are configured but services.api.enabled=false. The API is the only service that reads them and the only one that serves them, so nothing would publish these documents. Enable the api, or remove the documents." -}}
+{{- end -}}
+
+{{- /*
 Grafana dashboards. The rules are the library's, because the value contract and the CRD it
 depends on are — messages are collected rather than raised there so they land in this one report
 alongside everything else. Prefixed here, since the library cannot know which key path the
@@ -115,7 +140,12 @@ out now instead of discovering an unmonitored release weeks later.
 {{- end -}}
 {{- end -}}
 {{- if $ctx.Values.metrics.enabled -}}
-{{- $ruleErrors := include "common.prometheus.rules.errors" (dict "ctx" $ctx "values" $ctx.Values.metrics.prometheusRule "feature" "metrics.prometheusRule.enabled") -}}
+{{- $ruleErrors := include "common.prometheus.rules.errors" (dict
+      "ctx" $ctx
+      "values" $ctx.Values.metrics.prometheusRule
+      "feature" "metrics.prometheusRule.enabled"
+      "scopePlaceholder" (include "tankovault.rules.scopePlaceholder" $ctx)
+      "scopeMatcher" (include "tankovault.rules.scopeMatcher" $ctx)) -}}
 {{- if $ruleErrors -}}
 {{- range splitList "\n" $ruleErrors -}}
 {{- $errors = append $errors . -}}
@@ -127,6 +157,21 @@ out now instead of discovering an unmonitored release weeks later.
 {{- end -}}
 {{- if and $ctx.Values.metrics.serviceMonitor.enabled (not $ctx.Values.metrics.enabled) -}}
 {{- $errors = append $errors "metrics.serviceMonitor.enabled has no effect while metrics.enabled=false: the Services carry no metrics port for the ServiceMonitor to select. Enable metrics, or turn the ServiceMonitors off." -}}
+{{- end -}}
+
+{{- /*
+The NATS exporter. It reads NATS' *monitoring* listener, which is a different port and a
+different protocol from the client URL the services use, so an external NATS that publishes only
+4222 leaves it with nothing to scrape — a state that shows up as a pod retrying a connection
+forever rather than as an error, which is why it is refused here.
+*/ -}}
+{{- if $ctx.Values.metrics.natsExporter.enabled -}}
+{{- if not $ctx.Values.metrics.enabled -}}
+{{- $errors = append $errors "metrics.natsExporter.enabled has no effect while metrics.enabled=false: nothing would scrape the exporter. Enable metrics, or turn the exporter off." -}}
+{{- end -}}
+{{- if not (include "tankovault.natsMonitoringUrl" $ctx) -}}
+{{- $errors = append $errors "metrics.natsExporter.enabled needs a NATS monitoring endpoint, and none could be resolved. The exporter reads NATS' HTTP monitoring listener (`-m 8222`), not the client port, so `externalNats.url` does not supply one: set `metrics.natsExporter.url` to something like `http://nats.example.com:8222`, or enable the bundled NATS." -}}
+{{- end -}}
 {{- end -}}
 
 {{- if $errors -}}

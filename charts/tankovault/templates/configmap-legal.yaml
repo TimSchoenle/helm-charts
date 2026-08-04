@@ -1,0 +1,33 @@
+{{- /*
+The operator's own legal texts, when they are supplied inline.
+
+Terms, a privacy policy and — in some jurisdictions, as a statutory requirement — an imprint are
+per-deployment documents under per-deployment law, so upstream ships none of them and the API
+publishes an empty index until an operator provides some. Two ways to do that, and this object
+serves the first: `legal.documents.<slug>.content` is the text itself, written here as
+`<slug>.<locale>.md` and mounted read-only into the `api` pod at `legal.dir`. The second way,
+`sources`, names a path the operator has arranged some other way and creates nothing here.
+
+Not part of `checksum/config`, deliberately. The service reads these files on demand behind an
+mtime check, so an edited policy is picked up when the kubelet refreshes the mounted ConfigMap;
+folding them into the pod checksum would turn a text correction into a rolling restart of the
+API tier. This is the same reasoning as the config volume next to it, and the same rule applies:
+never mount it with `subPath`, which is resolved once at container start and never updated.
+*/ -}}
+{{- $files := include "tankovault.legal.files" . }}
+{{- if trim $files }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "common.fullname.suffixed" (dict "ctx" . "suffix" "legal") }}
+  namespace: {{ include "common.namespace" . }}
+  labels:
+    {{- include "common.labels" . | nindent 4 }}
+    app.kubernetes.io/component: legal
+  {{- with (include "common.annotations" .) }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
+data:
+  {{- $files | nindent 2 }}
+{{- end }}

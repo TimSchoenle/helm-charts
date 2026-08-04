@@ -778,6 +778,28 @@
               "required": [],
               "title": "labels",
               "type": "object"
+            },
+            "scope": {
+              "additionalProperties": true,
+              "description": "Confine the rules to a subset of the cluster's series. A `PrometheusRule` is not scoped to\nthe namespace it lives in, so `up{job=\"api\"} == 0` matches somebody else's `api` job in\nanother namespace and two installs of one chart alert on each other. Rather than parse PromQL\nin a Go template, the rule files mark every selector with an always-true placeholder matcher\nand the library swaps it for a real one — see the note in `_prometheus.tpl`. Consuming charts\nnormally derive `matcher` rather than exposing it raw.",
+              "properties": {
+                "matcher": {
+                  "default": "",
+                  "description": "What to swap it for, e.g. `namespace=\"prod\"`. Empty disables the substitution; the\nplaceholder is left in place, which is correct, because it is already a no-op matcher.",
+                  "required": [],
+                  "title": "matcher",
+                  "type": "string"
+                },
+                "placeholder": {
+                  "default": "",
+                  "description": "The literal placeholder written into the rule files, e.g. `myapp_scope=~\".*\"`. Empty\ndisables the substitution and the files install exactly as vendored.",
+                  "required": [],
+                  "title": "placeholder",
+                  "type": "string"
+                }
+              },
+              "required": [],
+              "title": "scope"
             }
           },
           "required": [],

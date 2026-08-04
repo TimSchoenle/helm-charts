@@ -206,10 +206,20 @@ drive each service's egress, so the two halves of every rule cannot drift apart.
 distinguished by `app.kubernetes.io/component`. Both halves of the TRAWL/Valkey rule are
 derived from the same `$trawlUsesValkey` predicate for the same reason.
 */ -}}
+{{- /*
+The exporter is the one component that scrapes a datastore rather than using it, so it appears on
+both halves of a rule the others do not have: NATS gains an ingress on its *monitoring* port
+(8222, not the client 4222 every service uses), and the exporter gains the matching egress. It is
+granted only when it is pointed at the bundled NATS — an exporter aimed elsewhere is reaching
+outside this release and gets no in-cluster grant, exactly as `trawl.redis.url` is handled above.
+*/ -}}
+{{- $natsExporterEnabled := and $.Values.metrics.enabled $.Values.metrics.natsExporter.enabled }}
+{{- $exporterUsesBundledNats := and $natsExporterEnabled $.Values.nats.enabled (not $.Values.metrics.natsExporter.url) }}
 {{- range $ds := list
       (dict "component" "postgresql" "enabled" $.Values.postgresql.enabled "port" 5432 "consumers" $dbConsumers "bootstrap" true "internet" false)
       (dict "component" "valkey" "enabled" $.Values.valkey.enabled "port" 6379 "consumers" $redisConsumers "bootstrap" false "internet" false "componentConsumers" (ternary (list "trawl") list $trawlUsesValkey))
-      (dict "component" "nats" "enabled" $.Values.nats.enabled "port" 4222 "consumers" $natsConsumers "bootstrap" false "internet" false)
+      (dict "component" "nats" "enabled" $.Values.nats.enabled "port" 4222 "consumers" $natsConsumers "bootstrap" false "internet" false "extraIngress" (ternary (list (dict "component" "nats-exporter" "port" 8222)) list $exporterUsesBundledNats))
+      (dict "component" "nats-exporter" "enabled" $natsExporterEnabled "port" 7777 "consumers" list "bootstrap" false "internet" false "scraped" true "componentEgress" (ternary (list (dict "component" "nats" "port" 8222)) list $exporterUsesBundledNats))
       (dict "component" "trawl" "enabled" $.Values.trawl.enabled "port" 8191 "consumers" (list "challengeSolver") "bootstrap" false "internet" true "componentEgress" (ternary (list (dict "component" "valkey" "port" 6379)) list $trawlUsesValkey)) }}
 {{- if $ds.enabled }}
 ---
@@ -250,6 +260,22 @@ spec:
     {{- range $consumer := $ds.componentConsumers }}
     - from:
         {{- include "tankovault.netpol.componentPeer" (dict "ctx" $ "component" $consumer) | nindent 8 }}
+      ports:
+        - port: {{ $ds.port }}
+          protocol: TCP
+    {{- end }}
+    {{- range $peer := $ds.extraIngress }}
+    - from:
+        {{- include "tankovault.netpol.componentPeer" (dict "ctx" $ "component" $peer.component) | nindent 8 }}
+      ports:
+        - port: {{ $peer.port }}
+          protocol: TCP
+    {{- end }}
+    {{- if $ds.scraped }}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              {{- toYaml $.Values.networkPolicy.monitoring.namespaceSelector | nindent 14 }}
       ports:
         - port: {{ $ds.port }}
           protocol: TCP

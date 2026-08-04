@@ -1,0 +1,137 @@
+{{- if and .Values.metrics.enabled .Values.metrics.natsExporter.enabled }}
+{{- $exporter := .Values.metrics.natsExporter }}
+{{- $monitoring := include "tankovault.natsMonitoringUrl" . }}
+{{- /*
+  NATS speaks its own monitoring protocol on `:8222` and no Prometheus exposition at all, so the
+  entire scan pipeline's queue depth — how many tasks are waiting per provider lane, how many are
+  being redelivered, whether the notifier's backlog is draining — is invisible to Prometheus
+  without a translator in front of it. Nothing TankoVault emits substitutes: a service can report
+  how many tasks it handed out, but not how many are still sitting in the broker unclaimed, which
+  is the number that distinguishes "the worker is idle because there is no work" from "the worker
+  is idle because it stopped consuming".
+
+  Off by default, because it is a second workload and a second image, and a release whose NATS is
+  someone else's problem should not grow one. The rules and dashboards that need it degrade the
+  honest way when it is absent: their series simply do not exist, so the panels are empty and the
+  alerts never fire, rather than reading a missing exporter as a healthy queue.
+
+  `runAsUser` is explicit for the same reason as `nats` and `trawl` next door: the image declares
+  no `USER`, so the restricted Pod Security Standard would refuse the pod. The container is a
+  single static binary behind a two-line entrypoint that writes nothing, so a read-only root
+  filesystem and any non-root UID are both fine.
+*/ -}}
+{{- $probe := dict "enabled" true "httpGet" (dict "path" "/metrics" "port" "metrics") }}
+{{- $values := include "tankovault.datastore.values" (dict
+      "ctx" .
+      "image" $exporter.image
+      "resourcesPreset" $exporter.resourcesPreset
+      "runAsUser" 1000 "runAsGroup" 1000 "fsGroup" 1000
+      "startupProbe" (merge (dict "periodSeconds" 5 "timeoutSeconds" 3 "failureThreshold" 12) (deepCopy $probe))
+      "livenessProbe" (merge (dict "periodSeconds" 30 "timeoutSeconds" 5 "failureThreshold" 5) (deepCopy $probe))
+      "readinessProbe" (merge (dict "periodSeconds" 10 "timeoutSeconds" 3 "failureThreshold" 3) (deepCopy $probe))
+    ) | fromYaml }}
+{{- $ctx := dict "Values" $values "Chart" $.Chart "Release" $.Release "Capabilities" $.Capabilities "Template" $.Template "Files" $.Files }}
+{{- /*
+  `-jsz=all` is what produces the `jetstream_consumer_*` and `jetstream_stream_*` series the scan
+  rules are built on; `-varz` adds the server-level counters, of which `gnatsd_varz_slow_consumers`
+  is the one that matters here — a dropped slow consumer on core NATS is a live notification the
+  subscriber never receives, and nothing else reports it.
+*/ -}}
+{{- $args := list "-varz" "-jsz=all" "-port" "7777" $monitoring }}
+apiVersion: v1
+kind: Service
+metadata:
+  {{- include "tankovault.datastore.metadata" (dict "ctx" . "component" "nats-exporter") | nindent 2 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: metrics
+      port: 7777
+      targetPort: metrics
+      protocol: TCP
+  selector:
+    {{- include "tankovault.datastore.selectorLabels" (dict "ctx" . "component" "nats-exporter") | nindent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  {{- include "tankovault.datastore.metadata" (dict "ctx" . "component" "nats-exporter") | nindent 2 }}
+spec:
+  replicas: 1
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      {{- include "tankovault.datastore.selectorLabels" (dict "ctx" . "component" "nats-exporter") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "common.podLabels" $ctx | nindent 8 }}
+        app.kubernetes.io/component: nats-exporter
+    spec:
+      {{- include "common.podSpec.common" $ctx | nindent 6 }}
+      containers:
+        {{- include "common.container" (dict
+              "ctx" $ctx
+              "name" "nats-exporter"
+              "args" $args
+              "ports" (list (dict "name" "metrics" "containerPort" 7777 "protocol" "TCP"))
+            ) | nindent 8 }}
+      {{- with (include "common.volumes" (dict "ctx" $ctx "volumes" list)) }}
+      volumes:
+        {{- . | nindent 8 }}
+      {{- end }}
+{{- if .Values.metrics.serviceMonitor.enabled }}
+---
+{{- /*
+  The relabelling that makes the queue-depth rules addressable.
+
+  A worker's durable consumer is named `tankovault-workers-<scan>-<provider>`
+  (`crates/contracts/src/subjects.rs`), so every per-lane series arrives with the provider and the
+  scan tier fused into one opaque `consumer_name`. Splitting them here rather than in the rules is
+  what lets `provider_scan:scan_queue_depth:current` sit next to the throughput series the
+  services emit, which carry `provider` and `scan` as real labels — otherwise the dashboard could
+  show backlog and throughput but never the same lane on both axes.
+
+  A `replace` action whose regex does not match leaves the series untouched, which is exactly the
+  wanted behaviour for the notifier's consumer (`tankovault-notifier`): it keeps an empty `scan`,
+  and the recording rules select on `scan!=""` to tell the two streams' consumers apart.
+*/ -}}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "common.fullname.suffixed" (dict "ctx" . "suffix" "nats-exporter") }}
+  namespace: {{ include "common.namespace" . }}
+  labels:
+    {{- include "common.labels" . | nindent 4 }}
+    app.kubernetes.io/component: nats-exporter
+    {{- with .Values.metrics.serviceMonitor.labels }}
+    {{- include "common.tplvalues.render" (dict "value" . "context" $) | nindent 4 }}
+    {{- end }}
+  {{- with (include "common.annotations" .) }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
+spec:
+  jobLabel: app.kubernetes.io/component
+  namespaceSelector:
+    matchNames:
+      - {{ include "common.namespace" . }}
+  selector:
+    matchLabels:
+      {{- include "tankovault.datastore.selectorLabels" (dict "ctx" . "component" "nats-exporter") | nindent 6 }}
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: {{ .Values.metrics.serviceMonitor.interval }}
+      scrapeTimeout: {{ .Values.metrics.serviceMonitor.scrapeTimeout }}
+      metricRelabelings:
+        - sourceLabels: [consumer_name]
+          regex: tankovault-workers-(fast|full)-(.+)
+          targetLabel: scan
+          replacement: $1
+        - sourceLabels: [consumer_name]
+          regex: tankovault-workers-(fast|full)-(.+)
+          targetLabel: provider
+          replacement: $2
+{{- end }}
+{{- end }}

@@ -7,6 +7,7 @@ suite: test observability objects
 templates:
   - dashboard-configmap.yaml
   - grafanadashboard.yaml
+  - nats-exporter.yaml
   - prometheusrule.yaml
   - serviceaccount.yaml
 values:
@@ -51,20 +52,34 @@ tests:
       metrics.dashboard.grafanaOperator.enabled: true
     template: grafanadashboard.yaml
     asserts:
+      # One per dashboard file, not one per chart: a `configMapRef` addresses a single key, and
+      # the operator tracks folder and import status per dashboard.
       - hasDocuments:
-          count: 1
+          count: 2
       - equal:
           path: metadata.name
           value: RELEASE-NAME-tankovault-overview
-      - equal:
-          path: spec.allowCrossNamespaceImport
-          value: true
-      - equal:
-          path: spec.configMapRef.name
-          value: RELEASE-NAME-tankovault-dashboards
+        documentIndex: 0
       - equal:
           path: spec.configMapRef.key
           value: tankovault-overview.json
+        documentIndex: 0
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-tankovault-scan-pipeline
+        documentIndex: 1
+      - equal:
+          path: spec.configMapRef.key
+          value: tankovault-scan-pipeline.json
+        documentIndex: 1
+      - equal:
+          path: spec.allowCrossNamespaceImport
+          value: true
+        documentIndex: 0
+      - equal:
+          path: spec.configMapRef.name
+          value: RELEASE-NAME-tankovault-dashboards
+        documentIndex: 0
 
   - it: reports the library's dashboard complaints through the chart's own validator
     capabilities:
@@ -99,7 +114,7 @@ tests:
   # The rules have only ever had one carrier — `PrometheusRule` is the operator's own CRD — so
   # what is checked here is the same refusal contract the dashboards got, not a second path.
 
-  - it: ships the vendored rules as a PrometheusRule
+  - it: ships the chart's rules as a PrometheusRule
     capabilities:
       apiVersions:
         - monitoring.coreos.com/v1
@@ -114,7 +129,7 @@ tests:
           value: kube-prometheus-stack
       - lengthEqual:
           path: spec.groups
-          count: 11
+          count: 19
 
   - it: keeps Prometheus' alert templating out of the template engine
     capabilities:
@@ -152,3 +167,136 @@ tests:
     asserts:
       - failedTemplate:
           errorPattern: "metrics.prometheusRule.enabled has no effect while metrics.enabled=false"
+
+  # Scoping. A `PrometheusRule` matches series from every namespace Prometheus scrapes, so an
+  # unscoped `up{job="api"}` alerts on somebody else's `api`. The mechanics belong to the library
+  # and are covered against the common fixture; what is pinned here is that this chart supplies
+  # both halves — its own placeholder and its own release namespace.
+  - it: scopes every rule expression to the release namespace by default
+    capabilities:
+      apiVersions:
+        - monitoring.coreos.com/v1
+    release:
+      namespace: tankovault-prod
+    set:
+      metrics.prometheusRule.enabled: true
+    template: prometheusrule.yaml
+    asserts:
+      - matchRegex:
+          path: spec.groups[0].rules[0].expr
+          pattern: 'namespace="tankovault-prod"'
+      - notMatchRegex:
+          path: spec.groups[0].rules[0].expr
+          pattern: 'tankovault_scope'
+
+  - it: leaves the rules unscoped when asked, placeholder and all
+    # `none` is for a Prometheus that sets `enforcedNamespaceLabel` and does the same rewrite
+    # itself. The placeholder is already an always-true matcher, so "unscoped" means shipping the
+    # files unchanged rather than stripping the token back out.
+    capabilities:
+      apiVersions:
+        - monitoring.coreos.com/v1
+    release:
+      namespace: tankovault-prod
+    set:
+      metrics.prometheusRule.enabled: true
+      metrics.prometheusRule.scope: none
+    template: prometheusrule.yaml
+    asserts:
+      - matchRegex:
+          path: spec.groups[0].rules[0].expr
+          pattern: 'tankovault_scope=~"\.\*"'
+      - notMatchRegex:
+          path: spec.groups[0].rules[0].expr
+          pattern: 'namespace="tankovault-prod"'
+
+  - it: does not rewrite the runbooks, only the expressions
+    capabilities:
+      apiVersions:
+        - monitoring.coreos.com/v1
+    release:
+      namespace: tankovault-prod
+    set:
+      metrics.prometheusRule.enabled: true
+    template: prometheusrule.yaml
+    asserts:
+      - matchRegex:
+          path: spec.groups[0].rules[0].annotations.description
+          pattern: '\{\{ \$labels\.namespace \}\}'
+
+  # The NATS exporter. NATS publishes no Prometheus exposition of its own, so without this the
+  # queue-depth rules and the pipeline dashboard's backlog row have no producer at all.
+  - it: ships no NATS exporter unless asked
+    template: nats-exporter.yaml
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: points the exporter at the bundled NATS monitoring listener, not the client port
+    set:
+      nats.enabled: true
+      metrics.natsExporter.enabled: true
+    template: nats-exporter.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].args
+          value:
+            - -varz
+            - -jsz=all
+            - -port
+            - "7777"
+            - http://RELEASE-NAME-tankovault-nats:8222
+
+  - it: splits the JetStream consumer name into provider and scan
+    # Without this the per-lane backlog arrives as one opaque `consumer_name` and cannot be read
+    # against the throughput series, which carry `provider` and `scan` as real labels.
+    capabilities:
+      apiVersions:
+        - monitoring.coreos.com/v1
+    set:
+      nats.enabled: true
+      metrics.natsExporter.enabled: true
+      metrics.serviceMonitor.enabled: true
+    template: nats-exporter.yaml
+    documentSelector:
+      path: kind
+      value: ServiceMonitor
+    asserts:
+      - equal:
+          path: spec.jobLabel
+          value: app.kubernetes.io/component
+      - equal:
+          path: spec.endpoints[0].metricRelabelings
+          value:
+            - sourceLabels: [consumer_name]
+              regex: tankovault-workers-(fast|full)-(.+)
+              targetLabel: scan
+              replacement: $1
+            - sourceLabels: [consumer_name]
+              regex: tankovault-workers-(fast|full)-(.+)
+              targetLabel: provider
+              replacement: $2
+
+  - it: refuses an exporter with nothing to scrape
+    # `externalNats.url` is the client port and a different protocol, so it cannot stand in.
+    set:
+      metrics.natsExporter.enabled: true
+      externalNats.url: nats://nats.example.com:4222
+      postgresql.enabled: true
+    template: serviceaccount.yaml
+    asserts:
+      - failedTemplate:
+          errorPattern: "needs a NATS monitoring endpoint"
+
+  - it: ships both dashboards under one ConfigMap
+    set:
+      metrics.dashboard.enabled: true
+    template: dashboard-configmap.yaml
+    asserts:
+      - exists:
+          path: data["tankovault-overview.json"]
+      - exists:
+          path: data["tankovault-scan-pipeline.json"]

@@ -588,7 +588,7 @@ services:
       # type: string
       # @schema
       # -- Image tag, pinned by digest.
-      tag: v1.1.1@sha256:46d771abe89462108833d4153b10a16a20254ae9e2f82b080e3c0fbd194e52c4
+      tag: v1.2.0@sha256:4736e450dc3f0a2b89d8399ed3390427c3c01739cdcb568c19b70954581637fd
 
     # @schema
     # enum: ["", nano, micro, small, medium, large]
@@ -712,7 +712,7 @@ services:
       # type: string
       # @schema
       # -- Image tag, pinned by digest.
-      tag: v1.1.1@sha256:13c91c228dd5ace197230dd9d2138f403e58a88b9e4b000182ed62358244cb9f
+      tag: v1.2.0@sha256:22ff0b7a7a97f2cebacf052400036425fea397336b41eb11bb78b361ebde3b65
 
     # @schema
     # enum: ["", nano, micro, small, medium, large]
@@ -836,7 +836,7 @@ services:
       # type: string
       # @schema
       # -- Image tag, pinned by digest.
-      tag: v1.1.1@sha256:3dc671bcde4060cdf7f8723e529d77bf31f1786e84d4ecbd5eccef7fed9d6507
+      tag: v1.2.0@sha256:4d5a9ca31ab6cbe37f895ac08d7d90730080bd7ed1b01fc0195213461991a9d2
 
     # @schema
     # enum: ["", nano, micro, small, medium, large]
@@ -924,7 +924,7 @@ services:
       # type: string
       # @schema
       # -- Image tag, pinned by digest.
-      tag: v1.1.1@sha256:7b8a4833a62f2365841797a7c083f1e8ebbff6083202222d6d42bfe8f1ced20e
+      tag: v1.2.0@sha256:b849f8fa17e88ac2239b9a905589e4b07a9430c9d243d10738982edec087c562
 
     # @schema
     # enum: ["", nano, micro, small, medium, large]
@@ -1046,7 +1046,7 @@ services:
       # type: string
       # @schema
       # -- Image tag, pinned by digest.
-      tag: v1.1.1@sha256:ab86fcfcf12ad3c61b4fe50792ae304558c4da6af4d5d1fd2ecea4816746a964
+      tag: v1.2.0@sha256:b2fe977eaa242aecfaa081de5c4c85bf484ef9781da2184db74ba6de19dd22c3
 
     # @schema
     # enum: ["", nano, micro, small, medium, large]
@@ -1133,7 +1133,7 @@ services:
       # type: string
       # @schema
       # -- Image tag, pinned by digest.
-      tag: v1.1.1@sha256:3b030c2eb71076634e66aea2c72429666ebb853634746f5800aeed91c14059c4
+      tag: v1.2.0@sha256:836d8deed69fa7e9b5902f0147b35c85a1285957332ec69bf4d0869051e85da1
 
     # @schema
     # enum: ["", nano, micro, small, medium, large]
@@ -1220,7 +1220,7 @@ services:
       # type: string
       # @schema
       # -- Image tag, pinned by digest.
-      tag: v1.1.1@sha256:2d2ee36ed60fdd4067c270bda1e3089f9e8121f47e19f28b4658f9d94be56afe
+      tag: v1.2.0@sha256:b64d1d2ea0f6be43f1fa69eccc06f92fdde37284a05ccf9c5b9e8e6438408ba8
 
     # @schema
     # enum: ["", nano, micro, small, medium, large]
@@ -1344,7 +1344,7 @@ services:
       # type: string
       # @schema
       # -- Image tag, pinned by digest.
-      tag: v1.1.1@sha256:5b96a6fcabb928e83e887904439f35211c6e82742b402094261537727eb20b84
+      tag: v1.2.0@sha256:76b2bbb011c858c2a7e9e9d016d0a2cc87436b6b2f2c4c52967ba23b75daec8d
 
     # @schema
     # $ref: https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.ResourceRequirements
@@ -1505,7 +1505,7 @@ bootstrap:
     # type: string
     # @schema
     # -- Image tag, pinned by digest.
-    tag: v1.1.1@sha256:52659556290fa90a80d9ed78d80c628ea3091bfc723e829df39089f71a11e48d
+    tag: v1.2.0@sha256:e0c837144778bf7d7c5ea7b46c37b53ed3a6fdcff6b2a7b1d297bb30277ea309
 
   # @schema
   # enum: ["", nano, micro, small, medium, large]
@@ -2052,6 +2052,68 @@ ingress:
 # @schema
 # additionalProperties: true
 # @schema
+# -- Operator-published legal documents, served unauthenticated by the API at `/v1/legal` and
+# `/v1/legal/{slug}`; the frontend's footer builds its Legal column from that index. Upstream
+# ships none of these on purpose — every deployment is a different operator under different law,
+# and an imprint is a statutory requirement in some jurisdictions and meaningless in others. With
+# no documents the index is empty and the footer publishes no Legal column at all, rather than
+# links that 404.
+legal:
+  # @schema
+  # type: string
+  # @schema
+  # -- Directory relative `sources` paths resolve against, and where the chart mounts any
+  # document supplied through `content`. An absolute `sources` path ignores it.
+  dir: /etc/tankovault/legal
+
+  # @schema
+  # type: object
+  # additionalProperties: true
+  # @schema
+  # -- Published documents, keyed by the URL slug they are served under. Each document names its
+  # body exactly once, in one of three ways, and the chart refuses a document that names it
+  # twice or not at all:
+  #
+  # - `content`: a locale-keyed map of the text itself. The chart writes it into a ConfigMap as
+  #   `<slug>.<locale>.md` and mounts it into the API pod. Edits are picked up without a restart —
+  #   the service re-reads behind an mtime check — so this is the option to reach for by default.
+  # - `sources`: a locale-keyed map of file paths you have arranged to mount yourself, through
+  #   `extraVolumes`/`extraVolumeMounts`. Use this when the texts belong to a Secret, a PVC or
+  #   another chart.
+  # - `url`: an absolute `http(s)` link to a document hosted elsewhere. Mounts nothing.
+  #
+  # `title` is a locale-keyed display name, and `updated` a free-form date shown alongside it.
+  # Both are optional and independent of how the body is supplied.
+  #
+  # <details><summary>Example</summary>
+  #
+  # ```yaml
+  # legal:
+  #   documents:
+  #     terms:
+  #       updated: "2026-08-04"
+  #       title:
+  #         en: Terms of Service
+  #         de: Nutzungsbedingungen
+  #       content:
+  #         en: |
+  #           # Terms of Service
+  #           ...
+  #         de: |
+  #           # Nutzungsbedingungen
+  #           ...
+  #     imprint:
+  #       title:
+  #         de: Impressum
+  #       url: https://example.org/impressum
+  # ```
+  #
+  # </details>
+  documents: {}
+
+# @schema
+# additionalProperties: true
+# @schema
 # -- Prometheus integration. Every service serves a scrape on an isolated port, outside the
 # request-facing listener and outside its own HTTP metrics middleware.
 metrics:
@@ -2107,7 +2169,7 @@ metrics:
     # @schema
     # type: boolean
     # @schema
-    # -- Create a PrometheusRule from the recording and alerting rules vendored from upstream.
+    # -- Create a PrometheusRule from the recording and alerting rules under `rules/`.
     enabled: false
 
     # @schema
@@ -2116,6 +2178,66 @@ metrics:
     # @schema
     # -- Extra labels for the PrometheusRule.
     labels: {}
+
+    # @schema
+    # enum: [namespace, none]
+    # @schema
+    # -- Confine the rules to this release's namespace. A `PrometheusRule` is not scoped to the
+    # namespace it lives in, so an unscoped `up{job="api"} == 0` matches an `api` job anywhere
+    # Prometheus can see — a second TankoVault release, or anyone else's service that happens to
+    # produce the same `job` label, and the two then alert on each other. `namespace` rewrites
+    # every rule expression to match only series from this namespace; `none` installs them as
+    # written, which is correct when a Prometheus already sets `enforcedNamespaceLabel` and would
+    # do the same rewrite itself, and wrong otherwise. Two releases of this chart in *one*
+    # namespace cannot be told apart by either mechanism.
+    scope: namespace
+
+  # @schema
+  # additionalProperties: true
+  # @schema
+  natsExporter:
+    # @schema
+    # type: boolean
+    # @schema
+    # -- Deploy `prometheus-nats-exporter` next to NATS. NATS speaks its own monitoring protocol
+    # and no Prometheus exposition, so without this the scan pipeline's queue depth — tasks
+    # waiting per provider lane, tasks being redelivered, whether the notifier backlog is
+    # draining — is invisible. Nothing the services emit substitutes: they can report tasks handed
+    # out, not tasks still sitting in the broker. The rules and dashboard panels that need it are
+    # simply empty while it is off, never falsely green.
+    enabled: false
+
+    # @schema
+    # type: string
+    # @schema
+    # -- NATS monitoring endpoint to scrape. Defaults to the bundled NATS' `:8222`. This is not
+    # the client URL: `externalNats.url` points at 4222 and speaks the NATS protocol, while the
+    # exporter reads HTTP on the monitoring listener, so an external NATS needs this set
+    # explicitly — e.g. `http://nats.example.com:8222`.
+    url: ""
+
+    # @schema
+    # additionalProperties: true
+    # @schema
+    image:
+      # @schema
+      # type: string
+      # @schema
+      # -- Image repository.
+      repository: natsio/prometheus-nats-exporter
+
+      # @schema
+      # type: string
+      # @schema
+      # -- Image tag, pinned by digest.
+      tag: 0.20.1@sha256:4fbf6dacb84780a45a1c3af9b1080c69451a288d20902deae671b80717bb8f61
+
+    # @schema
+    # enum: ["", nano, micro, small, medium, large]
+    # @schema
+    # -- Resource t-shirt size. The exporter polls two JSON endpoints and re-serves them; it does
+    # no work proportional to traffic.
+    resourcesPreset: nano
 
   # @schema
   # additionalProperties: true

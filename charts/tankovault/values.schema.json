@@ -80,7 +80,7 @@
               "type": "string"
             },
             "tag": {
-              "default": "v1.1.1@sha256:52659556290fa90a80d9ed78d80c628ea3091bfc723e829df39089f71a11e48d",
+              "default": "v1.2.0@sha256:e0c837144778bf7d7c5ea7b46c37b53ed3a6fdcff6b2a7b1d297bb30277ea309",
               "description": "Image tag, pinned by digest.",
               "required": [],
               "title": "tag",
@@ -863,6 +863,28 @@
               "required": [],
               "title": "labels",
               "type": "object"
+            },
+            "scope": {
+              "additionalProperties": true,
+              "description": "Confine the rules to a subset of the cluster's series. A `PrometheusRule` is not scoped to\nthe namespace it lives in, so `up{job=\"api\"} == 0` matches somebody else's `api` job in\nanother namespace and two installs of one chart alert on each other. Rather than parse PromQL\nin a Go template, the rule files mark every selector with an always-true placeholder matcher\nand the library swaps it for a real one — see the note in `_prometheus.tpl`. Consuming charts\nnormally derive `matcher` rather than exposing it raw.",
+              "properties": {
+                "matcher": {
+                  "default": "",
+                  "description": "What to swap it for, e.g. `namespace=\"prod\"`. Empty disables the substitution; the\nplaceholder is left in place, which is correct, because it is already a no-op matcher.",
+                  "required": [],
+                  "title": "matcher",
+                  "type": "string"
+                },
+                "placeholder": {
+                  "default": "",
+                  "description": "The literal placeholder written into the rule files, e.g. `myapp_scope=~\".*\"`. Empty\ndisables the substitution and the files install exactly as vendored.",
+                  "required": [],
+                  "title": "placeholder",
+                  "type": "string"
+                }
+              },
+              "required": [],
+              "title": "scope"
             }
           },
           "required": [],
@@ -1753,6 +1775,28 @@
       "title": "kubeVersionOverride",
       "type": "string"
     },
+    "legal": {
+      "additionalProperties": true,
+      "description": "Operator-published legal documents, served unauthenticated by the API at `/v1/legal` and\n`/v1/legal/{slug}`; the frontend's footer builds its Legal column from that index. Upstream\nships none of these on purpose — every deployment is a different operator under different law,\nand an imprint is a statutory requirement in some jurisdictions and meaningless in others. With\nno documents the index is empty and the footer publishes no Legal column at all, rather than\nlinks that 404.",
+      "properties": {
+        "dir": {
+          "default": "/etc/tankovault/legal",
+          "description": "Directory relative `sources` paths resolve against, and where the chart mounts any\ndocument supplied through `content`. An absolute `sources` path ignores it.",
+          "required": [],
+          "title": "dir",
+          "type": "string"
+        },
+        "documents": {
+          "additionalProperties": true,
+          "description": "Published documents, keyed by the URL slug they are served under. Each document names its\nbody exactly once, in one of three ways, and the chart refuses a document that names it\ntwice or not at all:\n\n- `content`: a locale-keyed map of the text itself. The chart writes it into a ConfigMap as\n  `\u003cslug\u003e.\u003clocale\u003e.md` and mounts it into the API pod. Edits are picked up without a restart —\n  the service re-reads behind an mtime check — so this is the option to reach for by default.\n- `sources`: a locale-keyed map of file paths you have arranged to mount yourself, through\n  `extraVolumes`/`extraVolumeMounts`. Use this when the texts belong to a Secret, a PVC or\n  another chart.\n- `url`: an absolute `http(s)` link to a document hosted elsewhere. Mounts nothing.\n\n`title` is a locale-keyed display name, and `updated` a free-form date shown alongside it.\nBoth are optional and independent of how the body is supplied.\n\n\u003cdetails\u003e\u003csummary\u003eExample\u003c/summary\u003e\n\n```yaml\nlegal:\n  documents:\n    terms:\n      updated: \"2026-08-04\"\n      title:\n        en: Terms of Service\n        de: Nutzungsbedingungen\n      content:\n        en: |\n          # Terms of Service\n          ...\n        de: |\n          # Nutzungsbedingungen\n          ...\n    imprint:\n      title:\n        de: Impressum\n      url: https://example.org/impressum\n```\n\n\u003c/details\u003e",
+          "required": [],
+          "title": "documents",
+          "type": "object"
+        }
+      },
+      "required": [],
+      "title": "legal"
+    },
     "metrics": {
       "additionalProperties": true,
       "description": "Prometheus integration. Every service serves a scrape on an isolated port, outside the\nrequest-facing listener and outside its own HTTP metrics middleware.",
@@ -1854,6 +1898,62 @@
           "title": "enabled",
           "type": "boolean"
         },
+        "natsExporter": {
+          "additionalProperties": true,
+          "properties": {
+            "enabled": {
+              "default": false,
+              "description": "Deploy `prometheus-nats-exporter` next to NATS. NATS speaks its own monitoring protocol\nand no Prometheus exposition, so without this the scan pipeline's queue depth — tasks\nwaiting per provider lane, tasks being redelivered, whether the notifier backlog is\ndraining — is invisible. Nothing the services emit substitutes: they can report tasks handed\nout, not tasks still sitting in the broker. The rules and dashboard panels that need it are\nsimply empty while it is off, never falsely green.",
+              "required": [],
+              "title": "enabled",
+              "type": "boolean"
+            },
+            "image": {
+              "additionalProperties": true,
+              "properties": {
+                "repository": {
+                  "default": "natsio/prometheus-nats-exporter",
+                  "description": "Image repository.",
+                  "required": [],
+                  "title": "repository",
+                  "type": "string"
+                },
+                "tag": {
+                  "default": "0.20.1@sha256:4fbf6dacb84780a45a1c3af9b1080c69451a288d20902deae671b80717bb8f61",
+                  "description": "Image tag, pinned by digest.",
+                  "required": [],
+                  "title": "tag",
+                  "type": "string"
+                }
+              },
+              "required": [],
+              "title": "image"
+            },
+            "resourcesPreset": {
+              "default": "nano",
+              "description": "Resource t-shirt size. The exporter polls two JSON endpoints and re-serves them; it does\nno work proportional to traffic.",
+              "enum": [
+                "",
+                "nano",
+                "micro",
+                "small",
+                "medium",
+                "large"
+              ],
+              "required": [],
+              "title": "resourcesPreset"
+            },
+            "url": {
+              "default": "",
+              "description": "NATS monitoring endpoint to scrape. Defaults to the bundled NATS' `:8222`. This is not\nthe client URL: `externalNats.url` points at 4222 and speaks the NATS protocol, while the\nexporter reads HTTP on the monitoring listener, so an external NATS needs this set\nexplicitly — e.g. `http://nats.example.com:8222`.",
+              "required": [],
+              "title": "url",
+              "type": "string"
+            }
+          },
+          "required": [],
+          "title": "natsExporter"
+        },
         "port": {
           "default": 9090,
           "description": "Port the Prometheus exposition is served on.",
@@ -1868,7 +1968,7 @@
           "properties": {
             "enabled": {
               "default": false,
-              "description": "Create a PrometheusRule from the recording and alerting rules vendored from upstream.",
+              "description": "Create a PrometheusRule from the recording and alerting rules under `rules/`.",
               "required": [],
               "title": "enabled",
               "type": "boolean"
@@ -1879,6 +1979,16 @@
               "required": [],
               "title": "labels",
               "type": "object"
+            },
+            "scope": {
+              "default": "namespace",
+              "description": "Confine the rules to this release's namespace. A `PrometheusRule` is not scoped to the\nnamespace it lives in, so an unscoped `up{job=\"api\"} == 0` matches an `api` job anywhere\nPrometheus can see — a second TankoVault release, or anyone else's service that happens to\nproduce the same `job` label, and the two then alert on each other. `namespace` rewrites\nevery rule expression to match only series from this namespace; `none` installs them as\nwritten, which is correct when a Prometheus already sets `enforcedNamespaceLabel` and would\ndo the same rewrite itself, and wrong otherwise. Two releases of this chart in *one*\nnamespace cannot be told apart by either mechanism.",
+              "enum": [
+                "namespace",
+                "none"
+              ],
+              "required": [],
+              "title": "scope"
             }
           },
           "required": [],
@@ -2343,7 +2453,7 @@
                   "type": "string"
                 },
                 "tag": {
-                  "default": "v1.1.1@sha256:13c91c228dd5ace197230dd9d2138f403e58a88b9e4b000182ed62358244cb9f",
+                  "default": "v1.2.0@sha256:22ff0b7a7a97f2cebacf052400036425fea397336b41eb11bb78b361ebde3b65",
                   "description": "Image tag, pinned by digest.",
                   "required": [],
                   "title": "tag",
@@ -2519,7 +2629,7 @@
                   "type": "string"
                 },
                 "tag": {
-                  "default": "v1.1.1@sha256:2d2ee36ed60fdd4067c270bda1e3089f9e8121f47e19f28b4658f9d94be56afe",
+                  "default": "v1.2.0@sha256:b64d1d2ea0f6be43f1fa69eccc06f92fdde37284a05ccf9c5b9e8e6438408ba8",
                   "description": "Image tag, pinned by digest.",
                   "required": [],
                   "title": "tag",
@@ -2645,7 +2755,7 @@
                   "type": "string"
                 },
                 "tag": {
-                  "default": "v1.1.1@sha256:3dc671bcde4060cdf7f8723e529d77bf31f1786e84d4ecbd5eccef7fed9d6507",
+                  "default": "v1.2.0@sha256:4d5a9ca31ab6cbe37f895ac08d7d90730080bd7ed1b01fc0195213461991a9d2",
                   "description": "Image tag, pinned by digest.",
                   "required": [],
                   "title": "tag",
@@ -2821,7 +2931,7 @@
                   "type": "string"
                 },
                 "tag": {
-                  "default": "v1.1.1@sha256:46d771abe89462108833d4153b10a16a20254ae9e2f82b080e3c0fbd194e52c4",
+                  "default": "v1.2.0@sha256:4736e450dc3f0a2b89d8399ed3390427c3c01739cdcb568c19b70954581637fd",
                   "description": "Image tag, pinned by digest.",
                   "required": [],
                   "title": "tag",
@@ -2947,7 +3057,7 @@
                   "type": "string"
                 },
                 "tag": {
-                  "default": "v1.1.1@sha256:ab86fcfcf12ad3c61b4fe50792ae304558c4da6af4d5d1fd2ecea4816746a964",
+                  "default": "v1.2.0@sha256:b2fe977eaa242aecfaa081de5c4c85bf484ef9781da2184db74ba6de19dd22c3",
                   "description": "Image tag, pinned by digest.",
                   "required": [],
                   "title": "tag",
@@ -3130,7 +3240,7 @@
                   "type": "string"
                 },
                 "tag": {
-                  "default": "v1.1.1@sha256:5b96a6fcabb928e83e887904439f35211c6e82742b402094261537727eb20b84",
+                  "default": "v1.2.0@sha256:76b2bbb011c858c2a7e9e9d016d0a2cc87436b6b2f2c4c52967ba23b75daec8d",
                   "description": "Image tag, pinned by digest.",
                   "required": [],
                   "title": "tag",
@@ -3253,7 +3363,7 @@
                   "type": "string"
                 },
                 "tag": {
-                  "default": "v1.1.1@sha256:3b030c2eb71076634e66aea2c72429666ebb853634746f5800aeed91c14059c4",
+                  "default": "v1.2.0@sha256:836d8deed69fa7e9b5902f0147b35c85a1285957332ec69bf4d0869051e85da1",
                   "description": "Image tag, pinned by digest.",
                   "required": [],
                   "title": "tag",
@@ -3429,7 +3539,7 @@
                   "type": "string"
                 },
                 "tag": {
-                  "default": "v1.1.1@sha256:7b8a4833a62f2365841797a7c083f1e8ebbff6083202222d6d42bfe8f1ced20e",
+                  "default": "v1.2.0@sha256:b849f8fa17e88ac2239b9a905589e4b07a9430c9d243d10738982edec087c562",
                   "description": "Image tag, pinned by digest.",
                   "required": [],
                   "title": "tag",

@@ -1,9 +1,27 @@
-# Derived series over the metrics the services emit, named `level:metric:operations`
-# (Prometheus convention): `job` is the aggregation level since metrics carry no service label.
+# Derived series over the metrics the services emit, named `level:metric:operations` (Prometheus
+# convention), where the level is the label set the series comes out with.
 #
-# Buckets, not quantiles: `http_request_duration_seconds` uses explicit bucket boundaries so these
-# rules can `sum by (job, le)` across replicas before taking the quantile — quantiles can't be
-# averaged, buckets can. Keep `sum by (..., le)` inside every `histogram_quantile` below.
+# `namespace` is in every level and every `by` clause, and that is load-bearing rather than
+# decorative. A recording rule drops any label it does not group by, so a series aggregated only
+# by `job` arrives at the alerting rules with no namespace at all — and an alert that then asks
+# for `{namespace="x"}` matches nothing, which reads exactly like a healthy system. Keeping
+# namespace through the aggregation is what makes the scoping in `tankovault.rules.scopeMatcher`
+# work, and it is also what stops two releases in different namespaces from summing into one
+# series.
+#
+# `job` is the second level everywhere because the metrics carry no service label of their own:
+# the chart points every ServiceMonitor's `jobLabel` at `app.kubernetes.io/component`, so `job`
+# comes out as the service slug (`api`, `worker`, `control-plane`, ...) and is the sole identifier
+# of which service emitted a series.
+#
+# `tankovault_scope=~".*"` in every selector is a placeholder, not a filter. It matches every
+# series — a regex match against an absent label matches the empty string — and the chart swaps
+# it for a real namespace matcher at render time. Any new rule must carry it too, or it silently
+# escapes the scoping; the render fails if no rule carries it at all.
+#
+# Buckets, not quantiles: the latency histograms use explicit bucket boundaries so these rules can
+# `sum by (..., le)` across replicas before taking the quantile — quantiles cannot be averaged,
+# buckets can. Keep `sum by (..., le)` inside every `histogram_quantile` below.
 #
 # Ratio rules divide two rates and are NaN while the denominator is zero, so an idle service
 # records a gap rather than a fabricated 0 — every comparison against NaN is false, so an idle
@@ -13,150 +31,435 @@ groups:
   - name: tankovault-http-recording
     interval: 30s
     rules:
-      - record: job:http_requests:rate5m
-        expr: sum by (job) (rate(http_requests_total[5m]))
+      - record: namespace_job:http_requests:rate5m
+        expr: sum by (namespace, job) (rate(http_requests_total{tankovault_scope=~".*"}[5m]))
 
-      - record: job_route:http_requests:rate5m
-        expr: sum by (job, route) (rate(http_requests_total[5m]))
+      - record: namespace_job_route:http_requests:rate5m
+        expr: sum by (namespace, job, route) (rate(http_requests_total{tankovault_scope=~".*"}[5m]))
 
       # `status` is the exact numeric code, not a class, so the class split happens here.
-      - record: job:http_requests_server_errors:rate5m
-        expr: sum by (job) (rate(http_requests_total{status=~"5.."}[5m]))
+      - record: namespace_job:http_requests_server_errors:rate5m
+        expr: >-
+          sum by (namespace, job) (
+            rate(http_requests_total{tankovault_scope=~".*", status=~"5.."}[5m]))
 
-      - record: job:http_requests_client_errors:rate5m
-        expr: sum by (job) (rate(http_requests_total{status=~"4.."}[5m]))
+      - record: namespace_job:http_requests_client_errors:rate5m
+        expr: >-
+          sum by (namespace, job) (
+            rate(http_requests_total{tankovault_scope=~".*", status=~"4.."}[5m]))
 
-      - record: job:http_requests_server_errors:ratio_rate5m
-        expr: job:http_requests_server_errors:rate5m / job:http_requests:rate5m
+      - record: namespace_job:http_requests_server_errors:ratio_rate5m
+        expr: >-
+          namespace_job:http_requests_server_errors:rate5m{tankovault_scope=~".*"}
+            / namespace_job:http_requests:rate5m{tankovault_scope=~".*"}
 
-      - record: job_route:http_requests_server_errors:rate5m
-        expr: sum by (job, route) (rate(http_requests_total{status=~"5.."}[5m]))
+      - record: namespace_job_route:http_requests_server_errors:rate5m
+        expr: >-
+          sum by (namespace, job, route) (
+            rate(http_requests_total{tankovault_scope=~".*", status=~"5.."}[5m]))
 
       # 429 (rate limiter) and 404 (feature gate) are policy answers, not defects; kept as their
       # own series so the client-error panel doesn't read a switched-off feature as a broken client.
-      - record: job:http_requests_throttled:rate5m
-        expr: sum by (job) (rate(http_requests_total{status="429"}[5m]))
+      - record: namespace_job:http_requests_throttled:rate5m
+        expr: >-
+          sum by (namespace, job) (
+            rate(http_requests_total{tankovault_scope=~".*", status="429"}[5m]))
 
-      - record: job:http_request_duration_seconds:p50_5m
+      - record: namespace_job:http_request_duration_seconds:p50_5m
         expr: >-
           histogram_quantile(0.50,
-            sum by (job, le) (rate(http_request_duration_seconds_bucket[5m])))
+            sum by (namespace, job, le) (
+              rate(http_request_duration_seconds_bucket{tankovault_scope=~".*"}[5m])))
 
-      - record: job:http_request_duration_seconds:p95_5m
+      - record: namespace_job:http_request_duration_seconds:p95_5m
         expr: >-
           histogram_quantile(0.95,
-            sum by (job, le) (rate(http_request_duration_seconds_bucket[5m])))
+            sum by (namespace, job, le) (
+              rate(http_request_duration_seconds_bucket{tankovault_scope=~".*"}[5m])))
 
-      - record: job:http_request_duration_seconds:p99_5m
+      - record: namespace_job:http_request_duration_seconds:p99_5m
         expr: >-
           histogram_quantile(0.99,
-            sum by (job, le) (rate(http_request_duration_seconds_bucket[5m])))
+            sum by (namespace, job, le) (
+              rate(http_request_duration_seconds_bucket{tankovault_scope=~".*"}[5m])))
 
       # /v1/me/stream excluded: a server-closed SSE stream (api restart, NATS loss) records a
       # multi-minute duration in the +Inf bucket and poisons every quantile for the api job.
-      - record: job_route:http_request_duration_seconds:p95_5m
+      - record: namespace_job_route:http_request_duration_seconds:p95_5m
         expr: >-
           histogram_quantile(0.95,
-            sum by (job, route, le) (
-              rate(http_request_duration_seconds_bucket{route!="/v1/me/stream"}[5m])))
+            sum by (namespace, job, route, le) (
+              rate(http_request_duration_seconds_bucket{tankovault_scope=~".*",
+                                                        route!="/v1/me/stream"}[5m])))
 
-      # Not alerted on: an open SSE stream is one request in flight for its whole life, so this
-      # tracks "browsers with the app open" as much as load (see docs/OBSERVABILITY.md).
-      - record: job:http_requests_in_flight:avg
-        expr: avg by (job) (http_requests_in_flight)
+      # Not alerted on above a placeholder threshold: an open SSE stream is one request in flight
+      # for its whole life, so this tracks "browsers with the app open" as much as load.
+      - record: namespace_job:http_requests_in_flight:avg
+        expr: avg by (namespace, job) (http_requests_in_flight{tankovault_scope=~".*"})
+
+  # Liveness, readiness and rollout state. Readiness comes from the service's own gauges rather
+  # than from an external prober: `service_ready` and `service_dependency_up` are exported on
+  # /metrics (upstream `crates/service/src/health.rs`), so the same scrape that proves a pod is
+  # answering also says whether it considers itself able to serve, and which dependency is at
+  # fault when it does not.
+  - name: tankovault-availability-recording
+    interval: 30s
+    rules:
+      # Restricted to this chart's own jobs. `up` is the one series here that Prometheus
+      # synthesises for every target it has, in every namespace, so without the job list a
+      # namespace shared with anything else would count that too.
+      - record: namespace_job:up:count
+        expr: >-
+          count by (namespace, job) (
+            up{tankovault_scope=~".*",
+               job=~"api|frontend|control-plane|worker|notifier|sync|challenge-solver|render"} == 1)
+
+      # `min`, not `avg`: one unready replica out of three is still a replica serving errors, and
+      # an average would dilute it to 0.67 and never cross a `== 0` threshold.
+      - record: namespace_job:service_ready:min
+        expr: min by (namespace, job) (service_ready{tankovault_scope=~".*"})
+
+      - record: namespace_job_dependency:service_dependency_up:min
+        expr: >-
+          min by (namespace, job, dependency) (
+            service_dependency_up{tankovault_scope=~".*"})
+
+      # How many distinct versions are running. `tankovault_build_info` is a constant 1 carrying
+      # the version as a label, so counting the label values counts the rollout: 1 is settled, 2
+      # is a deploy in flight or one that stopped half way.
+      - record: namespace:tankovault_versions:count
+        expr: >-
+          count by (namespace) (
+            count by (namespace, version) (tankovault_build_info{tankovault_scope=~".*"}))
 
   - name: tankovault-edge-policy-recording
     interval: 30s
     rules:
-      - record: job_class:http_rate_limited:rate5m
-        expr: sum by (job, class) (rate(http_rate_limited_total[5m]))
+      - record: namespace_job_class:http_rate_limited:rate5m
+        expr: >-
+          sum by (namespace, job, class) (
+            rate(http_rate_limited_total{tankovault_scope=~".*"}[5m]))
 
       # The Redis limiter backend fails open by design: while this is non-zero, configured limits
       # are not being enforced at all.
-      - record: job_backend:rate_limit_store_errors:rate5m
-        expr: sum by (job, backend) (rate(rate_limit_store_errors_total[5m]))
+      - record: namespace_job_backend:rate_limit_store_errors:rate5m
+        expr: >-
+          sum by (namespace, job, backend) (
+            rate(rate_limit_store_errors_total{tankovault_scope=~".*"}[5m]))
 
-      - record: job_feature:http_feature_disabled:rate15m
-        expr: sum by (job, feature) (rate(http_feature_disabled_total[15m]))
+      - record: namespace_job_feature:http_feature_disabled:rate15m
+        expr: >-
+          sum by (namespace, job, feature) (
+            rate(http_feature_disabled_total{tankovault_scope=~".*"}[15m]))
+
+      - record: namespace_job:auth_attempts:rate5m
+        expr: >-
+          sum by (namespace, job) (rate(auth_attempts_total{tankovault_scope=~".*"}[5m]))
+
+      # `failure` only. `denied` is an authorisation refusal — a signed-in user reaching for
+      # something that is not theirs — and mixing it in would let a permissions bug read as a
+      # credential attack.
+      - record: namespace_job:auth_attempts_failed:ratio_rate15m
+        expr: >-
+          sum by (namespace, job) (
+            rate(auth_attempts_total{tankovault_scope=~".*", result="failure"}[15m]))
+            / sum by (namespace, job) (rate(auth_attempts_total{tankovault_scope=~".*"}[15m]))
+
+  # The connection pool is the shared resource behind almost every "everything is slow" incident
+  # on this stack, and until these gauges existed it could only be inferred from latency.
+  - name: tankovault-database-recording
+    interval: 30s
+    rules:
+      - record: namespace_job_state:db_pool_connections:sum
+        expr: >-
+          sum by (namespace, job, state) (db_pool_connections{tankovault_scope=~".*"})
+
+      # Fleet-level: in-use across every replica of a service over the sum of their configured
+      # maxima. That is the number that matters for a shared database, and it is deliberately not
+      # per-pod — one replica briefly at its own ceiling while the others idle is normal, and a
+      # per-pod maximum would alert on it.
+      - record: namespace_job:db_pool_saturation:ratio
+        expr: >-
+          sum by (namespace, job) (
+            db_pool_connections{tankovault_scope=~".*", state="in_use"})
+            / sum by (namespace, job) (db_pool_max_connections{tankovault_scope=~".*"})
+
+  # The crawler's view of the sites it fetches from. All of this is emitted by `worker`; the
+  # `provider` label is the adapter slug, so these sit alongside the scan-pipeline series below
+  # and can be read on the same axis.
+  - name: tankovault-provider-recording
+    interval: 30s
+    rules:
+      - record: namespace_provider:provider_fetch:rate5m
+        expr: >-
+          sum by (namespace, provider) (rate(provider_fetch_total{tankovault_scope=~".*"}[5m]))
+
+      - record: namespace_provider_outcome:provider_fetch:rate5m
+        expr: >-
+          sum by (namespace, provider, outcome) (
+            rate(provider_fetch_total{tankovault_scope=~".*"}[5m]))
+
+      # `5xx` and `error` only. A 4xx from a provider is usually a chapter that has been taken
+      # down and is expected in normal operation; a 3xx is a redirect the fetcher followed. Only
+      # a server fault or a transport failure means the provider is unusable right now.
+      - record: namespace_provider:provider_fetch_failures:ratio_rate15m
+        expr: >-
+          sum by (namespace, provider) (
+            rate(provider_fetch_total{tankovault_scope=~".*", outcome=~"5xx|error"}[15m]))
+            / sum by (namespace, provider) (
+                rate(provider_fetch_total{tankovault_scope=~".*"}[15m]))
+
+      - record: namespace_provider:provider_fetch_duration_seconds:p95_5m
+        expr: >-
+          histogram_quantile(0.95,
+            sum by (namespace, provider, le) (
+              rate(provider_fetch_duration_seconds_bucket{tankovault_scope=~".*"}[5m])))
+
+      - record: namespace_provider:provider_backoff_waits:rate15m
+        expr: >-
+          sum by (namespace, provider) (
+            rate(provider_backoff_waits_total{tankovault_scope=~".*"}[15m]))
+
+      # Seconds of backoff accrued per second — a duty cycle, not a duration. 1.0 means one
+      # crawler is parked on this provider full time, so the number is directly comparable
+      # against the number of workers and needs no baseline to interpret.
+      - record: namespace_provider:provider_backoff_wait_seconds:rate15m
+        expr: >-
+          sum by (namespace, provider) (
+            rate(provider_backoff_wait_seconds_sum{tankovault_scope=~".*"}[15m]))
 
   # scan_tasks_served_total{provider,scan} counts tasks handed out, so a redelivered task counts
-  # again — see the retry caveat in docs/OBSERVABILITY.md.
+  # again — see the retry caveat in upstream's docs/OBSERVABILITY.md. `scan_tasks_settled_total`
+  # is the counterpart that counts terminal outcomes exactly once, which is why the failure ratio
+  # below is built on it rather than on the served counter.
   - name: tankovault-scan-recording
     interval: 30s
     rules:
-      - record: provider_scan:scan_tasks_served:rate5m
-        expr: sum by (provider, scan) (rate(scan_tasks_served_total[5m]))
-
-      - record: scan:scan_tasks_served:rate15m
-        expr: sum by (scan) (rate(scan_tasks_served_total[15m]))
-
-      - record: provider:scan_tasks_served:increase1h
-        expr: sum by (provider) (increase(scan_tasks_served_total[1h]))
-
-      # jetstream_consumer_num_pending is a durable consumer's undelivered backlog; the relabelling
-      # in prometheus.yml splits it into provider/scan to sit next to the throughput series above.
-      - record: provider_scan:scan_queue_depth:current
+      - record: namespace_provider_scan:scan_tasks_served:rate5m
         expr: >-
-          sum by (provider, scan) (
-            jetstream_consumer_num_pending{stream_name="TANKOVAULT_TASKS", scan!=""})
+          sum by (namespace, provider, scan) (
+            rate(scan_tasks_served_total{tankovault_scope=~".*"}[5m]))
 
-      - record: scan:scan_queue_depth:sum
-        expr: sum by (scan) (provider_scan:scan_queue_depth:current)
+      - record: namespace_scan:scan_tasks_served:rate15m
+        expr: >-
+          sum by (namespace, scan) (rate(scan_tasks_served_total{tankovault_scope=~".*"}[15m]))
+
+      - record: namespace_provider:scan_tasks_served:increase1h
+        expr: >-
+          sum by (namespace, provider) (
+            increase(scan_tasks_served_total{tankovault_scope=~".*"}[1h]))
+
+      - record: namespace_provider_scan_outcome:scan_tasks_settled:rate15m
+        expr: >-
+          sum by (namespace, provider, scan, outcome) (
+            rate(scan_tasks_settled_total{tankovault_scope=~".*"}[15m]))
+
+      # `requeued` is excluded from the numerator on purpose: a requeue is the retry mechanism
+      # working, and a task that keeps being requeued eventually settles as `failed` and is
+      # counted then. Including it would double-count the same failing task.
+      - record: namespace_provider_scan:scan_tasks_failed:ratio_rate15m
+        expr: >-
+          sum by (namespace, provider, scan) (
+            rate(scan_tasks_settled_total{tankovault_scope=~".*", outcome="failed"}[15m]))
+            / sum by (namespace, provider, scan) (
+                rate(scan_tasks_settled_total{tankovault_scope=~".*"}[15m]))
+
+      - record: namespace_scan:scan_task_duration_seconds:p95_15m
+        expr: >-
+          histogram_quantile(0.95,
+            sum by (namespace, scan, le) (
+              rate(scan_task_duration_seconds_bucket{tankovault_scope=~".*"}[15m])))
+
+      - record: namespace_provider:chapters_discovered:increase1h
+        expr: >-
+          sum by (namespace, provider) (
+            increase(chapters_discovered_total{tankovault_scope=~".*"}[1h]))
+
+      # Rejections are the adapter refusing a listing entry it cannot make sense of, so this
+      # ratio is a direct read on whether a provider's markup still matches its adapter.
+      #
+      # The `or ... * 0` is load-bearing, not defensive. Binary `+` between two vectors matches on
+      # identical label sets and drops anything unmatched, and these are two different counters: a
+      # provider that has only ever rejected has no `chapters_discovered_total` series at all, so
+      # a plain sum would drop it — losing exactly the provider whose ratio is 1.0 and which this
+      # rule exists to surface. The fallback supplies a zero on the discovered side for every
+      # provider that has a rejection.
+      - record: namespace_provider:chapters_rejected:ratio_rate1h
+        expr: >-
+          sum by (namespace, provider) (
+            rate(chapters_rejected_total{tankovault_scope=~".*"}[1h]))
+            / (
+              sum by (namespace, provider) (
+                rate(chapters_rejected_total{tankovault_scope=~".*"}[1h]))
+              + (
+                sum by (namespace, provider) (
+                  rate(chapters_discovered_total{tankovault_scope=~".*"}[1h]))
+                or sum by (namespace, provider) (
+                     rate(chapters_rejected_total{tankovault_scope=~".*"}[1h])) * 0
+              )
+            )
+
+      - record: namespace_provider_scan_result:scan_runs_planned:rate15m
+        expr: >-
+          sum by (namespace, provider, scan, result) (
+            rate(scan_runs_planned_total{tankovault_scope=~".*"}[15m]))
+
+      # Exactly one control-plane replica holds the lease and plans runs. Zero means nothing is
+      # scheduling; more than one means two replicas both believe they are leader.
+      - record: namespace:scheduler_leader:sum
+        expr: sum by (namespace) (scheduler_leader{tankovault_scope=~".*"})
+
+      # jetstream_consumer_num_pending is a durable consumer's undelivered backlog. It reaches
+      # Prometheus only through the bundled NATS exporter (`metrics.natsExporter.enabled`), whose
+      # ServiceMonitor splits the opaque `consumer_name` into `provider` and `scan` so these sit
+      # next to the throughput series above. Without the exporter these four series simply do not
+      # exist, and the alerts built on them never fire.
+      - record: namespace_provider_scan:scan_queue_depth:current
+        expr: >-
+          sum by (namespace, provider, scan) (
+            jetstream_consumer_num_pending{tankovault_scope=~".*",
+                                           stream_name="TANKOVAULT_TASKS", scan!=""})
+
+      - record: namespace_scan:scan_queue_depth:sum
+        expr: >-
+          sum by (namespace, scan) (
+            namespace_provider_scan:scan_queue_depth:current{tankovault_scope=~".*"})
 
       # MAX_TASK_DELIVERIES is 3, so a lane holding redelivered messages continuously is failing,
       # not hiccupping. Closest available signal to broker-side retry-versus-settle.
-      - record: provider_scan:scan_tasks_redelivered:current
+      - record: namespace_provider_scan:scan_tasks_redelivered:current
         expr: >-
-          sum by (provider, scan) (
-            jetstream_consumer_num_redelivered{stream_name="TANKOVAULT_TASKS", scan!=""})
+          sum by (namespace, provider, scan) (
+            jetstream_consumer_num_redelivered{tankovault_scope=~".*",
+                                               stream_name="TANKOVAULT_TASKS", scan!=""})
 
       # The notifier acks only after fan-out, so a hanging channel shows up here as a queue that
       # stops draining.
-      - record: consumer:events_queue_depth:current
+      - record: namespace_consumer:events_queue_depth:current
         expr: >-
-          sum by (consumer_name) (
-            jetstream_consumer_num_pending{stream_name="TANKOVAULT_EVENTS"})
+          sum by (namespace, consumer_name) (
+            jetstream_consumer_num_pending{tankovault_scope=~".*",
+                                           stream_name="TANKOVAULT_EVENTS"})
 
-      # Round-robin fairness (OPERATIONS.md §7) predicts this tracks the number of providers with
-      # work; one lane climbing alone is the signature of lanes that failed to open.
-      - record: scan:active_provider_lanes:count30m
-        expr: count by (scan) (sum by (provider, scan) (increase(scan_tasks_served_total[30m])) > 0)
+      # Round-robin fairness predicts this tracks the number of providers with work; one lane
+      # climbing alone is the signature of lanes that failed to open.
+      - record: namespace_scan:active_provider_lanes:count30m
+        expr: >-
+          count by (namespace, scan) (
+            sum by (namespace, provider, scan) (
+              increase(scan_tasks_served_total{tankovault_scope=~".*"}[30m])) > 0)
 
-  # solve_attempts_total is emitted by the shared handler (crates/solver/src/http.rs) that both
-  # challenge-solver and render mount — hence the job dimension on every rule here.
+  # Everything between a discovered chapter and a user finding out about it. Emitted by
+  # `notifier`, except the SSE series, which are the `api`'s end of the same path.
+  - name: tankovault-notifications-recording
+    interval: 30s
+    rules:
+      - record: namespace:notification_events_errors:ratio_rate15m
+        expr: >-
+          sum by (namespace) (
+            rate(notification_events_total{tankovault_scope=~".*", result="error"}[15m]))
+            / sum by (namespace) (
+                rate(notification_events_total{tankovault_scope=~".*"}[15m]))
+
+      - record: namespace:notifications_created:rate15m
+        expr: >-
+          sum by (namespace) (rate(notifications_created_total{tankovault_scope=~".*"}[15m]))
+
+      - record: namespace_channel_result:notifications_delivered:rate15m
+        expr: >-
+          sum by (namespace, channel, result) (
+            rate(notifications_delivered_total{tankovault_scope=~".*"}[15m]))
+
+      # `skipped` stays in the denominator: a channel a user has not configured is skipped, and
+      # excluding those would make a channel with two subscribers and one failure read as 50%
+      # broken regardless of how many users the deployment has.
+      - record: namespace_channel:notifications_delivered_errors:ratio_rate15m
+        expr: >-
+          sum by (namespace, channel) (
+            rate(notifications_delivered_total{tankovault_scope=~".*", result="error"}[15m]))
+            / sum by (namespace, channel) (
+                rate(notifications_delivered_total{tankovault_scope=~".*"}[15m]))
+
+      - record: namespace:notification_fanout_duration_seconds:p95_15m
+        expr: >-
+          histogram_quantile(0.95,
+            sum by (namespace, le) (
+              rate(notification_fanout_duration_seconds_bucket{tankovault_scope=~".*"}[15m])))
+
+      - record: namespace_job:sse_streams_active:sum
+        expr: sum by (namespace, job) (sse_streams_active{tankovault_scope=~".*"})
+
+      # `undecodable` counts alongside `error`: from a subscriber's point of view a frame that
+      # could not be decoded and a frame that could not be sent are the same missing notification.
+      - record: namespace_job:sse_events_pushed_errors:ratio_rate15m
+        expr: >-
+          sum by (namespace, job) (
+            rate(sse_events_pushed_total{tankovault_scope=~".*",
+                                         result=~"error|undecodable"}[15m]))
+            / sum by (namespace, job) (
+                rate(sse_events_pushed_total{tankovault_scope=~".*"}[15m]))
+
+  # solve_attempts_total is emitted by the shared handler both `challenge-solver` and `render`
+  # mount — hence the job dimension on every rule here.
   - name: tankovault-fetch-tier-recording
     interval: 30s
     rules:
-      - record: job_result:solve_attempts:rate5m
-        expr: sum by (job, result) (rate(solve_attempts_total[5m]))
-
-      - record: job:solve_attempts_errors:ratio_rate15m
+      - record: namespace_job_result:solve_attempts:rate5m
         expr: >-
-          sum by (job) (rate(solve_attempts_total{result="error"}[15m]))
-            / sum by (job) (rate(solve_attempts_total[15m]))
+          sum by (namespace, job, result) (
+            rate(solve_attempts_total{tankovault_scope=~".*"}[5m]))
 
-      - record: job_result:render_requests:rate5m
-        expr: sum by (job, result) (rate(render_requests_total[5m]))
-
-      - record: job:render_requests_errors:ratio_rate15m
+      - record: namespace_job:solve_attempts_errors:ratio_rate15m
         expr: >-
-          sum by (job) (rate(render_requests_total{result="error"}[15m]))
-            / sum by (job) (rate(render_requests_total[15m]))
+          sum by (namespace, job) (
+            rate(solve_attempts_total{tankovault_scope=~".*", result="error"}[15m]))
+            / sum by (namespace, job) (
+                rate(solve_attempts_total{tankovault_scope=~".*"}[15m]))
+
+      - record: namespace_job_result:render_requests:rate5m
+        expr: >-
+          sum by (namespace, job, result) (
+            rate(render_requests_total{tankovault_scope=~".*"}[5m]))
+
+      - record: namespace_job:render_requests_errors:ratio_rate15m
+        expr: >-
+          sum by (namespace, job) (
+            rate(render_requests_total{tankovault_scope=~".*", result="error"}[15m]))
+            / sum by (namespace, job) (
+                rate(render_requests_total{tankovault_scope=~".*"}[15m]))
 
       # Kept as two series, not one summed: render mounts both handlers, but challenge-solver
       # emits only the first, so any or/+ combination would drop one side.
-      - record: job:solve_targets_refused:increase15m
-        expr: sum by (job) (increase(solve_attempts_total{result="rejected"}[15m]))
+      - record: namespace_job:solve_targets_refused:increase15m
+        expr: >-
+          sum by (namespace, job) (
+            increase(solve_attempts_total{tankovault_scope=~".*", result="rejected"}[15m]))
 
-      - record: job:render_targets_refused:increase15m
-        expr: sum by (job) (increase(render_requests_total{result="rejected"}[15m]))
+      - record: namespace_job:render_targets_refused:increase15m
+        expr: >-
+          sum by (namespace, job) (
+            increase(render_requests_total{tankovault_scope=~".*", result="rejected"}[15m]))
 
-  - name: tankovault-fleet-recording
+  # AniList is a third party with a published request budget, and `sync` is the only service that
+  # talks to it. Its own latency is deliberately not part of `sync`'s readiness, so this is the
+  # only place a degrading AniList becomes visible.
+  - name: tankovault-anilist-recording
     interval: 30s
     rules:
-      # worker is the only tier expected to exceed 1 (docker-compose.yml declares replicas: 2).
-      - record: job:replicas:count
-        expr: count by (job) (up{job!~"prometheus|readiness|blackbox-exporter"} == 1)
+      - record: namespace_operation_result:anilist_requests:rate15m
+        expr: >-
+          sum by (namespace, operation, result) (
+            rate(anilist_requests_total{tankovault_scope=~".*"}[15m]))
 
-      - record: service:ready:min
-        expr: min by (service) (probe_success{job="readiness"})
+      - record: namespace:anilist_requests_rate_limited:ratio_rate15m
+        expr: >-
+          sum by (namespace) (
+            rate(anilist_requests_total{tankovault_scope=~".*", result="rate_limited"}[15m]))
+            / sum by (namespace) (
+                rate(anilist_requests_total{tankovault_scope=~".*"}[15m]))
+
+      - record: namespace_operation:anilist_request_duration_seconds:p95_15m
+        expr: >-
+          histogram_quantile(0.95,
+            sum by (namespace, operation, le) (
+              rate(anilist_request_duration_seconds_bucket{tankovault_scope=~".*"}[15m])))

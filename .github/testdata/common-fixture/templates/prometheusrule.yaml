@@ -3,7 +3,13 @@ Instantiates `common.prometheus.rules.*` as a consuming chart would. The fixture
 carry Prometheus' `{{ $labels.job }}` templating on purpose, so a regression that evaluated them
 as Go templates is caught here.
 */ -}}
-{{- include "common.prometheus.rules.validate" (dict "ctx" . "values" .Values.prometheusRule) }}
+{{- $scope := .Values.prometheusRule.scope | default dict }}
+{{- $args := dict
+      "ctx" .
+      "values" .Values.prometheusRule
+      "scopePlaceholder" $scope.placeholder
+      "scopeMatcher" $scope.matcher }}
+{{- include "common.prometheus.rules.validate" $args }}
 {{- if .Values.prometheusRule.enabled }}
-{{- include "common.prometheus.rules.prometheusRule" (dict "ctx" . "values" .Values.prometheusRule) }}
+{{- include "common.prometheus.rules.prometheusRule" $args }}
 {{- end }}

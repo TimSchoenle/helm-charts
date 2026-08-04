@@ -65,6 +65,83 @@ tests:
           path: spec.egress[?(@.to[0].ipBlock)].to[0].ipBlock.except
           content: 169.254.0.0/16
 
+  - it: lets the challenge solver reach the bundled TRAWL
+    template: networkpolicy.yaml
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-challenge-solver
+    asserts:
+      - contains:
+          path: spec.egress
+          content:
+            to:
+              - podSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: tankovault
+                    app.kubernetes.io/instance: RELEASE-NAME
+                    app.kubernetes.io/component: trawl
+            ports:
+              - port: 8191
+                protocol: TCP
+
+  - it: opens TRAWL's session cache in both directions and nowhere else
+    # The two halves are derived from one predicate, so a rule that exists on only one side is
+    # the failure this asserts against — the pod would start, solve, and silently never cache.
+    template: networkpolicy.yaml
+    asserts:
+      - contains:
+          path: spec.egress
+          content:
+            to:
+              - podSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: tankovault
+                    app.kubernetes.io/instance: RELEASE-NAME
+                    app.kubernetes.io/component: valkey
+            ports:
+              - port: 6379
+                protocol: TCP
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-trawl
+
+  - it: lets the bundled Valkey accept TRAWL as well as the services
+    template: networkpolicy.yaml
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-valkey
+    asserts:
+      - contains:
+          path: spec.ingress
+          content:
+            from:
+              - podSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: tankovault
+                    app.kubernetes.io/instance: RELEASE-NAME
+                    app.kubernetes.io/component: trawl
+            ports:
+              - port: 6379
+                protocol: TCP
+
+  - it: does not grant TRAWL in-cluster Redis access when it is pointed elsewhere
+    # `trawl.redis.url` naming a Redis outside the release must not silently open the bundled
+    # Valkey to it; the rule is derived by comparing the resolved URLs, not by a boolean.
+    template: networkpolicy.yaml
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-trawl
+    set:
+      trawl.redis.url: redis://sessions.example.com:6379
+    asserts:
+      # DNS and the internet block, and nothing else. `to[0].podSelector` alone would match the
+      # kube-dns rule, which carries one under its namespaceSelector.
+      - lengthEqual:
+          path: spec.egress
+          count: 2
+      - notExists:
+          path: spec.egress[?(@.to[0].podSelector.matchLabels["app.kubernetes.io/component"] == "valkey")]
+
   - it: gives the control plane no internet egress at all
     template: networkpolicy.yaml
     documentSelector:

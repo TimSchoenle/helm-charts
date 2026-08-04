@@ -21,11 +21,29 @@ live stream degrades, rather than the service refusing to boot.
 {{- end -}}
 {{- end -}}
 
-{{- define "tankovault.flaresolverrUrl" -}}
-{{- if .Values.flaresolverr.enabled -}}
-{{- printf "http://%s:8191" (include "common.fullname.suffixed" (dict "ctx" . "suffix" "flaresolverr")) -}}
+{{- define "tankovault.trawlUrl" -}}
+{{- if .Values.trawl.enabled -}}
+{{- printf "http://%s:8191" (include "common.fullname.suffixed" (dict "ctx" . "suffix" "trawl")) -}}
 {{- else -}}
-{{- .Values.externalFlaresolverr.url -}}
+{{- .Values.externalTrawl.url -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Where the bundled TRAWL keeps its per-domain solved-cookie jar.
+
+Defaults to the Redis the services already use, because replaying a solved session instead of
+re-solving it is the difference between a sub-second fetch and a cold browser launch. Sharing
+one instance is safe by construction — TankoVault namespaces every key under `tankovault:`,
+TRAWL writes `session:<domain>` — and it is the shape upstream's compose stack ships.
+
+Empty is a supported state: TRAWL then solves from a cold browser every time. It is also the
+only possible one when `externalRedis.existingSecret` carries the URL, since the chart never
+reads a Secret's contents.
+*/}}
+{{- define "tankovault.trawlRedisUrl" -}}
+{{- if .Values.trawl.redis.enabled -}}
+{{- default (include "tankovault.redisUrl" .) .Values.trawl.redis.url -}}
 {{- end -}}
 {{- end -}}
 
@@ -86,9 +104,9 @@ worker:
   challenge_solver_endpoint: {{ include "tankovault.url" (dict "ctx" $ctx "service" "challengeSolver") | quote }}
 {{- end }}
 {{- if eq $service "challengeSolver" }}
-{{- with include "tankovault.flaresolverrUrl" $ctx }}
+{{- with include "tankovault.trawlUrl" $ctx }}
 solver:
-  flaresolverr_endpoint: {{ . | quote }}
+  trawl_endpoint: {{ . | quote }}
 {{- end }}
 {{- end }}
 {{- if eq $service "sync" }}

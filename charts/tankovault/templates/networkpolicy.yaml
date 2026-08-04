@@ -73,6 +73,16 @@ an SSRF away from the node's instance credentials.
 {{- end }}
 {{- end }}
 
+{{- /*
+The bundled TRAWL is the one datastore that is also a *client* of another one: it keeps its
+solved-cookie jar in Redis. The rule is derived by comparing the URL it resolved against the
+bundled Valkey's, so an explicit `trawl.redis.url` that happens to name the same instance is
+covered too, and one pointing anywhere else is not silently granted in-cluster access.
+*/ -}}
+{{- $trawlUsesValkey := and $.Values.trawl.enabled $.Values.valkey.enabled
+      (include "tankovault.trawlRedisUrl" $)
+      (eq (include "tankovault.trawlRedisUrl" $) (include "tankovault.redisUrl" $)) }}
+
 {{- range $service, $spec := $specs }}
 {{- if (index $.Values.services $service).enabled }}
 ---
@@ -171,9 +181,9 @@ spec:
         - port: 4222
           protocol: TCP
     {{- end }}
-    {{- if and (eq $service "challengeSolver") $.Values.flaresolverr.enabled }}
+    {{- if and (eq $service "challengeSolver") $.Values.trawl.enabled }}
     - to:
-        {{- include "tankovault.netpol.componentPeer" (dict "ctx" $ "component" "flaresolverr") | nindent 8 }}
+        {{- include "tankovault.netpol.componentPeer" (dict "ctx" $ "component" "trawl") | nindent 8 }}
       ports:
         - port: 8191
           protocol: TCP
@@ -190,12 +200,17 @@ spec:
 {{- /*
 The bundled datastores. Their ingress lists are computed from the same `needs*` flags that
 drive each service's egress, so the two halves of every rule cannot drift apart.
+
+`consumers` names services (matched by their per-service name label); `componentConsumers` and
+`componentEgress` name other bundled datastores, which carry the shared name label and are
+distinguished by `app.kubernetes.io/component`. Both halves of the TRAWL/Valkey rule are
+derived from the same `$trawlUsesValkey` predicate for the same reason.
 */ -}}
 {{- range $ds := list
       (dict "component" "postgresql" "enabled" $.Values.postgresql.enabled "port" 5432 "consumers" $dbConsumers "bootstrap" true "internet" false)
-      (dict "component" "valkey" "enabled" $.Values.valkey.enabled "port" 6379 "consumers" $redisConsumers "bootstrap" false "internet" false)
+      (dict "component" "valkey" "enabled" $.Values.valkey.enabled "port" 6379 "consumers" $redisConsumers "bootstrap" false "internet" false "componentConsumers" (ternary (list "trawl") list $trawlUsesValkey))
       (dict "component" "nats" "enabled" $.Values.nats.enabled "port" 4222 "consumers" $natsConsumers "bootstrap" false "internet" false)
-      (dict "component" "flaresolverr" "enabled" $.Values.flaresolverr.enabled "port" 8191 "consumers" (list "challengeSolver") "bootstrap" false "internet" true) }}
+      (dict "component" "trawl" "enabled" $.Values.trawl.enabled "port" 8191 "consumers" (list "challengeSolver") "bootstrap" false "internet" true "componentEgress" (ternary (list (dict "component" "valkey" "port" 6379)) list $trawlUsesValkey)) }}
 {{- if $ds.enabled }}
 ---
 apiVersion: {{ include "common.capabilities.networkPolicy.apiVersion" $ }}
@@ -232,8 +247,22 @@ spec:
         - port: {{ $ds.port }}
           protocol: TCP
     {{- end }}
+    {{- range $consumer := $ds.componentConsumers }}
+    - from:
+        {{- include "tankovault.netpol.componentPeer" (dict "ctx" $ "component" $consumer) | nindent 8 }}
+      ports:
+        - port: {{ $ds.port }}
+          protocol: TCP
+    {{- end }}
   egress:
     {{- include "tankovault.netpol.dnsPeers" $ | nindent 4 }}
+    {{- range $peer := $ds.componentEgress }}
+    - to:
+        {{- include "tankovault.netpol.componentPeer" (dict "ctx" $ "component" $peer.component) | nindent 8 }}
+      ports:
+        - port: {{ $peer.port }}
+          protocol: TCP
+    {{- end }}
     {{- if $ds.internet }}
     {{- include "tankovault.netpol.internetPeers" $ | nindent 4 }}
     {{- end }}

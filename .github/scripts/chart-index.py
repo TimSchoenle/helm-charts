@@ -2,9 +2,14 @@
 """Emit the chart index the root README is rendered from, as one line of JSON on stdout.
 
 Every value comes from a chart's own Chart.yaml, so the table in the README cannot drift from
-what the charts actually declare: adding a chart or bumping a version is enough. Application
-and library charts are reported separately because the README presents them differently —
-library charts are not published to the Helm repository.
+what the charts actually declare: adding a chart is enough. Application and library charts are
+reported separately because the README presents them differently — library charts are not
+published to the Helm repository.
+
+Versions are deliberately not part of the index. They change on nearly every pull request,
+and rendering them into the root README made that one file a merge-conflict hotspot across
+concurrent version-bump branches. The published versions come from the Helm repository index
+and each chart's own README instead.
 
 Usage: .github/scripts/chart-index.py [charts-dir]
 """
@@ -16,8 +21,9 @@ from pathlib import Path
 import yaml
 
 # Without these a chart cannot be listed at all, and a silently empty table cell is worse than
-# a failed pipeline.
-REQUIRED_FIELDS = ("name", "description", "version")
+# a failed pipeline. `version` is not checked here — it is not rendered, and chart linting
+# already rejects a Chart.yaml without it.
+REQUIRED_FIELDS = ("name", "description")
 
 
 def fail(message: str) -> None:
@@ -41,8 +47,6 @@ def read_chart(chart_yaml: Path) -> dict[str, str]:
         # Folded and multi-line descriptions become one line: the README renders them into a
         # table cell, where a line break would split the row.
         "description": " ".join(str(metadata["description"]).split()),
-        "version": str(metadata["version"]),
-        "appVersion": str(metadata.get("appVersion", "")),
         # Helm defaults an absent `type` to `application`.
         "type": str(metadata.get("type", "application")),
     }

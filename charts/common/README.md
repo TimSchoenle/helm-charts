@@ -1,6 +1,6 @@
 # common
 
-![Version: 1.1.0](https://img.shields.io/badge/Version-1.1.0-informational?style=flat-square) ![Type: library](https://img.shields.io/badge/Type-library-informational?style=flat-square)
+![Version: 1.2.1](https://img.shields.io/badge/Version-1.2.1-informational?style=flat-square) ![Type: library](https://img.shields.io/badge/Type-library-informational?style=flat-square)
 
 Shared template partials for the TimSchoenle Helm charts
 
@@ -114,8 +114,9 @@ Prometheus custom resource decide what loads them; `labels` is the half of that 
 
 > [!IMPORTANT]
 > Dashboard JSON and rule files are read as file data and never passed through the template
-> engine. Grafana legends use `{{ }}` and alert annotations use `{{ $labels.job }}`, both of
-> which Go would either fail on or silently resolve to an empty string.
+> engine. Grafana legends use `{{ }}` and alert annotations use
+> `{{ $labels.job }}`, both of which Go would either fail on or silently resolve to an
+> empty string.
 
 > [!IMPORTANT]
 > When the required CRDs are absent these partials fail the render instead of skipping. A
@@ -169,11 +170,6 @@ and act as the reference shape for consuming charts.
 | extraVolumeMounts | list | `[]` | Additional volume mounts added to the application container. |
 | extraVolumes | list | `[]` | Additional volumes added to the pod. |
 | fullnameOverride | string | `""` | Override the full generated resource name. |
-| hostAliases | list | `[]` | Host aliases injected into the pod's /etc/hosts. |
-| image.pullPolicy | string | `""` | Image pull policy. Left empty, resolves to `Always` for the `latest` tag and `IfNotPresent` for anything pinned. |
-| image.registry | string | `""` | Registry host. Left empty, the repository is used as-is (Docker Hub). |
-| image.repository | string | `""` | Image repository. Required. |
-| image.tag | string | `""` | Image tag. Defaults to the chart's `appVersion`. May pin a digest inline (`v1.2.3@sha256:...`): the digest pins the pull, while the tag stays on as the readable version marker. |
 | grafanaDashboard | object | `{"enabled":false,"grafanaOperator":{"allowCrossNamespaceImport":true,"enabled":false,"folder":"","instanceSelector":{"matchLabels":{"dashboards":"grafana"}},"resyncPeriod":"5m"},"label":"grafana_dashboard","labelValue":"1"}` | Grafana dashboard delivery, consumed by `common.grafana.dashboard.*`. A consuming chart exposes this shape wherever it likes — `metrics.dashboard` is the convention — and passes it in as the `values` argument. Grafana has no Kubernetes-native dashboard type, so the partials render both mechanisms: a labelled ConfigMap for the sidecar, and, optionally, one `GrafanaDashboard` per file for grafana-operator v5. |
 | grafanaDashboard.enabled | bool | `false` | Create the ConfigMap holding the dashboard JSON. Required by the operator path too, which references it rather than duplicating the JSON into the custom resources. |
 | grafanaDashboard.grafanaOperator.allowCrossNamespaceImport | bool | `true` | Let the resources bind to Grafana instances outside the release namespace. With `false` the operator only considers Grafana custom resources in the same namespace. |
@@ -183,6 +179,11 @@ and act as the reference shape for consuming charts.
 | grafanaDashboard.grafanaOperator.resyncPeriod | string | `"5m"` | How often the operator re-reconciles the dashboard, undoing edits made in the Grafana UI. A Go duration. |
 | grafanaDashboard.label | string | `"grafana_dashboard"` | Label a Grafana sidecar watches for dashboard ConfigMaps. Discovery is a property of the *Grafana* release: the sidecar only sees this ConfigMap if `sidecar.dashboards.searchNamespace` covers the namespace it lands in, which a chart cannot influence from its own side. |
 | grafanaDashboard.labelValue | string | `"1"` | Value for that label. |
+| hostAliases | list | `[]` | Host aliases injected into the pod's /etc/hosts. |
+| image.pullPolicy | string | `""` | Image pull policy. Left empty, resolves to `Always` for the `latest` tag and `IfNotPresent` for anything pinned. |
+| image.registry | string | `""` | Registry host. Left empty, the repository is used as-is (Docker Hub). |
+| image.repository | string | `""` | Image repository. Required. |
+| image.tag | string | `""` | Image tag. Defaults to the chart's `appVersion`. May pin a digest inline (`v1.2.3@sha256:...`): the digest pins the pull, while the tag stays on as the readable version marker. |
 | imagePullSecrets | list | `[]` | Pull secrets for private registries. Accepts `- name: regcred` or the shorthand `- regcred`. |
 | kubeVersionOverride | string | `""` | Kubernetes version to target when branching on API availability. Lets `helm template` render for a specific cluster version without a live connection. Leave empty to detect from the cluster. |
 | livenessProbe | object | `{"enabled":false}` | Liveness probe. See `startupProbe` for the accepted shape. |
@@ -227,9 +228,12 @@ and act as the reference shape for consuming charts.
 | podSecurityContext | object | `{}` | Pod security context, merged over the preset. |
 | podSecurityContextPreset | string | `"restricted"` | Baseline for the pod security context. `restricted` applies the Pod Security Standards restricted profile (`runAsNonRoot`, `seccompProfile: RuntimeDefault`, `fsGroupChangePolicy: OnRootMismatch`); `none` applies nothing. Identity fields (`runAsUser`, `runAsGroup`, `fsGroup`) are always left to the chart, since they must match the UID baked into the image. |
 | priorityClassName | string | `""` | PriorityClass for the pod. |
-| prometheusRule | object | `{"enabled":false,"labels":{}}` | Prometheus recording and alerting rules, consumed by `common.prometheus.rules.*`. Unlike the dashboards there is only one carrier — `PrometheusRule` is already the operator's own CRD — and no per-object cross-namespace grant: which namespaces a Prometheus loads rules from is decided by `ruleNamespaceSelector` and `ruleSelector` on the Prometheus custom resource. |
+| prometheusRule | object | `{"enabled":false,"labels":{},"scope":{"matcher":"","placeholder":""}}` | Prometheus recording and alerting rules, consumed by `common.prometheus.rules.*`. Unlike the dashboards there is only one carrier — `PrometheusRule` is already the operator's own CRD — and no per-object cross-namespace grant: which namespaces a Prometheus loads rules from is decided by `ruleNamespaceSelector` and `ruleSelector` on the Prometheus custom resource. |
 | prometheusRule.enabled | bool | `false` | Create a PrometheusRule from the chart's rule files. Requires the `monitoring.coreos.com/v1` CRDs; `common.prometheus.rules.errors` fails the render loudly rather than silently dropping the object when they are absent. |
 | prometheusRule.labels | object | `{}` | Extra labels, templated. This is the only half of rule discovery a chart controls: a cluster whose Prometheus selects `release: kube-prometheus-stack` needs that label here, or the rules are created and never loaded. |
+| prometheusRule.scope | object | `{"matcher":"","placeholder":""}` | Confine the rules to a subset of the cluster's series. A `PrometheusRule` is not scoped to the namespace it lives in, so `up{job="api"} == 0` matches somebody else's `api` job in another namespace and two installs of one chart alert on each other. Rather than parse PromQL in a Go template, the rule files mark every selector with an always-true placeholder matcher and the library swaps it for a real one — see the note in `_prometheus.tpl`. Consuming charts normally derive `matcher` rather than exposing it raw. |
+| prometheusRule.scope.matcher | string | `""` | What to swap it for, e.g. `namespace="prod"`. Empty disables the substitution; the placeholder is left in place, which is correct, because it is already a no-op matcher. |
+| prometheusRule.scope.placeholder | string | `""` | The literal placeholder written into the rule files, e.g. `myapp_scope=~".*"`. Empty disables the substitution and the files install exactly as vendored. |
 | readinessProbe | object | `{"enabled":false}` | Readiness probe. See `startupProbe` for the accepted shape. |
 | readinessProbe.enabled | bool | `false` | Enable the readiness probe. |
 | resources | object | `{}` | Explicit resource requests and limits. Wins over `resourcesPreset`. |

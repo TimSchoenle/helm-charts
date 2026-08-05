@@ -43,6 +43,13 @@ if [ -z "${python_bin}" ]; then
   exit 1
 fi
 
+# Shared with every other renderer in the repository; see the file's header for why an offline
+# render has to declare them.
+api_version_args=()
+while IFS= read -r api_version; do
+  api_version_args+=(--api-versions "${api_version}")
+done < <(grep -Ev '^[[:space:]]*(#|$)' "${repo_root}/.github/configs/render-api-versions.txt")
+
 # The namespace the rendered rules are scoped to. Every suite's `scoping_test.yml` asserts that
 # series from any other namespace are ignored, so this value is part of the contract between this
 # runner and every chart's tests, and is named in them too.
@@ -77,12 +84,11 @@ for chart_dir in "${repo_root}"/charts/*/; do
     values_args=(--values "${render_values}")
   fi
 
-  # The library dependency has to be resolved, and the operator CRD declared, since a chart that
-  # ships Prometheus objects is expected to refuse to render rather than drop them silently.
+  # The library dependency has to be resolved before the chart can render at all.
   helm dependency build "${chart_dir}" >/dev/null 2>&1 || true
   helm template "${chart}" "${chart_dir}" \
     --namespace "${render_namespace}" \
-    --api-versions monitoring.coreos.com/v1 \
+    "${api_version_args[@]}" \
     "${values_args[@]}" \
     > "${work}/rendered-manifest.yaml"
 

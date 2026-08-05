@@ -38,10 +38,35 @@ step there is no account that can administer anything:
   helm upgrade {{ .Release.Name }} ... \
     --set bootstrap.seedAdmin.enabled=true
 {{- end }}
-{{ if not .Values.postgresql.enabled }}{{ else }}
+{{ if not .Values.postgresql.enabled }}
+NOTE: your database must have pgvector available. Migration 0027 runs `CREATE EXTENSION vector`
+and the recommender retrieves through an HNSW index, so the extension is a hard dependency from
+that migration onwards — the migration fails loudly rather than degrading, because a recommender
+that silently returns nothing is worse than one that refuses to start. Install the extension
+package before upgrading (`postgresql-18-pgvector`, or your managed provider's allowlist setting
+— RDS, Cloud SQL and Azure Flexible Server all ship it); the migration issues the
+`CREATE EXTENSION` itself. The bundled `postgresql` runs `pgvector/pgvector` and needs nothing.
+{{- else }}
+{{- if .Release.IsUpgrade }}
+ACTION REQUIRED if this upgrade crossed chart 3.1.0: REINDEX the database once.
+
+  kubectl --namespace {{ include "common.namespace" . }} exec -it \
+    {{ include "common.fullname.suffixed" (dict "ctx" . "suffix" "postgresql") }}-0 -- \
+    psql -U {{ .Values.postgresql.auth.username }} -d {{ .Values.postgresql.auth.database }} \
+    -c 'REINDEX DATABASE {{ .Values.postgresql.auth.database }};'
+
+The bundled image moved from Alpine to Debian to get pgvector, and those two sort text
+differently under the same `en_US.utf8` locale. Every index on a text column was built under the
+old ordering and is not valid under the new one, so lookups can miss rows that are really there.
+PostgreSQL does not warn: this data directory records no collation version, so there is nothing
+for it to compare. The REINDEX rebuilds them and is the whole fix. Skip it only if this release
+is new.
+{{- end }}
+
 NOTE: the bundled PostgreSQL is a single instance with no failover and no point-in-time
 recovery. It exists so the chart installs on a bare cluster. Before this carries anything you
-care about, move to `externalDatabase` and a database you back up.
+care about, move to `externalDatabase` and a database you back up — one with pgvector available,
+which migration 0027 requires and this image already has.
 {{- end }}
 {{- if and .Values.services.api.enabled (not (include "tankovault.redisUrl" .)) }}
 

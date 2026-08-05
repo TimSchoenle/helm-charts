@@ -401,12 +401,23 @@ jobs:
       - name: Set up chart-testing
         uses: helm/chart-testing-action@6ec842c01de15ebb84c8627d2744a0c2f2755c9f # v2.8.0
 
+      # Three nodes, because `--upgrade` rolls every workload at once and a single node cannot
+      # schedule the rolling-update surge alongside the datastore StatefulSets it is also
+      # replacing. See the header of the config for what that deadlock looks like.
       - name: Create kind cluster
         if: needs.lint.outputs.changed == 'true'
         uses: helm/kind-action@ef37e7f390d99f746eb8b610417061a60e82a6cc # v1.14.0
         with:
+          config: ./.github/configs/kind.yaml
           node_image: kindest/node:${{ matrix.kubernetes }}
           wait: '120s'
+
+      # kind's own `--wait` covers the control plane; the workers join after it returns. Without
+      # this the install can start while they are still NotReady, land everything on the one node
+      # that is, and hit exactly the capacity limit the extra nodes were added to remove.
+      - name: Wait for every node to be ready
+        if: needs.lint.outputs.changed == 'true'
+        run: kubectl wait --for=condition=Ready nodes --all --timeout=180s
 
       # Charts that ship PodMonitors or PrometheusRules fail to render without the Prometheus
       # Operator's CRDs, and kind provides none. Only the two kinds the charts actually use are

@@ -8,6 +8,27 @@
 # postgresql.auth.password is set explicitly rather than generated: `helm template` has no
 # cluster to look up the previous value in, so an empty password would render a different
 # secret on every invocation and make this file useless for snapshot comparison.
+#
+# `defaults.strategy` removes the rolling-update surge, which is what makes this fixture
+# survivable under `ct install --upgrade`.
+#
+# Every chart-version bump rewrites `helm.sh/chart` and `app.kubernetes.io/version` in
+# `common.podLabels`, so an upgrade rolls all twelve workloads at once — including the bundled
+# PostgreSQL, whose StatefulSet deletes its pod and recreates it. Steady state here is 2700m of
+# CPU against a single kind node's ~3250m; a default 25% surge asks for roughly 1700m on top of
+# that. The excess alone would be harmless, since surplus pods just stay Pending — but the
+# database is one of the pods that has to be rescheduled, and in the window between its delete
+# and its create the surge pods take the CPU it freed. Nothing then resolves: the database
+# cannot schedule, so no service passes a readiness probe, so no old pod is retired, so the CPU
+# never comes back. `maxSurge: 0` retires before it replaces, so the release never needs more
+# than its steady state and the database always has a slot to return to.
+#
+# Note that `ct` reads the *previous* revision's copy of this file for both halves of its
+# upgrade test (`doUpgrade` takes `oldChart.ValuesFilePathsForCI()` and passes the same path to
+# the upgrade), so this setting first takes effect on the release after the one that introduces
+# it. It is still the correct configuration for the fixture, and it is the same lever an
+# operator needs on any capacity-constrained cluster running the bundled datastores; see the
+# chart README.
 auth:
   jwtSecret: ci-jwt-secret-0123456789abcdef0123
   passwordPepper: ci-password-pepper-0123456789abcd
@@ -18,6 +39,12 @@ anilist:
   clientSecret: ci-anilist-client-secret
   tokenEncryptionKey: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
   redirectUri: https://tankovault.example.com/account/anilist-callback
+defaults:
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
 postgresql:
   enabled: true
   auth:

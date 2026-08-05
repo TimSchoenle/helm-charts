@@ -3,12 +3,32 @@ templates:
   - job-migrate.yaml
   - job-seed.yaml
   - deployment.yaml
+  - postgresql.yaml
   - serviceaccount.yaml
   - secret.yaml
   - configmap-bootstrap.yaml
 values:
   - ../ci/default.yaml
 tests:
+  - it: gives the bundled database the extension the migrations require
+    # Migration `0027_recsys_signals` runs `CREATE EXTENSION vector`, and stock `postgres`
+    # cannot. Nothing else in this chart would notice: the image renders, the StatefulSet
+    # starts, `pg_isready` passes, and the release fails at its first migration instead — on a
+    # message about a missing extension rather than about the wrong image. This is the only
+    # place that decision is written down, so it is pinned here.
+    template: postgresql.yaml
+    set:
+      postgresql.enabled: true
+      postgresql.auth.password: test-password
+      externalDatabase.url: ""
+    documentSelector:
+      path: kind
+      value: StatefulSet
+    asserts:
+      - matchRegex:
+          path: spec.template.spec.containers[0].image
+          pattern: '^pgvector/pgvector:pg18@sha256:[0-9a-f]{64}$'
+
   - it: uses a pre-install hook Job against an external database
     template: job-migrate.yaml
     asserts:

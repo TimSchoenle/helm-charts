@@ -1,0 +1,36 @@
+# The cluster `ct install --upgrade` runs against.
+#
+# Three nodes rather than the action's default single node, and the reason is scheduling
+# capacity during an upgrade rather than anything about multi-node behaviour.
+#
+# `ct install --upgrade` installs the previous chart revision and then upgrades the release in
+# place. Every chart-version bump rewrites `helm.sh/chart` and `app.kubernetes.io/version` in the
+# pod labels, so the upgrade rolls *every* workload at once — for the tankovault chart's
+# `bundled-datastores-values.yaml` fixture that is twelve of them, including the PostgreSQL and
+# NATS StatefulSets. The fixture's steady state is ~2700m of CPU requests and a default 25%
+# rolling-update surge asks for roughly 1700m on top, against the ~3250m a single kind node on a
+# 4-core runner has to give.
+#
+# Over-request on its own would be harmless — surplus pods simply stay Pending until the old ones
+# retire. It stops being harmless because a datastore StatefulSet is among the workloads being
+# replaced: its pod is deleted and recreated, and in that window the surge pods take the CPU it
+# just released. Nothing then resolves. No service passes a readiness probe without the database,
+# so no old pod is ever retired, so the capacity never comes back, and the upgrade sits there
+# until `--timeout` expires. That is what it looked like the first time this job met a
+# version-bumping PR.
+#
+# Each kind node is a container that advertises the host's full CPU count, so three of them
+# report three times the allocatable CPU the runner actually has. That is deliberate
+# over-subscription: requests are a scheduling contract, not a reservation, and this job is
+# verifying that a release installs and upgrades cleanly, not that it fits in 4 cores. Pods may
+# be throttled under contention; none of the assertions here are timing-sensitive.
+#
+# The alternative — shrinking the fixture until an upgrade fits on one node — would have cost the
+# coverage that matters most, since the bundled datastores are exactly the configuration where an
+# in-place upgrade is risky.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+  - role: control-plane
+  - role: worker
+  - role: worker

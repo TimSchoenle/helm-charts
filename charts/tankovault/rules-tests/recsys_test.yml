@@ -1,0 +1,132 @@
+# The recommender: model builds on the control-plane, personalised shelves on the api.
+#
+# Both alerts here exist because the recommender's failure modes are invisible to every other
+# rule in the set. A model that has stopped being built still serves; a shelf that comes back
+# empty is a `200` that is faster than a full one. Nothing in the request path, the scan pipeline
+# or the readiness gauges moves for either.
+rule_files:
+  - tankovault-recording.rules.yml
+  - tankovault-alerts.rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  # An incremental build failing every pass — the shape a deployment is in when no full build has
+  # ever completed, so there is no projection basis and every incremental run refuses to start.
+  # `for: 15m` is the whole fuse here: a single failed run must not page.
+  - interval: 1m
+    input_series:
+      - series: 'recsys_build_series_total{namespace="tv", job="control-plane", pod="cp-1", stage="incremental", result="failed"}'
+        values: '0+1x120'
+    promql_expr_test:
+      - expr: ALERTS{alertname="TankoVaultRecsysBuildFailing", alertstate="pending"}
+        eval_time: 10m
+        exp_samples:
+          - labels: 'ALERTS{alertname="TankoVaultRecsysBuildFailing", alertstate="pending", namespace="tv", stage="incremental", severity="warning"}'
+            value: 1
+      - expr: ALERTS{alertname="TankoVaultRecsysBuildFailing", alertstate="firing"}
+        eval_time: 30m
+        exp_samples:
+          - labels: 'ALERTS{alertname="TankoVaultRecsysBuildFailing", alertstate="firing", namespace="tv", stage="incremental", severity="warning"}'
+            value: 1
+
+  # The same failure on the weekly full build. `stage` has to survive the aggregation, or the
+  # runbook — which branches entirely on which stage failed — names nothing.
+  - interval: 1m
+    input_series:
+      - series: 'recsys_build_series_total{namespace="tv", job="control-plane", pod="cp-1", stage="full", result="failed"}'
+        values: '0+1x120'
+    promql_expr_test:
+      - expr: ALERTS{alertname="TankoVaultRecsysBuildFailing", alertstate="firing"}
+        eval_time: 30m
+        exp_samples:
+          - labels: 'ALERTS{alertname="TankoVaultRecsysBuildFailing", alertstate="firing", namespace="tv", stage="full", severity="warning"}'
+            value: 1
+
+  # Builds that complete produce a `built` series and no `failed` one, so the failure rule has no
+  # numerator at all — absent, not zero. A rule that summed every result label would fire here.
+  - interval: 1m
+    input_series:
+      - series: 'recsys_build_series_total{namespace="tv", job="control-plane", pod="cp-1", stage="incremental", result="built"}'
+        values: '0+40x120'
+    promql_expr_test:
+      - expr: namespace_stage:recsys_build_failures:increase6h
+        eval_time: 60m
+        exp_samples: []
+      - expr: ALERTS{alertname="TankoVaultRecsysBuildFailing"}
+        eval_time: 60m
+        exp_samples: []
+
+  # Model size across a leadership move. Only the replica that ran a build sets the gauge, and it
+  # keeps its last value forever afterwards — so two replicas that have each been leader report
+  # two different sizes for one model, and summing them would report 2 200 series for a catalogue
+  # of 1 200 and grow again on every failover.
+  - interval: 1m
+    input_series:
+      - series: 'recsys_model_series{namespace="tv", job="control-plane", pod="cp-1", table="series_embedding"}'
+        values: '1000+0x120'
+      - series: 'recsys_model_series{namespace="tv", job="control-plane", pod="cp-2", table="series_embedding"}'
+        values: '1200+0x120'
+    promql_expr_test:
+      - expr: namespace_table:recsys_model_series:current
+        eval_time: 30m
+        exp_samples:
+          - labels: 'namespace_table:recsys_model_series:current{namespace="tv", table="series_embedding"}'
+            value: 1200
+
+  # Shelves served empty while readers are asking for them: six serves a minute, zero items in
+  # any of them. The requests are 200s and they are fast, so nothing else in the rule set moves.
+  - interval: 1m
+    input_series:
+      - series: 'recsys_shelf_size_sum{namespace="tv", job="api", pod="api-1"}'
+        values: '0+0x120'
+      - series: 'recsys_shelf_size_count{namespace="tv", job="api", pod="api-1"}'
+        values: '0+6x120'
+      - series: 'recsys_serve_duration_seconds_count{namespace="tv", job="api", pod="api-1", path="computed"}'
+        values: '0+6x120'
+    promql_expr_test:
+      # Exactly zero rather than a near-zero float: the numerator's rate is zero, and zero over
+      # anything is exact however the extrapolation lands.
+      - expr: namespace:recsys_shelf_size:avg15m
+        eval_time: 60m
+        exp_samples:
+          - labels: 'namespace:recsys_shelf_size:avg15m{namespace="tv"}'
+            value: 0
+      - expr: ALERTS{alertname="TankoVaultRecsysShelvesEmpty", alertstate="firing"}
+        eval_time: 60m
+        exp_samples:
+          - labels: 'ALERTS{alertname="TankoVaultRecsysShelvesEmpty", alertstate="firing", namespace="tv", severity="warning"}'
+            value: 1
+
+  # Twelve items per shelf on the same serve rate. Both sides of the ratio are extrapolated
+  # identically over identical sample times, so the quotient is exactly the mean and needs no
+  # tolerance.
+  - interval: 1m
+    input_series:
+      - series: 'recsys_shelf_size_sum{namespace="tv", job="api", pod="api-1"}'
+        values: '0+72x120'
+      - series: 'recsys_shelf_size_count{namespace="tv", job="api", pod="api-1"}'
+        values: '0+6x120'
+      - series: 'recsys_serve_duration_seconds_count{namespace="tv", job="api", pod="api-1", path="cached"}'
+        values: '0+6x120'
+    promql_expr_test:
+      - expr: namespace:recsys_shelf_size:avg15m
+        eval_time: 60m
+        exp_samples:
+          - labels: 'namespace:recsys_shelf_size:avg15m{namespace="tv"}'
+            value: 12
+      - expr: ALERTS{alertname="TankoVaultRecsysShelvesEmpty"}
+        eval_time: 60m
+        exp_samples: []
+
+  # Recommendations switched off: a model may exist, but nothing serves a shelf, so there is no
+  # ratio to compare and the serve-rate conjunct has nothing to satisfy it. The alert must stay
+  # dark — an operator who disabled the feature has not broken it.
+  - interval: 1m
+    input_series:
+      - series: 'recsys_model_series{namespace="tv", job="control-plane", pod="cp-1", table="series_embedding"}'
+        values: '1200+0x120'
+    promql_expr_test:
+      - expr: ALERTS{alertname="TankoVaultRecsysShelvesEmpty"}
+        eval_time: 60m
+        exp_samples: []

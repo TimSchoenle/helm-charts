@@ -9,8 +9,8 @@
 # Every pair is attempted before the script exits, so one chart that fails to render does not
 # hide the state of the rest.
 #
-# Usage: .github/scripts/render-charts.sh <output-dir> [extra helm args...]
-#        .github/scripts/render-charts.sh rendered --kube-version 1.34.0
+# Usage: bash .github/scripts/render-charts.sh <output-dir> [extra helm args...]
+#        bash .github/scripts/render-charts.sh rendered --kube-version 1.34.0
 set -euo pipefail
 
 out="${1:?usage: render-charts.sh <output-dir> [extra helm args...]}"

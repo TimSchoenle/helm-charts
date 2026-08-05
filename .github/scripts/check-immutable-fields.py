@@ -35,8 +35,8 @@ set is a constant here. `verify_against_schema` cross-checks it against the same
 catalog kubeconform validates the rendered manifests with, which is authoritative on the
 fields that exist and so catches the list drifting from the API.
 
-Usage: .github/scripts/check-immutable-fields.py
-       KUBE_VERSION=1.31.0 .github/scripts/check-immutable-fields.py
+Usage: python3 .github/scripts/check-immutable-fields.py
+       KUBE_VERSION=1.31.0 python3 .github/scripts/check-immutable-fields.py
 """
 
 from __future__ import annotations

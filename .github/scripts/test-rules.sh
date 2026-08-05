@@ -20,8 +20,8 @@
 #
 # promtool comes from the official Prometheus image, so there is no binary to pin a checksum for.
 #
-# Usage: .github/scripts/test-rules.sh
-#        PROM_IMAGE=prom/prometheus:v3.7.3 .github/scripts/test-rules.sh
+# Usage: bash .github/scripts/test-rules.sh
+#        PROM_IMAGE=prom/prometheus:v3.7.3 bash .github/scripts/test-rules.sh
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"

@@ -9,7 +9,7 @@
 #
 # kubeconform validates every file before it exits, so one broken chart does not hide the rest.
 #
-# Usage: KUBE_VERSION=1.31.0 .github/scripts/validate-manifests.sh
+# Usage: KUBE_VERSION=1.31.0 bash .github/scripts/validate-manifests.sh
 set -euo pipefail
 
 kube_version="${KUBE_VERSION:?KUBE_VERSION must be set}"
@@ -25,7 +25,7 @@ trap 'rm -rf "${rendered}"' EXIT
 
 echo "::group::Rendering every chart for Kubernetes ${kube_version}"
 render_status=0
-"${repo_root}/.github/scripts/render-charts.sh" "${rendered}" --kube-version "${kube_version}" \
+bash "${repo_root}/.github/scripts/render-charts.sh" "${rendered}" --kube-version "${kube_version}" \
   || render_status=1
 echo "::endgroup::"
 

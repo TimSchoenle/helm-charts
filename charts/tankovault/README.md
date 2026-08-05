@@ -472,12 +472,15 @@ operator's decision to schedule.
   rollout — and the migration is the step that needs pgvector.
 - **The bundled PostgreSQL image changed** from `postgres:18-alpine` to `pgvector/pgvector:pg18`,
   as above. If you pinned `postgresql.image.*` yourself, move it to an image that has pgvector.
-- **The upgrade moves the database pod**, which earlier upgrades never did — the image is what
-  changed, so the StatefulSet has to replace it. On a cluster with no spare CPU that can deadlock:
-  the rolling-update surge takes the capacity the database pod just released, and nothing recovers,
-  because no service passes a readiness probe without the database and so no old pod is ever
-  retired. If your nodes are tight, set `defaults.strategy.rollingUpdate.maxSurge: 0` for the
-  upgrade, which retires before it replaces. The chart's own CI fixture does exactly this.
+- **On a capacity-constrained cluster, set `defaults.strategy.rollingUpdate.maxSurge: 0` for the
+  upgrade.** Every chart-version bump rewrites the `helm.sh/chart` and `app.kubernetes.io/version`
+  pod labels, so an upgrade rolls every workload — the bundled datastores included, which means
+  the database pod is deleted and recreated. The default rollout asks for its replacement pods
+  before retiring the old ones, and if the surge takes the CPU the database just released,
+  nothing recovers: no service passes a readiness probe without the database, so no old pod is
+  ever retired and the capacity never comes back. `maxSurge: 0` retires before it replaces. This
+  is not new in 3.1.0 — it applies to any version bump with the bundled datastores on tight
+  nodes — but it is worth knowing before an upgrade that also has a REINDEX after it.
 - **Two alerts are added**, `TankoVaultRecsysBuildFailing` and `TankoVaultRecsysShelvesEmpty`, with
   seven recording rules behind them under `tankovault-recsys-recording`. `metrics.prometheusRule`
   therefore produces 21 groups where it produced 19.

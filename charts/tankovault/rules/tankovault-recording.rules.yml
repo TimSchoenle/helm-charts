@@ -440,6 +440,66 @@ groups:
           sum by (namespace, job) (
             increase(render_requests_total{tankovault_scope=~".*", result="rejected"}[15m]))
 
+  # The recommender. Two halves that fail independently and are emitted by different services:
+  # `control-plane` builds the model on the scheduler's cadence, `api` serves a shelf out of it on
+  # the request path. A model that has stopped being built keeps serving — stale at first, then
+  # empty as the catalogue moves past it — so the build side is not observable from the serve side
+  # and neither is observable from the request metrics.
+  - name: tankovault-recsys-recording
+    interval: 30s
+    rules:
+      # Counts, not rates: a build is an event every quarter hour at most, and a full one is
+      # weekly by default. A 5m rate over that reads zero almost everywhere and hides the thing
+      # being measured.
+      - record: namespace_stage_result:recsys_build_series:increase1h
+        expr: >-
+          sum by (namespace, stage, result) (
+            increase(recsys_build_series_total{tankovault_scope=~".*"}[1h]))
+
+      # Six hours because the default full-build cadence is weekly and its failures must not age
+      # out between two evaluations of the alert built on this.
+      - record: namespace_stage:recsys_build_failures:increase6h
+        expr: >-
+          sum by (namespace, stage) (
+            increase(recsys_build_series_total{tankovault_scope=~".*", result="failed"}[6h]))
+
+      - record: namespace_stage:recsys_build_duration_seconds:p95_6h
+        expr: >-
+          histogram_quantile(0.95,
+            sum by (namespace, stage, le) (
+              rate(recsys_build_duration_seconds_bucket{tankovault_scope=~".*"}[6h])))
+
+      # `max`, not `sum`. The gauge is set by whichever control-plane replica ran the build, and a
+      # replica that held leadership earlier keeps its last value forever — summing would report a
+      # model several times its real size, and would grow every time leadership moved.
+      - record: namespace_table:recsys_model_series:current
+        expr: max by (namespace, table) (recsys_model_series{tankovault_scope=~".*"})
+
+      - record: namespace_path:recsys_serve_duration_seconds:p95_15m
+        expr: >-
+          histogram_quantile(0.95,
+            sum by (namespace, path, le) (
+              rate(recsys_serve_duration_seconds_bucket{tankovault_scope=~".*"}[15m])))
+
+      # Whether anyone is asking for a shelf at all — the denominator that keeps the emptiness
+      # rule below from reading an idle deployment as a broken one.
+      - record: namespace:recsys_serves:rate15m
+        expr: >-
+          sum by (namespace) (
+            rate(recsys_serve_duration_seconds_count{tankovault_scope=~".*"}[15m]))
+
+      # Mean items per served shelf, from the histogram's own sum and count rather than from a
+      # bucket boundary. A `le` selector would be the sharper statistic — the share of shelves
+      # that came back empty — but it depends on how the exporter formats the boundary `0`, and a
+      # rule that silently matches nothing is the exact failure this whole rule set is written to
+      # avoid. Sum over count needs no such assumption and answers the same question: an unbuilt
+      # or broken model serves nothing but empty shelves, so this goes to zero while the serve
+      # rate above does not.
+      - record: namespace:recsys_shelf_size:avg15m
+        expr: >-
+          sum by (namespace) (rate(recsys_shelf_size_sum{tankovault_scope=~".*"}[15m]))
+            / sum by (namespace) (rate(recsys_shelf_size_count{tankovault_scope=~".*"}[15m]))
+
   # AniList is a third party with a published request budget, and `sync` is the only service that
   # talks to it. Its own latency is deliberately not part of `sync`'s readiness, so this is the
   # only place a degrading AniList becomes visible.

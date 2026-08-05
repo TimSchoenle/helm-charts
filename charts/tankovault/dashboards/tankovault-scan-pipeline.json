@@ -1,7 +1,7 @@
 {
   "uid": "tankovault-scan-pipeline",
   "title": "TankoVault Scan Pipeline",
-  "description": "Everything between a scheduled scan and a user being told about a new chapter: scheduling, per-provider task throughput and backlog, outbound fetches and the throttling they earn, notification fan-out, and AniList synchronisation. The backlog row needs `metrics.natsExporter.enabled` \u2014 NATS publishes no Prometheus exposition of its own, so those panels are empty rather than wrong without it.",
+  "description": "Everything between a scheduled scan and a user being told about a new chapter: scheduling, per-provider task throughput and backlog, outbound fetches and the throttling they earn, notification fan-out, AniList synchronisation, and the recommendation model built from the catalogue the rest of it fills. The backlog row needs `metrics.natsExporter.enabled` \u2014 NATS publishes no Prometheus exposition of its own, so those panels are empty rather than wrong without it.",
   "tags": [
     "tankovault"
   ],
@@ -1791,6 +1791,314 @@
         "w": 8,
         "x": 16,
         "y": 82
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      }
+    },
+    {
+      "id": 38,
+      "type": "row",
+      "title": "Recommendations",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 89
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "stat",
+      "title": "Series the model covers",
+      "description": "Rows the recommendation model holds, per table. Flat while the catalogue grows means builds are failing or no replica is holding scheduler leadership. Absent entirely means no build has ever completed \u2014 the state a fresh deployment is in until its first full build, during which every incremental build refuses to run and every shelf comes back empty.",
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "namespace_table:recsys_model_series:current{namespace=\"$namespace\"}",
+          "legendFormat": "{{table}}",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "value_and_name",
+        "orientation": "auto",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "id": 39,
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 0,
+        "y": 90
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Model builds, last hour",
+      "description": "Series processed by a build, split by stage and result. `incremental` runs on a quarter-hourly cadence and touches only what changed; `full` is weekly by default and re-solves the projection over the whole catalogue. A `failed` line at all is `TankoVaultRecsysBuildFailing`.",
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "namespace_stage_result:recsys_build_series:increase1h{namespace=\"$namespace\"}",
+          "legendFormat": "{{stage}} {{result}}"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "last",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 0,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "id": 40,
+      "gridPos": {
+        "h": 6,
+        "w": 9,
+        "x": 6,
+        "y": 90
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Build duration (p95)",
+      "description": "A full build re-counts the vocabulary and re-solves the projection from the whole catalogue and is expected in minutes; an incremental one is proportional to catalogue churn, not to catalogue size. An incremental duration tracking the full one means the incremental ceiling is binding.",
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "namespace_stage:recsys_build_duration_seconds:p95_6h{namespace=\"$namespace\"}",
+          "legendFormat": "{{stage}} p95"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "last",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 0,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "id": 41,
+      "gridPos": {
+        "h": 6,
+        "w": 9,
+        "x": 15,
+        "y": 90
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Items per served shelf",
+      "description": "The earliest symptom of a broken or unbuilt model, and the one invisible in request latency: an empty shelf is a `200` served faster than a full one. Read against the serve rate on the same panel \u2014 a mean near zero only means anything while shelves are actually being asked for.",
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "namespace:recsys_shelf_size:avg15m{namespace=\"$namespace\"}",
+          "legendFormat": "mean items"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "namespace:recsys_serves:rate15m{namespace=\"$namespace\"}",
+          "legendFormat": "shelves/s"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "last",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 0,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "id": 42,
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 0,
+        "y": 96
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Shelf serve latency (p95)",
+      "description": "Split by how the shelf was produced. `cached` is a single row read; `computed` runs one approximate-nearest-neighbour search per seed, so its tail is where the seed count shows up rather than where the catalogue size does.",
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "namespace_path:recsys_serve_duration_seconds:p95_15m{namespace=\"$namespace\"}",
+          "legendFormat": "{{path}} p95"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "last",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 0,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "id": 43,
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 12,
+        "y": 96
       },
       "datasource": {
         "type": "prometheus",

@@ -703,6 +703,64 @@ groups:
             `networkPolicy.enabled` is true, and that no Service publishes them outside the
             cluster.
 
+  - name: tankovault-recsys
+    rules:
+      # Any failure at all, because a build has no partial success to tolerate: the run either
+      # completes and advances the generation or it does not, and the next one redoes the same
+      # work and fails the same way. 15m of `for` only keeps a single transient database blip
+      # from paging.
+      - alert: TankoVaultRecsysBuildFailing
+        expr: namespace_stage:recsys_build_failures:increase6h{tankovault_scope=~".*"} > 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.stage }} recommendation-model builds are failing"
+          description: >-
+            The model has stopped advancing. Nothing breaks immediately — the last generation
+            keeps being served — so this decays into stale and then empty recommendations rather
+            than into an error anyone reports. The reason is in the control-plane log:
+            `kubectl -n {{ $labels.namespace }} logs -l
+            app.kubernetes.io/component=control-plane | grep -i recommendation`. Two causes
+            dominate. On `stage="incremental"`, `no projection basis yet` means no **full** build
+            has ever completed, and every incremental run will keep refusing until one does —
+            trigger one from the admin console's recommendation panel rather than waiting out
+            `scheduler.recsys_full_interval_secs`, which is a week by default. Anything naming
+            the `vector` extension means the database does not have pgvector and migration 0027
+            did not do what it appeared to; see the chart README. If the pod is instead being
+            OOM-killed there is no log line at all — check `describe pod` against the
+            control-plane's memory limit and lower `scheduler.recsys_batch`.
+
+      # The symptom no latency or error metric can reach: the request succeeds, quickly, and
+      # carries nothing. Gated on the serve rate so a deployment with recommendations switched
+      # off — which serves nothing at all and records no ratio — cannot trip it.
+      # grounding: baseline-needed — a shelf is 0 to 60 items and new readers legitimately get
+      # few, so "below one item on average" is judgement about where a working model cannot be,
+      # not a measured floor. Re-tune once the deployment has a week of real shelves.
+      - alert: TankoVaultRecsysShelvesEmpty
+        expr: >-
+          namespace:recsys_shelf_size:avg15m{tankovault_scope=~".*"} < 1
+            and namespace:recsys_serves:rate15m{tankovault_scope=~".*"} > 0.01
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Personalised shelves are being served empty"
+          description: >-
+            Readers are asking for recommendations and getting nothing back, and every other
+            signal reads healthy: the requests are 200s and they are fast, because an empty shelf
+            is the cheapest one to build. Check whether a model exists at all —
+            `namespace_table:recsys_model_series:current` flat at zero or absent means none has
+            ever been built, which is the state a fresh deployment is in until its first full
+            build completes, and
+            `kubectl -n {{ $labels.namespace }} logs -l
+            app.kubernetes.io/component=control-plane | grep 'recommendation model built'`
+            confirms it from the other side. If a model is there and covering the catalogue, the
+            fault is on the
+            read side rather than the build side: the shelf is assembled from the reader's own
+            signals, so a deployment whose users have not yet read anything genuinely has nothing
+            to project from, and this is expected rather than broken until they have.
+
   - name: tankovault-anilist
     rules:
       # AniList publishes a request budget and answers 429 past it. A quarter of calls throttled

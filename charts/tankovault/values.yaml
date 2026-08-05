@@ -588,7 +588,7 @@ services:
       # type: string
       # @schema
       # -- Image tag, pinned by digest.
-      tag: v1.2.2@sha256:afb825de9865a792397e91dfb0acc9d0ebb93f5ee86abea6508c5e7078afcbdf
+      tag: v1.3.0@sha256:2d7b089b5a3f7384cf9b9eb46735c6f78d6b738d50a631ee964a9798566ff79e
 
     # @schema
     # enum: ["", nano, micro, small, medium, large]
@@ -712,7 +712,7 @@ services:
       # type: string
       # @schema
       # -- Image tag, pinned by digest.
-      tag: v1.2.2@sha256:84c933ccf3fe3765cc00ee2bf8c193077f6a696fe9d8ab3b5aa33a879a5b044d
+      tag: v1.3.0@sha256:688ff0a711d39787bafdcc333b7761adb2ced2940e4e4fa14159571a81762dc2
 
     # @schema
     # enum: ["", nano, micro, small, medium, large]
@@ -836,7 +836,7 @@ services:
       # type: string
       # @schema
       # -- Image tag, pinned by digest.
-      tag: v1.2.2@sha256:be00fd90eb0bcaed5f0c9c618d5924ca292e48b61130f54ac22a851760592f98
+      tag: v1.3.0@sha256:1abe73d52baebe58e497036291b5d284b8335367046dc988f6dfd12330561568
 
     # @schema
     # enum: ["", nano, micro, small, medium, large]
@@ -924,7 +924,7 @@ services:
       # type: string
       # @schema
       # -- Image tag, pinned by digest.
-      tag: v1.2.2@sha256:bca660838859e06cbc7b027577457cc9395947d1c5a6866e7cfe1530274279dc
+      tag: v1.3.0@sha256:1cc87817f13324c818418531684ddcf145ff433988176d522190a61d717dc581
 
     # @schema
     # enum: ["", nano, micro, small, medium, large]
@@ -1046,7 +1046,7 @@ services:
       # type: string
       # @schema
       # -- Image tag, pinned by digest.
-      tag: v1.2.2@sha256:edcdbe83c2a069523355bd064a46d24606b2332e461da0ffc3b3b509f7588900
+      tag: v1.3.0@sha256:664d1b8dacf95bca81d3496f76dbefad2a725a5e739f024f0700e10c080b6cc9
 
     # @schema
     # enum: ["", nano, micro, small, medium, large]
@@ -1133,7 +1133,7 @@ services:
       # type: string
       # @schema
       # -- Image tag, pinned by digest.
-      tag: v1.2.2@sha256:fb480ab14507c8e3db6c95255ef912a1b0945dcff1409d4913b986b32c75e30b
+      tag: v1.3.0@sha256:8f0b824720d8c77b5464e03546cff77fd13722a7c1a0c68ecb9c94fb0680179d
 
     # @schema
     # enum: ["", nano, micro, small, medium, large]
@@ -1220,7 +1220,7 @@ services:
       # type: string
       # @schema
       # -- Image tag, pinned by digest.
-      tag: v1.2.2@sha256:56bdde2ce632556ffd06a6a4c74b122abf836b1397bd38b796f0387f894b1f38
+      tag: v1.3.0@sha256:d2916c743332b39227139e022eb9d67e6bf895dc3ef9b8a344dd4863c828a670
 
     # @schema
     # enum: ["", nano, micro, small, medium, large]
@@ -1344,7 +1344,7 @@ services:
       # type: string
       # @schema
       # -- Image tag, pinned by digest.
-      tag: v1.2.2@sha256:2ed04a7e7c0619795ecf5aa501c1aeb48bf117a51db1a2b82337c1fc539119ed
+      tag: v1.3.0@sha256:d19661396140072d601aaa622089a2c0c43fa25624b59a9b003e75d4df5f7409
 
     # @schema
     # $ref: https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.ResourceRequirements
@@ -1505,7 +1505,7 @@ bootstrap:
     # type: string
     # @schema
     # -- Image tag, pinned by digest.
-    tag: v1.2.2@sha256:6dec5e2ad047d4d531376a31814e5c7e96e6a683941771be869451c836592f8f
+    tag: v1.3.0@sha256:009bf66ae3c903e942dd9d81d0c4911186f2f395bf38c80d83b6415d49ebffd5
 
   # @schema
   # enum: ["", nano, micro, small, medium, large]
@@ -1609,7 +1609,8 @@ bootstrap:
 # -- Bundled PostgreSQL. A single instance with a PVC, on the same image the upstream compose
 # stack pins. Deliberately not an operator and not a third-party subchart, so `helm install`
 # works on a bare cluster — but equally deliberately **not a production database**: one
-# replica, no failover, no point-in-time recovery. Use `externalDatabase` for anything real.
+# replica, no failover, no point-in-time recovery. Use `externalDatabase` for anything real —
+# and give it [pgvector](https://github.com/pgvector/pgvector), which migration `0027` requires.
 postgresql:
   # @schema
   # type: boolean
@@ -1624,14 +1625,21 @@ postgresql:
     # @schema
     # type: string
     # @schema
-    # -- Image repository.
-    repository: postgres
+    # -- Image repository. `pgvector/pgvector`, not stock `postgres`: TankoVault migration
+    # `0027_recsys_signals` runs `CREATE EXTENSION vector` and the recommender retrieves through
+    # an HNSW index, so the extension is a hard dependency of the deployment rather than an
+    # optional extra. This is the official PostgreSQL image with pgvector preinstalled — same
+    # major, same entrypoint, same environment contract, same `postgres` uid — so nothing else
+    # in this block changes and an existing PVC is reused in place. It is Debian-based rather
+    # than Alpine; `resourcesPreset` already accommodates that.
+    repository: pgvector/pgvector
 
     # @schema
     # type: string
     # @schema
-    # -- Image tag, pinned by digest.
-    tag: 18-alpine@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15
+    # -- Image tag, pinned by digest. Held to the same digest as upstream's compose stack and CI
+    # services, so the database this chart runs is the one the queries were type-checked against.
+    tag: pg18@sha256:691673308c99d2161ba298736f3147f1f22d79de2fb7ec93ae9b4afcab870b62
 
   # @schema
   # additionalProperties: true

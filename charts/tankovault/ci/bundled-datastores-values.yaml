@@ -8,6 +8,23 @@
 # postgresql.auth.password is set explicitly rather than generated: `helm template` has no
 # cluster to look up the previous value in, so an empty password would render a different
 # secret on every invocation and make this file useless for snapshot comparison.
+#
+# `defaults.strategy` removes the rolling-update surge, and it is load-bearing for
+# `ct install --upgrade` rather than cosmetic. This fixture requests 2700m of CPU against a
+# single kind node, which fits — but a default rollout creates each Deployment's replacement
+# pods *before* retiring the old ones, so an upgrade briefly asks for roughly 1800m more. That
+# is survivable on its own: surplus pods simply stay Pending until the old ones go.
+#
+# It stops being survivable the moment the upgrade also has to move the bundled PostgreSQL,
+# which it does whenever its image changes. The StatefulSet deletes its pod and recreates it,
+# and in the window between the two the surge pods take the CPU it just freed. Nothing then
+# resolves: the replacement database cannot schedule, so no service can pass a readiness probe,
+# so no old pod is retired, so the CPU is never given back. `maxSurge: 0` retires before it
+# replaces, which means the release never needs more than its steady state and the database
+# always has its own slot to come back into.
+#
+# The same lever is the answer on any capacity-constrained cluster running the bundled
+# datastores; see the chart README.
 auth:
   jwtSecret: ci-jwt-secret-0123456789abcdef0123
   passwordPepper: ci-password-pepper-0123456789abcd
@@ -18,6 +35,12 @@ anilist:
   clientSecret: ci-anilist-client-secret
   tokenEncryptionKey: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
   redirectUri: https://tankovault.example.com/account/anilist-callback
+defaults:
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
 postgresql:
   enabled: true
   auth:

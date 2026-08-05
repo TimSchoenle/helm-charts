@@ -565,7 +565,7 @@ series rather than only checking that they parse.
   a recorded series' level prefix is meant to be its label set. If you referenced the old name in a
   query of your own, update it; nothing inside the chart still does.
 - **`TankoVaultWorkerTargetsAbsent`'s runbook** no longer interpolates
-  `{{ `{{ $labels.namespace }}` }}`.
+  `{{ $labels.namespace }}`.
   `absent()` builds its series from equality matchers only, so under
   `metrics.prometheusRule.scope=none` that label does not exist and the runbook rendered a
   `kubectl -n  ...` command with a hole in it.

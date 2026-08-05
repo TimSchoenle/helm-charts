@@ -35,8 +35,8 @@ set is a constant here. `verify_against_schema` cross-checks it against the same
 catalog kubeconform validates the rendered manifests with, which is authoritative on the
 fields that exist and so catches the list drifting from the API.
 
-Usage: .github/scripts/check-immutable-fields.py
-       KUBE_VERSION=1.31.0 .github/scripts/check-immutable-fields.py
+Usage: python3 .github/scripts/check-immutable-fields.py
+       KUBE_VERSION=1.31.0 python3 .github/scripts/check-immutable-fields.py
 """
 
 from __future__ import annotations
@@ -57,16 +57,9 @@ import yaml
 
 CHARTS_DIR = Path("charts")
 
-# A library chart renders nothing on its own.
-EXCLUDED_CHARTS = {"common"}
-
-# `helm template` reports the built-in API surface but no CRDs, and charts that ship custom
-# resources refuse to render rather than dropping them silently. Kept in step with
-# render-charts.sh.
-API_VERSIONS = [
-    "--api-versions", "monitoring.coreos.com/v1",
-    "--api-versions", "grafana.integreatly.org/v1beta1",
-]
+# The API groups an offline render has to declare, shared with every other renderer in the
+# repository. See the file's own header for why they are needed at all.
+API_VERSIONS_FILE = Path(".github/configs/render-api-versions.txt")
 
 # Everything the API server allows to change on an existing StatefulSet. Anything else in the
 # spec is immutable and must therefore be invariant under a version bump.
@@ -111,6 +104,26 @@ PROBE_NAME_OVERRIDE = "immutability-probe"
 # chart's own. Both fields move: `version` feeds `helm.sh/chart`, `appVersion` feeds
 # `app.kubernetes.io/version`, and either one reaching an immutable field is a defect.
 PROBE_VERSION = "99.99.99"
+
+
+def api_version_args() -> list[str]:
+    """`--api-versions` flags for every CRD group the shared list declares."""
+    args: list[str] = []
+    for line in API_VERSIONS_FILE.read_text(encoding="utf-8").splitlines():
+        entry = line.strip()
+        if entry and not entry.startswith("#"):
+            args += ["--api-versions", entry]
+    return args
+
+
+def is_library_chart(chart: Path) -> bool:
+    """A library chart renders nothing on its own, so there is nothing here to check.
+
+    Read from `Chart.yaml` rather than matched against a hard-coded name, so a second library
+    chart needs no change here — matching how the shell renderers decide the same thing.
+    """
+    metadata = yaml.safe_load((chart / "Chart.yaml").read_text(encoding="utf-8")) or {}
+    return metadata.get("type") == "library"
 
 
 def statefulset_spec_properties() -> set[str] | None:
@@ -166,7 +179,7 @@ def render(chart: Path, values: Path, extra: list[str] | None = None) -> list[di
     cmd = [
         "helm", "template", chart.name, str(chart),
         "--namespace", "default",
-        *API_VERSIONS,
+        *api_version_args(),
         "--values", str(values),
         *(extra or []),
     ]
@@ -285,7 +298,7 @@ def main() -> int:
     verify_against_schema(failures)
 
     for chart in sorted(CHARTS_DIR.iterdir()):
-        if not chart.is_dir() or chart.name in EXCLUDED_CHARTS:
+        if not chart.is_dir() or is_library_chart(chart):
             continue
 
         values_files = sorted((chart / "ci").glob("*.yaml"))

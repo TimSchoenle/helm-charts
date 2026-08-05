@@ -205,6 +205,11 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read # to checkout code
+    # Whether any chart changed is derived from the diff against the target branch. The install
+    # job needs the same answer and gates on this one anyway, so it is published here rather
+    # than re-derived by a second `ct list-changed` run there.
+    outputs:
+      changed: ${{ steps.list-changed.outputs.changed }}
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
@@ -239,14 +244,14 @@ jobs:
       - name: Run chart-testing (list-changed)
         id: list-changed
         run: |
-          changed=$(ct list-changed --config ./.github/configs/ct-lint.yaml)
+          changed=$(ct list-changed --config ./.github/configs/ct.yaml)
           if [[ -n "$changed" ]]; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Run chart-testing (lint)
         if: steps.list-changed.outputs.changed == 'true'
-        run: ct lint --debug --config ./.github/configs/ct-lint.yaml --lint-conf ./.github/configs/lintconf.yaml
+        run: ct lint --debug --config ./.github/configs/ct.yaml --lint-conf ./.github/configs/lintconf.yaml
 
   validate-manifests:
     name: Validate Manifests (k8s ${{ matrix.kubernetes }})
@@ -291,9 +296,12 @@ jobs:
 
   # Immutable fields are the one class of defect that renders, lints and installs cleanly and
   # only fails on an upgrade of an already-running release — on a cluster, during a sync, long
-  # after review. `ct install` cannot see it either: it installs fresh, and a fresh install of
-  # a broken chart succeeds. This job is the only thing standing between a version bump and a
-  # release that cannot be upgraded in place.
+  # after review. The `install` job runs `ct install --upgrade`, which patches a live release
+  # and so catches this on a real API server; this job is the cheap and complete half of that
+  # pair. It needs no cluster, it covers every chart rather than only the ones a PR touches,
+  # and it still runs for a chart whose major version was bumped — which `ct` deliberately
+  # exempts from its upgrade test, and which is exactly when an immutable field is most likely
+  # to have moved.
   immutable-fields:
     name: Immutable Fields
     runs-on: ubuntu-latest
@@ -393,16 +401,8 @@ jobs:
       - name: Set up chart-testing
         uses: helm/chart-testing-action@6ec842c01de15ebb84c8627d2744a0c2f2755c9f # v2.8.0
 
-      - name: Run chart-testing (list-changed)
-        id: list-changed
-        run: |
-          changed=$(ct list-changed --config ./.github/configs/ct-lint.yaml)
-          if [[ -n "$changed" ]]; then
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-          fi
-
       - name: Create kind cluster
-        if: steps.list-changed.outputs.changed == 'true'
+        if: needs.lint.outputs.changed == 'true'
         uses: helm/kind-action@ef37e7f390d99f746eb8b610417061a60e82a6cc # v1.14.0
         with:
           node_image: kindest/node:${{ matrix.kubernetes }}
@@ -415,7 +415,7 @@ jobs:
       # Server-side apply because the CRD schemas exceed the annotation size limit that
       # client-side `kubectl apply` would hit.
       - name: Install Prometheus Operator CRDs
-        if: steps.list-changed.outputs.changed == 'true'
+        if: needs.lint.outputs.changed == 'true'
         env:
           # renovate: datasource=github-releases depName=prometheus-operator/prometheus-operator
           PROMETHEUS_OPERATOR_VERSION: v0.93.0
@@ -429,9 +429,20 @@ jobs:
             crd/podmonitors.monitoring.coreos.com \
             crd/prometheusrules.monitoring.coreos.com
 
-      - name: Run chart-testing (install)
-        if: steps.list-changed.outputs.changed == 'true'
-        run: ct install --config ./.github/configs/ct-lint.yaml
+      # `--upgrade` is what makes this job an upgrade test rather than only an install test: for
+      # every changed chart, `ct` first installs the revision on the target branch and then
+      # upgrades it in place to the revision in the PR. That is the only check here that
+      # exercises a live object being patched, so it is the one that can see the whole class of
+      # immutable-field rejections — on any kind, not just the StatefulSet spec the static
+      # `immutable-fields` job diffs. It skips charts whose major version was bumped, where a
+      # breaking change is declared rather than accidental.
+      #
+      # The old revision's ci/ values files drive the install, and the same paths are then used
+      # for the upgrade. `--skip-missing-values` skips the ones this revision renamed or
+      # removed, which would otherwise fail with nothing to upgrade with.
+      - name: Run chart-testing (install & upgrade)
+        if: needs.lint.outputs.changed == 'true'
+        run: ct install --config ./.github/configs/ct.yaml --upgrade --skip-missing-values
 
   renovate-validate:
     name: Validate Renovate Config

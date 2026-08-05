@@ -1,54 +1,41 @@
 #!/usr/bin/env bash
-# Render every application chart against every one of its ci/ values files for a given
-# Kubernetes version and validate the result with kubeconform.
+# Validate every chart's rendered output against the Kubernetes schemas for a given version.
 #
-# Every combination is checked before the script exits, so one broken chart does not hide
-# the rest.
+# The render is `render-charts.sh`, so this script owns only the validation. Both it and the
+# policy scan used to carry their own copy of the same loop and had to be kept identical by
+# hand; now the manifests kube-linter sees and the manifests kubeconform sees cannot diverge.
+# Each rendered file is named `<chart>--<values>.yaml`, so kubeconform's own output identifies
+# the offending pair.
 #
-# Usage: KUBE_VERSION=1.31.0 .github/scripts/validate-manifests.sh
-set -uo pipefail
+# kubeconform validates every file before it exits, so one broken chart does not hide the rest.
+#
+# Usage: KUBE_VERSION=1.31.0 bash .github/scripts/validate-manifests.sh
+set -euo pipefail
 
 kube_version="${KUBE_VERSION:?KUBE_VERSION must be set}"
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 # PodMonitor and other operator CRDs are not part of the Kubernetes API surface, so their
 # schemas come from the community catalog.
 crd_schema='https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json'
 
-# Charts that ship custom resources refuse to render when the API is missing, rather than
-# dropping the objects silently, so an offline render has to declare the CRD APIs the target
-# cluster is assumed to have. Without this the objects would never reach kubeconform.
-# shellcheck disable=SC2054 # not a list literal
-api_versions=(
-  --api-versions monitoring.coreos.com/v1
-  --api-versions grafana.integreatly.org/v1beta1
-)
+rendered="$(mktemp -d)"
+trap 'rm -rf "${rendered}"' EXIT
 
-failed=0
+echo "::group::Rendering every chart for Kubernetes ${kube_version}"
+render_status=0
+bash "${repo_root}/.github/scripts/render-charts.sh" "${rendered}" --kube-version "${kube_version}" \
+  || render_status=1
+echo "::endgroup::"
 
-for chart in charts/*/; do
-  name="$(basename "$chart")"
-  [ "$name" = "common" ] && continue
+echo "Validating rendered manifests against Kubernetes ${kube_version}"
+kubeconform \
+  -strict \
+  -summary \
+  -kubernetes-version "${kube_version}" \
+  -schema-location default \
+  -schema-location "${crd_schema}" \
+  "${rendered}"
 
-  for values in "$chart"ci/*.yaml; do
-    [ -e "$values" ] || continue
-
-    echo "::group::${name} <- $(basename "$values") (k8s ${kube_version})"
-    if ! helm template "$name" "$chart" \
-          --namespace default \
-          --kube-version "${kube_version}" \
-          "${api_versions[@]}" \
-          --values "$values" |
-        kubeconform \
-          -strict \
-          -summary \
-          -kubernetes-version "${kube_version}" \
-          -schema-location default \
-          -schema-location "${crd_schema}"; then
-      echo "FAILED: ${name} with $(basename "$values")"
-      failed=1
-    fi
-    echo "::endgroup::"
-  done
-done
-
-exit "$failed"
+exit "${render_status}"

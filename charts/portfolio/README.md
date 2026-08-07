@@ -1,6 +1,6 @@
 # portfolio
 
-![Version: 3.0.10](https://img.shields.io/badge/Version-3.0.10-informational?style=flat-square) ![AppVersion: v2.2.3](https://img.shields.io/badge/AppVersion-v2.2.3-informational?style=flat-square)
+![Version: 3.0.11](https://img.shields.io/badge/Version-3.0.11-informational?style=flat-square) ![AppVersion: v2.2.3](https://img.shields.io/badge/AppVersion-v2.2.3-informational?style=flat-square)
 
 Personal portfolio built with Rust (Yew frontend, Axum server).
 

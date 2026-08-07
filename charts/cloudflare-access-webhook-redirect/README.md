@@ -1,6 +1,6 @@
 # cloudflare-access-webhook-redirect
 
-![Version: 3.0.8](https://img.shields.io/badge/Version-3.0.8-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: v0.3.22](https://img.shields.io/badge/AppVersion-v0.3.22-informational?style=flat-square)
+![Version: 3.0.9](https://img.shields.io/badge/Version-3.0.9-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: v0.3.22](https://img.shields.io/badge/AppVersion-v0.3.22-informational?style=flat-square)
 
 A Helm chart for deploying the Cloudflare Access Webhook Redirect service. This service acts as an authentication proxy that validates requests using Cloudflare Access Service Auth tokens before forwarding them to target backend services.
 

@@ -1,6 +1,6 @@
 # tankovault
 
-![Version: 3.1.5](https://img.shields.io/badge/Version-3.1.5-informational?style=flat-square) ![AppVersion: 1.5.0](https://img.shields.io/badge/AppVersion-1.5.0-informational?style=flat-square)
+![Version: 3.1.6](https://img.shields.io/badge/Version-3.1.6-informational?style=flat-square) ![AppVersion: 1.5.0](https://img.shields.io/badge/AppVersion-1.5.0-informational?style=flat-square)
 
 This chart deploys the full TankoVault manga aggregator stack — frontend, api, control-plane, worker, notifier, sync, challenge-solver and render — hardened to the restricted Pod Security Standard, with file-backed configuration that reloads in place instead of restarting pods, optional bundled PostgreSQL, Valkey, NATS JetStream and TRAWL, and optional Prometheus metrics, alerting rules and Grafana dashboards.
 
@@ -13,6 +13,24 @@ This chart deploys the whole system: the `frontend` SPA server, the `api` edge, 
 `control-plane` scheduler, the `worker` fetch tier, `notifier`, `sync`, `challenge-solver` and
 the optional headless `render` tier, plus the one-shot `bootstrap` migration and seeding steps.
 
+> [!IMPORTANT]
+> **Upgrading an existing release?** Read
+> [UPGRADING.md](https://github.com/TimSchoenle/helm-charts/blob/main/charts/tankovault/UPGRADING.md)
+> first. Two versions need a manual step that nothing else will remind you about: 3.1.0 (pgvector,
+> and a one-off `REINDEX` on the bundled database) and 3.0.3 (a one-off StatefulSet recreate).
+
+## Where to look
+
+| If you are | Read |
+|---|---|
+| installing for the first time | [Quick start](#quick-start), then [Exposure](#exposure) |
+| wiring up your own datastores | [The bundled datastores are evaluation-tier](#the-bundled-datastores-are-evaluation-tier) |
+| wondering why a config change did not restart anything | [Configuration reloads instead of restarting](#configuration-reloads-instead-of-restarting) |
+| supplying secrets yourself | [Generated credentials](#generated-credentials), [Configuration and secrets](#configuration-and-secrets) |
+| deploying through Argo CD | [Argo CD and `bootstrap.migrate.ordering`](#argo-cd-and-bootstrapmigrateordering) |
+| hooking up Prometheus or Grafana | [Observability](#observability) |
+| publishing terms or a privacy policy | [Legal documents](#legal-documents) |
+
 ## Prerequisites
 
 - Kubernetes 1.19+
@@ -24,19 +42,15 @@ the optional headless `render` tier, plus the one-shot `bootstrap` migration and
 - The Prometheus Operator CRDs, if `metrics.serviceMonitor` or `metrics.prometheusRule` are enabled
 - An ingress controller, if `ingress.enabled=true`
 
-## Get Repository Info
-
-```shell
-helm repo add timschoenle https://timschoenle.github.io/helm-charts
-helm repo update
-```
-
-## Install
+## Quick start
 
 Nothing stateful is created unless you ask for it, and the only credentials you must supply are
 the ones issued by somebody else. The smallest working install is therefore:
 
 ```shell
+helm repo add timschoenle https://timschoenle.github.io/helm-charts
+helm repo update
+
 helm install tankovault timschoenle/tankovault \
   --set postgresql.enabled=true \
   --set nats.enabled=true \
@@ -45,8 +59,11 @@ helm install tankovault timschoenle/tankovault \
   --set bootstrap.seedAdmin.enabled=true
 ```
 
-`services.sync` additionally needs an [AniList OAuth application](https://anilist.co/settings/developer);
-set `services.sync.enabled=false` if you do not want it.
+That is an evaluation stack — see
+[the bundled datastores](#the-bundled-datastores-are-evaluation-tier) before it carries anything
+you care about. `services.sync` additionally needs an
+[AniList OAuth application](https://anilist.co/settings/developer); set
+`services.sync.enabled=false` if you do not want it.
 
 ### Generated credentials
 
@@ -79,9 +96,10 @@ one — a release running without a pepper keeps running without it until you se
 yourself, at which point every existing password is invalidated deliberately rather than by
 surprise.
 
-**Back the `Secret` up.** Losing `auth__password_pepper` invalidates every stored password;
-losing `anilist__token_encryption_key` forces every account to re-link. That is true however
-those values were set, but generated values exist nowhere else.
+> [!WARNING]
+> **Back the `Secret` up.** Losing `auth__password_pepper` invalidates every stored password;
+> losing `anilist__token_encryption_key` forces every account to re-link. That is true however
+> those values were set, but generated values exist nowhere else.
 
 ## Configuration reloads instead of restarting
 
@@ -109,7 +127,7 @@ kubectl get pods -l app.kubernetes.io/part-of=tankovault \
   -o custom-columns=NAME:.metadata.name,RESTARTS:.status.containerStatuses[0].restartCount
 ```
 
-Three exceptions are worth knowing:
+Four changes do not behave like the rest:
 
 | Change | Effect |
 |---|---|
@@ -168,11 +186,13 @@ Schema migration is a discrete step, never something a service does at startup.
 The migration Job runs before Helm creates any of the release's own objects, so the three things
 it needs — the ServiceAccount, the credential Secret and its ConfigMap — are Helm hooks
 themselves, created at weight `-10` ahead of the Job at `-5`. They are deliberately not deleted
-when the hook finishes, because the release's workloads use them for as long as they run. The
-consequence to know about: being hooks, these three do not appear in `helm get manifest`, are not
-reverted by `helm rollback`, and **survive `helm uninstall`** — delete the leftover
-`<release>` Secret, `<release>` ServiceAccount and `<release>-bootstrap-config` ConfigMap by hand
-if you want the namespace empty.
+when the hook finishes, because the release's workloads use them for as long as they run.
+
+> [!NOTE]
+> Being hooks, those three do not appear in `helm get manifest`, are not reverted by
+> `helm rollback`, and **survive `helm uninstall`**. Delete the leftover `<release>` Secret,
+> `<release>` ServiceAccount and `<release>-bootstrap-config` ConfigMap by hand if you want the
+> namespace empty.
 
 ### Argo CD and `bootstrap.migrate.ordering`
 
@@ -202,9 +222,9 @@ Two things follow from the Job no longer being a hook:
 - Anything the migration depends on — the ExternalSecret itself, a database provisioned by an
   operator — must be given a sync wave **strictly below** `argoSyncWaveBase`.
 
-The default is unchanged, so `helm install` consumers and anyone happy with the hook are unaffected.
-Only `bootstrap.migrate.mode: job` is affected; the seed steps stay `post-install` because PostSync
-runs after Sync and their secrets already exist.
+The default is unchanged, so `helm install` consumers and anyone happy with the hook are
+unaffected. Only `bootstrap.migrate.mode: job` is affected; the seed steps stay `post-install`
+because PostSync runs after Sync and their secrets already exist.
 
 ## Recommendations need pgvector
 
@@ -214,11 +234,12 @@ control-plane's schedule and queried per reader on the `api`. Migration
 have pgvector available**. The migration fails loudly rather than degrading, because a recommender
 that silently returns nothing is worse than one that refuses to start.
 
-- **`postgresql.enabled=true`**: the bundled image moved from `postgres:18-alpine` to
-  `pgvector/pgvector:pg18` — the same PostgreSQL major with the extension preinstalled, same
+- **`postgresql.enabled=true`**: the bundled image is `pgvector/pgvector:pg18` — the same
+  PostgreSQL major as the `postgres:18-alpine` it replaced, with the extension preinstalled, same
   entrypoint, same environment contract, same uid, so the existing PVC is reused in place and no
   other value changes. **An existing release needs one manual step afterwards**; see
-  [Upgrading to 3.1.0](#upgrading-to-310). A fresh install needs nothing.
+  [UPGRADING.md](https://github.com/TimSchoenle/helm-charts/blob/main/charts/tankovault/UPGRADING.md#310).
+  A fresh install needs nothing.
 - **`externalDatabase.*`**: install the extension package *before* upgrading — `apt install
   postgresql-18-pgvector`, or your managed provider's equivalent; RDS, Cloud SQL and Azure
   Flexible Server all ship it behind an allowlist setting. The migration only needs it to be
@@ -329,6 +350,12 @@ Operator this chart already requires ships both: `KubeDeploymentReplicasMismatch
 shortfalls (it reads kube-state-metrics, which knows the desired count; nothing this chart emits
 does), and `PrometheusRuleFailures` for the case where these rule groups stop evaluating.
 
+Every one of these objects needs its CRDs. When they are missing the chart refuses to render and
+says which API is absent, rather than dropping the objects and leaving you with a release that
+installed cleanly and is not monitored. Rendering offline — `helm template` reports the built-in
+API surface but no CRDs — needs
+`--api-versions monitoring.coreos.com/v1 --api-versions grafana.integreatly.org/v1beta1`.
+
 ### Queue depth needs the NATS exporter
 
 NATS speaks its own monitoring protocol and publishes no Prometheus exposition, so the scan
@@ -369,13 +396,6 @@ sidecar decides which namespaces it watches, not this chart: unless the Grafana 
 `sidecar.dashboards.searchNamespace` to `ALL` or to a list including this namespace — and the
 default is Grafana's own — the ConfigMap is created and nothing ever reads it.
 
-There are two dashboards: a service overview (liveness, readiness and its dependencies, the
-request path, the database pool, edge policy) and a scan pipeline (scheduling, per-provider
-throughput and backlog, outbound fetches and throttling, notifications, AniList, and the
-recommendation model built from the catalogue the rest of it fills). Neither pins a
-datasource UID — both expose a `Data source` picker and a `Namespace` picker, so one copy works
-for every release in the cluster.
-
 `metrics.dashboard.grafanaOperator.enabled` additionally creates a `GrafanaDashboard` per file for
 clusters running [grafana-operator](https://github.com/grafana/grafana-operator) v5. That resource
 carries `allowCrossNamespaceImport`, so the dashboard declares its own reach and a Grafana
@@ -384,17 +404,18 @@ at the labels on your `Grafana` custom resource. The resources reference the Con
 `configMapRef` rather than inlining the JSON, so the ConfigMap stays enabled and the dashboard is
 stored once.
 
+There are two dashboards: a service overview (liveness, readiness and its dependencies, the
+request path, the database pool, edge policy) and a scan pipeline (scheduling, per-provider
+throughput and backlog, outbound fetches and throttling, notifications, AniList, and the
+recommendation model built from the catalogue the rest of it fills). Neither pins a datasource
+UID — both expose a `Data source` picker and a `Namespace` picker, so one copy works for every
+release in the cluster.
+
 The rules have no such choice. `PrometheusRule` is already the Prometheus Operator's own CRD and
 has no per-object cross-namespace grant — a Prometheus decides what it loads through
 `ruleNamespaceSelector` and `ruleSelector`. `metrics.prometheusRule.labels` is the half of that a
 chart can influence; on a kube-prometheus-stack cluster it usually has to carry
 `release: kube-prometheus-stack` or the rules are created and never loaded.
-
-Every one of these objects needs its CRDs. When they are missing the chart refuses to render and
-says which API is absent, rather than dropping the objects and leaving you with a release that
-installed cleanly and is not monitored. Rendering offline — `helm template` reports the built-in
-API surface but no CRDs — needs
-`--api-versions monitoring.coreos.com/v1 --api-versions grafana.integreatly.org/v1beta1`.
 
 ## Legal documents
 
@@ -420,219 +441,12 @@ Documents supplied through `content` are read on demand behind an mtime check, s
 policy is a values change and the kubelet's ConfigMap refresh, never a restart. That ConfigMap is
 deliberately excluded from the pod's `checksum/config` annotation for exactly that reason.
 
-## Upgrading to 3.1.0
+## Upgrading
 
-This version moves to TankoVault 1.3.0, which adds the recommender. Two things need reading before
-you upgrade an existing release, one for each kind of database.
-
-**On an external database**, install pgvector first — see
-[Recommendations need pgvector](#recommendations-need-pgvector). Migration `0027` will not run
-without it and there is nothing a chart can do to detect that ahead of time.
-
-### `postgresql.enabled=true`: REINDEX once, after the upgrade
-
-**This is a required step for any existing release running the bundled database, and nothing will
-tell you if you skip it.** Fresh installs are unaffected.
-
-Getting pgvector meant moving the bundled image from Alpine to Debian, and those two sort text
-differently under the same `en_US.utf8` locale name — musl compares by byte, glibc compares
-linguistically:
-
-| | `ORDER BY t` |
-|---|---|
-| `postgres:18-alpine` (musl) | `A, B, _z, a, a-b, ab, b` |
-| `pgvector/pgvector:pg18` (glibc) | `a, A, a-b, ab, b, B, _z` |
-
-Every btree index on a `text` or `varchar` column was built under the first ordering and is not
-valid under the second. The consequence is silent and it is wrong answers, not errors: an index
-scan can skip rows that are really there, and a unique index can stop rejecting duplicates.
-Verified with `amcheck` against a data directory carried across the two images —
-`bt_index_check` reports `item order invariant violated` immediately after the swap.
-
-PostgreSQL issues **no warning**, which is what makes this worth a section rather than a
-footnote. It warns on a collation change only when the database records a collation version to
-compare against, and a cluster initialised by the Alpine image records none
-(`pg_database.datcollversion` is null).
-
-The whole fix is one command, run once, after the new image is serving:
-
-```shell
-kubectl -n <namespace> exec -it <release>-tankovault-postgresql-0 -- \
-  psql -U tankovault -d tankovault -c 'REINDEX DATABASE tankovault;'
-```
-
-`REINDEX DATABASE` takes locks on each index as it rebuilds it, so run it in a window where a
-pause is acceptable, or use `REINDEX DATABASE CONCURRENTLY` to trade speed for staying online.
-The chart prints this instruction in its upgrade notes too, and deliberately does not run it for
-you: on a large catalogue it is a long operation with real locking behaviour, and that is an
-operator's decision to schedule.
-
-- **`appVersion` is 1.3.0** and all nine service images are repinned to their `v1.3.0` digests.
-  The upgrade order is the one the chart already enforces — the migration runs ahead of the
-  rollout — and the migration is the step that needs pgvector.
-- **The bundled PostgreSQL image changed** from `postgres:18-alpine` to `pgvector/pgvector:pg18`,
-  as above. If you pinned `postgresql.image.*` yourself, move it to an image that has pgvector.
-- **On a capacity-constrained cluster, set `defaults.strategy.rollingUpdate.maxSurge: 0` for the
-  upgrade.** Every chart-version bump rewrites the `helm.sh/chart` and `app.kubernetes.io/version`
-  pod labels, so an upgrade rolls every workload — the bundled datastores included, which means
-  the database pod is deleted and recreated. The default rollout asks for its replacement pods
-  before retiring the old ones, and if the surge takes the CPU the database just released,
-  nothing recovers: no service passes a readiness probe without the database, so no old pod is
-  ever retired and the capacity never comes back. `maxSurge: 0` retires before it replaces. This
-  is not new in 3.1.0 — it applies to any version bump with the bundled datastores on tight
-  nodes — but it is worth knowing before an upgrade that also has a REINDEX after it.
-- **Two alerts are added**, `TankoVaultRecsysBuildFailing` and `TankoVaultRecsysShelvesEmpty`, with
-  seven recording rules behind them under `tankovault-recsys-recording`. `metrics.prometheusRule`
-  therefore produces 21 groups where it produced 19.
-- **The scan-pipeline dashboard gains a `Recommendations` row.** No new ConfigMap key and no new
-  `GrafanaDashboard`; the existing `tankovault-scan-pipeline.json` grew five panels.
-- **Nothing is switched on by this chart.** The recommender is gated on the
-  `catalogue.recommendations` feature flag in the admin console, and its build cadence has working
-  defaults — see [Build cadence and cost](#build-cadence-and-cost) for the knobs and for the two
-  things worth knowing before touching them. With the flag off nothing builds and nothing is
-  served, so the new rules evaluate against no data and stay dark rather than firing.
-
-## Upgrading to 3.0.3
-
-**Read this before upgrading any release that runs a bundled datastore with persistence.** The
-fix in this version is complete for new installs and requires one manual step for existing ones.
-
-Until 3.0.3 the chart stamped the full label set — including `helm.sh/chart` and
-`app.kubernetes.io/version` — onto the `volumeClaimTemplates` of the bundled NATS and
-PostgreSQL StatefulSets. That block is part of the StatefulSet **spec**, which Kubernetes
-refuses to update for any field other than `replicas`, `ordinals`, `template`,
-`updateStrategy`, `revisionHistoryLimit`, `persistentVolumeClaimRetentionPolicy` and
-`minReadySeconds`. Both of those labels move on every release, so any version bump of this
-chart made the next in-place upgrade fail:
-
-```
-StatefulSet.apps "tankovault-nats" is invalid: spec: Forbidden: updates to statefulset spec
-for fields other than 'replicas', 'ordinals', 'template', 'updateStrategy',
-'revisionHistoryLimit', 'persistentVolumeClaimRetentionPolicy' and 'minReadySeconds' are
-forbidden
-```
-
-The claim templates now carry only labels that are stable for the lifetime of a release
-(`name`, `instance`, `managed-by`, `component`), so this cannot recur.
-
-**It does not repair an existing install.** The StatefulSet already running still carries the
-old labels, and the corrected render still differs from them — so the upgrade is rejected on
-exactly the same field until the object is recreated once:
-
-```shell
-kubectl delete statefulset <release>-nats -n <namespace> --cascade=orphan
-```
-
-Repeat for `<release>-postgresql` if the bundled database is in use. If you are unsure of the
-names:
-
-```shell
-kubectl get statefulset -n <namespace> -l app.kubernetes.io/instance=<release>
-```
-
-Then upgrade as usual. This is safe, and it is worth knowing exactly why rather than having to
-reason it out under a failing sync:
-
-- **The data survives.** The chart sets no `persistentVolumeClaimRetentionPolicy`, so it
-  defaults to `Retain`/`Retain` and the PVCs carry no owner reference to the StatefulSet. The
-  JetStream and PostgreSQL volumes are untouched however the StatefulSet is deleted.
-- **The service stays up.** `--cascade=orphan` deletes only the StatefulSet object; the pod
-  keeps running throughout.
-- **No second pod appears.** The recreated StatefulSet's selector is `name`/`instance`/
-  `component` only and is unchanged between versions, so it adopts the orphaned pod rather
-  than starting a rival. It then rolls it once to pick up the new image — which the upgrade
-  was going to do anyway.
-
-Argo CD users: perform the delete manually, then sync. Do not add the StatefulSet to a
-`Replace=true` sync policy — that would delete the pod along with it.
-
-### `nameOverride` on the bundled datastores
-
-Also fixed here, and unrelated to the above. The bundled datastores rendered their selector and
-their pod template against two different contexts, so under `nameOverride` the two disagreed on
-`app.kubernetes.io/name` and the API server rejected the workload outright with "`selector` does
-not match template `labels`". `nameOverride` broke the bundled NATS, PostgreSQL, Valkey, TRAWL
-and NATS exporter rather than renaming them. If you were affected you will not have a running
-release to upgrade — install normally.
-
-## Upgrading to 3.0.2
-
-Three corrections to the rules 3.0.0 introduced, all found by evaluating them against synthetic
-series rather than only checking that they parse.
-
-- **`TankoVaultLatencyCritical` could never fire.** It compared p99 against `> 10`, and
-  `histogram_quantile` cannot return a value above the highest finite bucket — a service whose
-  every request takes a minute reports exactly `10`. The threshold is now `>= 10`.
-- **`namespace_consumer:events_queue_depth:current` is renamed to
-  `namespace_consumer_name:events_queue_depth:current`**, because it groups by `consumer_name` and
-  a recorded series' level prefix is meant to be its label set. If you referenced the old name in a
-  query of your own, update it; nothing inside the chart still does.
-- **`TankoVaultWorkerTargetsAbsent`'s runbook** no longer interpolates
-  `{{ $labels.namespace }}`.
-  `absent()` builds its series from equality matchers only, so under
-  `metrics.prometheusRule.scope=none` that label does not exist and the runbook rendered a
-  `kubectl -n  ...` command with a hole in it.
-
-## Upgrading to 3.0.0
-
-The observability surface was rebuilt for Kubernetes. Nothing outside `metrics.*` changed, and a
-release that does not enable metrics is unaffected.
-
-**The alerting and recording rules are new.** The previous set was carried over from a
-docker-compose stack and large parts of it could never fire in a cluster: readiness came from a
-blackbox exporter this chart does not deploy, the replica count aggregated every scrape job in the
-cluster, the JetStream queue-depth series had no producer, and the runbooks gave
-`docker compose logs` commands.
-
-- **Recorded series are renamed.** Every rule now aggregates by `namespace` as well as `job`, and
-  the names say so: `job:http_requests:rate5m` is now `namespace_job:http_requests:rate5m`, and so
-  on for all of them. Without namespace in the aggregation the recorded series lose the label and
-  nothing downstream can be scoped. Saved Grafana queries and any downstream rules of your own
-  need updating.
-- **Alerts removed:** `TankoVaultReadinessProberDown` (no prober any more),
-  `TankoVaultWorkerFleetIncomplete` (hardcoded compose's `replicas: 2`; use
-  `KubeDeploymentReplicasMismatch`), `TankoVaultPrometheusRuleEvaluationFailing` (use
-  `PrometheusRuleFailures`).
-- **Alerts added:** `TankoVaultDependencyDown`, `TankoVaultVersionSkew`,
-  `TankoVaultAuthFailureSurge`, `TankoVaultDatabasePoolSaturated`,
-  `TankoVaultProviderFetchFailing`, `TankoVaultProviderThrottlingHeavily`,
-  `TankoVaultScanTasksFailing`, `TankoVaultNoSchedulerLeader`, `TankoVaultSplitBrainScheduler`,
-  `TankoVaultChaptersAllRejected`, `TankoVaultNotificationDeliveryFailing`,
-  `TankoVaultNotificationEventsFailing`, `TankoVaultSseEventsUndeliverable`,
-  `TankoVaultAniListRateLimited`.
-- **`metrics.prometheusRule.scope` is new and defaults to `namespace`**, which rewrites every
-  expression to match only this release's series. Set it to `none` to keep the previous
-  cluster-wide behaviour.
-- **The dashboards no longer pin a datasource UID.** The old one referenced
-  `tankovault-prometheus`, a name provisioned by upstream's compose stack and absent from every
-  cluster; both dashboards now expose a `Data source` picker and a `Namespace` picker. A second
-  dashboard, `tankovault-scan-pipeline`, is added, so `metrics.dashboard.enabled` now produces two
-  ConfigMap keys and, on the operator path, two `GrafanaDashboard` resources.
-- **`metrics.natsExporter` is new**, off by default. The queue-depth alerts and the pipeline
-  dashboard's backlog row need it; see above.
-
-## Upgrading to 2.0.0
-
-TankoVault 1.0.0 replaced FlareSolverr with [TRAWL](https://github.com/germondai/trawl) as its
-solver back-end, and this chart follows. The rename is mechanical:
-
-| 1.x | 2.0.0 |
-|---|---|
-| `flaresolverr.enabled` | `trawl.enabled` |
-| `flaresolverr.image.*` | `trawl.image.*` (now `ghcr.io/germondai/trawl`) |
-| `flaresolverr.runAsUser` | `trawl.runAsUser` |
-| `flaresolverr.shmSize` | `trawl.shmSize` |
-| `flaresolverr.resourcesPreset` | `trawl.resources` (no preset fits a browser tier) |
-| `externalFlaresolverr.url` | `externalTrawl.url` |
-| — | `trawl.browserPoolSize`, `trawl.redis.*` (new) |
-
-There is no compatibility shim: the old keys are rejected by `values.schema.json`, so an upgrade
-that missed one fails at render rather than quietly dropping the solver.
-
-Order matters in one direction only. TRAWL serves FlareSolverr's `/v1` API as well as its own, so
-a TankoVault 0.4.x release keeps working once the container behind `externalTrawl.url` is swapped;
-the reverse is not true. The chart emits `solver.trawl_endpoint`, which only TankoVault 1.0.0 and
-later read — upgrade the application first, or in the same step.
+Version-by-version migration notes live in
+[UPGRADING.md](https://github.com/TimSchoenle/helm-charts/blob/main/charts/tankovault/UPGRADING.md).
+Read it before upgrading across 3.0.3 or 3.1.0 — both need a manual step, and neither fails in a
+way that points at it.
 
 ## Values
 

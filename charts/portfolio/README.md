@@ -1,50 +1,114 @@
 # portfolio
 
-![Version: 3.0.10](https://img.shields.io/badge/Version-3.0.10-informational?style=flat-square) ![AppVersion: v2.2.3](https://img.shields.io/badge/AppVersion-v2.2.3-informational?style=flat-square)
+![Version: 3.0.11](https://img.shields.io/badge/Version-3.0.11-informational?style=flat-square) ![AppVersion: v2.2.3](https://img.shields.io/badge/AppVersion-v2.2.3-informational?style=flat-square)
 
 Personal portfolio built with Rust (Yew frontend, Axum server).
 
-> [!WARNING]
-> This chart's latest major release changes the values contract. See
-> [UPGRADING.md](https://github.com/TimSchoenle/helm-charts/blob/main/UPGRADING.md) before
-> upgrading from an earlier major version.
+A single self-contained Rust binary serving pre-built assets. There is no database, no cache
+and no runtime credential — the GitHub data on the site is fetched at build time, so no token
+is needed here. Installing it without any values produces a working release; the only thing
+most installs add is an Ingress.
 
 ## Prerequisites
 
 - Kubernetes 1.19+
 - Helm 3.0+
+- An ingress controller, if `ingress.enabled=true`
 
-## Get Repository Info
+## Quick start
 
 ```shell
 helm repo add timschoenle https://timschoenle.github.io/helm-charts
 helm repo update
-```
 
-## Install Chart
-
-```shell
 helm install [RELEASE_NAME] timschoenle/portfolio \
-  --namespace [NAMESPACE] \
-  --create-namespace
+  --namespace [NAMESPACE] --create-namespace
 ```
 
-## Upgrade Chart
+Upgrade with `helm upgrade [RELEASE_NAME] timschoenle/portfolio -n [NAMESPACE]`,
+remove with `helm uninstall [RELEASE_NAME] -n [NAMESPACE]`. Nothing outlives the release.
 
-```shell
-helm upgrade [RELEASE_NAME] timschoenle/portfolio \
-  --namespace [NAMESPACE]
+## Publishing it
+
+```yaml
+ingress:
+  enabled: true
+  ingressClassName: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+  hosts:
+    - host: portfolio.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: portfolio-tls
+      hosts:
+        - portfolio.example.com
 ```
 
-## Uninstall Chart
+## Sizing
 
-```shell
-helm uninstall [RELEASE_NAME] --namespace [NAMESPACE]
+`resources` ships with real defaults — 25m/32Mi requested, 250m/128Mi limited — rather than the
+empty block most charts use, because the server's footprint is known and small. Raise the
+limits only if you are actually seeing throttling or OOM kills; a static-asset server that is
+slow is usually waiting on the network, not on CPU.
+
+`resourcesPreset` offers named t-shirt sizes instead, and is ignored whenever `resources` is
+set. Set one or the other, not both.
+
+For availability, `replicaCount` plus a `podAntiAffinity` (or the `topologySpreadConstraints`
+value) is the whole story — the pods share nothing, so any number of them can run.
+
+## Health checks
+
+All three probes are on by default and hit `/api/health`. The startup probe is the one that
+covers a slow boot, and it is why the liveness probe can be aggressive without risking a kill
+loop during startup.
+
+Each probe takes one handler (`httpGet`, `tcpSocket`, `exec` or `grpc`) and the usual timings.
+Anything left unset is omitted from the manifest rather than written out, so Kubernetes' own
+defaults apply:
+
+```yaml
+startupProbe:
+  failureThreshold: 12   # 12 x periodSeconds before the container is considered failed
+livenessProbe:
+  periodSeconds: 10
 ```
 
-## Configuration
+> [!NOTE]
+> `successThreshold` is accepted only on the readiness probe. Kubernetes rejects any value
+> other than `1` on startup and liveness probes, so the chart omits it there.
 
-The following table lists the configurable parameters of the chart and their default values.
+## Security
+
+The pod satisfies the [restricted Pod Security Standard][pss] as installed: non-root (UID
+1001), read-only root filesystem, all capabilities dropped, no privilege escalation,
+`seccompProfile: RuntimeDefault`, and no ServiceAccount token mounted. `/tmp` is the one
+writable path, provided as an `emptyDir`.
+
+Opt out with `podSecurityContextPreset: none` / `securityContextPreset: none`, or override
+single fields under `podSecurityContext` / `securityContext` — your values are merged over the
+preset rather than replacing it.
+
+[pss]: https://kubernetes.io/docs/concepts/security/pod-security-standards/#restricted
+
+## When it will not start
+
+```bash
+kubectl describe pod -n [NAMESPACE] -l app.kubernetes.io/name=portfolio
+kubectl logs -n [NAMESPACE] -l app.kubernetes.io/name=portfolio
+```
+
+If the pod is running but the Ingress serves an error, check the app directly first — that
+separates a broken Ingress from a broken pod:
+
+```bash
+kubectl port-forward -n [NAMESPACE] svc/[RELEASE_NAME]-portfolio 8080:80
+curl http://localhost:8080/api/health
+```
 
 ## Values
 
@@ -164,205 +228,6 @@ The following table lists the configurable parameters of the chart and their def
 | terminationGracePeriodSeconds | int | `30` | Grace period for pod shutdown. |
 | tolerations | list | `[]` | Tolerations for pod assignment. |
 | topologySpreadConstraints | list | `[]` | Pod topology spread constraints for availability. |
-
-> [!NOTE]
-> The v2 application is a self-contained Rust binary that serves pre-built assets.
-> GitHub data is fetched at build time, so no GitHub token is required at runtime.
-
-## Examples
-
-### Minimal Configuration
-
-The chart runs with sensible defaults and requires no mandatory configuration:
-
-```shell
-helm install [RELEASE_NAME] timschoenle/portfolio \
-  --namespace [NAMESPACE] --create-namespace
-```
-
-### With Ingress and TLS
-
-```yaml
-ingress:
-  enabled: true
-  ingressClassName: "nginx"
-  annotations:
-    cert-manager.io/cluster-issuer: "letsencrypt-prod"
-    nginx.ingress.kubernetes.io/ssl-redirect: "true"
-  hosts:
-    - host: portfolio.example.com
-      paths:
-        - path: /
-          pathType: Prefix
-  tls:
-    - secretName: portfolio-tls
-      hosts:
-        - portfolio.example.com
-```
-
-### Production Configuration with Resource Limits
-
-```yaml
-application:
-  logLevel: info
-
-resources:
-  limits:
-    cpu: 1000m
-    memory: 512Mi
-  requests:
-    cpu: 200m
-    memory: 256Mi
-
-ingress:
-  enabled: true
-  ingressClassName: "nginx"
-  annotations:
-    cert-manager.io/cluster-issuer: "letsencrypt-prod"
-    nginx.ingress.kubernetes.io/ssl-redirect: "true"
-    nginx.ingress.kubernetes.io/rate-limit: "100"
-  hosts:
-    - host: portfolio.example.com
-      paths:
-        - path: /
-          pathType: Prefix
-  tls:
-    - secretName: portfolio-tls
-      hosts:
-        - portfolio.example.com
-```
-
-### High Availability Configuration
-
-```yaml
-resources:
-  limits:
-    cpu: 1000m
-    memory: 512Mi
-  requests:
-    cpu: 250m
-    memory: 256Mi
-
-topologySpreadConstraints:
-  - maxSkew: 1
-    topologyKey: kubernetes.io/hostname
-    whenUnsatisfiable: DoNotSchedule
-    labelSelector:
-      matchLabels:
-        app.kubernetes.io/name: portfolio
-
-affinity:
-  podAntiAffinity:
-    preferredDuringSchedulingIgnoredDuringExecution:
-      - weight: 100
-        podAffinityTerm:
-          labelSelector:
-            matchLabels:
-              app.kubernetes.io/name: portfolio
-          topologyKey: kubernetes.io/hostname
-```
-
-## Health Checks
-
-The chart configures comprehensive health checks using the `/api/health` endpoint:
-
-- **Startup Probe**: Protects slow starting containers (up to 60 seconds)
-- **Liveness Probe**: Restarts unhealthy containers
-- **Readiness Probe**: Controls traffic routing to ready pods
-
-All probes are fully configurable via values. Each probe takes one handler (`httpGet`,
-`tcpSocket`, `exec` or `grpc`) and the usual timings; anything left unset falls back to the
-Kubernetes default rather than being written into the manifest:
-
-```yaml
-startupProbe:
-  enabled: true
-  httpGet:
-    path: /api/health
-    port: http
-  initialDelaySeconds: 10
-  periodSeconds: 5
-  failureThreshold: 12
-
-livenessProbe:
-  enabled: true
-  httpGet:
-    path: /api/health
-    port: http
-  initialDelaySeconds: 30
-  periodSeconds: 10
-  failureThreshold: 3
-
-readinessProbe:
-  enabled: true
-  httpGet:
-    path: /api/health
-    port: http
-  initialDelaySeconds: 10
-  periodSeconds: 5
-  failureThreshold: 3
-```
-
-> [!NOTE]
-> `successThreshold` is accepted only on the readiness probe. Kubernetes rejects any value
-> other than `1` on startup and liveness probes, so the chart omits it there.
-
-## Security
-
-The chart follows security best practices:
-
-- Runs as non-root user (UID 1001)
-- Read-only root filesystem (enabled by default)
-- No privilege escalation
-- `seccompProfile: RuntimeDefault`
-- Service account token not mounted into the pod
-- Drop all capabilities
-
-Together these satisfy the [restricted Pod Security Standard][pss]. Set
-`podSecurityContextPreset: none` / `securityContextPreset: none` to opt out, or override
-individual fields under `podSecurityContext` / `securityContext` — user values are merged
-over the preset rather than replacing it.
-
-[pss]: https://kubernetes.io/docs/concepts/security/pod-security-standards/#restricted
-
-Writable volumes are provided only where necessary:
-- `/tmp` - Temporary files
-
-## Resource Recommendations
-
-Based on the Rust application characteristics:
-
-| Environment | CPU Request | CPU Limit | Memory Request | Memory Limit |
-|-------------|-------------|-----------|----------------|--------------|
-| Development | 25m         | 250m      | 32Mi           | 128Mi        |
-| Production  | 50m         | 500m      | 64Mi           | 256Mi        |
-| High Traffic| 100m        | 1000m     | 128Mi          | 512Mi        |
-
-## Troubleshooting
-
-### Pod not starting
-
-Inspect the pod events and logs:
-
-```bash
-kubectl describe pod -n [NAMESPACE] -l app.kubernetes.io/name=portfolio
-kubectl logs -n [NAMESPACE] -l app.kubernetes.io/name=portfolio
-```
-
-### Health check failures
-
-View pod logs to diagnose:
-
-```bash
-kubectl logs -n [NAMESPACE] -l app.kubernetes.io/name=portfolio
-```
-
-Check health endpoint directly:
-
-```bash
-kubectl port-forward -n [NAMESPACE] svc/[SERVICE_NAME] 8080:80
-curl http://localhost:8080/api/health
-```
 
 ## Source Code
 

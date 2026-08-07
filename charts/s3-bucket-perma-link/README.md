@@ -4,49 +4,126 @@
 
 This chart deploys a simple web server that provides permanent links to specific S3 bucket resources. It allows you to define static URL paths that always point to specific files in your S3 buckets.
 
-> [!WARNING]
-> This chart's latest major release changes the values contract. See
-> [UPGRADING.md](https://github.com/TimSchoenle/helm-charts/blob/main/UPGRADING.md) before
-> upgrading from an earlier major version.
+The point is a URL that never changes while the object behind it does: `/latest-report` keeps
+working when the file it maps to is replaced, and the bucket layout stays private. The service
+holds the credentials and fetches the object itself, so nothing is signed into a link and no
+bucket has to be made public.
 
 ## Prerequisites
 
 - Kubernetes 1.19+
 - Helm 3.0+
-- S3-compatible storage with access credentials
+- An S3-compatible bucket and a credential pair that can read it
+- An ingress controller, if the links are meant to work outside the cluster
 
-## Get Repository Info
+## Quick start
+
+Create the credential Secret first — the chart never takes the keys as values:
+
+```shell
+kubectl create secret generic s3-credentials \
+  --namespace [NAMESPACE] \
+  --from-literal=access_key='...' \
+  --from-literal=secret_key='...'
+```
+
+The key names matter: the chart reads `access_key` and `secret_key`, and a Secret with any
+other spelling produces a pod that starts and then fails every request.
 
 ```shell
 helm repo add timschoenle https://timschoenle.github.io/helm-charts
 helm repo update
-```
 
-## Install Chart
-
-```shell
 helm install [RELEASE_NAME] timschoenle/s3-bucket-perma-link \
-  --namespace [NAMESPACE] \
-  --create-namespace \
-  --set application.s3.secretName="s3-credentials"
+  --namespace [NAMESPACE] --create-namespace \
+  --values values.yaml
 ```
 
-## Upgrade Chart
+Upgrade with `helm upgrade [RELEASE_NAME] timschoenle/s3-bucket-perma-link -n [NAMESPACE]`,
+remove with `helm uninstall [RELEASE_NAME] -n [NAMESPACE]`.
 
-```shell
-helm upgrade [RELEASE_NAME] timschoenle/s3-bucket-perma-link \
-  --namespace [NAMESPACE]
+## Mapping paths to objects
+
+`application.handler.entries` is the whole configuration: one key per URL path, whose value is
+a list of `"bucket,key"` pairs.
+
+```yaml
+application:
+  handler:
+    entries:
+      latest-report:
+        - "company-reports,2024/q4-report.pdf"
+      user-guide:
+        - "documentation,guides/user-guide.pdf"
+
+  s3:
+    secretName: s3-credentials
+    host: s3.eu-central-1.amazonaws.com
+    region: eu-central-1
 ```
 
-## Uninstall Chart
+`GET /latest-report` then serves `2024/q4-report.pdf` out of `company-reports`. Paths are
+declared, not derived — a request for anything not listed here is not proxied, so the bucket
+cannot be walked through this service.
 
-```shell
-helm uninstall [RELEASE_NAME] --namespace [NAMESPACE]
+Changing an entry is a values change and a rollout; the URL is unaffected.
+
+## Non-AWS endpoints
+
+`application.s3.host` takes any S3-compatible API endpoint, including a port. `region` is still
+required — most implementations only use it to build the request signature, but the signature
+is rejected if it disagrees with what the server expects.
+
+```yaml
+application:
+  s3:
+    secretName: s3-credentials
+    host: minio.example.com:9000
+    region: us-east-1
 ```
 
-## Configuration
+## Publishing it
 
-The following table lists the configurable parameters of the chart and their default values.
+```yaml
+ingress:
+  enabled: true
+  ingressClassName: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+  hosts:
+    - host: files.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: files-tls
+      hosts:
+        - files.example.com
+```
+
+Anyone who can reach the Ingress can fetch every mapped object — the service has no
+authentication of its own. Put it behind one, or keep it internal, if the objects are not meant
+to be public.
+
+With `networkPolicy.enabled`, outbound HTTPS is allowed by default — enough for AWS and any
+other endpoint on a public address. An in-cluster or otherwise private endpoint (a MinIO in the
+next namespace, say) falls inside the RFC1918 range that `networkPolicy.egress.except` carves
+out, and needs a rule of its own:
+
+```yaml
+networkPolicy:
+  enabled: true
+  egress:
+    customRules:
+      - to:
+          - namespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: minio
+        ports:
+          - protocol: TCP
+            port: 9000
+```
 
 ## Values
 
@@ -167,159 +244,6 @@ The following table lists the configurable parameters of the chart and their def
 | tolerations | list | `[]` | Tolerations for pod assignment. |
 | topologySpreadConstraints | list | `[]` | Pod topology spread constraints for availability. |
 
-## S3 Secret Configuration
-
-Create a Kubernetes secret with your S3 credentials:
-
-```bash
-kubectl create secret generic s3-credentials \
-  --namespace [NAMESPACE] \
-  --from-literal=access_key='your-access-key' \
-  --from-literal=secret_key='your-secret-key'
-```
-
-The secret must contain the following keys:
-- `access_key`: Your S3 access key
-- `secret_key`: Your S3 secret key
-
-## Path Configuration
-
-Define URL paths that map to S3 bucket files using the `application.handler.entries` configuration:
-
-```yaml
-application:
-  handler:
-    entries:
-      # URL path -> ["bucket-name,path/to/file"]
-      myfile:
-        - "my-bucket,documents/file.pdf"
-      report:
-        - "reports-bucket,2024/annual-report.pdf"
-```
-
-With this configuration:
-- `http://your-service/myfile` will serve `documents/file.pdf` from `my-bucket`
-- `http://your-service/report` will serve `2024/annual-report.pdf` from `reports-bucket`
-
-## Examples
-
-### Minimal Configuration
-
-```yaml
-application:
-  handler:
-    entries:
-      myfile:
-        - "my-bucket,path/to/file.txt"
-
-  s3:
-    secretName: "s3-credentials"
-    host: "s3.amazonaws.com"
-    region: "us-east-1"
-```
-
-### With Custom S3 Endpoint (MinIO, etc.)
-
-```yaml
-application:
-  handler:
-    entries:
-      data:
-        - "data-bucket,exports/data.csv"
-      backup:
-        - "backup-bucket,latest/backup.tar.gz"
-
-  s3:
-    secretName: "s3-credentials"
-    host: "minio.example.com:9000"
-    region: "us-east-1"
-
-resources:
-  limits:
-    memory: 30Mi
-  requests:
-    memory: 20Mi
-```
-
-### With Ingress and TLS
-
-```yaml
-application:
-  handler:
-    entries:
-      report:
-        - "reports-bucket,2024/report.pdf"
-      data:
-        - "data-bucket,exports/data.csv"
-
-  s3:
-    secretName: "s3-credentials"
-    host: "s3.eu-central-1.amazonaws.com"
-    region: "eu-central-1"
-
-ingress:
-  enabled: true
-  ingressClassName: "nginx"
-  annotations:
-    cert-manager.io/cluster-issuer: "letsencrypt-prod"
-    nginx.ingress.kubernetes.io/ssl-redirect: "true"
-  hosts:
-    - host: files.example.com
-      paths:
-        - path: /
-          pathType: Prefix
-  tls:
-    - secretName: files-tls
-      hosts:
-        - files.example.com
-```
-
-### Advanced Configuration with Multiple Files
-
-```yaml
-application:
-  logLevel: debug
-
-  handler:
-    entries:
-      # Multiple files can be served from different buckets
-      latest-report:
-        - "company-reports,2024/q4-report.pdf"
-      user-guide:
-        - "documentation,guides/user-guide.pdf"
-      api-docs:
-        - "documentation,api/v2/openapi.yaml"
-      backup:
-        - "backups,daily/latest.tar.gz"
-
-  s3:
-    secretName: "s3-credentials"
-    host: "s3.amazonaws.com"
-    region: "us-east-1"
-
-service:
-  type: ClusterIP
-  port: 80
-
-resources:
-  limits:
-    memory: 25Mi
-  requests:
-    memory: 15Mi
-```
-
-## How It Works
-
-1. The service receives a request at a defined path (e.g., `/myfile`)
-2. It looks up the path in the `entries` configuration
-3. It retrieves the corresponding file from the S3 bucket
-4. The file is served directly to the client
-
-This is useful for:
-- Providing stable URLs to frequently changing S3 objects
-- Creating short, memorable links to S3 resources
-- Simplifying access to S3 files without exposing bucket structure
-
 ## Source Code
 
 * <https://github.com/timschoenle/s3-bucket-perma-link>
@@ -332,4 +256,3 @@ This is useful for:
 
 ----------------------------------------------
 Autogenerated from chart metadata using [helm-docs v1.14.2](https://github.com/norwoodj/helm-docs/releases/v1.14.2)
-

@@ -4,56 +4,184 @@
 
 A Helm chart for deploying the Cloudflare Access Webhook Redirect service. This service acts as an authentication proxy that validates requests using Cloudflare Access Service Auth tokens before forwarding them to target backend services.
 
-> [!WARNING]
-> This chart's latest major release changes the values contract. See
-> [UPGRADING.md](https://github.com/TimSchoenle/helm-charts/blob/main/UPGRADING.md) before
-> upgrading from an earlier major version.
-
-## Use Case
-
-This is particularly useful for protecting webhook endpoints or APIs that don't have built-in authentication, by leveraging Cloudflare Access for secure authentication and authorization.
+Use it in front of a webhook receiver or an internal API that has no authentication of its
+own: only the paths and methods you declare are forwarded, and each one is validated against
+Cloudflare Access before it reaches the backend.
 
 ## Prerequisites
 
 - Kubernetes 1.19+
 - Helm 3.0+
 - A Cloudflare Access application with Service Auth credentials
-- Target backend service to proxy requests to
+- The backend service to forward to, reachable from the pod
 
-## Get Repository Info
+## Quick start
 
 ```shell
 helm repo add timschoenle https://timschoenle.github.io/helm-charts
 helm repo update
-```
 
-## Install Chart
-
-```shell
 helm install [RELEASE_NAME] timschoenle/cloudflare-access-webhook-redirect \
+  --namespace [NAMESPACE] --create-namespace \
+  --values values.yaml
+```
+
+with `values.yaml`:
+
+```yaml
+application:
+  handler:
+    targetBase: http://backend-service:8080
+    paths:
+      api/webhook:
+        - POST
+
+  cloudflareAccess:
+    secretName: cloudflare-access-secret
+```
+
+Upgrade with `helm upgrade [RELEASE_NAME] timschoenle/cloudflare-access-webhook-redirect -n [NAMESPACE]`,
+remove with `helm uninstall [RELEASE_NAME] -n [NAMESPACE]`.
+
+## Credentials
+
+Create the Secret yourself and reference it by name. The keys have to be called `client_id`
+and `client_secret`:
+
+```shell
+kubectl create secret generic cloudflare-access-secret \
   --namespace [NAMESPACE] \
-  --create-namespace \
-  --set application.handler.targetBase="http://backend:8080" \
-  --set application.cloudflareAccess.clientId="your-client-id" \
-  --set application.cloudflareAccess.clientSecret="your-client-secret"
+  --from-literal=client_id='...' \
+  --from-literal=client_secret='...'
 ```
 
-## Upgrade Chart
-
-```shell
-helm upgrade [RELEASE_NAME] timschoenle/cloudflare-access-webhook-redirect \
-  --namespace [NAMESPACE]
+```yaml
+application:
+  cloudflareAccess:
+    secretName: cloudflare-access-secret
 ```
 
-## Uninstall Chart
+`application.cloudflareAccess.clientId` / `.clientSecret` are accepted as an alternative and
+make the chart render the Secret itself. That puts the credentials into `values.yaml` and into
+the Helm release object, where anyone who can run `helm get values` can read them — use it for
+a throwaway cluster, not for anything real. `secretName` wins if both are set.
 
-```shell
-helm uninstall [RELEASE_NAME] --namespace [NAMESPACE]
+## Declaring what gets forwarded
+
+`application.handler.paths` is an allowlist, keyed by path, valued by the methods permitted on
+it. Nothing outside it is proxied, so a backend endpoint you did not list stays unreachable
+through this service even though `targetBase` points at the same host.
+
+```yaml
+application:
+  handler:
+    targetBase: http://backend-service:8080
+    paths:
+      api/webhook:      # every method
+        - ALL
+      api/data:         # reads and writes
+        - GET
+        - POST
+      health:           # reads only
+        - GET
 ```
 
-## Configuration
+Methods: `GET`, `POST`, `PUT`, `DELETE`, `PATCH`, `HEAD`, `OPTIONS`, or `ALL`.
 
-The following table lists the configurable parameters of the chart and their default values.
+Keep the list as narrow as the caller actually needs. `ALL` on a path that only ever receives
+webhooks also exposes `DELETE` on it.
+
+## Request flow
+
+1. A client reaches the service, usually through an Ingress.
+2. The path and method are checked against `application.handler.paths`; anything not declared
+   is rejected here.
+3. The request is authenticated with the Cloudflare Access Service Auth credentials.
+4. It is forwarded to `targetBase`, and the backend's response is returned unchanged.
+
+## Publishing it
+
+```yaml
+ingress:
+  enabled: true
+  ingressClassName: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+  hosts:
+    - host: webhook.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: webhook-tls
+      hosts:
+        - webhook.example.com
+```
+
+Terminate TLS at the Ingress. The service speaks plain HTTP on port 8080 and is not meant to be
+published without one.
+
+## Running more than one replica
+
+The service is stateless, so `replicaCount`, `autoscaling` and `podDisruptionBudget` behave the
+way they do for any other Deployment and are all off or at 1 by default:
+
+```yaml
+replicaCount: 3
+
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 2
+
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: ScheduleAnyway
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/name: cloudflare-access-webhook-redirect
+```
+
+A PodDisruptionBudget with `minAvailable` equal to `replicaCount` blocks node drains
+indefinitely — keep it at least one below.
+
+## Network policy
+
+`networkPolicy.enabled` renders a default-deny policy per direction, with cluster DNS and
+outbound HTTPS allowed out of the box. The HTTPS rule covers Cloudflare, but its destination
+CIDR carves out RFC1918 space — **so the backend, which is almost always an in-cluster address,
+is not reachable until you add a rule for it**. Without one the pod starts and every forwarded
+request times out.
+
+```yaml
+networkPolicy:
+  enabled: true
+  ingress:
+    controller:
+      namespace: ingress-nginx                    # defaults to Traefik
+      selector:
+        app.kubernetes.io/name: ingress-nginx
+  egress:
+    customRules:
+      - to:
+          - podSelector:
+              matchLabels:
+                app.kubernetes.io/name: backend-service
+        ports:
+          - protocol: TCP
+            port: 8080
+```
+
+Every rule you add must carry its own `to:`. A rule that lists only `ports:` is not a
+restriction — the NetworkPolicy API reads a missing `to` as *any destination*, which includes
+the cloud instance metadata endpoint at `169.254.169.254`.
 
 ## Values
 
@@ -173,265 +301,6 @@ The following table lists the configurable parameters of the chart and their def
 | tolerations | list | `[]` | Tolerations for taints |
 | topologySpreadConstraints | list | `[]` | Pod topology spread constraints for availability |
 
-## Cloudflare Access Configuration
-
-### Option 1: Using Existing Secret
-
-Create a Kubernetes secret with your Cloudflare Access Service Auth credentials:
-
-```bash
-kubectl create secret generic cloudflare-access-secret \
-  --namespace [NAMESPACE] \
-  --from-literal=client_id='your-client-id' \
-  --from-literal=client_secret='your-client-secret'
-```
-
-Then reference it in your values:
-
-```yaml
-application:
-  cloudflareAccess:
-    secretName: "cloudflare-access-secret"
-```
-
-### Option 2: Inline Credentials (Not Recommended for Production)
-
-```yaml
-application:
-  cloudflareAccess:
-    clientId: "your-client-id"
-    clientSecret: "your-client-secret"
-```
-
-## Path Configuration
-
-Define which paths should be proxied and which HTTP methods are allowed:
-
-```yaml
-application:
-  handler:
-    paths:
-      # Allow all HTTP methods for webhook endpoint
-      api/webhook:
-        - ALL
-
-      # Allow specific methods
-      api/data:
-        - GET
-        - POST
-
-      # Multiple endpoints
-      health:
-        - GET
-      metrics:
-        - GET
-```
-
-Available HTTP methods: `GET`, `POST`, `PUT`, `DELETE`, `PATCH`, `HEAD`, `OPTIONS`, or `ALL` for all methods.
-
-## Examples
-
-### Minimal Configuration
-
-```yaml
-application:
-  handler:
-    targetBase: "http://backend-service:8080"
-    paths:
-      api/webhook:
-        - POST
-
-  cloudflareAccess:
-    clientId: "your-client-id-here"
-    clientSecret: "your-client-secret-here"
-```
-
-### With Ingress and TLS
-
-```yaml
-application:
-  handler:
-    targetBase: "http://backend-service:8080"
-    paths:
-      api/webhook:
-        - POST
-      api/status:
-        - GET
-
-  cloudflareAccess:
-    secretName: "cloudflare-access-secret"
-
-ingress:
-  enabled: true
-  ingressClassName: "nginx"
-  annotations:
-    cert-manager.io/cluster-issuer: "letsencrypt-prod"
-    nginx.ingress.kubernetes.io/ssl-redirect: "true"
-  hosts:
-    - host: webhook.example.com
-      paths:
-        - path: /
-          pathType: Prefix
-  tls:
-    - secretName: webhook-tls
-      hosts:
-        - webhook.example.com
-```
-
-### High Availability Setup
-
-```yaml
-replicaCount: 3
-
-application:
-  handler:
-    targetBase: "http://backend-service:8080"
-    paths:
-      api/webhook:
-        - POST
-      api/events:
-        - POST
-        - GET
-
-  cloudflareAccess:
-    secretName: "cloudflare-access-secret"
-
-autoscaling:
-  enabled: true
-  minReplicas: 3
-  maxReplicas: 10
-  targetCPUUtilizationPercentage: 70
-  targetMemoryUtilizationPercentage: 80
-
-topologySpreadConstraints:
-  - maxSkew: 1
-    topologyKey: kubernetes.io/hostname
-    whenUnsatisfiable: ScheduleAnyway
-    labelSelector:
-      matchLabels:
-        app.kubernetes.io/name: cloudflare-access-webhook-redirect
-
-podDisruptionBudget:
-  enabled: true
-  minAvailable: 2
-
-resources:
-  limits:
-    cpu: 200m
-    memory: 30Mi
-  requests:
-    cpu: 50m
-    memory: 20Mi
-```
-
-### With Network Policy
-
-```yaml
-application:
-  handler:
-    targetBase: "http://backend-service:8080"
-    paths:
-      api/webhook:
-        - ALL
-
-  cloudflareAccess:
-    secretName: "cloudflare-access-secret"
-
-networkPolicy:
-  enabled: true
-  policyTypes:
-    - Ingress
-    - Egress
-  ingress:
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              name: ingress-nginx
-      ports:
-        - protocol: TCP
-          port: 8080
-  egress:
-    - to:
-        - namespaceSelector: {}
-      ports:
-        - protocol: TCP
-          port: 8080
-    - to:
-        - namespaceSelector: {}
-      ports:
-        - protocol: TCP
-          port: 443
-```
-
-### Production Setup with Monitoring
-
-```yaml
-replicaCount: 2
-
-application:
-  logLevel: info
-  sentryDsn: "https://your-sentry-dsn@sentry.io/project"
-
-  handler:
-    targetBase: "http://backend-service:8080"
-    paths:
-      api/webhook:
-        - POST
-      api/data:
-        - GET
-        - POST
-
-  cloudflareAccess:
-    secretName: "cloudflare-access-secret"
-
-resources:
-  limits:
-    cpu: 100m
-    memory: 15Mi
-  requests:
-    cpu: 10m
-    memory: 10Mi
-
-startupProbe:
-  enabled: true
-  initialDelaySeconds: 0
-  periodSeconds: 5
-  failureThreshold: 30
-
-livenessProbe:
-  enabled: true
-  initialDelaySeconds: 10
-  periodSeconds: 10
-
-readinessProbe:
-  enabled: true
-  initialDelaySeconds: 5
-  periodSeconds: 5
-
-podDisruptionBudget:
-  enabled: true
-  minAvailable: 1
-```
-
-## How It Works
-
-1. Client sends a request to the service (e.g., via Ingress)
-2. The service validates the request against the configured paths and HTTP methods
-3. It uses Cloudflare Access Service Auth credentials to authenticate the request
-4. If authenticated, the request is proxied to the target backend service
-5. The response from the backend is returned to the client
-
-This provides a zero-trust authentication layer for services that don't have built-in authentication.
-
-## Security Considerations
-
-- **Always use secrets** for Cloudflare Access credentials in production
-- **Enable NetworkPolicy** to restrict ingress/egress traffic
-- **Use TLS/HTTPS** via Ingress with proper certificates
-- **Monitor logs** and consider enabling Sentry for error tracking
-- **Set resource limits** to prevent resource exhaustion
-- **Use PodDisruptionBudget** for high-availability deployments
-
 ## Source Code
 
 * <https://github.com/TimSchoenle/cloudflare-access-webhook-redirect>
@@ -445,4 +314,3 @@ This provides a zero-trust authentication layer for services that don't have bui
 
 ----------------------------------------------
 Autogenerated from chart metadata using [helm-docs v1.14.2](https://github.com/norwoodj/helm-docs/releases/v1.14.2)
-

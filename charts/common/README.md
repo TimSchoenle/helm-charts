@@ -4,9 +4,10 @@
 
 Shared template partials for the TimSchoenle Helm charts
 
-This is a **library chart**. It renders nothing on its own and is never released; the
+This is a **library chart**. It renders nothing on its own and is never published; the
 application charts in this repository depend on it via `file://../common` and compose its
-partials.
+partials. Nothing here is installable — if you are looking for something to deploy, see the
+[chart index](https://github.com/TimSchoenle/helm-charts#charts).
 
 ## Design
 
@@ -14,6 +15,11 @@ The library provides *partials*, not whole resources. Charts keep ownership of w
 Kubernetes objects they create; the library owns everything those objects have in common —
 naming, labels, image references, security contexts, probes, resources, scheduling and
 network policy.
+
+That split is the whole design. A partial that emitted a complete Deployment would have to
+grow a value for every field any consumer might need, and the consumers would stop being
+readable. Composing named fragments instead keeps each chart's templates a recognisable
+Kubernetes manifest.
 
 A minimal consumer looks like this:
 
@@ -105,12 +111,13 @@ spec:
 | `common.prometheus.operatorErrors` | Whether the Prometheus Operator CRDs are missing, as a message |
 
 Grafana ships no Kubernetes-native dashboard type, and the two carriers that exist are not
-equivalent. A sidecar ConfigMap is discovered according to the *Grafana* release's
-`sidecar.dashboards.searchNamespace`, which the chart owning the dashboard cannot influence; a
-`GrafanaDashboard` carries `allowCrossNamespaceImport` and so declares its own reach. Both are
-rendered from the same ConfigMap — the custom resources use `configMapRef` — so the JSON is
-stored once. Rules have only the one carrier, and `ruleNamespaceSelector`/`ruleSelector` on the
-Prometheus custom resource decide what loads them; `labels` is the half of that a chart controls.
+equivalent: a sidecar ConfigMap is discovered according to the *Grafana* release's
+`sidecar.dashboards.searchNamespace`, which the chart owning the dashboard cannot influence,
+while a `GrafanaDashboard` carries `allowCrossNamespaceImport` and so declares its own reach.
+Both render from the same ConfigMap — the custom resources use `configMapRef` — so the JSON is
+stored once. Rules have only the one carrier: `ruleNamespaceSelector`/`ruleSelector` on the
+Prometheus custom resource decide what loads them, and `labels` is the half of that a chart
+controls.
 
 > [!IMPORTANT]
 > Dashboard JSON and rule files are read as file data and never passed through the template

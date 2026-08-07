@@ -4,49 +4,81 @@
 
 This chart deploys the Netcup Offer Bot, which monitors https://www.netcup-sonderangebote.de/ RSS feed and sends notifications to Discord webhooks when new offers are available.
 
-> [!WARNING]
-> This chart's latest major release changes the values contract. See
-> [UPGRADING.md](https://github.com/TimSchoenle/helm-charts/blob/main/UPGRADING.md) before
-> upgrading from an earlier major version.
+One replica, one webhook, one small volume. The bot polls the feed on a timer and posts new
+offers; everything else is defaults.
 
 ## Prerequisites
 
 - Kubernetes 1.19+
 - Helm 3.0+
 - A Discord webhook URL
+- The Prometheus Operator CRDs, if `metrics.podMonitor` is enabled
 
-## Get Repository Info
+## Quick start
 
 ```shell
 helm repo add timschoenle https://timschoenle.github.io/helm-charts
 helm repo update
-```
 
-## Install Chart
-
-```shell
 helm install [RELEASE_NAME] timschoenle/netcup-offer-bot \
+  --namespace [NAMESPACE] --create-namespace \
+  --set env.webHook="https://discord.com/api/webhooks/..."
+```
+
+Upgrade with `helm upgrade [RELEASE_NAME] timschoenle/netcup-offer-bot -n [NAMESPACE]`,
+remove with `helm uninstall [RELEASE_NAME] -n [NAMESPACE]`.
+
+## Keeping the webhook out of the release
+
+`env.webHook` is written into a Secret, but it still passes through `values.yaml` and stays
+readable in the Helm release object afterwards. Point `existingSecret` at a Secret you created
+yourself to avoid both:
+
+```shell
+kubectl create secret generic netcup-webhook \
   --namespace [NAMESPACE] \
-  --create-namespace \
-  --set env.webHook="YOUR_DISCORD_WEBHOOK_URL"
+  --from-literal=webHook='https://discord.com/api/webhooks/...'
 ```
 
-## Upgrade Chart
-
-```shell
-helm upgrade [RELEASE_NAME] timschoenle/netcup-offer-bot \
-  --namespace [NAMESPACE]
+```yaml
+existingSecret: netcup-webhook
 ```
 
-## Uninstall Chart
+`env.webHook` is then ignored.
 
-```shell
-helm uninstall [RELEASE_NAME] --namespace [NAMESPACE]
+## State and restarts
+
+The bot records which offers it has already announced on a `ReadWriteOnce` volume, 10Mi by
+default. Two things follow:
+
+- **Turning persistence off means re-announcing every current offer after each restart**, since
+  the replacement pod starts from an empty `emptyDir`.
+- **`ReadWriteOnce` forces the `Recreate` update strategy.** A rolling update would wedge: the
+  replacement pod cannot attach a volume the outgoing pod still holds. Expect a short gap on
+  every upgrade — harmless here, since a missed poll is picked up by the next one.
+
+`helm uninstall` deletes the claim along with the release. Set
+`persistence.data.annotations."helm\.sh/resource-policy"=keep` if you want the seen-offer state
+to survive a reinstall.
+
+## Metrics
+
+`metrics.enabled` exposes a Prometheus endpoint on `metrics.port` (9184). There is no Service,
+so the chart renders a `PodMonitor` rather than a ServiceMonitor:
+
+```yaml
+metrics:
+  enabled: true
+  podMonitor:
+    enabled: true
+    labels:
+      release: kube-prometheus-stack # whatever your Prometheus selects rules and monitors on
 ```
 
-## Configuration
+Without a matching label the PodMonitor is created and never read.
 
-The following table lists the configurable parameters of the chart and their default values.
+`env.sentryDns` additionally routes application errors to Sentry; leave it empty to keep the
+bot's egress to Discord and the netcup feed only.
 
 ## Values
 
@@ -141,70 +173,6 @@ The following table lists the configurable parameters of the chart and their def
 | tolerations | list | `[]` | Tolerations for pod assignment. |
 | topologySpreadConstraints | list | `[]` | Pod topology spread constraints for availability |
 
-## Examples
-
-### Minimal Configuration
-
-```yaml
-env:
-  webHook: "https://discord.com/api/webhooks/..."
-  checkInterval: 180
-```
-
-### Production Setup with Metrics
-
-```yaml
-env:
-  webHook: "https://discord.com/api/webhooks/..."
-  sentryDns: "https://your-sentry-dsn@sentry.io/project"
-  checkInterval: 300
-  logLevel: info
-
-metrics:
-  enabled: true
-  port: 9184
-  podMonitor:
-    enabled: true
-    interval: 1m
-    scrapeTimeout: 30s
-
-resources:
-  limits:
-    memory: 20Mi
-  requests:
-    memory: 15Mi
-
-persistence:
-  data:
-    size: 50Mi
-```
-
-### With Custom Resource Limits
-
-```yaml
-env:
-  webHook: "https://discord.com/api/webhooks/..."
-  checkInterval: 120
-  logLevel: debug
-
-resources:
-  limits:
-    memory: 30Mi
-  requests:
-    memory: 20Mi
-
-persistence:
-  data:
-    accessMode: ReadWriteOnce
-    size: 100Mi
-```
-
-## Persistence
-
-The bot uses a persistent volume to store its state and track which offers have already been processed. This ensures that notifications aren't duplicated when the pod restarts.
-
-The default storage size is 10Mi, which should be sufficient for most use cases.
-
 ## Source Code
 
 * <https://github.com/TimSchoenle/netcup-offer-bot>
@@ -217,4 +185,3 @@ The default storage size is 10Mi, which should be sufficient for most use cases.
 
 ----------------------------------------------
 Autogenerated from chart metadata using [helm-docs v1.14.2](https://github.com/norwoodj/helm-docs/releases/v1.14.2)
-

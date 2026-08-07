@@ -4,6 +4,11 @@
 
 This chart deploys a TeamSpeak 3 server hardened to the restricted Pod Security Standard, with optional persistence, an optional Prometheus metrics exporter sidecar, Grafana dashboards and Prometheus alerting rules.
 
+Three things decide whether an install works, and all three are covered below: the server has
+to be reached on the exact port it listens on ([Exposing the server](#exposing-the-server)),
+its data volume *is* the server's identity ([Persistence](#persistence)), and the admin token
+is printed once and never again ([First start](#first-start)).
+
 ## Prerequisites
 
 - Kubernetes 1.19+
@@ -14,39 +19,23 @@ This chart deploys a TeamSpeak 3 server hardened to the restricted Pod Security 
   cluster are meant to connect
 - The Prometheus Operator CRDs, if `metrics.podMonitor` or `metrics.prometheusRule` are enabled
 
-## Get Repository Info
+## Quick start
 
 ```shell
 helm repo add timschoenle https://timschoenle.github.io/helm-charts
 helm repo update
-```
 
-## Install Chart
-
-```shell
 helm install [RELEASE_NAME] timschoenle/teamspeak \
-  --namespace [NAMESPACE] \
-  --create-namespace \
+  --namespace [NAMESPACE] --create-namespace \
   --set license.accept=true
 ```
 
-## Upgrade Chart
-
-```shell
-helm upgrade [RELEASE_NAME] timschoenle/teamspeak \
-  --namespace [NAMESPACE]
-```
-
-## Uninstall Chart
-
-```shell
-helm uninstall [RELEASE_NAME] --namespace [NAMESPACE]
-```
+Upgrade with `helm upgrade [RELEASE_NAME] timschoenle/teamspeak -n [NAMESPACE]`.
 
 > [!WARNING]
-> The PersistentVolumeClaim is owned by the release, so `helm uninstall` deletes it — and with
-> it the server's identity, database, channels and permissions. Set
-> `persistence.data.annotations."helm\.sh/resource-policy"=keep` before you need it.
+> `helm uninstall` deletes the PersistentVolumeClaim along with the release — and with it the
+> server's identity, database, channels and permissions. Set
+> `persistence.data.annotations."helm\.sh/resource-policy"=keep` **before** you need it.
 
 ## First start
 
@@ -64,7 +53,7 @@ The same log carries the generated ServerQuery password, unless one was supplied
 
 TeamSpeak clients dial the voice port they were handed; there is no protocol-level redirect.
 **The port the outside world connects to has to be the port the server listens on.** That has
-three consequences:
+four consequences:
 
 - `LoadBalancer` is the only Service type that works unmodified, which is why it is the
   default. The chart publishes `server.voicePort` (UDP) and `server.fileTransferPort` (TCP)
@@ -80,7 +69,7 @@ three consequences:
 
 `service.externalTrafficPolicy` defaults to `Local`, which preserves the client's source
 address. The server's ban list and flood protection operate on that address; with `Cluster`
-every client appears to come from a node and one abusive client gets everyone banned.
+every client appears to come from a node, and one abusive client gets everyone banned.
 
 ## Persistence
 
@@ -91,7 +80,7 @@ permissions gone.
 
 The claim is `ReadWriteOnce`, which forces the Deployment to the `Recreate` update strategy —
 a rolling update would deadlock, because the replacement pod cannot attach a volume the
-outgoing pod still holds.
+outgoing pod still holds. Every upgrade is therefore a short outage.
 
 `replicaCount` is capped at 1 on purpose. Two replicas against one database corrupt it; two
 against separate volumes are two unrelated servers behind one Service.
@@ -133,13 +122,6 @@ a sidecar that cannot authenticate.
 | `metrics.prometheusRule.enabled` | five alerting rules, each individually switchable |
 | `metrics.dashboards.enabled` | a labelled ConfigMap the Grafana sidecar loads |
 
-`metrics.channelMetrics` is off by default: each scrape then costs `(2 + channels) *
-virtualservers` ServerQuery commands, which gets slow quickly.
-
-The exporter exits if it cannot log in at startup, so on a cold start it restarts a couple of
-times while the server finishes booting. That is expected and self-correcting; a sidecar that
-is *still* restarting after a minute or two means the password is wrong.
-
 ```yaml
 license:
   accept: true
@@ -162,6 +144,17 @@ metrics:
     annotations:
       grafana_folder: TeamSpeak
 ```
+
+The `labels` are not decoration: a Prometheus Operator selects PodMonitors and rules by label,
+so without the one your instance selects on the objects are created and never loaded.
+
+Two behaviours worth expecting:
+
+- `metrics.channelMetrics` is off by default. Each scrape then costs
+  `(2 + channels) * virtualservers` ServerQuery commands, which gets slow quickly.
+- The exporter exits if it cannot log in at startup, so on a cold start it restarts a couple of
+  times while the server finishes booting. That is self-correcting; a sidecar *still* restarting
+  after a minute or two means the password is wrong.
 
 ## Network policies
 
@@ -204,9 +197,63 @@ server:
   machineId: primary # required once several servers share one database
 ```
 
-## Configuration
+## Recipes
 
-The following table lists the configurable parameters of the chart and their default values.
+### Public server on a LoadBalancer
+
+```yaml
+license:
+  accept: true
+
+serverQuery:
+  adminPassword: change-me
+
+service:
+  type: LoadBalancer
+  loadBalancerIP: 203.0.113.10
+
+persistence:
+  data:
+    size: 5Gi
+    annotations:
+      helm.sh/resource-policy: keep
+
+networkPolicy:
+  enabled: true
+  egress:
+    weblist:
+      enabled: true
+```
+
+### Licensed server
+
+`licensepath` names a directory, and the file inside it has to be called `licensekey.dat`, so
+the chart mounts the Secret key under that name:
+
+```shell
+kubectl create secret generic ts3-license \
+  --namespace [NAMESPACE] \
+  --from-file=licensekey.dat=./licensekey.dat
+```
+
+```yaml
+license:
+  accept: true
+  existingSecret: ts3-license
+```
+
+### Settings the chart does not model
+
+Anything the image's entrypoint understands can be passed through verbatim. Values are
+rendered through the template engine, so release-scoped values work:
+
+```yaml
+extraServerConfig:
+  TS3SERVER_DB_CLIENTKEEPDAYS: "90"
+  TS3SERVER_MACHINE_ID: "{{ .Release.Name }}"
+```
+
+Never put credentials there — `extraServerConfig` lands in the ConfigMap, not the Secret.
 
 ## Values
 
@@ -427,64 +474,6 @@ The following table lists the configurable parameters of the chart and their def
 | terminationGracePeriodSeconds | int | `60` | Grace period for pod shutdown. The server flushes its database and disconnects clients on SIGTERM; cutting that short risks a corrupt SQLite file. |
 | tolerations | list | `[]` | Tolerations for pod assignment. |
 | topologySpreadConstraints | list | `[]` | Pod topology spread constraints for availability. |
-
-## Examples
-
-### Public server on a LoadBalancer
-
-```yaml
-license:
-  accept: true
-
-serverQuery:
-  adminPassword: change-me
-
-service:
-  type: LoadBalancer
-  loadBalancerIP: 203.0.113.10
-
-persistence:
-  data:
-    size: 5Gi
-    annotations:
-      helm.sh/resource-policy: keep
-
-networkPolicy:
-  enabled: true
-  egress:
-    weblist:
-      enabled: true
-```
-
-### Licensed server
-
-`licensepath` names a directory, and the file inside it has to be called `licensekey.dat`, so
-the chart mounts the Secret key under that name:
-
-```shell
-kubectl create secret generic ts3-license \
-  --namespace [NAMESPACE] \
-  --from-file=licensekey.dat=./licensekey.dat
-```
-
-```yaml
-license:
-  accept: true
-  existingSecret: ts3-license
-```
-
-### Settings the chart does not model
-
-Anything the image's entrypoint understands can be passed through verbatim. Values are
-rendered through the template engine, so release-scoped values work:
-
-```yaml
-extraServerConfig:
-  TS3SERVER_DB_CLIENTKEEPDAYS: "90"
-  TS3SERVER_MACHINE_ID: "{{ .Release.Name }}"
-```
-
-Never put credentials there — `extraServerConfig` lands in the ConfigMap, not the Secret.
 
 ## Source Code
 

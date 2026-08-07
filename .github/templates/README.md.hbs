@@ -6,79 +6,25 @@ Variables come from .github/scripts/chart-index.py, which reads every charts/*/C
 -->
 # Helm Charts
 
-A collection of Helm charts for Kubernetes applications, focusing on utility services and automation tools.
+Helm charts for the applications and utilities I run on Kubernetes. Every chart is built on
+the same `common` library, so they share one values contract, one label scheme and one
+security baseline.
 
 ## TL;DR
 
 ```bash
 helm repo add timschoenle https://timschoenle.github.io/helm-charts
 helm repo update
-helm search repo timschoenle
-helm install my-release timschoenle/<chart-name>
-```
-
-## Prerequisites
-
-- Kubernetes 1.19+
-- Helm 3.0+ (CI validates against Helm 3.21 and 4.2)
-
-## Usage
-
-[Helm](https://helm.sh) must be installed to use the charts.
-Please refer to Helm's [documentation](https://helm.sh/docs/) to get started.
-
-### Add Helm Repository
-
-Once Helm is set up properly, add the repository as follows:
-
-```bash
-helm repo add timschoenle https://timschoenle.github.io/helm-charts
-```
-
-### Update Repository
-
-You can then run `helm search repo timschoenle` to see the available charts.
-
-```bash
-helm repo update
-```
-
-### Install a Chart
-
-To install a chart from this repository:
-
-```bash
-helm install my-release timschoenle/<chart-name>
-```
-
-To install with custom values:
-
-```bash
 helm install my-release timschoenle/<chart-name> -f values.yaml
 ```
 
-### Upgrade a Chart
+Requires Kubernetes 1.19+ and Helm 3.0+. CI validates every chart against Helm 3.21 and 4.2.
 
-To upgrade an existing release:
+## Charts
 
-```bash
-helm upgrade my-release timschoenle/<chart-name>
-```
-
-### Uninstall a Chart
-
-To uninstall a chart:
-
-```bash
-helm uninstall my-release
-```
-
-## Available Charts
-
-Versions are deliberately omitted here: they change on nearly every pull request, and a
-rendered version column turns each of those into a merge conflict on this file. Run
-`helm search repo timschoenle --versions` for the published versions, or read the chart's
-own README.
+Each chart's README is the reference for its values, its prerequisites and its migration
+notes. Follow the link before installing — several charts need a credential or an accepted
+licence that `helm install` cannot invent for you.
 
 | Chart | Description |
 |-------|-------------|
@@ -87,54 +33,73 @@ own README.
 {{/each}}
 {{#each libraryCharts}}
 
-The [`{{name}}`](./charts/{{name}}) library chart is not published. It holds the
-shared template partials every chart above composes, and is consumed locally via
-`file://../{{name}}`.
+The [`{{name}}`](./charts/{{name}}) library chart is not published. It holds the shared
+template partials every chart above composes, and is consumed locally via `file://../{{name}}`.
 {{/each}}
 
-## Upgrading
+Versions are deliberately absent from this table: they change on nearly every pull request,
+and a rendered version column would turn each of those into a merge conflict on this one
+file. Run `helm search repo timschoenle --versions` for what is published.
 
-Chart majors change the values contract. See [UPGRADING.md](./UPGRADING.md) for the
-migration notes, including the NetworkPolicy egress hardening that can block traffic a
-previous release silently allowed.
+## What every chart gives you
 
-## Security posture
+**The [restricted Pod Security Standard][pss] by default.** Pods run non-root with no
+privilege escalation, all Linux capabilities dropped, a read-only root filesystem,
+`seccompProfile: RuntimeDefault` and no ServiceAccount token mounted. Relax any of it per
+chart through `podSecurityContextPreset` / `securityContextPreset` and the matching context
+values.
 
-Every chart renders pods that satisfy the [restricted Pod Security Standard][pss]: non-root,
-no privilege escalation, all Linux capabilities dropped, read-only root filesystem,
-`seccompProfile: RuntimeDefault`, and no ServiceAccount token mounted. Any of it can be
-relaxed per chart via `podSecurityContextPreset` / `securityContextPreset` and the
-corresponding context values.
+**NetworkPolicies that actually restrict.** Opt in with `networkPolicy.enabled`. Every
+generated egress rule carries a `to:` selector — DNS to the cluster DNS service, HTTP/HTTPS
+to a configurable CIDR that excludes RFC1918 space and the link-local range covering the
+cloud instance metadata endpoint. A rule with only `ports:` would permit every destination,
+so custom rules must supply their own `to:`.
 
-NetworkPolicies are opt-in (`networkPolicy.enabled`). When enabled, every generated egress
-rule is scoped by a `to:` selector — DNS to the cluster DNS service, HTTP/HTTPS to a
-configurable CIDR that excludes RFC1918 private space and the link-local range covering the
-cloud instance metadata endpoint.
+**Optional observability.** Charts that ship metrics render ServiceMonitors or PodMonitors,
+Prometheus rules and Grafana dashboards. All are off by default and all require the relevant
+operator CRDs; when those are missing the chart fails the render rather than installing
+cleanly and leaving you unmonitored.
 
 [pss]: https://kubernetes.io/docs/concepts/security/pod-security-standards/#restricted
 
-## Chart Documentation
-
-For detailed documentation on each chart, including configuration options and examples, please refer to the individual chart's README:
+## Reading a chart's documentation
 
 ```bash
-# View chart README
-helm show readme timschoenle/<chart-name>
-
-# View all available values
-helm show values timschoenle/<chart-name>
-
-# View chart information
-helm show chart timschoenle/<chart-name>
+helm show readme timschoenle/<chart-name>   # the chart README, as published
+helm show values timschoenle/<chart-name>   # every value with its default
 ```
 
-You can also browse the documentation for each chart in the [charts directory](./charts/).
+## Upgrading
 
+A chart's major version bump means its values contract changed. Migration notes live in that
+chart's own README under an `Upgrading` heading; for `tankovault`, whose history is longer,
+they live in [charts/tankovault/UPGRADING.md](./charts/tankovault/UPGRADING.md).
 
-### Reporting Issues
+Every chart also publishes a `values.schema.json`, so a value that a new major removed or
+renamed fails at render time with the offending key named, rather than being silently
+dropped.
 
-If you encounter any issues or have feature requests:
-1. Check if the issue already exists in the [issue tracker](https://github.com/timschoenle/helm-charts/issues)
-2. If not, create a new issue with detailed information
-3. Include Kubernetes and Helm versions
-4. Provide relevant logs and configuration
+## Working on the charts
+
+`README.md` and `values.schema.json` are generated. Edit the sources instead:
+
+| Generated | Source |
+|---|---|
+| `charts/<chart>/README.md` | `charts/<chart>/README.md.gotmpl` and `values.yaml` |
+| `charts/<chart>/values.schema.json` | `charts/<chart>/values.yaml` |
+| `README.md` (this file) | `.github/templates/README.md.hbs` |
+
+CI regenerates all three on every pull request and commits the result back to the branch, so
+there is no toolchain to install locally. To run the checks yourself:
+
+```bash
+helm unittest charts/<chart>          # template unit tests
+ct lint --config ./.github/configs/ct.yaml
+.github/scripts/test-rules.sh         # promtool tests for charts that ship Prometheus rules
+```
+
+## Reporting issues
+
+Open an [issue](https://github.com/timschoenle/helm-charts/issues) with the chart name and
+version, your Kubernetes and Helm versions, the values you installed with, and the output of
+`helm template` or the failing pod's logs.

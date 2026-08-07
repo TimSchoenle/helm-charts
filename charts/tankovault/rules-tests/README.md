@@ -1,8 +1,10 @@
 # tankovault rule tests
 
-promtool unit tests for `charts/tankovault/rules/*.yml`, run by
-[`.github/scripts/test-rules.sh`](../../scripts/test-rules.sh) and by the **Rule & Dashboard
-Tests** CI job.
+promtool unit tests for [`charts/tankovault/rules/*.yml`](../rules), run by
+[`.github/scripts/test-rules.sh`](../../../.github/scripts/test-rules.sh) and by the **Rule &
+Dashboard Tests** CI job.
+
+Run them from the repository root:
 
 ```bash
 .github/scripts/test-rules.sh

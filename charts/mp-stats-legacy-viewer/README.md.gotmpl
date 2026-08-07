@@ -6,47 +6,57 @@
 
 {{ template "chart.description" . }}
 
-> [!WARNING]
-> This chart's latest major release changes the values contract. See
-> [UPGRADING.md](https://github.com/TimSchoenle/helm-charts/blob/main/UPGRADING.md) before
-> upgrading from an earlier major version.
+A single stateless HTTP deployment: no database, no credentials and nothing to persist. It
+installs and serves on its ClusterIP with no configuration at all, so the only values most
+installs touch are `ingress.*` and `resources`.
 
 ## Prerequisites
 
 - Kubernetes 1.19+
 - Helm 3.0+
+- An ingress controller, if `ingress.enabled=true`
 
-## Get Repository Info
+## Quick start
 
 ```shell
 helm repo add timschoenle https://timschoenle.github.io/helm-charts
 helm repo update
-```
 
-## Install Chart
-
-```shell
 helm install [RELEASE_NAME] timschoenle/{{ template "chart.name" . }} \
-  --namespace [NAMESPACE] \
-  --create-namespace
+  --namespace [NAMESPACE] --create-namespace
 ```
 
-## Upgrade Chart
+Upgrade with `helm upgrade [RELEASE_NAME] timschoenle/{{ template "chart.name" . }} -n [NAMESPACE]`,
+remove with `helm uninstall [RELEASE_NAME] -n [NAMESPACE]`. Nothing outlives the release.
 
-```shell
-helm upgrade [RELEASE_NAME] timschoenle/{{ template "chart.name" . }} \
-  --namespace [NAMESPACE]
+## Publishing it
+
+```yaml
+ingress:
+  enabled: true
+  ingressClassName: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+  hosts:
+    - host: stats.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: stats-tls
+      hosts:
+        - stats.example.com
 ```
 
-## Uninstall Chart
+## Health checks
 
-```shell
-helm uninstall [RELEASE_NAME] --namespace [NAMESPACE]
-```
+All three probes are enabled by default and point at the application's own endpoints —
+`/health/startup`, `/health/live` and `/health/ready`. The startup probe is what tolerates a
+slow first boot; raise `startupProbe.failureThreshold` rather than the liveness probe's
+`initialDelaySeconds` if the pod is being killed while still starting.
 
-## Configuration
-
-The following table lists the configurable parameters of the chart and their default values.
+`successThreshold` is accepted only on the readiness probe. Kubernetes rejects any other value
+on the startup and liveness probes, so the chart omits it there.
 
 {{ template "chart.valuesSection" . }}
 
@@ -55,4 +65,3 @@ The following table lists the configurable parameters of the chart and their def
 {{ template "chart.maintainersSection" . }}
 
 {{ template "helm-docs.versionFooter" . }}
-

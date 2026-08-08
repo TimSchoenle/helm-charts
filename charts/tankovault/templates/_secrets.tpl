@@ -127,6 +127,31 @@ only when `sync` is enabled, so a release that never links AniList carries no ke
 {{- end -}}
 
 {{/*
+The MFA secret-encryption key: whatever the operator set, else generated and remembered.
+
+Seals every enrolled TOTP secret at rest, and the service requires base64 of exactly 32 bytes —
+what `randAlphaNum 32 | b64enc` produces. A TOTP secret is symmetric, unlike a password hash:
+whoever reads the column can mint that account's codes, so a database dump must not be enough on
+its own.
+
+Generated rather than left to the operator, because unset does not fail — it disables
+authenticator-app enrolment and says so only in a boot log. The account that step lands on is the
+seeded administrator, which holds every write permission and so is required to enrol a second
+factor before it can administer anything; without this key its only remaining option is a hardware
+security key. A `helm install` that quietly demands one is not a working first install.
+
+Only `api` reads it, so only `api` is given it. Like the AniList key it must never change once
+enrolments exist: rotating it locks every enrolled account out of its second factor.
+*/}}
+{{- define "tankovault.mfaEncryptionKey" -}}
+{{- if .Values.auth.mfaEncryptionKey -}}
+{{- .Values.auth.mfaEncryptionKey -}}
+{{- else if .Values.services.api.enabled -}}
+{{- include "tankovault.rememberedSecret" (dict "ctx" . "key" "auth__mfa_encryption_key" "fallback" (randAlphaNum 32 | b64enc)) -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
 Every credential the chart itself manages, as a `key: value` YAML map.
 
 Keys are configuration paths with `__` for nesting and no dots, because that is exactly how
@@ -140,6 +165,7 @@ differently.
 {{- $data := dict -}}
 {{- with include "tankovault.jwtSecret" $ctx }}{{- $_ := set $data "auth__jwt_secret" . }}{{- end -}}
 {{- with include "tankovault.passwordPepper" $ctx }}{{- $_ := set $data "auth__password_pepper" . }}{{- end -}}
+{{- with include "tankovault.mfaEncryptionKey" $ctx }}{{- $_ := set $data "auth__mfa_encryption_key" . }}{{- end -}}
 {{- with include "tankovault.internalToken" $ctx }}{{- $_ := set $data "internal__token" . }}{{- end -}}
 {{- with $ctx.Values.anilist.clientId }}{{- $_ := set $data "anilist__client_id" . }}{{- end -}}
 {{- with $ctx.Values.anilist.clientSecret }}{{- $_ := set $data "anilist__client_secret" . }}{{- end -}}

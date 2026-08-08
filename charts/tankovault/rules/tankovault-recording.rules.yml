@@ -349,6 +349,22 @@ groups:
             sum by (namespace, provider, scan) (
               increase(scan_tasks_served_total{tankovault_scope=~".*"}[30m])) > 0)
 
+      # What one worker replica is executing right now. A worker runs at most one task per
+      # provider, so this is both its task concurrency and the count of distinct providers it is
+      # crawling — the instantaneous companion to the 30m lane count above.
+      #
+      # Averaged rather than summed, like `namespace_job:http_requests_in_flight:avg`, because the
+      # ceiling it is read against is per replica: `worker.max_concurrent_providers` (default 4)
+      # caps each pod, so a sum grows with the fleet and has no threshold to be compared to.
+      # Sitting at the cap means the queue is the constraint; sitting below it while
+      # `namespace_scan:scan_queue_depth:sum` is non-zero means every remaining provider already
+      # has a task in flight, and more worker replicas would not help.
+      #
+      # Not alerted on: neither state is a fault, and the cap is a configuration value Prometheus
+      # cannot see, so any threshold here would be a guess about an operator's own `config`.
+      - record: namespace_job:scan_tasks_inflight:avg
+        expr: avg by (namespace, job) (scan_tasks_inflight{tankovault_scope=~".*"})
+
   # Everything between a discovered chapter and a user finding out about it. Emitted by
   # `notifier`, except the SSE series, which are the `api`'s end of the same path.
   - name: tankovault-notifications-recording

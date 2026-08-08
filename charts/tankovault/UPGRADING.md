@@ -3,16 +3,126 @@
 Migration notes, newest first. Only the versions listed here need anything beyond
 `helm upgrade`; everything in between is an image or dependency bump.
 
-Two of them require a manual step that nothing will remind you about:
+Some of them require a manual step that nothing will remind you about:
 
 | Version | Applies to | Step |
 |---|---|---|
+| [3.2.0](#320) | releases that set `metadata.priority` under `services.sync.config` | move it to the top-level `config` |
+| [3.2.0](#320) | releases using `existingSecret` | add `auth__mfa_encryption_key` to it |
 | [3.1.0](#310) | existing releases with `postgresql.enabled=true` | `REINDEX DATABASE` once, after the upgrade |
 | [3.1.0](#310) | existing releases with `externalDatabase.*` | install pgvector **before** upgrading |
 | [3.0.3](#303) | existing releases with a bundled datastore | delete the StatefulSet with `--cascade=orphan` once |
 
 The values contract is enforced by `values.schema.json`, so a key a new major removed or
 renamed fails the render with the offending path named, rather than being silently ignored.
+
+## 3.2.0
+
+**`appVersion` moves to 3.2.0**, and with it the nine image digests.
+
+Chart versions 3.1.1 through 3.1.10 carried TankoVault from 1.3.0 to 3.1.0 — fifteen releases and
+two majors — by repinning those digests and nothing else. That is correct for a chart whose
+`config` is a free-form TOML tree: every key those releases added was already settable, and no
+default changed under anyone. It also means none of it was written down, and three of the changes
+alter what a running deployment does. **No value is renamed or removed here**, and the schema
+migrations run themselves; what follows is the part no migration can tell you.
+
+### Adult content is now gated, and it was gated by chart 3.1.9
+
+TankoVault 3.0.0 excludes any series flagged adult from Discover, from search and from the
+recommender unless the `catalogue.adult_content` feature flag is on *and* the reader has opted in
+with an age attestation. The flag ships **off**, so a release that was serving such series stopped
+when its images moved to `v3.0.0` — which chart 3.1.9 did, without saying so. If your Discover
+counts fell around that upgrade, this is why.
+
+Nothing needs undoing, and the chart still exposes no value for the flag on purpose. See
+[Adult content is gated off](README.md#adult-content-is-gated-off-and-this-chart-does-not-open-it)
+for how the classifier decides, and for `metadata.tags.adult_tags` if your providers use terms the
+shipped set does not cover.
+
+### `metadata.priority` is read by the worker now, not only by sync
+
+Two writers put metadata on a series row — the worker's catalogue scan and sync's enrichment pass
+— and as of TankoVault 1.3.3 both read `metadata.priority`. Before that only sync did, which made
+the priority ineffective in practice: the scan runs far more often, so every enriched description
+was overwritten by the next scrape and `content_type`/`status` reverted to the `unknown` the
+adapters hardcode.
+
+**If you set `metadata.priority` under `services.sync.config`, move it to the top-level `config`**
+so the worker gets it too. Nothing fails if you do not — the worker falls back to the shipped
+default of AniList before the adapters, which is also what the key usually says — but the override
+you wrote will not be the one that wins. The section also gained `content_type`, `status` and
+`release_year` lists, and a sibling `metadata.tags` guard over which scraped "genres" are allowed
+to become tags at all; both are documented under
+[Metadata authority and the tag guard](README.md#metadata-authority-and-the-tag-guard).
+
+### Worker crawl concurrency is visible
+
+TankoVault 3.1.0 added `worker.max_concurrent_providers`, defaulting to 4, and a
+`scan_tasks_inflight` gauge to go with it.
+
+- **One recording rule is added**, `namespace_job:scan_tasks_inflight:avg`, to the existing
+  `tankovault-scan-recording` group. `metrics.prometheusRule` still produces 21 groups. No alert:
+  neither a saturated worker nor an idle one is a fault, and the cap is a configuration value
+  Prometheus cannot see, so any threshold would be a guess.
+- **The scan-pipeline dashboard's *Active provider lanes* panel is renamed** to *Providers in
+  flight, and lanes with work* and plots the new series beside the 30-minute lane count. No new
+  ConfigMap key and no new `GrafanaDashboard`.
+- **Raise `database.max_connections` if you raise the cap.** It is 16 per replica and the pool is
+  not sized from the concurrency; a scan that cannot acquire a connection times out and reads like
+  a database fault. See
+  [Crawl concurrency and the connection pool](README.md#crawl-concurrency-and-the-connection-pool).
+
+### Two-factor authentication arrives with app 3.2.0
+
+TankoVault gained MFA — authenticator apps, security keys, recovery codes and step-up prompts —
+in [288ace0](https://github.com/TimSchoenle/TankoVault/commit/288ace009fef068d7188d263406d0c95a52cfceb),
+released as app 3.2.0 and pinned here. **This is the change in this version most likely to
+surprise an operator**, because it can lock an administrator out of the console on first sign-in
+rather than at upgrade time.
+
+- **`auth.mfaEncryptionKey` is new**, and generated when `services.api` is enabled, so a default
+  install needs nothing. It is projected into `api` only, and **must never change once anyone has
+  enrolled** — a TOTP secret is symmetric, so rotating the key locks every enrolled account out of
+  its second factor. Back it up alongside `auth.passwordPepper`.
+- **If you use `existingSecret`, add `auth__mfa_encryption_key` to it** — base64 of exactly 32
+  bytes, `openssl rand -base64 32`. The chart generates nothing when `existingSecret` is set, and a
+  missing key disables authenticator-app enrolment rather than failing, which is the harder failure
+  to notice.
+- **A second factor is required for administrators by the authorization path, not a feature flag.**
+  Any account holding an administrative permission — which the seeded administrator does, all of
+  them — must enrol before it can administer anything. There is nothing to switch off, and this is
+  why the chart generates the key rather than leaving it to be discovered: without it, a hardware
+  security key is that account's only route into the console.
+- **`accounts.mfa_required` ships off** and is the flag that extends the requirement to every
+  account. Turning it on confines everyone without a second factor to the enrolment surface.
+- `auth.totp_issuer`, `auth.step_up_ttl_minutes` and `auth.mfa_challenge_ttl_minutes` are ordinary
+  `config` keys with working defaults; see
+  [Two-factor authentication](README.md#two-factor-authentication).
+
+Migration `0043` renames `user_passkeys` to `user_webauthn_credentials` and gives each row a
+`purpose`, so a passkey and a security key cannot be the same authenticator — existing passkeys are
+backfilled as first-factor credentials and keep working. It runs with the rest of this upgrade;
+nothing is required of you.
+
+### The rest
+
+- **The installer's first account now holds `system.superuser`**, a grant that answers every
+  permission check including capabilities added by later releases. `bootstrap.seedAdmin` claims it
+  only while that account is the only one in the database; migration `0042` grants it retroactively
+  to the earliest account holding `users.permissions`, so an existing deployment's owner already
+  has it and a deployment with no such holder gets none. It cannot be granted from the permission
+  editor, and a permission edit that omits it leaves it alone rather than revoking it. The seed
+  Job's log says which of the two happened.
+- **Notification preferences gate delivery** as of TankoVault 2.0.0, and readers who never touched
+  them get the shipped defaults — which do *not* notify on series they marked `dropped` or
+  `completed`. Every other kind and status stays on. Chapters of one series also coalesce into a
+  single unread row instead of one row each; existing history is left ungrouped rather than
+  rewritten.
+- **Four automatic-merge guards are settable** under `config.matching`, all on by default, so the
+  duplicate sweep queues a suspicious pair for review instead of merging it. This is only a
+  documentation change here — the guards have been on since TankoVault 1.4.x. See
+  [Automatic-merge guards](README.md#automatic-merge-guards).
 
 ## 3.1.0
 

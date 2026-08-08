@@ -1,6 +1,6 @@
 # tankovault
 
-![Version: 3.1.10](https://img.shields.io/badge/Version-3.1.10-informational?style=flat-square) ![AppVersion: 3.1.0](https://img.shields.io/badge/AppVersion-3.1.0-informational?style=flat-square)
+![Version: 3.2.0](https://img.shields.io/badge/Version-3.2.0-informational?style=flat-square) ![AppVersion: 3.2.0](https://img.shields.io/badge/AppVersion-3.2.0-informational?style=flat-square)
 
 This chart deploys the full TankoVault manga aggregator stack — frontend, api, control-plane, worker, notifier, sync, challenge-solver and render — hardened to the restricted Pod Security Standard, with file-backed configuration that reloads in place instead of restarting pods, optional bundled PostgreSQL, Valkey, NATS JetStream and TRAWL, and optional Prometheus metrics, alerting rules and Grafana dashboards.
 
@@ -30,6 +30,9 @@ the optional headless `render` tier, plus the one-shot `bootstrap` migration and
 | deploying through Argo CD | [Argo CD and `bootstrap.migrate.ordering`](#argo-cd-and-bootstrapmigrateordering) |
 | hooking up Prometheus or Grafana | [Observability](#observability) |
 | publishing terms or a privacy policy | [Legal documents](#legal-documents) |
+| turning on two-factor authentication | [Two-factor authentication](#two-factor-authentication) |
+| tuning how fast the catalogue is crawled | [Crawl concurrency and the connection pool](#crawl-concurrency-and-the-connection-pool) |
+| deciding what a reader is allowed to see | [Adult content is gated off](#adult-content-is-gated-off-and-this-chart-does-not-open-it) |
 
 ## Prerequisites
 
@@ -75,6 +78,7 @@ so `helm upgrade` never rotates one out from under a running workload.
 |---|---|---|
 | `auth.jwtSecret` | always | `auth__jwt_secret` |
 | `auth.passwordPepper` | first install only (see below) | `auth__password_pepper` |
+| `auth.mfaEncryptionKey` | `services.api.enabled` | `auth__mfa_encryption_key` |
 | `internal.token` | `profile=production` | `internal__token` |
 | `anilist.tokenEncryptionKey` | `services.sync.enabled` | `anilist__token_encryption_key` |
 | `bootstrap.seedAdmin.password` | `bootstrap.seedAdmin.enabled` | `seed_admin_password` |
@@ -171,6 +175,123 @@ kubectl create secret generic tankovault-credentials \
   --from-literal=internal__token="$(openssl rand -hex 32)" \
   --from-literal=anilist__token_encryption_key="$(openssl rand -base64 32)"
 ```
+
+### Two-factor authentication
+
+`auth.mfaEncryptionKey` seals every enrolled TOTP secret at rest. The chart generates one when
+`services.api` is enabled and remembers it across upgrades, so a default install needs nothing —
+but two properties are worth knowing before you touch it:
+
+- **It must never change once anyone has enrolled.** A TOTP secret is symmetric, unlike a password
+  hash: rotating or losing the key locks every enrolled account out of its second factor, and the
+  repair is clearing `user_totp` and having them enrol again. It is deliberately not derived from
+  `auth.jwtSecret`, which is routine to rotate. Back the Secret up alongside `auth.passwordPepper`.
+- **Leaving it unset is not neutral.** Unset disables authenticator-app enrolment only — security
+  keys and recovery codes still work — but a second factor is required by the *authorization path*
+  for any account holding an administrative permission, not by a feature flag. The seeded
+  administrator holds all of them, so an install without this key leaves it a hardware security key
+  as its only route into the console.
+
+The rest is runtime configuration and goes under `config` like anything else:
+
+```yaml
+config:
+  auth:
+    totp_issuer: TankoVault              # what an authenticator app files the entry under
+    step_up_ttl_minutes: 5               # how long a "sudo" elevation lasts
+    mfa_challenge_ttl_minutes: 5         # how long a half-finished sign-in may sit
+```
+
+Two feature flags govern the rest, both in the admin console. `accounts.mfa` is on by default and
+gates enrolment — switching it off hides the option but leaves factors already enrolled working, so
+a flag change cannot quietly downgrade an account that opted into protection. `accounts.mfa_required`
+ships **off** and extends the requirement from administrators to everyone; turning it on confines
+every account without a second factor to the enrolment surface, so pick the day for it.
+
+### Crawl concurrency and the connection pool
+
+A worker scans `worker.max_concurrent_providers` providers at once — 4 by default, and it runs at
+most one task per provider, so that number is both its task concurrency and the count of distinct
+providers it has in flight. Raising it is the first thing to reach for when the backlog is not
+draining and the fetch panels show idle time:
+
+```yaml
+services:
+  worker:
+    config:
+      worker:
+        max_concurrent_providers: 8
+      database:
+        max_connections: 32
+```
+
+**Raise the pool with it.** Crawl politeness is unaffected — a provider's `rps` and `concurrency`
+are enforced by a fetch stack cached per provider that every task for that provider shares — but
+`database.max_connections` is not. It defaults to 16 *per replica*, and a scan that cannot acquire
+a connection queues on `acquire` and then times out, which surfaces as database errors rather than
+as the saturation it is. `0` is clamped to `1`: it would deadlock the consumer loop rather than
+disable it, and stopping the crawl is what `providers.active` is for.
+
+Read the result on the pipeline dashboard's *Providers in flight, and lanes with work* panel,
+recorded as `namespace_job:scan_tasks_inflight:avg`. Pinned at the cap means the queue is the
+constraint and there is more work than concurrency; below the cap while the backlog row is
+non-empty means every remaining provider already has a task in flight, and neither a higher cap
+nor more worker replicas will help — only more providers would.
+
+The other direction matters on the bundled datastore. Pools are ceilings, not reservations, so
+seven replicas at 16 have never actually held 112 connections against `pgvector/pgvector`'s
+default `max_connections=100` — but a worker fleet that now really does run several scans at once
+holds more of its pool than it used to. It is one more reason the bundled database is
+[evaluation-tier](#the-bundled-datastores-are-evaluation-tier).
+
+### Metadata authority and the tag guard
+
+`metadata.priority` decides which source owns each field of a series, and `metadata.tags` decides
+which scraped "genres" are refused before they become a facet chip, a recommender term, or an
+alternative title:
+
+```yaml
+config:
+  metadata:
+    priority:
+      description: [anilist, adapter]
+      content_type: [anilist, adapter]
+      status: [anilist, adapter]
+      release_year: [anilist, adapter]
+    tags:
+      use_defaults: true       # the shipped refusals: `updating`, `status`, `manga`, ...
+      blocklist: [bookmark]    # added to them, never replacing them
+      adult_tags: []           # additions only; see below
+```
+
+Put both under the top-level `config`, **not** under `services.sync.config`. Two writers put
+metadata on a series row — the worker's catalogue scan and sync's enrichment pass — and both read
+these sections. A priority only `sync` had was no priority at all: every enriched description was
+overwritten by the next scrape. `services.<name>.config` is still the right place for a knob one
+service owns, such as `worker.max_concurrent_providers` above.
+
+Only `anilist` and `adapter` are accepted in a priority list, and anything else is a boot failure
+naming the key rather than a silently ignored entry, so a typo cannot read as deliberate
+de-prioritisation.
+
+### Automatic-merge guards
+
+The duplicate sweep can merge two already-existing series without asking, which deletes a series
+row and the id it carries. Four guards turn a pair that clears both the identity rule and the
+score threshold into a review-queue row instead, and all four are on by default:
+
+| Key under `config.matching` | Catches |
+|---|---|
+| `block_auto_merge_on_numeric_conflict` | `Overlord` against `Overlord 2` — nothing else in the scorer distinguishes a sequel from its predecessor |
+| `block_auto_merge_on_author_conflict` | Both name authors and share none: a remake, a spin-off, an unrelated work with the same title |
+| `block_auto_merge_on_year_conflict` | Release years three or more years apart |
+| `block_auto_merge_on_type_conflict` | Both declare a medium and disagree (manga against manhwa) |
+
+Switching one off does not switch its signal off — it still fires, is still scored, and is still
+recorded on the decision journal; it just stops blocking the merge. `GET /v1/admin/merge-decisions`
+carries `blocked_by` per row, so the way to size these is to run with them on and read the near
+misses. The type guard is the one worth reconsidering first, on a deployment whose providers infer
+the medium from the site they were scraped from rather than from the work.
 
 ## Migrations
 
@@ -284,6 +405,40 @@ Three things about this are worth knowing before you tune it:
 To run without the recommender, switch the `catalogue.recommendations` feature flag off in the
 admin console. Setting both intervals to `0` stops the builds but leaves the surface on, which
 serves empty shelves rather than hiding them.
+
+## Adult content is gated off, and this chart does not open it
+
+From TankoVault 3.0.0 a series flagged adult is excluded from every surface — Discover, search,
+the recommender — unless **two** things are both true: the deployment has the
+`catalogue.adult_content` feature flag on, and the reader has opted in and attested their age at
+`PUT /v1/me/content-prefs`. Anonymous callers cannot satisfy the second and so never see gated
+series at all.
+
+The flag is runtime state in the database, set from the admin console, and it ships **off**. This
+chart deliberately exposes no value for it: it is the one flag whose default-on failure mode is
+showing adult material to an audience nobody chose, and turning it on should be a decision with a
+name attached to it rather than a line in a values file. An upgrade therefore hides content a
+release was previously serving, which is the intended direction — see
+[UPGRADING.md](https://github.com/TimSchoenle/helm-charts/blob/main/charts/tankovault/UPGRADING.md#320).
+
+What the chart *can* influence is the classifier that decides which series are flagged. Two
+independent writers feed it: AniList's `isAdult`, which is authoritative wherever the enrichment
+sweep found a match and may say either yes or no, and an ingest classifier over the provider's own
+genre chips, which may only ever say **yes** and which nothing clears — a provider dropping a chip
+and an adapter selector breaking are indistinguishable from the scan's side, and one of them
+silently reopens a gate. The shipped terms mean explicit sexual content and nothing else; `ecchi`,
+`yaoi`, `yuri`, `bl`, `mature`, `seinen`, `josei` and `doujinshi` are deliberately not among them.
+Add your own providers' terms, and note there is no switch that drops the shipped ones:
+
+```yaml
+config:
+  metadata:
+    tags:
+      adult_tags: [smut, hentai]
+```
+
+The classifier runs against the raw scrape, *before* `metadata.tags.blocklist` — so a term added
+there to keep it out of the facet list cannot hide an adult signal from the gate as a side effect.
 
 ## Exposure
 
@@ -458,10 +613,11 @@ way that points at it.
 | anilist.redirectUri | string | `""` | OAuth redirect URI. Left empty it is derived from the ingress as `<external URL>/account/anilist-callback`. It must point at the **frontend**, not the API: the API callback would need the SPA's in-memory bearer token, which a browser redirect cannot carry. |
 | anilist.tokenEncryptionKey | string | `""` | Base64 of exactly 32 bytes, sealing every user's AniList token at rest. Left empty the chart generates one when `services.sync` is enabled and remembers it across upgrades, which is the recommended setting; set one explicitly (`openssl rand -base64 32`) only if it has to be known outside the release. Losing it forces every account to re-link; leaking it exposes every stored token. Rotating it does not re-seal tokens already stored. |
 | auth.jwtSecret | string | `""` | Token signing secret (`auth.jwt_secret`). Left empty the chart generates one and remembers it across upgrades, which is the recommended setting; set one explicitly (minimum 32 characters, e.g. `openssl rand -hex 32`) only if it has to be known outside the release. The known upstream placeholder is refused at boot in every profile, and rotating the value signs every user out. |
+| auth.mfaEncryptionKey | string | `""` | Base64 of exactly 32 bytes (`auth.mfa_encryption_key`), sealing every enrolled TOTP secret at rest. A TOTP secret is symmetric, unlike a password hash — whoever reads the column can mint that account's codes — so a database dump must not be enough on its own. Left empty the chart generates one when `services.api` is enabled and remembers it across upgrades, which is the recommended setting; set one explicitly (`openssl rand -base64 32`) only if it has to be known outside the release. **It must never change once anyone has enrolled**: rotating or losing it locks every enrolled account out of its second factor, and the only repair is clearing `user_totp` and having them enrol again. Deliberately not derived from `jwtSecret`, which is routine to rotate. Unset disables authenticator-app enrolment only — security keys and recovery codes still work — but the seeded administrator holds permissions that require a second factor, so unset leaves it only a hardware key. |
 | auth.passwordPepper | string | `""` | Server-side pepper mixed into every argon2id hash, so a database leak alone cannot be brute-forced offline. Left empty the chart generates one **on a first install only** and remembers it across upgrades; a release that already exists without a pepper keeps running without one, because every password stored unpeppered would stop verifying the moment one appeared. For the same reason it must never change once set: rotating or losing it invalidates every stored password, so back the Secret up. The `seed-admin` step receives the identical value, or the administrator it creates could never log in. |
-| bootstrap | object | `{"image":{"repository":"timschoenle/tankovault-bootstrap","tag":"v3.1.0@sha256:7e2c624d8eb85197440b80f00986ed173679f7b886b0ed9266b74b99b1c8c06c"},"migrate":{"argoSyncWaveBase":0,"backoffLimit":3,"mode":"auto","ordering":"helmHook"},"resourcesPreset":"small","seedAdmin":{"email":"","enabled":false,"password":"","username":"admin"},"seedProviders":{"enabled":false}}` | Schema migration and first-install seeding, all from the `bootstrap` image. Nothing published carries a destructive command; resetting the schema is not available in any image. |
+| bootstrap | object | `{"image":{"repository":"timschoenle/tankovault-bootstrap","tag":"v3.2.0@sha256:c4c52b849df8a442fe032fb1a1076ecf3b817fc4e2ce14d74644c1aa58516a4f"},"migrate":{"argoSyncWaveBase":0,"backoffLimit":3,"mode":"auto","ordering":"helmHook"},"resourcesPreset":"small","seedAdmin":{"email":"","enabled":false,"password":"","username":"admin"},"seedProviders":{"enabled":false}}` | Schema migration and first-install seeding, all from the `bootstrap` image. Nothing published carries a destructive command; resetting the schema is not available in any image. |
 | bootstrap.image.repository | string | `"timschoenle/tankovault-bootstrap"` | Image repository. |
-| bootstrap.image.tag | string | `"v3.1.0@sha256:7e2c624d8eb85197440b80f00986ed173679f7b886b0ed9266b74b99b1c8c06c"` | Image tag, pinned by digest. |
+| bootstrap.image.tag | string | `"v3.2.0@sha256:c4c52b849df8a442fe032fb1a1076ecf3b817fc4e2ce14d74644c1aa58516a4f"` | Image tag, pinned by digest. |
 | bootstrap.migrate.argoSyncWaveBase | int | `0` | Sync wave the migration Job takes under `ordering: argoSyncWave`; the workloads take this plus one, which is what reproduces the `pre-upgrade` guarantee — Argo CD holds a wave until the previous one is healthy, and a Job is healthy only once it is Complete. Anything the migration itself depends on — the ExternalSecret carrying `database__url`, a database some operator provisions — must be given a wave strictly below this one. |
 | bootstrap.migrate.backoffLimit | int | `3` | Retries before the migration Job is considered failed. |
 | bootstrap.migrate.mode | string | `"auto"` | How `bootstrap migrate` runs. `job` is a `pre-install,pre-upgrade` Helm hook, correct when the database already exists. `initContainer` runs it in every service pod, which is what the bundled PostgreSQL needs — a pre-install hook would run before the StatefulSet exists and could only ever fail. Concurrent runs are safe: sqlx takes a Postgres advisory lock. `auto` picks `initContainer` when `postgresql.enabled`, otherwise `job`. |
@@ -540,7 +696,7 @@ way that points at it.
 | email.port | int | `587` | SMTP port. |
 | email.security | string | `"starttls"` | Transport security for the relay connection. |
 | email.username | string | `""` | SMTP username. |
-| existingSecret | string | `""` | Name of an existing Secret holding the credentials, instead of having the chart render one from the values above. When set it takes precedence and no credential value is written into the Helm release. Its keys are the configuration paths with `__` for nesting and no dots — `auth__jwt_secret`, `auth__password_pepper`, `internal__token`, `anilist__client_id`, `anilist__client_secret`, `anilist__token_encryption_key`, `email__username`, `email__password`, `channels__discord_webhook_url`, `channels__webhook_url`, `database__url`, `redis__url`. Only the keys a given service reads are projected into it. |
+| existingSecret | string | `""` | Name of an existing Secret holding the credentials, instead of having the chart render one from the values above. When set it takes precedence and no credential value is written into the Helm release. Its keys are the configuration paths with `__` for nesting and no dots — `auth__jwt_secret`, `auth__password_pepper`, `auth__mfa_encryption_key`, `internal__token`, `anilist__client_id`, `anilist__client_secret`, `anilist__token_encryption_key`, `email__username`, `email__password`, `channels__discord_webhook_url`, `channels__webhook_url`, `database__url`, `redis__url`. Only the keys a given service reads are projected into it. |
 | externalDatabase | object | `{"existingSecret":"","url":"","urlKey":"database__url"}` | Point TankoVault at a PostgreSQL you already run. Used whenever `postgresql.enabled` is false, and the only supported production topology. |
 | externalDatabase.existingSecret | string | `""` | Name of an existing Secret holding the connection URL. |
 | externalDatabase.url | string | `""` | Connection URL, e.g. `postgres://user:password@host:5432/tankovault`. Rendered into the chart's Secret; prefer `existingSecret` so it never enters the Helm release. |
@@ -634,8 +790,8 @@ way that points at it.
 | serviceAccount.annotations | object | `{}` | Additional annotations for the service account. |
 | serviceAccount.create | bool | `true` | Whether to create a dedicated service account. One account is shared by every workload: nothing in TankoVault talks to the Kubernetes API, so per-service accounts would add objects without reducing any privilege. |
 | serviceAccount.name | string | `""` | Custom service account name (auto-generated if empty). |
-| services | object | `{"api":{"autoscaling":{"enabled":false,"maxReplicas":10,"minReplicas":2,"targetCPUUtilizationPercentage":80,"targetMemoryUtilizationPercentage":null},"config":{},"enabled":true,"image":{"repository":"timschoenle/tankovault-api","tag":"v3.1.0@sha256:3750da6d1d4fd9a0a18cfad45ae4cc86b682e2fd5dfdba6db842a252798fe271"},"podDisruptionBudget":{"enabled":false,"maxUnavailable":null,"minAvailable":1},"replicaCount":2,"resourcesPreset":"large","service":{"annotations":{},"type":"ClusterIP"}},"challengeSolver":{"autoscaling":{"enabled":false,"maxReplicas":4,"minReplicas":1,"targetCPUUtilizationPercentage":80,"targetMemoryUtilizationPercentage":null},"config":{},"enabled":true,"image":{"repository":"timschoenle/tankovault-challenge-solver","tag":"v3.1.0@sha256:e94f84c597c0913bb774434fead91f4d3709bad495c323547efe9cf6f3f89270"},"podDisruptionBudget":{"enabled":false,"maxUnavailable":null,"minAvailable":1},"replicaCount":1,"resourcesPreset":"medium","service":{"annotations":{},"type":"ClusterIP"}},"controlPlane":{"config":{},"enabled":true,"image":{"repository":"timschoenle/tankovault-control-plane","tag":"v3.1.0@sha256:b016a118dd4a71c846901756917048b59053ffbf3bb4a6766e9240e78d2ac685"},"podDisruptionBudget":{"enabled":false,"maxUnavailable":null,"minAvailable":1},"replicaCount":1,"resourcesPreset":"medium","service":{"annotations":{},"type":"ClusterIP"}},"frontend":{"autoscaling":{"enabled":false,"maxReplicas":6,"minReplicas":2,"targetCPUUtilizationPercentage":80,"targetMemoryUtilizationPercentage":null},"config":{},"enabled":true,"image":{"repository":"timschoenle/tankovault-frontend","tag":"v3.1.0@sha256:33f4ffca198a71779660a38dff3335322e362d7211f0e67fcd0edb4ab4588af4"},"podDisruptionBudget":{"enabled":false,"maxUnavailable":null,"minAvailable":1},"replicaCount":2,"resourcesPreset":"small","service":{"annotations":{},"type":"ClusterIP"}},"notifier":{"config":{},"enabled":true,"image":{"repository":"timschoenle/tankovault-notifier","tag":"v3.1.0@sha256:bdd3fb689f49d29af5ff9154e9e16eab82401c4dbce14e9ff775534701ee161a"},"podDisruptionBudget":{"enabled":false,"maxUnavailable":null,"minAvailable":1},"replicaCount":1,"resourcesPreset":"medium","service":{"annotations":{},"type":"ClusterIP"}},"render":{"autoscaling":{"enabled":false,"maxReplicas":4,"minReplicas":1,"targetCPUUtilizationPercentage":80,"targetMemoryUtilizationPercentage":null},"config":{},"enabled":false,"homeDir":"/home/nonroot","image":{"repository":"timschoenle/tankovault-render","tag":"v3.1.0@sha256:c24ffc65e3e57fa49da56efa543a9bc26be8841b6f9a9cd29ce3b008372727de"},"podDisruptionBudget":{"enabled":false,"maxUnavailable":null,"minAvailable":1},"replicaCount":1,"resources":{"limits":{"memory":"2Gi"},"requests":{"cpu":"250m","memory":"512Mi"}},"service":{"annotations":{},"type":"ClusterIP"},"shmSize":"1Gi"},"sync":{"config":{},"enabled":true,"image":{"repository":"timschoenle/tankovault-sync","tag":"v3.1.0@sha256:6ae9853941d07ae8cab036554054a24551e93da41aeddaa4a1c124a4ba1db0ee"},"podDisruptionBudget":{"enabled":false,"maxUnavailable":null,"minAvailable":1},"replicaCount":1,"resourcesPreset":"medium","service":{"annotations":{},"type":"ClusterIP"}},"worker":{"autoscaling":{"enabled":false,"maxReplicas":10,"minReplicas":2,"targetCPUUtilizationPercentage":80,"targetMemoryUtilizationPercentage":null},"config":{},"enabled":true,"image":{"repository":"timschoenle/tankovault-worker","tag":"v3.1.0@sha256:5fefd84928fb64fa0cccdcfc440d79a83e865a9d379224acaa0ae66f9b8b4fe7"},"podDisruptionBudget":{"enabled":false,"maxUnavailable":null,"minAvailable":1},"replicaCount":2,"resourcesPreset":"large","service":{"annotations":{},"type":"ClusterIP"}}}` | Per-service settings. Each block is merged over `defaults`, so any key from `defaults` may be repeated here for one service only. |
-| services.api | object | `{"autoscaling":{"enabled":false,"maxReplicas":10,"minReplicas":2,"targetCPUUtilizationPercentage":80,"targetMemoryUtilizationPercentage":null},"config":{},"enabled":true,"image":{"repository":"timschoenle/tankovault-api","tag":"v3.1.0@sha256:3750da6d1d4fd9a0a18cfad45ae4cc86b682e2fd5dfdba6db842a252798fe271"},"podDisruptionBudget":{"enabled":false,"maxUnavailable":null,"minAvailable":1},"replicaCount":2,"resourcesPreset":"large","service":{"annotations":{},"type":"ClusterIP"}}` | The axum REST edge: authentication, read models, write endpoints, administration and the server-sent scan feed. |
+| services | object | `{"api":{"autoscaling":{"enabled":false,"maxReplicas":10,"minReplicas":2,"targetCPUUtilizationPercentage":80,"targetMemoryUtilizationPercentage":null},"config":{},"enabled":true,"image":{"repository":"timschoenle/tankovault-api","tag":"v3.2.0@sha256:f23b84b61e3e7cbfd40d6ff1215585de8b95b00a1b3f82732f36701781b585f5"},"podDisruptionBudget":{"enabled":false,"maxUnavailable":null,"minAvailable":1},"replicaCount":2,"resourcesPreset":"large","service":{"annotations":{},"type":"ClusterIP"}},"challengeSolver":{"autoscaling":{"enabled":false,"maxReplicas":4,"minReplicas":1,"targetCPUUtilizationPercentage":80,"targetMemoryUtilizationPercentage":null},"config":{},"enabled":true,"image":{"repository":"timschoenle/tankovault-challenge-solver","tag":"v3.2.0@sha256:5f4b3faffa18ac5c597e9b6dd80b78bb866315ae31bee26a7a8cd4dbed79c2da"},"podDisruptionBudget":{"enabled":false,"maxUnavailable":null,"minAvailable":1},"replicaCount":1,"resourcesPreset":"medium","service":{"annotations":{},"type":"ClusterIP"}},"controlPlane":{"config":{},"enabled":true,"image":{"repository":"timschoenle/tankovault-control-plane","tag":"v3.2.0@sha256:41a9aa66a2b08732a3778e4c49bc8164b3980b86178c267fc56421137c199df6"},"podDisruptionBudget":{"enabled":false,"maxUnavailable":null,"minAvailable":1},"replicaCount":1,"resourcesPreset":"medium","service":{"annotations":{},"type":"ClusterIP"}},"frontend":{"autoscaling":{"enabled":false,"maxReplicas":6,"minReplicas":2,"targetCPUUtilizationPercentage":80,"targetMemoryUtilizationPercentage":null},"config":{},"enabled":true,"image":{"repository":"timschoenle/tankovault-frontend","tag":"v3.2.0@sha256:e8de9380593ba21dffa407dd04899dbc7dcb12f3ebcfe81f176243e2e523b4e7"},"podDisruptionBudget":{"enabled":false,"maxUnavailable":null,"minAvailable":1},"replicaCount":2,"resourcesPreset":"small","service":{"annotations":{},"type":"ClusterIP"}},"notifier":{"config":{},"enabled":true,"image":{"repository":"timschoenle/tankovault-notifier","tag":"v3.2.0@sha256:a7c8bb4abe7b88a84c75eb16464f1c304004ddaf00468e333233c3f4834d2890"},"podDisruptionBudget":{"enabled":false,"maxUnavailable":null,"minAvailable":1},"replicaCount":1,"resourcesPreset":"medium","service":{"annotations":{},"type":"ClusterIP"}},"render":{"autoscaling":{"enabled":false,"maxReplicas":4,"minReplicas":1,"targetCPUUtilizationPercentage":80,"targetMemoryUtilizationPercentage":null},"config":{},"enabled":false,"homeDir":"/home/nonroot","image":{"repository":"timschoenle/tankovault-render","tag":"v3.2.0@sha256:0615f82daa89568ce7a6ccc0a1a6cc5b3fe3a2e009689961be31a9181a287298"},"podDisruptionBudget":{"enabled":false,"maxUnavailable":null,"minAvailable":1},"replicaCount":1,"resources":{"limits":{"memory":"2Gi"},"requests":{"cpu":"250m","memory":"512Mi"}},"service":{"annotations":{},"type":"ClusterIP"},"shmSize":"1Gi"},"sync":{"config":{},"enabled":true,"image":{"repository":"timschoenle/tankovault-sync","tag":"v3.2.0@sha256:c549f084ca14f7702f8edb28af69ef6b662eb2fbe21df853a36b3718d4c390b3"},"podDisruptionBudget":{"enabled":false,"maxUnavailable":null,"minAvailable":1},"replicaCount":1,"resourcesPreset":"medium","service":{"annotations":{},"type":"ClusterIP"}},"worker":{"autoscaling":{"enabled":false,"maxReplicas":10,"minReplicas":2,"targetCPUUtilizationPercentage":80,"targetMemoryUtilizationPercentage":null},"config":{},"enabled":true,"image":{"repository":"timschoenle/tankovault-worker","tag":"v3.2.0@sha256:45fbb62e37e3774960609f255c42ad2375cec7dd220f7a5f3d710a76862b32d4"},"podDisruptionBudget":{"enabled":false,"maxUnavailable":null,"minAvailable":1},"replicaCount":2,"resourcesPreset":"large","service":{"annotations":{},"type":"ClusterIP"}}}` | Per-service settings. Each block is merged over `defaults`, so any key from `defaults` may be repeated here for one service only. |
+| services.api | object | `{"autoscaling":{"enabled":false,"maxReplicas":10,"minReplicas":2,"targetCPUUtilizationPercentage":80,"targetMemoryUtilizationPercentage":null},"config":{},"enabled":true,"image":{"repository":"timschoenle/tankovault-api","tag":"v3.2.0@sha256:f23b84b61e3e7cbfd40d6ff1215585de8b95b00a1b3f82732f36701781b585f5"},"podDisruptionBudget":{"enabled":false,"maxUnavailable":null,"minAvailable":1},"replicaCount":2,"resourcesPreset":"large","service":{"annotations":{},"type":"ClusterIP"}}` | The axum REST edge: authentication, read models, write endpoints, administration and the server-sent scan feed. |
 | services.api.autoscaling.enabled | bool | `false` | Enable a HorizontalPodAutoscaler. |
 | services.api.autoscaling.maxReplicas | int | `10` | Maximum replicas. |
 | services.api.autoscaling.minReplicas | int | `2` | Minimum replicas. |
@@ -644,7 +800,7 @@ way that points at it.
 | services.api.config | object | `{}` | Service-specific configuration, merged over the global `config` tree. |
 | services.api.enabled | bool | `true` | Deploy the API. |
 | services.api.image.repository | string | `"timschoenle/tankovault-api"` | Image repository. |
-| services.api.image.tag | string | `"v3.1.0@sha256:3750da6d1d4fd9a0a18cfad45ae4cc86b682e2fd5dfdba6db842a252798fe271"` | Image tag, pinned by digest. |
+| services.api.image.tag | string | `"v3.2.0@sha256:f23b84b61e3e7cbfd40d6ff1215585de8b95b00a1b3f82732f36701781b585f5"` | Image tag, pinned by digest. |
 | services.api.podDisruptionBudget.enabled | bool | `false` | Create a PodDisruptionBudget. |
 | services.api.podDisruptionBudget.maxUnavailable | string | `nil` | Maximum unavailable pods. |
 | services.api.podDisruptionBudget.minAvailable | int | `1` | Minimum available pods during voluntary disruption. |
@@ -652,7 +808,7 @@ way that points at it.
 | services.api.resourcesPreset | string | `"large"` | Resource t-shirt size. |
 | services.api.service.annotations | object | `{}` | Extra Service annotations. |
 | services.api.service.type | string | `"ClusterIP"` | Service type. |
-| services.challengeSolver | object | `{"autoscaling":{"enabled":false,"maxReplicas":4,"minReplicas":1,"targetCPUUtilizationPercentage":80,"targetMemoryUtilizationPercentage":null},"config":{},"enabled":true,"image":{"repository":"timschoenle/tankovault-challenge-solver","tag":"v3.1.0@sha256:e94f84c597c0913bb774434fead91f4d3709bad495c323547efe9cf6f3f89270"},"podDisruptionBudget":{"enabled":false,"maxUnavailable":null,"minAvailable":1},"replicaCount":1,"resourcesPreset":"medium","service":{"annotations":{},"type":"ClusterIP"}}` | Modular bot-management bypass tier. Detects Cloudflare, JavaScript and Turnstile interstitials and delegates to a solver backend, TRAWL by default. |
+| services.challengeSolver | object | `{"autoscaling":{"enabled":false,"maxReplicas":4,"minReplicas":1,"targetCPUUtilizationPercentage":80,"targetMemoryUtilizationPercentage":null},"config":{},"enabled":true,"image":{"repository":"timschoenle/tankovault-challenge-solver","tag":"v3.2.0@sha256:5f4b3faffa18ac5c597e9b6dd80b78bb866315ae31bee26a7a8cd4dbed79c2da"},"podDisruptionBudget":{"enabled":false,"maxUnavailable":null,"minAvailable":1},"replicaCount":1,"resourcesPreset":"medium","service":{"annotations":{},"type":"ClusterIP"}}` | Modular bot-management bypass tier. Detects Cloudflare, JavaScript and Turnstile interstitials and delegates to a solver backend, TRAWL by default. |
 | services.challengeSolver.autoscaling.enabled | bool | `false` | Enable a HorizontalPodAutoscaler. |
 | services.challengeSolver.autoscaling.maxReplicas | int | `4` | Maximum replicas. |
 | services.challengeSolver.autoscaling.minReplicas | int | `1` | Minimum replicas. |
@@ -661,7 +817,7 @@ way that points at it.
 | services.challengeSolver.config | object | `{}` | Service-specific configuration, merged over the global `config` tree. |
 | services.challengeSolver.enabled | bool | `true` | Deploy the challenge solver. |
 | services.challengeSolver.image.repository | string | `"timschoenle/tankovault-challenge-solver"` | Image repository. |
-| services.challengeSolver.image.tag | string | `"v3.1.0@sha256:e94f84c597c0913bb774434fead91f4d3709bad495c323547efe9cf6f3f89270"` | Image tag, pinned by digest. |
+| services.challengeSolver.image.tag | string | `"v3.2.0@sha256:5f4b3faffa18ac5c597e9b6dd80b78bb866315ae31bee26a7a8cd4dbed79c2da"` | Image tag, pinned by digest. |
 | services.challengeSolver.podDisruptionBudget.enabled | bool | `false` | Create a PodDisruptionBudget. |
 | services.challengeSolver.podDisruptionBudget.maxUnavailable | string | `nil` | Maximum unavailable pods. |
 | services.challengeSolver.podDisruptionBudget.minAvailable | int | `1` | Minimum available pods during voluntary disruption. |
@@ -669,11 +825,11 @@ way that points at it.
 | services.challengeSolver.resourcesPreset | string | `"medium"` | Resource t-shirt size. |
 | services.challengeSolver.service.annotations | object | `{}` | Extra Service annotations. |
 | services.challengeSolver.service.type | string | `"ClusterIP"` | Service type. Publishing this service exposes a privileged contract. |
-| services.controlPlane | object | `{"config":{},"enabled":true,"image":{"repository":"timschoenle/tankovault-control-plane","tag":"v3.1.0@sha256:b016a118dd4a71c846901756917048b59053ffbf3bb4a6766e9240e78d2ac685"},"podDisruptionBudget":{"enabled":false,"maxUnavailable":null,"minAvailable":1},"replicaCount":1,"resourcesPreset":"medium","service":{"annotations":{},"type":"ClusterIP"}}` | The singleton scheduler: run planning, task distribution and provider health. Safe to run with more than one replica — it elects a leader through Redis, and falls open to sole-leader when Redis is absent. |
+| services.controlPlane | object | `{"config":{},"enabled":true,"image":{"repository":"timschoenle/tankovault-control-plane","tag":"v3.2.0@sha256:41a9aa66a2b08732a3778e4c49bc8164b3980b86178c267fc56421137c199df6"},"podDisruptionBudget":{"enabled":false,"maxUnavailable":null,"minAvailable":1},"replicaCount":1,"resourcesPreset":"medium","service":{"annotations":{},"type":"ClusterIP"}}` | The singleton scheduler: run planning, task distribution and provider health. Safe to run with more than one replica — it elects a leader through Redis, and falls open to sole-leader when Redis is absent. |
 | services.controlPlane.config | object | `{}` | Service-specific configuration, merged over the global `config` tree. |
 | services.controlPlane.enabled | bool | `true` | Deploy the control plane. |
 | services.controlPlane.image.repository | string | `"timschoenle/tankovault-control-plane"` | Image repository. |
-| services.controlPlane.image.tag | string | `"v3.1.0@sha256:b016a118dd4a71c846901756917048b59053ffbf3bb4a6766e9240e78d2ac685"` | Image tag, pinned by digest. |
+| services.controlPlane.image.tag | string | `"v3.2.0@sha256:41a9aa66a2b08732a3778e4c49bc8164b3980b86178c267fc56421137c199df6"` | Image tag, pinned by digest. |
 | services.controlPlane.podDisruptionBudget.enabled | bool | `false` | Create a PodDisruptionBudget. |
 | services.controlPlane.podDisruptionBudget.maxUnavailable | string | `nil` | Maximum unavailable pods. |
 | services.controlPlane.podDisruptionBudget.minAvailable | int | `1` | Minimum available pods during voluntary disruption. |
@@ -681,7 +837,7 @@ way that points at it.
 | services.controlPlane.resourcesPreset | string | `"medium"` | Resource t-shirt size. |
 | services.controlPlane.service.annotations | object | `{}` | Extra Service annotations. |
 | services.controlPlane.service.type | string | `"ClusterIP"` | Service type. Publishing this service exposes a privileged contract; the chart refuses anything but `ClusterIP` unless `allowUnsafeExposure` is set. |
-| services.frontend | object | `{"autoscaling":{"enabled":false,"maxReplicas":6,"minReplicas":2,"targetCPUUtilizationPercentage":80,"targetMemoryUtilizationPercentage":null},"config":{},"enabled":true,"image":{"repository":"timschoenle/tankovault-frontend","tag":"v3.1.0@sha256:33f4ffca198a71779660a38dff3335322e362d7211f0e67fcd0edb4ab4588af4"},"podDisruptionBudget":{"enabled":false,"maxUnavailable":null,"minAvailable":1},"replicaCount":2,"resourcesPreset":"small","service":{"annotations":{},"type":"ClusterIP"}}` | The Dioxus WASM SPA and its axum server. It serves the client and reverse-proxies `/v1/*` to the API, so this single origin is all a browser needs — which is why it is the only service the ingress exposes. |
+| services.frontend | object | `{"autoscaling":{"enabled":false,"maxReplicas":6,"minReplicas":2,"targetCPUUtilizationPercentage":80,"targetMemoryUtilizationPercentage":null},"config":{},"enabled":true,"image":{"repository":"timschoenle/tankovault-frontend","tag":"v3.2.0@sha256:e8de9380593ba21dffa407dd04899dbc7dcb12f3ebcfe81f176243e2e523b4e7"},"podDisruptionBudget":{"enabled":false,"maxUnavailable":null,"minAvailable":1},"replicaCount":2,"resourcesPreset":"small","service":{"annotations":{},"type":"ClusterIP"}}` | The Dioxus WASM SPA and its axum server. It serves the client and reverse-proxies `/v1/*` to the API, so this single origin is all a browser needs — which is why it is the only service the ingress exposes. |
 | services.frontend.autoscaling.enabled | bool | `false` | Enable a HorizontalPodAutoscaler. |
 | services.frontend.autoscaling.maxReplicas | int | `6` | Maximum replicas. |
 | services.frontend.autoscaling.minReplicas | int | `2` | Minimum replicas. |
@@ -690,7 +846,7 @@ way that points at it.
 | services.frontend.config | object | `{}` | Service-specific configuration, merged over the global `config` tree for this service only. Rendered into this service's own TOML fragment. |
 | services.frontend.enabled | bool | `true` | Deploy the frontend. |
 | services.frontend.image.repository | string | `"timschoenle/tankovault-frontend"` | Image repository. |
-| services.frontend.image.tag | string | `"v3.1.0@sha256:33f4ffca198a71779660a38dff3335322e362d7211f0e67fcd0edb4ab4588af4"` | Image tag, pinned by digest. |
+| services.frontend.image.tag | string | `"v3.2.0@sha256:e8de9380593ba21dffa407dd04899dbc7dcb12f3ebcfe81f176243e2e523b4e7"` | Image tag, pinned by digest. |
 | services.frontend.podDisruptionBudget.enabled | bool | `false` | Create a PodDisruptionBudget. |
 | services.frontend.podDisruptionBudget.maxUnavailable | string | `nil` | Maximum unavailable pods. Mutually exclusive with `minAvailable`. |
 | services.frontend.podDisruptionBudget.minAvailable | int | `1` | Minimum available pods during voluntary disruption. |
@@ -698,11 +854,11 @@ way that points at it.
 | services.frontend.resourcesPreset | string | `"small"` | Resource t-shirt size. |
 | services.frontend.service.annotations | object | `{}` | Extra Service annotations. |
 | services.frontend.service.type | string | `"ClusterIP"` | Service type. The frontend is the one service it is safe to publish directly. |
-| services.notifier | object | `{"config":{},"enabled":true,"image":{"repository":"timschoenle/tankovault-notifier","tag":"v3.1.0@sha256:bdd3fb689f49d29af5ff9154e9e16eab82401c4dbce14e9ff775534701ee161a"},"podDisruptionBudget":{"enabled":false,"maxUnavailable":null,"minAvailable":1},"replicaCount":1,"resourcesPreset":"medium","service":{"annotations":{},"type":"ClusterIP"}}` | Distributes new-chapter notifications to users over email, Discord and generic webhooks. |
+| services.notifier | object | `{"config":{},"enabled":true,"image":{"repository":"timschoenle/tankovault-notifier","tag":"v3.2.0@sha256:a7c8bb4abe7b88a84c75eb16464f1c304004ddaf00468e333233c3f4834d2890"},"podDisruptionBudget":{"enabled":false,"maxUnavailable":null,"minAvailable":1},"replicaCount":1,"resourcesPreset":"medium","service":{"annotations":{},"type":"ClusterIP"}}` | Distributes new-chapter notifications to users over email, Discord and generic webhooks. |
 | services.notifier.config | object | `{}` | Service-specific configuration, merged over the global `config` tree. |
 | services.notifier.enabled | bool | `true` | Deploy the notifier. |
 | services.notifier.image.repository | string | `"timschoenle/tankovault-notifier"` | Image repository. |
-| services.notifier.image.tag | string | `"v3.1.0@sha256:bdd3fb689f49d29af5ff9154e9e16eab82401c4dbce14e9ff775534701ee161a"` | Image tag, pinned by digest. |
+| services.notifier.image.tag | string | `"v3.2.0@sha256:a7c8bb4abe7b88a84c75eb16464f1c304004ddaf00468e333233c3f4834d2890"` | Image tag, pinned by digest. |
 | services.notifier.podDisruptionBudget.enabled | bool | `false` | Create a PodDisruptionBudget. |
 | services.notifier.podDisruptionBudget.maxUnavailable | string | `nil` | Maximum unavailable pods. |
 | services.notifier.podDisruptionBudget.minAvailable | int | `1` | Minimum available pods during voluntary disruption. |
@@ -710,7 +866,7 @@ way that points at it.
 | services.notifier.resourcesPreset | string | `"medium"` | Resource t-shirt size. |
 | services.notifier.service.annotations | object | `{}` | Extra Service annotations. |
 | services.notifier.service.type | string | `"ClusterIP"` | Service type. |
-| services.render | object | `{"autoscaling":{"enabled":false,"maxReplicas":4,"minReplicas":1,"targetCPUUtilizationPercentage":80,"targetMemoryUtilizationPercentage":null},"config":{},"enabled":false,"homeDir":"/home/nonroot","image":{"repository":"timschoenle/tankovault-render","tag":"v3.1.0@sha256:c24ffc65e3e57fa49da56efa543a9bc26be8841b6f9a9cd29ce3b008372727de"},"podDisruptionBudget":{"enabled":false,"maxUnavailable":null,"minAvailable":1},"replicaCount":1,"resources":{"limits":{"memory":"2Gi"},"requests":{"cpu":"250m","memory":"512Mi"}},"service":{"annotations":{},"type":"ClusterIP"},"shmSize":"1Gi"}` | Optional headless-browser tier for JavaScript-rendered pages; doubles as a solver backend. This is the one service not built on `scratch`: it is a Debian base driving a real Chromium, so it needs writable scratch space and a shared-memory volume. |
+| services.render | object | `{"autoscaling":{"enabled":false,"maxReplicas":4,"minReplicas":1,"targetCPUUtilizationPercentage":80,"targetMemoryUtilizationPercentage":null},"config":{},"enabled":false,"homeDir":"/home/nonroot","image":{"repository":"timschoenle/tankovault-render","tag":"v3.2.0@sha256:0615f82daa89568ce7a6ccc0a1a6cc5b3fe3a2e009689961be31a9181a287298"},"podDisruptionBudget":{"enabled":false,"maxUnavailable":null,"minAvailable":1},"replicaCount":1,"resources":{"limits":{"memory":"2Gi"},"requests":{"cpu":"250m","memory":"512Mi"}},"service":{"annotations":{},"type":"ClusterIP"},"shmSize":"1Gi"}` | Optional headless-browser tier for JavaScript-rendered pages; doubles as a solver backend. This is the one service not built on `scratch`: it is a Debian base driving a real Chromium, so it needs writable scratch space and a shared-memory volume. |
 | services.render.autoscaling.enabled | bool | `false` | Enable a HorizontalPodAutoscaler. |
 | services.render.autoscaling.maxReplicas | int | `4` | Maximum replicas. |
 | services.render.autoscaling.minReplicas | int | `1` | Minimum replicas. |
@@ -720,7 +876,7 @@ way that points at it.
 | services.render.enabled | bool | `false` | Deploy the render tier. |
 | services.render.homeDir | string | `"/home/nonroot"` | Home directory of the image's nonroot user, mounted as a writable emptyDir. Chromium writes its profile and crashpad database here; when it is not writable the failure surfaces as a misleading `--database is required` error. |
 | services.render.image.repository | string | `"timschoenle/tankovault-render"` | Image repository. |
-| services.render.image.tag | string | `"v3.1.0@sha256:c24ffc65e3e57fa49da56efa543a9bc26be8841b6f9a9cd29ce3b008372727de"` | Image tag, pinned by digest. |
+| services.render.image.tag | string | `"v3.2.0@sha256:0615f82daa89568ce7a6ccc0a1a6cc5b3fe3a2e009689961be31a9181a287298"` | Image tag, pinned by digest. |
 | services.render.podDisruptionBudget.enabled | bool | `false` | Create a PodDisruptionBudget. |
 | services.render.podDisruptionBudget.maxUnavailable | string | `nil` | Maximum unavailable pods. |
 | services.render.podDisruptionBudget.minAvailable | int | `1` | Minimum available pods during voluntary disruption. |
@@ -734,11 +890,11 @@ way that points at it.
 | services.render.service.annotations | object | `{}` | Extra Service annotations. |
 | services.render.service.type | string | `"ClusterIP"` | Service type. Publishing this service exposes a privileged contract. |
 | services.render.shmSize | string | `"1Gi"` | Size of the `/dev/shm` in-memory volume. Chromium crashes with cryptic renderer failures on the 64Mi Kubernetes default. |
-| services.sync | object | `{"config":{},"enabled":true,"image":{"repository":"timschoenle/tankovault-sync","tag":"v3.1.0@sha256:6ae9853941d07ae8cab036554054a24551e93da41aeddaa4a1c124a4ba1db0ee"},"podDisruptionBudget":{"enabled":false,"maxUnavailable":null,"minAvailable":1},"replicaCount":1,"resourcesPreset":"medium","service":{"annotations":{},"type":"ClusterIP"}}` | Bidirectional AniList integration and metadata enrichment. |
+| services.sync | object | `{"config":{},"enabled":true,"image":{"repository":"timschoenle/tankovault-sync","tag":"v3.2.0@sha256:c549f084ca14f7702f8edb28af69ef6b662eb2fbe21df853a36b3718d4c390b3"},"podDisruptionBudget":{"enabled":false,"maxUnavailable":null,"minAvailable":1},"replicaCount":1,"resourcesPreset":"medium","service":{"annotations":{},"type":"ClusterIP"}}` | Bidirectional AniList integration and metadata enrichment. |
 | services.sync.config | object | `{}` | Service-specific configuration, merged over the global `config` tree. |
 | services.sync.enabled | bool | `true` | Deploy the sync service. Requires the `anilist` credentials. |
 | services.sync.image.repository | string | `"timschoenle/tankovault-sync"` | Image repository. |
-| services.sync.image.tag | string | `"v3.1.0@sha256:6ae9853941d07ae8cab036554054a24551e93da41aeddaa4a1c124a4ba1db0ee"` | Image tag, pinned by digest. |
+| services.sync.image.tag | string | `"v3.2.0@sha256:c549f084ca14f7702f8edb28af69ef6b662eb2fbe21df853a36b3718d4c390b3"` | Image tag, pinned by digest. |
 | services.sync.podDisruptionBudget.enabled | bool | `false` | Create a PodDisruptionBudget. |
 | services.sync.podDisruptionBudget.maxUnavailable | string | `nil` | Maximum unavailable pods. |
 | services.sync.podDisruptionBudget.minAvailable | int | `1` | Minimum available pods during voluntary disruption. |
@@ -746,7 +902,7 @@ way that points at it.
 | services.sync.resourcesPreset | string | `"medium"` | Resource t-shirt size. |
 | services.sync.service.annotations | object | `{}` | Extra Service annotations. |
 | services.sync.service.type | string | `"ClusterIP"` | Service type. Publishing this service exposes a privileged contract. |
-| services.worker | object | `{"autoscaling":{"enabled":false,"maxReplicas":10,"minReplicas":2,"targetCPUUtilizationPercentage":80,"targetMemoryUtilizationPercentage":null},"config":{},"enabled":true,"image":{"repository":"timschoenle/tankovault-worker","tag":"v3.1.0@sha256:5fefd84928fb64fa0cccdcfc440d79a83e865a9d379224acaa0ae66f9b8b4fe7"},"podDisruptionBudget":{"enabled":false,"maxUnavailable":null,"minAvailable":1},"replicaCount":2,"resourcesPreset":"large","service":{"annotations":{},"type":"ClusterIP"}}` | Fetches and parses provider data through the adapters and upserts chapter and metadata changes. Scales horizontally for free: replicas join one NATS JetStream consumer group. |
+| services.worker | object | `{"autoscaling":{"enabled":false,"maxReplicas":10,"minReplicas":2,"targetCPUUtilizationPercentage":80,"targetMemoryUtilizationPercentage":null},"config":{},"enabled":true,"image":{"repository":"timschoenle/tankovault-worker","tag":"v3.2.0@sha256:45fbb62e37e3774960609f255c42ad2375cec7dd220f7a5f3d710a76862b32d4"},"podDisruptionBudget":{"enabled":false,"maxUnavailable":null,"minAvailable":1},"replicaCount":2,"resourcesPreset":"large","service":{"annotations":{},"type":"ClusterIP"}}` | Fetches and parses provider data through the adapters and upserts chapter and metadata changes. Scales horizontally for free: replicas join one NATS JetStream consumer group. |
 | services.worker.autoscaling.enabled | bool | `false` | Enable a HorizontalPodAutoscaler. |
 | services.worker.autoscaling.maxReplicas | int | `10` | Maximum replicas. |
 | services.worker.autoscaling.minReplicas | int | `2` | Minimum replicas. |
@@ -755,7 +911,7 @@ way that points at it.
 | services.worker.config | object | `{}` | Service-specific configuration, merged over the global `config` tree. |
 | services.worker.enabled | bool | `true` | Deploy the worker. |
 | services.worker.image.repository | string | `"timschoenle/tankovault-worker"` | Image repository. |
-| services.worker.image.tag | string | `"v3.1.0@sha256:5fefd84928fb64fa0cccdcfc440d79a83e865a9d379224acaa0ae66f9b8b4fe7"` | Image tag, pinned by digest. |
+| services.worker.image.tag | string | `"v3.2.0@sha256:45fbb62e37e3774960609f255c42ad2375cec7dd220f7a5f3d710a76862b32d4"` | Image tag, pinned by digest. |
 | services.worker.podDisruptionBudget.enabled | bool | `false` | Create a PodDisruptionBudget. |
 | services.worker.podDisruptionBudget.maxUnavailable | string | `nil` | Maximum unavailable pods. |
 | services.worker.podDisruptionBudget.minAvailable | int | `1` | Minimum available pods during voluntary disruption. |

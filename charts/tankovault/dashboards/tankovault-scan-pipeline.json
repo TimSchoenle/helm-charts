@@ -579,8 +579,8 @@
     },
     {
       "type": "timeseries",
-      "title": "Active provider lanes",
-      "description": "Round-robin fairness predicts this tracks the number of providers with work. One lane climbing alone is the signature of lanes that failed to open.",
+      "title": "Providers in flight, and lanes with work",
+      "description": "Two reads on provider concurrency. `lanes (30m)` counts the providers served at least one task in the last 30 minutes \u2014 round-robin fairness predicts it tracks the number of providers with work, and one lane climbing alone is the signature of lanes that failed to open. `in flight (per worker)` is what a worker replica is executing right now; a worker runs at most one task per provider, so it is also the number of providers being crawled at this instant, capped per replica by `worker.max_concurrent_providers` (default 4). Pinned at the cap means the queue is the constraint; below the cap while the backlog row is non-empty means every remaining provider already has a task in flight, and more worker replicas would not help.",
       "targets": [
         {
           "refId": "A",
@@ -589,7 +589,16 @@
             "uid": "${datasource}"
           },
           "expr": "namespace_scan:active_provider_lanes:count30m{namespace=\"$namespace\"}",
-          "legendFormat": "{{scan}}"
+          "legendFormat": "lanes (30m) \u2014 {{scan}}"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "namespace_job:scan_tasks_inflight:avg{namespace=\"$namespace\"}",
+          "legendFormat": "in flight (per worker)"
         }
       ],
       "options": {

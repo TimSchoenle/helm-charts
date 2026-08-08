@@ -31,6 +31,24 @@ The chart generated the password; read it once with:
   kubectl --namespace {{ include "common.namespace" . }} get secret {{ include "tankovault.secretName" . }} \
     -o jsonpath='{.data.seed_admin_password}' | base64 -d
 {{- end }}
+
+If it was the first account in the database it also holds `system.superuser`, which answers every
+permission check including ones added by later releases. Only the installer mints it, the
+permission editor cannot hand it out, and the database refuses a second one — so seeding another
+administrator later creates an ordinary one, and a permission edit that omits the grant leaves it
+alone rather than revoking it. Which of the two happened is in the seed Job's log:
+
+  kubectl --namespace {{ include "common.namespace" . }} logs job/{{ include "common.fullname.suffixed" (dict "ctx" . "suffix" "seed-admin") }}
+
+Expect the first sign-in to ask for a second factor before it reaches the console. Every account
+holding an administrative permission must enrol one, and this account holds them all. That is the
+authorization path, not a feature flag, so there is nothing to switch off.
+{{- if not (include "tankovault.mfaEncryptionKey" .) }}
+
+  WARNING: auth.mfaEncryptionKey is unset, so authenticator apps cannot be enrolled and a
+  hardware security key is this account's only way in. Set it, or leave it empty and let the
+  chart generate one.
+{{- end }}
 {{- else }}
 No administrator has been created. Registration confers no privilege, so until you run the seed
 step there is no account that can administer anything:

@@ -30,6 +30,7 @@ api:
   secretKeys:
     - auth__jwt_secret
     - auth__password_pepper
+    - auth__mfa_encryption_key
     - internal__token
     - database__url
     - redis__url

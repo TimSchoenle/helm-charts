@@ -18,8 +18,12 @@ renamed fails the render with the offending path named, rather than being silent
 
 ## 3.3.0
 
+**`appVersion` moves to 3.3.0**, and with it the nine image digests.
+
 Nothing to do. No value is renamed or removed, no default changes, and a release that is not
-behind Cloudflare renders byte-identically to 3.2.0.
+behind Cloudflare renders byte-identically to 3.2.0 on the new images. Upstream 3.3.0 also adds
+catalogue bulk-delete and purge to the admin console, and accepts a security key at the
+confirm-it-is-you prompt; neither needs anything from this chart.
 
 ### `cloudflare.scriptNonce` and `cloudflare.turnstile`
 

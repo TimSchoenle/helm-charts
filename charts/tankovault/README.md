@@ -30,6 +30,8 @@ the optional headless `render` tier, plus the one-shot `bootstrap` migration and
 | deploying through Argo CD | [Argo CD and `bootstrap.migrate.ordering`](#argo-cd-and-bootstrapmigrateordering) |
 | hooking up Prometheus or Grafana | [Observability](#observability) |
 | publishing terms or a privacy policy | [Legal documents](#legal-documents) |
+| tuning how fast the catalogue is crawled | [Crawl concurrency and the connection pool](#crawl-concurrency-and-the-connection-pool) |
+| deciding what a reader is allowed to see | [Adult content is gated off](#adult-content-is-gated-off-and-this-chart-does-not-open-it) |
 
 ## Prerequisites
 
@@ -172,6 +174,91 @@ kubectl create secret generic tankovault-credentials \
   --from-literal=anilist__token_encryption_key="$(openssl rand -base64 32)"
 ```
 
+### Crawl concurrency and the connection pool
+
+A worker scans `worker.max_concurrent_providers` providers at once — 4 by default, and it runs at
+most one task per provider, so that number is both its task concurrency and the count of distinct
+providers it has in flight. Raising it is the first thing to reach for when the backlog is not
+draining and the fetch panels show idle time:
+
+```yaml
+services:
+  worker:
+    config:
+      worker:
+        max_concurrent_providers: 8
+      database:
+        max_connections: 32
+```
+
+**Raise the pool with it.** Crawl politeness is unaffected — a provider's `rps` and `concurrency`
+are enforced by a fetch stack cached per provider that every task for that provider shares — but
+`database.max_connections` is not. It defaults to 16 *per replica*, and a scan that cannot acquire
+a connection queues on `acquire` and then times out, which surfaces as database errors rather than
+as the saturation it is. `0` is clamped to `1`: it would deadlock the consumer loop rather than
+disable it, and stopping the crawl is what `providers.active` is for.
+
+Read the result on the pipeline dashboard's *Providers in flight, and lanes with work* panel,
+recorded as `namespace_job:scan_tasks_inflight:avg`. Pinned at the cap means the queue is the
+constraint and there is more work than concurrency; below the cap while the backlog row is
+non-empty means every remaining provider already has a task in flight, and neither a higher cap
+nor more worker replicas will help — only more providers would.
+
+The other direction matters on the bundled datastore. Pools are ceilings, not reservations, so
+seven replicas at 16 have never actually held 112 connections against `pgvector/pgvector`'s
+default `max_connections=100` — but a worker fleet that now really does run several scans at once
+holds more of its pool than it used to. It is one more reason the bundled database is
+[evaluation-tier](#the-bundled-datastores-are-evaluation-tier).
+
+### Metadata authority and the tag guard
+
+`metadata.priority` decides which source owns each field of a series, and `metadata.tags` decides
+which scraped "genres" are refused before they become a facet chip, a recommender term, or an
+alternative title:
+
+```yaml
+config:
+  metadata:
+    priority:
+      description: [anilist, adapter]
+      content_type: [anilist, adapter]
+      status: [anilist, adapter]
+      release_year: [anilist, adapter]
+    tags:
+      use_defaults: true       # the shipped refusals: `updating`, `status`, `manga`, ...
+      blocklist: [bookmark]    # added to them, never replacing them
+      adult_tags: []           # additions only; see below
+```
+
+Put both under the top-level `config`, **not** under `services.sync.config`. Two writers put
+metadata on a series row — the worker's catalogue scan and sync's enrichment pass — and both read
+these sections. A priority only `sync` had was no priority at all: every enriched description was
+overwritten by the next scrape. `services.<name>.config` is still the right place for a knob one
+service owns, such as `worker.max_concurrent_providers` above.
+
+Only `anilist` and `adapter` are accepted in a priority list, and anything else is a boot failure
+naming the key rather than a silently ignored entry, so a typo cannot read as deliberate
+de-prioritisation.
+
+### Automatic-merge guards
+
+The duplicate sweep can merge two already-existing series without asking, which deletes a series
+row and the id it carries. Four guards turn a pair that clears both the identity rule and the
+score threshold into a review-queue row instead, and all four are on by default:
+
+| Key under `config.matching` | Catches |
+|---|---|
+| `block_auto_merge_on_numeric_conflict` | `Overlord` against `Overlord 2` — nothing else in the scorer distinguishes a sequel from its predecessor |
+| `block_auto_merge_on_author_conflict` | Both name authors and share none: a remake, a spin-off, an unrelated work with the same title |
+| `block_auto_merge_on_year_conflict` | Release years three or more years apart |
+| `block_auto_merge_on_type_conflict` | Both declare a medium and disagree (manga against manhwa) |
+
+Switching one off does not switch its signal off — it still fires, is still scored, and is still
+recorded on the decision journal; it just stops blocking the merge. `GET /v1/admin/merge-decisions`
+carries `blocked_by` per row, so the way to size these is to run with them on and read the near
+misses. The type guard is the one worth reconsidering first, on a deployment whose providers infer
+the medium from the site they were scraped from rather than from the work.
+
 ## Migrations
 
 Schema migration is a discrete step, never something a service does at startup.
@@ -284,6 +371,40 @@ Three things about this are worth knowing before you tune it:
 To run without the recommender, switch the `catalogue.recommendations` feature flag off in the
 admin console. Setting both intervals to `0` stops the builds but leaves the surface on, which
 serves empty shelves rather than hiding them.
+
+## Adult content is gated off, and this chart does not open it
+
+From TankoVault 3.0.0 a series flagged adult is excluded from every surface — Discover, search,
+the recommender — unless **two** things are both true: the deployment has the
+`catalogue.adult_content` feature flag on, and the reader has opted in and attested their age at
+`PUT /v1/me/content-prefs`. Anonymous callers cannot satisfy the second and so never see gated
+series at all.
+
+The flag is runtime state in the database, set from the admin console, and it ships **off**. This
+chart deliberately exposes no value for it: it is the one flag whose default-on failure mode is
+showing adult material to an audience nobody chose, and turning it on should be a decision with a
+name attached to it rather than a line in a values file. An upgrade therefore hides content a
+release was previously serving, which is the intended direction — see
+[UPGRADING.md](https://github.com/TimSchoenle/helm-charts/blob/main/charts/tankovault/UPGRADING.md#320).
+
+What the chart *can* influence is the classifier that decides which series are flagged. Two
+independent writers feed it: AniList's `isAdult`, which is authoritative wherever the enrichment
+sweep found a match and may say either yes or no, and an ingest classifier over the provider's own
+genre chips, which may only ever say **yes** and which nothing clears — a provider dropping a chip
+and an adapter selector breaking are indistinguishable from the scan's side, and one of them
+silently reopens a gate. The shipped terms mean explicit sexual content and nothing else; `ecchi`,
+`yaoi`, `yuri`, `bl`, `mature`, `seinen`, `josei` and `doujinshi` are deliberately not among them.
+Add your own providers' terms, and note there is no switch that drops the shipped ones:
+
+```yaml
+config:
+  metadata:
+    tags:
+      adult_tags: [smut, hentai]
+```
+
+The classifier runs against the raw scrape, *before* `metadata.tags.blocklist` — so a term added
+there to keep it out of the facet list cannot hide an adult signal from the gate as a side effect.
 
 ## Exposure
 

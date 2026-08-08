@@ -281,3 +281,37 @@ tests:
         exp_samples:
           - labels: 'ALERTS{alertname="TankoVaultChaptersAllRejected", alertstate="firing", namespace="tv", provider="redesigned", severity="info"}'
             value: 1
+
+  # Worker task concurrency, averaged across replicas rather than summed. Two workers pinned at
+  # the default cap of 4 must record 4, not 8: the cap is per replica, so a sum would grow with
+  # the fleet and could never be read against it. A third replica sitting idle pulls the average
+  # down, which is the point — it is the fleet's headroom the rule reports, not one pod's.
+  - interval: 1m
+    input_series:
+      - series: 'scan_tasks_inflight{namespace="tv", job="worker", pod="w-1"}'
+        values: '4x30'
+      - series: 'scan_tasks_inflight{namespace="tv", job="worker", pod="w-2"}'
+        values: '4x30'
+    promql_expr_test:
+      - expr: namespace_job:scan_tasks_inflight:avg
+        eval_time: 10m
+        exp_samples:
+          - labels: 'namespace_job:scan_tasks_inflight:avg{namespace="tv", job="worker"}'
+            value: 4
+
+  # The same fleet with one replica idle. The gauge is not a counter, so an idle pod contributes
+  # a real 0 rather than an absent series, and the average has to fall.
+  - interval: 1m
+    input_series:
+      - series: 'scan_tasks_inflight{namespace="tv", job="worker", pod="w-1"}'
+        values: '4x30'
+      - series: 'scan_tasks_inflight{namespace="tv", job="worker", pod="w-2"}'
+        values: '4x30'
+      - series: 'scan_tasks_inflight{namespace="tv", job="worker", pod="w-3"}'
+        values: '0x30'
+    promql_expr_test:
+      - expr: namespace_job:scan_tasks_inflight:avg
+        eval_time: 10m
+        exp_samples:
+          - labels: 'namespace_job:scan_tasks_inflight:avg{namespace="tv", job="worker"}'
+            value: 2.6666666666666665

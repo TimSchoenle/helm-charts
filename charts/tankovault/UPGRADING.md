@@ -16,6 +16,37 @@ Some of them require a manual step that nothing will remind you about:
 The values contract is enforced by `values.schema.json`, so a key a new major removed or
 renamed fails the render with the offending path named, rather than being silently ignored.
 
+## 3.3.0
+
+Nothing to do. No value is renamed or removed, no default changes, and a release that is not
+behind Cloudflare renders byte-identically to 3.2.0.
+
+### `cloudflare.scriptNonce` and `cloudflare.turnstile`
+
+The frontend hashes every inline script in the SPA shell at startup and serves the result as its
+`script-src`. Cloudflare's bot products — Bot Fight Mode, JavaScript Detections, the challenge
+platform — inject their own inline `<script>` *at the edge*, after that hash was taken, so the
+policy refuses it and the detection silently never runs. Nothing upstream can fix that from
+inside the process, so TankoVault added two opt-ins and this chart exposes them as a top-level
+`cloudflare` block:
+
+```yaml
+cloudflare:
+  scriptNonce: true
+  turnstile: false
+```
+
+They render into the frontend's own TOML as `[frontend.cloudflare]` and reach no other service —
+the frontend is the only tier that assembles a Content-Security-Policy. Setting either while
+`services.frontend.enabled=false` now fails the render rather than accepting a flag nothing
+serves.
+
+Both default off, which is the state every existing release is already in. Turn them on only if
+you really are behind Cloudflare, and read
+[Running behind Cloudflare](README.md#running-behind-cloudflare) first — in particular that
+Rocket Loader must be off for the hostname (it breaks the SPA outright, with or without these
+flags) and that the app shell must not sit behind an edge cache while `scriptNonce` is on.
+
 ## 3.2.0
 
 **`appVersion` moves to 3.2.0**, and with it the nine image digests.

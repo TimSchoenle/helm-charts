@@ -24,6 +24,7 @@ the optional headless `render` tier, plus the one-shot `bootstrap` migration and
 | If you are | Read |
 |---|---|
 | installing for the first time | [Quick start](#quick-start), then [Exposure](#exposure) |
+| putting Cloudflare in front of it | [Running behind Cloudflare](#running-behind-cloudflare) |
 | wiring up your own datastores | [The bundled datastores are evaluation-tier](#the-bundled-datastores-are-evaluation-tier) |
 | wondering why a config change did not restart anything | [Configuration reloads instead of restarting](#configuration-reloads-instead-of-restarting) |
 | supplying secrets yourself | [Generated credentials](#generated-credentials), [Configuration and secrets](#configuration-and-secrets) |
@@ -454,6 +455,49 @@ publishes none of them even on a single host. Giving any of the four a Service t
 `config.security.cors.allowed_origins` and `config.auth.webauthn_origin` to match, or logins will
 fail in ways that only show up in a browser.
 
+### Running behind Cloudflare
+
+The frontend serves the SPA shell under a Content-Security-Policy it assembles itself, hashing
+every inline script in the shell at startup. Cloudflare's bot products inject their own inline
+`<script>` **at the edge**, long after that hash was taken — so `script-src` refuses it and the
+detection silently never runs. No code change can reach that, which is why there are two flags:
+
+```yaml
+cloudflare:
+  scriptNonce: true    # Bot Fight Mode, JavaScript Detections, the challenge platform
+  turnstile: false     # a Turnstile widget embedded in a page this app serves
+```
+
+Both default off, and both belong off anywhere that is not actually behind Cloudflare — each
+admits something the policy otherwise refuses, and an unused concession is only a weakness. Most
+of what the bot products need is already covered without them: the `/cdn-cgi/challenge-platform/`
+scripts and their beacons are same-origin, so `script-src 'self'` and `connect-src 'self'` reach
+them. These two are what `'self'` never can.
+
+`scriptNonce` sends a freshly minted `'nonce-…'` in `script-src` on every response; Cloudflare
+reads it out of the response header and copies it onto what it injects, so nothing is stamped
+into the shell and the shell's own inline scripts keep being admitted by hash. Decide it rather
+than setting it by default. An injected script that can already run could read the header back
+off a same-origin fetch and admit further inline script — it cannot forge a nonce ahead of time
+(128 CSPRNG bits, minted per response), and it still reaches neither `'unsafe-eval'` nor an
+off-origin host.
+
+`turnstile` admits `https://challenges.cloudflare.com` in `script-src` **and** `frame-src`, which
+is one flag because Turnstile loads `api.js` and then frames the widget from that same host;
+admitting the script alone renders an empty box. `frame-ancestors 'none'` is untouched — this app
+framing the widget is the opposite direction from this app being framed. A managed-challenge
+interstitial needs neither flag: it is a Cloudflare-served document carrying its own policy.
+
+> [!WARNING]
+> **Turn Rocket Loader off for this hostname**, and do not put an edge cache in front of the app
+> shell. Rocket Loader is a *speed* feature, not a bot product: no flag here makes it work, and it
+> breaks the app outright by re-injecting the SPA's `<script type="module">`, whose reload misses
+> the bundle, resolves to the app shell, and is rejected as `text/html`. Cloudflare's documented
+> opt-out cannot be applied, because the tag is generated at build time — disable it zone-wide or
+> with a Configuration Rule for this host. Caching the shell breaks the other half: the nonce is
+> only safe while every reader gets their own, and a cached shell pins one across all of them for
+> the lifetime of the entry, which is `'unsafe-inline'` with extra steps.
+
 ## The bundled datastores are evaluation-tier
 
 `postgresql`, `valkey`, `nats` and `trawl` exist so that `helm install` produces a working
@@ -632,6 +676,9 @@ way that points at it.
 | channels.discordWebhookUrl | string | `""` | Discord webhook URL. Empty disables the channel. |
 | channels.emailTo | list | `[]` | Static recipient addresses for new-chapter notifications. Empty disables the channel. |
 | channels.webhookUrl | string | `""` | Generic outbound webhook URL. Empty disables the channel. |
+| cloudflare | object | `{"scriptNonce":false,"turnstile":false}` | What the frontend's Content-Security-Policy concedes to Cloudflare, one flag per product. Both default off and both belong off on a deployment that is not behind Cloudflare: each admits something the policy otherwise refuses, and an unused concession is only a weakness. Nothing else Cloudflare's bot products need is opened here — the `/cdn-cgi/challenge-platform/` scripts and their beacons are same-origin, so `script-src 'self'` and `connect-src 'self'` already cover them. These are the only two things `'self'` can never reach. |
+| cloudflare.scriptNonce | bool | `false` | Send a freshly minted `'nonce-…'` in `script-src` on every response. Set this when the zone runs Bot Fight Mode, JavaScript Detections or the challenge platform: each injects an inline `<script>` at the edge, *after* the frontend has hashed the shell, so `script-src` refuses it and the detection silently never runs. Cloudflare reads the nonce out of the response header and copies it onto what it injects, so nothing is stamped into the shell and the shell's own inline scripts keep being admitted by hash. Decide this rather than setting it by default: an injected script that can already run could read the header back off a same-origin fetch and admit further inline script. It cannot forge a nonce ahead of time (128 CSPRNG bits, minted per response) and it still reaches neither `'unsafe-eval'` nor an off-origin host — but that argument rests on the shell being served `Cache-Control: no-cache`, so **do not put an edge cache in front of the shell**. A cached shell pins one nonce across every reader for the lifetime of the entry, which is `'unsafe-inline'` with extra steps. |
+| cloudflare.turnstile | bool | `false` | Admit `https://challenges.cloudflare.com` in `script-src` and `frame-src`, for a Turnstile widget embedded **in** a page the frontend serves. One flag reaches both directives because Turnstile loads `api.js` and then frames the widget from that same host; admitting the script without the frame renders an empty box. A managed-challenge interstitial needs nothing here — it is a Cloudflare-served document carrying its own policy. `frame-ancestors 'none'` is untouched: this app framing the widget is the opposite direction from this app being framed. |
 | commonAnnotations | object | `{}` | Annotations added to every object this chart creates. |
 | commonLabels | object | `{}` | Labels added to every object this chart creates. |
 | config | object | `{}` | Global TankoVault configuration, expressed exactly as the TOML tree documented in `docs/CONFIGURATION.md` (`database.max_connections`, `security.cors.allowed_origins`, ...). It is rendered to a ConfigMap and mounted as a file, never passed as environment variables, so **changing a value here reloads the running services in place instead of restarting them**. Two carve-outs from upstream: `telemetry.*` and `metrics.*` are installed process-globally and still need a restart to take effect. |

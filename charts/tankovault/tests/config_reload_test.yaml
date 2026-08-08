@@ -122,6 +122,49 @@ tests:
           path: data["config.toml"]
           pattern: 'api_upstream = "http://RELEASE-NAME-tankovault-api:8080"'
 
+  - it: emits no Cloudflare concessions unless they are asked for
+    # Both flags default off in the service too, so the correct rendering is silence: this layer
+    # outranks `.Values.config`, and an always-emitted `false` would override the same key set by
+    # hand in the raw TOML tree.
+    template: configmap.yaml
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-frontend-config
+    asserts:
+      - notMatchRegex:
+          path: data["config.toml"]
+          pattern: "cloudflare"
+
+  - it: renders the Cloudflare CSP flags under the frontend table
+    # `[frontend.cloudflare]`, not `[cloudflare]`: the service reads them as
+    # TANKOVAULT_FRONTEND__CLOUDFLARE__*, and a top-level table would be a key nothing looks at.
+    template: configmap.yaml
+    set:
+      cloudflare:
+        scriptNonce: true
+        turnstile: true
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-frontend-config
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: "\\[frontend\\.cloudflare\\]\\nscript_nonce = true\\nturnstile = true"
+
+  - it: gives the Cloudflare flags to the frontend alone
+    # Every other service would carry a configuration key it never reads. The frontend is the
+    # only tier that assembles a Content-Security-Policy at all.
+    template: configmap.yaml
+    set:
+      cloudflare.turnstile: true
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-api-config
+    asserts:
+      - notMatchRegex:
+          path: data["config.toml"]
+          pattern: "cloudflare"
+
   - it: points the challenge solver at the bundled TRAWL under the key the service reads
     # `trawl_endpoint` is TankoVault 1.0.0's spelling; 0.4.x read `flaresolverr_endpoint` and a
     # release mixing the two boots with no solver configured at all.

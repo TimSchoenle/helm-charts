@@ -96,6 +96,11 @@ service listens, where its peers are) or a value that has to agree with the brow
 origin — `anilist.redirect_uri`, `email.base_url` and `auth.webauthn_origin` are all bound to
 that origin by AniList, by mail clients and by the browser's passkey implementation
 respectively, and getting any of them wrong fails only at runtime.
+
+`frontend.cloudflare.*` is the one block emitted only when it is switched on, rather than
+always with its default. This layer outranks `.Values.config`, so an always-emitted `false`
+would silently override the same key written by hand in the raw TOML tree — and `false` is
+already what the service defaults to, so there is nothing to state.
 */}}
 {{- define "tankovault.derivedConfig" -}}
 {{- $ctx := .ctx -}}
@@ -121,8 +126,18 @@ rate_limit:
   backend: redis
 {{- end }}
 {{- if eq $service "frontend" }}
+{{- $cloudflare := $ctx.Values.cloudflare }}
 frontend:
   api_upstream: {{ include "tankovault.url" (dict "ctx" $ctx "service" "api") | quote }}
+  {{- if or $cloudflare.scriptNonce $cloudflare.turnstile }}
+  cloudflare:
+    {{- if $cloudflare.scriptNonce }}
+    script_nonce: true
+    {{- end }}
+    {{- if $cloudflare.turnstile }}
+    turnstile: true
+    {{- end }}
+  {{- end }}
 {{- end }}
 {{- if eq $service "api" }}
 {{- if $ctx.Values.services.controlPlane.enabled }}

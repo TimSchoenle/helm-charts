@@ -240,6 +240,28 @@
       "required": [],
       "title": "channels"
     },
+    "cloudflare": {
+      "additionalProperties": true,
+      "description": "What the frontend's Content-Security-Policy concedes to Cloudflare, one flag per product.\nBoth default off and both belong off on a deployment that is not behind Cloudflare: each admits\nsomething the policy otherwise refuses, and an unused concession is only a weakness. Nothing\nelse Cloudflare's bot products need is opened here — the `/cdn-cgi/challenge-platform/` scripts\nand their beacons are same-origin, so `script-src 'self'` and `connect-src 'self'` already\ncover them. These are the only two things `'self'` can never reach.",
+      "properties": {
+        "scriptNonce": {
+          "default": false,
+          "description": "Send a freshly minted `'nonce-…'` in `script-src` on every response. Set this when the zone\nruns Bot Fight Mode, JavaScript Detections or the challenge platform: each injects an inline\n`\u003cscript\u003e` at the edge, *after* the frontend has hashed the shell, so `script-src` refuses it\nand the detection silently never runs. Cloudflare reads the nonce out of the response header\nand copies it onto what it injects, so nothing is stamped into the shell and the shell's own\ninline scripts keep being admitted by hash. Decide this rather than setting it by default: an\ninjected script that can already run could read the header back off a same-origin fetch and\nadmit further inline script. It cannot forge a nonce ahead of time (128 CSPRNG bits, minted\nper response) and it still reaches neither `'unsafe-eval'` nor an off-origin host — but that\nargument rests on the shell being served `Cache-Control: no-cache`, so **do not put an edge\ncache in front of the shell**. A cached shell pins one nonce across every reader for the\nlifetime of the entry, which is `'unsafe-inline'` with extra steps.",
+          "required": [],
+          "title": "scriptNonce",
+          "type": "boolean"
+        },
+        "turnstile": {
+          "default": false,
+          "description": "Admit `https://challenges.cloudflare.com` in `script-src` and `frame-src`, for a Turnstile\nwidget embedded **in** a page the frontend serves. One flag reaches both directives because\nTurnstile loads `api.js` and then frames the widget from that same host; admitting the script\nwithout the frame renders an empty box. A managed-challenge interstitial needs nothing here —\nit is a Cloudflare-served document carrying its own policy. `frame-ancestors 'none'` is\nuntouched: this app framing the widget is the opposite direction from this app being framed.",
+          "required": [],
+          "title": "turnstile",
+          "type": "boolean"
+        }
+      },
+      "required": [],
+      "title": "cloudflare"
+    },
     "common": {
       "description": "Shared template partials for the TimSchoenle Helm charts",
       "properties": {

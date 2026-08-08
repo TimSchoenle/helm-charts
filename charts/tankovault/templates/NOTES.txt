@@ -105,6 +105,20 @@ period (~1 minute), with the restart count unchanged. The exceptions are `teleme
 Legal documents supplied through `legal.documents.<slug>.content` are the same story: the API
 re-reads them behind an mtime check, so correcting a policy is a `helm upgrade` and a kubelet
 sync, not a restart.
+{{- if or .Values.cloudflare.scriptNonce .Values.cloudflare.turnstile }}
+
+Running behind Cloudflare — two things this chart cannot check for you:
+
+  * Turn Rocket Loader OFF for this hostname. It is a speed feature, not a bot product, no value
+    here makes it work, and it breaks the app outright: it re-injects the SPA's module script,
+    whose reload misses the bundle, resolves to the app shell, and is rejected as `text/html`.
+    Disable it zone-wide or with a Configuration Rule for this host.
+{{- if .Values.cloudflare.scriptNonce }}
+  * Do not put an edge cache in front of the app shell. `cloudflare.scriptNonce` is only safe
+    while every reader gets their own nonce; a cached shell pins one across all of them for the
+    lifetime of the entry, which is `'unsafe-inline'` with extra steps.
+{{- end }}
+{{- end }}
 {{- if and .Values.metrics.enabled .Values.metrics.prometheusRule.enabled (not .Values.metrics.natsExporter.enabled) }}
 
 NOTE: the scan-pipeline backlog alerts are installed but cannot fire. NATS publishes no

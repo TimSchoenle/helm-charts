@@ -2077,6 +2077,44 @@ ingress:
 # @schema
 # additionalProperties: true
 # @schema
+# -- What the frontend's Content-Security-Policy concedes to Cloudflare, one flag per product.
+# Both default off and both belong off on a deployment that is not behind Cloudflare: each admits
+# something the policy otherwise refuses, and an unused concession is only a weakness. Nothing
+# else Cloudflare's bot products need is opened here — the `/cdn-cgi/challenge-platform/` scripts
+# and their beacons are same-origin, so `script-src 'self'` and `connect-src 'self'` already
+# cover them. These are the only two things `'self'` can never reach.
+cloudflare:
+  # @schema
+  # type: boolean
+  # @schema
+  # -- Send a freshly minted `'nonce-…'` in `script-src` on every response. Set this when the zone
+  # runs Bot Fight Mode, JavaScript Detections or the challenge platform: each injects an inline
+  # `<script>` at the edge, *after* the frontend has hashed the shell, so `script-src` refuses it
+  # and the detection silently never runs. Cloudflare reads the nonce out of the response header
+  # and copies it onto what it injects, so nothing is stamped into the shell and the shell's own
+  # inline scripts keep being admitted by hash. Decide this rather than setting it by default: an
+  # injected script that can already run could read the header back off a same-origin fetch and
+  # admit further inline script. It cannot forge a nonce ahead of time (128 CSPRNG bits, minted
+  # per response) and it still reaches neither `'unsafe-eval'` nor an off-origin host — but that
+  # argument rests on the shell being served `Cache-Control: no-cache`, so **do not put an edge
+  # cache in front of the shell**. A cached shell pins one nonce across every reader for the
+  # lifetime of the entry, which is `'unsafe-inline'` with extra steps.
+  scriptNonce: false
+
+  # @schema
+  # type: boolean
+  # @schema
+  # -- Admit `https://challenges.cloudflare.com` in `script-src` and `frame-src`, for a Turnstile
+  # widget embedded **in** a page the frontend serves. One flag reaches both directives because
+  # Turnstile loads `api.js` and then frames the widget from that same host; admitting the script
+  # without the frame renders an empty box. A managed-challenge interstitial needs nothing here —
+  # it is a Cloudflare-served document carrying its own policy. `frame-ancestors 'none'` is
+  # untouched: this app framing the widget is the opposite direction from this app being framed.
+  turnstile: false
+
+# @schema
+# additionalProperties: true
+# @schema
 # -- Operator-published legal documents, served unauthenticated by the API at `/v1/legal` and
 # `/v1/legal/{slug}`; the frontend's footer builds its Legal column from that index. Upstream
 # ships none of these on purpose — every deployment is a different operator under different law,

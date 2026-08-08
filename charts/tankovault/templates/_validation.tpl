@@ -113,6 +113,21 @@ would otherwise look like a working configuration.
 {{- end -}}
 
 {{- /*
+The Cloudflare CSP concessions. Only the frontend assembles a Content-Security-Policy, so with
+that service disabled these flags reach no reader at all — and an operator who set them believes
+their edge-injected scripts are admitted when nothing is serving the header.
+*/ -}}
+{{- if not $ctx.Values.services.frontend.enabled -}}
+{{- $flags := list -}}
+{{- if $ctx.Values.cloudflare.scriptNonce -}}{{- $flags = append $flags "cloudflare.scriptNonce" -}}{{- end -}}
+{{- if $ctx.Values.cloudflare.turnstile -}}{{- $flags = append $flags "cloudflare.turnstile" -}}{{- end -}}
+{{- if $flags -}}
+{{- $plural := gt (len $flags) 1 -}}
+{{- $errors = append $errors (printf "%s %s set while services.frontend.enabled=false. The frontend is the only service that assembles a Content-Security-Policy, so nothing would apply what you set here. Enable the frontend, or turn %s off." (join " and " $flags) (ternary "are" "is" $plural) (ternary "them" "it" $plural)) -}}
+{{- end -}}
+{{- end -}}
+
+{{- /*
 Grafana dashboards. The rules are the library's, because the value contract and the CRD it
 depends on are — messages are collected rather than raised there so they land in this one report
 alongside everything else. Prefixed here, since the library cannot know which key path the

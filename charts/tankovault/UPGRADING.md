@@ -18,12 +18,14 @@ renamed fails the render with the offending path named, rather than being silent
 
 ## 3.2.0
 
+**`appVersion` moves to 3.2.0**, and with it the nine image digests.
+
 Chart versions 3.1.1 through 3.1.10 carried TankoVault from 1.3.0 to 3.1.0 — fifteen releases and
-two majors — by repinning the nine image digests and nothing else. That is correct for a chart
-whose `config` is a free-form TOML tree: every key those releases added was already settable, and
-no default changed under anyone. It also means none of it was written down, and two of the
-changes alter what a running deployment does. **No value is renamed or removed here and no
-migration is required; this version catches the chart's own surface up.**
+two majors — by repinning those digests and nothing else. That is correct for a chart whose
+`config` is a free-form TOML tree: every key those releases added was already settable, and no
+default changed under anyone. It also means none of it was written down, and three of the changes
+alter what a running deployment does. **No value is renamed or removed here**, and the schema
+migrations run themselves; what follows is the part no migration can tell you.
 
 ### Adult content is now gated, and it was gated by chart 3.1.9
 
@@ -71,14 +73,13 @@ TankoVault 3.1.0 added `worker.max_concurrent_providers`, defaulting to 4, and a
   a database fault. See
   [Crawl concurrency and the connection pool](README.md#crawl-concurrency-and-the-connection-pool).
 
-### Two-factor authentication is wired up ahead of the app release
+### Two-factor authentication arrives with app 3.2.0
 
 TankoVault gained MFA — authenticator apps, security keys, recovery codes and step-up prompts —
 in [288ace0](https://github.com/TimSchoenle/TankoVault/commit/288ace009fef068d7188d263406d0c95a52cfceb),
-which is queued for app 3.2.0 and **not released yet**. This chart ships the surface now so the
-automated image bump lands on a release that already has somewhere to put it. Nothing here changes
-behaviour on app 3.1.0: unknown configuration keys are silently ignored upstream, so the new secret
-sits unread until the images move.
+released as app 3.2.0 and pinned here. **This is the change in this version most likely to
+surprise an operator**, because it can lock an administrator out of the console on first sign-in
+rather than at upgrade time.
 
 - **`auth.mfaEncryptionKey` is new**, and generated when `services.api` is enabled, so a default
   install needs nothing. It is projected into `api` only, and **must never change once anyone has
@@ -100,8 +101,9 @@ sits unread until the images move.
   [Two-factor authentication](README.md#two-factor-authentication).
 
 Migration `0043` renames `user_passkeys` to `user_webauthn_credentials` and gives each row a
-`purpose`, so a passkey and a security key cannot be the same authenticator. It runs with the rest
-when the images move; nothing is required of you here.
+`purpose`, so a passkey and a security key cannot be the same authenticator — existing passkeys are
+backfilled as first-factor credentials and keep working. It runs with the rest of this upgrade;
+nothing is required of you.
 
 ### The rest
 

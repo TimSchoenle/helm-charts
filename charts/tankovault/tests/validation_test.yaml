@@ -117,6 +117,25 @@ tests:
       - hasDocuments:
           count: 1
 
+  - it: refuses Cloudflare CSP concessions with no frontend to serve them
+    # The frontend is the only tier that assembles a Content-Security-Policy. Silently accepting
+    # the flags would leave an operator believing their edge-injected scripts are admitted.
+    set:
+      services.frontend.enabled: false
+      cloudflare.scriptNonce: true
+    asserts:
+      - failedTemplate:
+          errorPattern: "cloudflare.scriptNonce is set while services.frontend.enabled=false"
+
+  - it: names both Cloudflare flags when both are stranded
+    set:
+      services.frontend.enabled: false
+      cloudflare.scriptNonce: true
+      cloudflare.turnstile: true
+    asserts:
+      - failedTemplate:
+          errorPattern: "cloudflare.scriptNonce and cloudflare.turnstile are set"
+
   - it: stops checking credentials it cannot see
     # With an existingSecret the chart cannot read the values, so it does not guess at them.
     # The topology checks that do not depend on credential contents still apply.

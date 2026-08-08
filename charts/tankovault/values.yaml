@@ -605,7 +605,7 @@ services:
       # type: string
       # @schema
       # -- Image tag, pinned by digest.
-      tag: v3.2.0@sha256:e8de9380593ba21dffa407dd04899dbc7dcb12f3ebcfe81f176243e2e523b4e7
+      tag: v3.3.0@sha256:72775fc91f101f9f8598006f3a2a29b16e9677826395bd1fa996832261b47a27
 
     # @schema
     # enum: ["", nano, micro, small, medium, large]
@@ -729,7 +729,7 @@ services:
       # type: string
       # @schema
       # -- Image tag, pinned by digest.
-      tag: v3.2.0@sha256:f23b84b61e3e7cbfd40d6ff1215585de8b95b00a1b3f82732f36701781b585f5
+      tag: v3.3.0@sha256:fdee47403871f2a003e0f090fedd8003f1a727d9c438a8f795b8394a9e7a0f82
 
     # @schema
     # enum: ["", nano, micro, small, medium, large]
@@ -853,7 +853,7 @@ services:
       # type: string
       # @schema
       # -- Image tag, pinned by digest.
-      tag: v3.2.0@sha256:41a9aa66a2b08732a3778e4c49bc8164b3980b86178c267fc56421137c199df6
+      tag: v3.3.0@sha256:b4cd62e5ba23cdee32030fbc7ec04e02b7cc26afb8d37283f86b6bff723acddc
 
     # @schema
     # enum: ["", nano, micro, small, medium, large]
@@ -941,7 +941,7 @@ services:
       # type: string
       # @schema
       # -- Image tag, pinned by digest.
-      tag: v3.2.0@sha256:45fbb62e37e3774960609f255c42ad2375cec7dd220f7a5f3d710a76862b32d4
+      tag: v3.3.0@sha256:0e5b19b99d42a5abaebad0bda7646adee512772202af1bd092e10fb76a2bb76f
 
     # @schema
     # enum: ["", nano, micro, small, medium, large]
@@ -1063,7 +1063,7 @@ services:
       # type: string
       # @schema
       # -- Image tag, pinned by digest.
-      tag: v3.2.0@sha256:a7c8bb4abe7b88a84c75eb16464f1c304004ddaf00468e333233c3f4834d2890
+      tag: v3.3.0@sha256:48a8dbfa3f59ae9c2d8624016d93aa50e936e08a1ed21d3c72342ab5247b8e77
 
     # @schema
     # enum: ["", nano, micro, small, medium, large]
@@ -1150,7 +1150,7 @@ services:
       # type: string
       # @schema
       # -- Image tag, pinned by digest.
-      tag: v3.2.0@sha256:c549f084ca14f7702f8edb28af69ef6b662eb2fbe21df853a36b3718d4c390b3
+      tag: v3.3.0@sha256:7e991faee77d0fee08b095034371100c4da4f49ec37b4e7b6e59ac4deaba0207
 
     # @schema
     # enum: ["", nano, micro, small, medium, large]
@@ -1237,7 +1237,7 @@ services:
       # type: string
       # @schema
       # -- Image tag, pinned by digest.
-      tag: v3.2.0@sha256:5f4b3faffa18ac5c597e9b6dd80b78bb866315ae31bee26a7a8cd4dbed79c2da
+      tag: v3.3.0@sha256:b164484c076ee631348b5871796b8b954c43a77d74e593fcd5d807ce56a0118c
 
     # @schema
     # enum: ["", nano, micro, small, medium, large]
@@ -1361,7 +1361,7 @@ services:
       # type: string
       # @schema
       # -- Image tag, pinned by digest.
-      tag: v3.2.0@sha256:0615f82daa89568ce7a6ccc0a1a6cc5b3fe3a2e009689961be31a9181a287298
+      tag: v3.3.0@sha256:83d5b41729d233dc9fbb1e1f15e466ed69002da9c5e33a6744c43264b0502b48
 
     # @schema
     # $ref: https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.ResourceRequirements
@@ -1522,7 +1522,7 @@ bootstrap:
     # type: string
     # @schema
     # -- Image tag, pinned by digest.
-    tag: v3.2.0@sha256:c4c52b849df8a442fe032fb1a1076ecf3b817fc4e2ce14d74644c1aa58516a4f
+    tag: v3.3.0@sha256:6a5f66e00d6482e54c2e9fe254a07e7c12ce4af7b138ce3bbb4a3ad262fd7357
 
   # @schema
   # enum: ["", nano, micro, small, medium, large]
@@ -2073,6 +2073,44 @@ ingress:
     # @schema
     # -- Extra Ingress annotations.
     annotations: {}
+
+# @schema
+# additionalProperties: true
+# @schema
+# -- What the frontend's Content-Security-Policy concedes to Cloudflare, one flag per product.
+# Both default off and both belong off on a deployment that is not behind Cloudflare: each admits
+# something the policy otherwise refuses, and an unused concession is only a weakness. Nothing
+# else Cloudflare's bot products need is opened here — the `/cdn-cgi/challenge-platform/` scripts
+# and their beacons are same-origin, so `script-src 'self'` and `connect-src 'self'` already
+# cover them. These are the only two things `'self'` can never reach.
+cloudflare:
+  # @schema
+  # type: boolean
+  # @schema
+  # -- Send a freshly minted `'nonce-…'` in `script-src` on every response. Set this when the zone
+  # runs Bot Fight Mode, JavaScript Detections or the challenge platform: each injects an inline
+  # `<script>` at the edge, *after* the frontend has hashed the shell, so `script-src` refuses it
+  # and the detection silently never runs. Cloudflare reads the nonce out of the response header
+  # and copies it onto what it injects, so nothing is stamped into the shell and the shell's own
+  # inline scripts keep being admitted by hash. Decide this rather than setting it by default: an
+  # injected script that can already run could read the header back off a same-origin fetch and
+  # admit further inline script. It cannot forge a nonce ahead of time (128 CSPRNG bits, minted
+  # per response) and it still reaches neither `'unsafe-eval'` nor an off-origin host — but that
+  # argument rests on the shell being served `Cache-Control: no-cache`, so **do not put an edge
+  # cache in front of the shell**. A cached shell pins one nonce across every reader for the
+  # lifetime of the entry, which is `'unsafe-inline'` with extra steps.
+  scriptNonce: false
+
+  # @schema
+  # type: boolean
+  # @schema
+  # -- Admit `https://challenges.cloudflare.com` in `script-src` and `frame-src`, for a Turnstile
+  # widget embedded **in** a page the frontend serves. One flag reaches both directives because
+  # Turnstile loads `api.js` and then frames the widget from that same host; admitting the script
+  # without the frame renders an empty box. A managed-challenge interstitial needs nothing here —
+  # it is a Cloudflare-served document carrying its own policy. `frame-ancestors 'none'` is
+  # untouched: this app framing the widget is the opposite direction from this app being framed.
+  turnstile: false
 
 # @schema
 # additionalProperties: true

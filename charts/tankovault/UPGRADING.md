@@ -8,6 +8,7 @@ Some of them require a manual step that nothing will remind you about:
 | Version | Applies to | Step |
 |---|---|---|
 | [3.2.0](#320) | releases that set `metadata.priority` under `services.sync.config` | move it to the top-level `config` |
+| [3.2.0](#320) | releases using `existingSecret` | add `auth__mfa_encryption_key` to it |
 | [3.1.0](#310) | existing releases with `postgresql.enabled=true` | `REINDEX DATABASE` once, after the upgrade |
 | [3.1.0](#310) | existing releases with `externalDatabase.*` | install pgvector **before** upgrading |
 | [3.0.3](#303) | existing releases with a bundled datastore | delete the StatefulSet with `--cascade=orphan` once |
@@ -69,6 +70,38 @@ TankoVault 3.1.0 added `worker.max_concurrent_providers`, defaulting to 4, and a
   not sized from the concurrency; a scan that cannot acquire a connection times out and reads like
   a database fault. See
   [Crawl concurrency and the connection pool](README.md#crawl-concurrency-and-the-connection-pool).
+
+### Two-factor authentication is wired up ahead of the app release
+
+TankoVault gained MFA — authenticator apps, security keys, recovery codes and step-up prompts —
+in [288ace0](https://github.com/TimSchoenle/TankoVault/commit/288ace009fef068d7188d263406d0c95a52cfceb),
+which is queued for app 3.2.0 and **not released yet**. This chart ships the surface now so the
+automated image bump lands on a release that already has somewhere to put it. Nothing here changes
+behaviour on app 3.1.0: unknown configuration keys are silently ignored upstream, so the new secret
+sits unread until the images move.
+
+- **`auth.mfaEncryptionKey` is new**, and generated when `services.api` is enabled, so a default
+  install needs nothing. It is projected into `api` only, and **must never change once anyone has
+  enrolled** — a TOTP secret is symmetric, so rotating the key locks every enrolled account out of
+  its second factor. Back it up alongside `auth.passwordPepper`.
+- **If you use `existingSecret`, add `auth__mfa_encryption_key` to it** — base64 of exactly 32
+  bytes, `openssl rand -base64 32`. The chart generates nothing when `existingSecret` is set, and a
+  missing key disables authenticator-app enrolment rather than failing, which is the harder failure
+  to notice.
+- **A second factor is required for administrators by the authorization path, not a feature flag.**
+  Any account holding an administrative permission — which the seeded administrator does, all of
+  them — must enrol before it can administer anything. There is nothing to switch off, and this is
+  why the chart generates the key rather than leaving it to be discovered: without it, a hardware
+  security key is that account's only route into the console.
+- **`accounts.mfa_required` ships off** and is the flag that extends the requirement to every
+  account. Turning it on confines everyone without a second factor to the enrolment surface.
+- `auth.totp_issuer`, `auth.step_up_ttl_minutes` and `auth.mfa_challenge_ttl_minutes` are ordinary
+  `config` keys with working defaults; see
+  [Two-factor authentication](README.md#two-factor-authentication).
+
+Migration `0043` renames `user_passkeys` to `user_webauthn_credentials` and gives each row a
+`purpose`, so a passkey and a security key cannot be the same authenticator. It runs with the rest
+when the images move; nothing is required of you here.
 
 ### The rest
 

@@ -32,6 +32,7 @@ the optional headless `render` tier, plus the one-shot `bootstrap` migration and
 | deploying through Argo CD | [Argo CD and `bootstrap.migrate.ordering`](#argo-cd-and-bootstrapmigrateordering) |
 | hooking up Prometheus or Grafana | [Observability](#observability) |
 | publishing terms or a privacy policy | [Legal documents](#legal-documents) |
+| turning on two-factor authentication | [Two-factor authentication](#two-factor-authentication) |
 | tuning how fast the catalogue is crawled | [Crawl concurrency and the connection pool](#crawl-concurrency-and-the-connection-pool) |
 | deciding what a reader is allowed to see | [Adult content is gated off](#adult-content-is-gated-off-and-this-chart-does-not-open-it) |
 
@@ -79,6 +80,7 @@ so `helm upgrade` never rotates one out from under a running workload.
 |---|---|---|
 | `auth.jwtSecret` | always | `auth__jwt_secret` |
 | `auth.passwordPepper` | first install only (see below) | `auth__password_pepper` |
+| `auth.mfaEncryptionKey` | `services.api.enabled` | `auth__mfa_encryption_key` |
 | `internal.token` | `profile=production` | `internal__token` |
 | `anilist.tokenEncryptionKey` | `services.sync.enabled` | `anilist__token_encryption_key` |
 | `bootstrap.seedAdmin.password` | `bootstrap.seedAdmin.enabled` | `seed_admin_password` |
@@ -175,6 +177,38 @@ kubectl create secret generic tankovault-credentials \
   --from-literal=internal__token="$(openssl rand -hex 32)" \
   --from-literal=anilist__token_encryption_key="$(openssl rand -base64 32)"
 ```
+
+### Two-factor authentication
+
+`auth.mfaEncryptionKey` seals every enrolled TOTP secret at rest. The chart generates one when
+`services.api` is enabled and remembers it across upgrades, so a default install needs nothing —
+but two properties are worth knowing before you touch it:
+
+- **It must never change once anyone has enrolled.** A TOTP secret is symmetric, unlike a password
+  hash: rotating or losing the key locks every enrolled account out of its second factor, and the
+  repair is clearing `user_totp` and having them enrol again. It is deliberately not derived from
+  `auth.jwtSecret`, which is routine to rotate. Back the Secret up alongside `auth.passwordPepper`.
+- **Leaving it unset is not neutral.** Unset disables authenticator-app enrolment only — security
+  keys and recovery codes still work — but a second factor is required by the *authorization path*
+  for any account holding an administrative permission, not by a feature flag. The seeded
+  administrator holds all of them, so an install without this key leaves it a hardware security key
+  as its only route into the console.
+
+The rest is runtime configuration and goes under `config` like anything else:
+
+```yaml
+config:
+  auth:
+    totp_issuer: TankoVault              # what an authenticator app files the entry under
+    step_up_ttl_minutes: 5               # how long a "sudo" elevation lasts
+    mfa_challenge_ttl_minutes: 5         # how long a half-finished sign-in may sit
+```
+
+Two feature flags govern the rest, both in the admin console. `accounts.mfa` is on by default and
+gates enrolment — switching it off hides the option but leaves factors already enrolled working, so
+a flag change cannot quietly downgrade an account that opted into protection. `accounts.mfa_required`
+ships **off** and extends the requirement from administrators to everyone; turning it on confines
+every account without a second factor to the enrolment surface, so pick the day for it.
 
 ### Crawl concurrency and the connection pool
 

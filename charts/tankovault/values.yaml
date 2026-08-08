@@ -98,6 +98,22 @@ auth:
   # identical value, or the administrator it creates could never log in.
   passwordPepper: ""
 
+  # @schema
+  # type: string
+  # @schema
+  # -- Base64 of exactly 32 bytes (`auth.mfa_encryption_key`), sealing every enrolled TOTP secret
+  # at rest. A TOTP secret is symmetric, unlike a password hash — whoever reads the column can mint
+  # that account's codes — so a database dump must not be enough on its own. Left empty the chart
+  # generates one when `services.api` is enabled and remembers it across upgrades, which is the
+  # recommended setting; set one explicitly (`openssl rand -base64 32`) only if it has to be known
+  # outside the release. **It must never change once anyone has enrolled**: rotating or losing it
+  # locks every enrolled account out of its second factor, and the only repair is clearing
+  # `user_totp` and having them enrol again. Deliberately not derived from `jwtSecret`, which is
+  # routine to rotate. Unset disables authenticator-app enrolment only — security keys and
+  # recovery codes still work — but the seeded administrator holds permissions that require a
+  # second factor, so unset leaves it only a hardware key.
+  mfaEncryptionKey: ""
+
 # @schema
 # additionalProperties: true
 # @schema
@@ -231,10 +247,11 @@ channels:
 # -- Name of an existing Secret holding the credentials, instead of having the chart render one
 # from the values above. When set it takes precedence and no credential value is written into
 # the Helm release. Its keys are the configuration paths with `__` for nesting and no dots —
-# `auth__jwt_secret`, `auth__password_pepper`, `internal__token`, `anilist__client_id`,
-# `anilist__client_secret`, `anilist__token_encryption_key`, `email__username`,
-# `email__password`, `channels__discord_webhook_url`, `channels__webhook_url`,
-# `database__url`, `redis__url`. Only the keys a given service reads are projected into it.
+# `auth__jwt_secret`, `auth__password_pepper`, `auth__mfa_encryption_key`, `internal__token`,
+# `anilist__client_id`, `anilist__client_secret`, `anilist__token_encryption_key`,
+# `email__username`, `email__password`, `channels__discord_webhook_url`,
+# `channels__webhook_url`, `database__url`, `redis__url`. Only the keys a given service reads
+# are projected into it.
 existingSecret: ""
 
 # @schema

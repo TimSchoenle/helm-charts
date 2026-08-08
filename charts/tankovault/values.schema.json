@@ -54,6 +54,13 @@
           "title": "jwtSecret",
           "type": "string"
         },
+        "mfaEncryptionKey": {
+          "default": "",
+          "description": "Base64 of exactly 32 bytes (`auth.mfa_encryption_key`), sealing every enrolled TOTP secret\nat rest. A TOTP secret is symmetric, unlike a password hash — whoever reads the column can mint\nthat account's codes — so a database dump must not be enough on its own. Left empty the chart\ngenerates one when `services.api` is enabled and remembers it across upgrades, which is the\nrecommended setting; set one explicitly (`openssl rand -base64 32`) only if it has to be known\noutside the release. **It must never change once anyone has enrolled**: rotating or losing it\nlocks every enrolled account out of its second factor, and the only repair is clearing\n`user_totp` and having them enrol again. Deliberately not derived from `jwtSecret`, which is\nroutine to rotate. Unset disables authenticator-app enrolment only — security keys and\nrecovery codes still work — but the seeded administrator holds permissions that require a\nsecond factor, so unset leaves it only a hardware key.",
+          "required": [],
+          "title": "mfaEncryptionKey",
+          "type": "string"
+        },
         "passwordPepper": {
           "default": "",
           "description": "Server-side pepper mixed into every argon2id hash, so a database leak alone cannot be\nbrute-forced offline. Left empty the chart generates one **on a first install only** and\nremembers it across upgrades; a release that already exists without a pepper keeps running\nwithout one, because every password stored unpeppered would stop verifying the moment one\nappeared. For the same reason it must never change once set: rotating or losing it\ninvalidates every stored password, so back the Secret up. The `seed-admin` step receives the\nidentical value, or the administrator it creates could never log in.",
@@ -1501,7 +1508,7 @@
     },
     "existingSecret": {
       "default": "",
-      "description": "Name of an existing Secret holding the credentials, instead of having the chart render one\nfrom the values above. When set it takes precedence and no credential value is written into\nthe Helm release. Its keys are the configuration paths with `__` for nesting and no dots —\n`auth__jwt_secret`, `auth__password_pepper`, `internal__token`, `anilist__client_id`,\n`anilist__client_secret`, `anilist__token_encryption_key`, `email__username`,\n`email__password`, `channels__discord_webhook_url`, `channels__webhook_url`,\n`database__url`, `redis__url`. Only the keys a given service reads are projected into it.",
+      "description": "Name of an existing Secret holding the credentials, instead of having the chart render one\nfrom the values above. When set it takes precedence and no credential value is written into\nthe Helm release. Its keys are the configuration paths with `__` for nesting and no dots —\n`auth__jwt_secret`, `auth__password_pepper`, `auth__mfa_encryption_key`, `internal__token`,\n`anilist__client_id`, `anilist__client_secret`, `anilist__token_encryption_key`,\n`email__username`, `email__password`, `channels__discord_webhook_url`,\n`channels__webhook_url`, `database__url`, `redis__url`. Only the keys a given service reads\nare projected into it.",
       "required": [],
       "title": "existingSecret",
       "type": "string"

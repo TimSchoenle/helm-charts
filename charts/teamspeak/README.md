@@ -1,6 +1,6 @@
 # teamspeak
 
-![Version: 1.0.6](https://img.shields.io/badge/Version-1.0.6-informational?style=flat-square) ![AppVersion: 3.13.8](https://img.shields.io/badge/AppVersion-3.13.8-informational?style=flat-square)
+![Version: 1.0.7](https://img.shields.io/badge/Version-1.0.7-informational?style=flat-square) ![AppVersion: 3.13.8](https://img.shields.io/badge/AppVersion-3.13.8-informational?style=flat-square)
 
 This chart deploys a TeamSpeak 3 server hardened to the restricted Pod Security Standard, with optional persistence, an optional Prometheus metrics exporter sidecar, Grafana dashboards and Prometheus alerting rules.
 

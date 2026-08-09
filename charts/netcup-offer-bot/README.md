@@ -1,6 +1,6 @@
 # netcup-offer-bot
 
-![Version: 3.0.10](https://img.shields.io/badge/Version-3.0.10-informational?style=flat-square) ![AppVersion: v1.5.24](https://img.shields.io/badge/AppVersion-v1.5.24-informational?style=flat-square)
+![Version: 4.0.0](https://img.shields.io/badge/Version-4.0.0-informational?style=flat-square) ![AppVersion: v2.0.0](https://img.shields.io/badge/AppVersion-v2.0.0-informational?style=flat-square)
 
 This chart deploys the Netcup Offer Bot, which monitors https://www.netcup-sonderangebote.de/ RSS feed and sends notifications to Discord webhooks when new offers are available.
 
@@ -22,7 +22,7 @@ helm repo update
 
 helm install [RELEASE_NAME] timschoenle/netcup-offer-bot \
   --namespace [NAMESPACE] --create-namespace \
-  --set env.webHook="https://discord.com/api/webhooks/..."
+  --set discord.webhookUrl="https://discord.com/api/webhooks/..."
 ```
 
 Upgrade with `helm upgrade [RELEASE_NAME] timschoenle/netcup-offer-bot -n [NAMESPACE]`,
@@ -30,21 +30,41 @@ remove with `helm uninstall [RELEASE_NAME] -n [NAMESPACE]`.
 
 ## Keeping the webhook out of the release
 
-`env.webHook` is written into a Secret, but it still passes through `values.yaml` and stays
-readable in the Helm release object afterwards. Point `existingSecret` at a Secret you created
-yourself to avoid both:
+`discord.webhookUrl` is written into a Secret, but it still passes through `values.yaml` and
+stays readable in the Helm release object afterwards. Point `existingSecret` at a Secret you
+created yourself to avoid both:
 
 ```shell
-kubectl create secret generic netcup-webhook \
-  --namespace [NAMESPACE] \
-  --from-literal=webHook='https://discord.com/api/webhooks/...'
+kubectl create secret generic netcup-webhook   --namespace [NAMESPACE]   --from-literal=discord__webhook_url='https://discord.com/api/webhooks/...'
 ```
 
 ```yaml
 existingSecret: netcup-webhook
 ```
 
-`env.webHook` is then ignored.
+**The key name is the configuration path the bot reads, not a free-form name.** The webhook
+arrives as a file in a projected volume and the bot takes the key out of the file *name*, so
+`discord__webhook_url` is required; a Secret spelled any other way mounts cleanly, supplies
+nothing, and the bot refuses to boot naming the missing credential.
+
+`discord.webhookUrl` is then ignored.
+
+## Configuration
+
+Everything the bot reads is rendered into one `config.toml`, mounted as a ConfigMap and pointed
+at by `NETCUP_OFFER_BOT_CONFIG`; the webhook is mounted separately as a file under
+`NETCUP_OFFER_BOT_SECRETS_DIR`. Nothing is passed as an environment variable, and that is
+deliberate on two counts: the loader **fails the boot on a key supplied by both the environment
+and a file** rather than resolving it by precedence, and an environment variable is visible in
+`kubectl describe pod`, in `/proc/<pid>/environ` and in the environment of every child process
+— which for a webhook URL is exactly the exposure worth removing.
+
+The values above cover the whole documented surface. `config` takes the raw TOML tree for
+anything they do not, merged over the derived one, and `configExtraToml` is appended verbatim
+for what the renderer cannot express.
+
+The bot does not reload its configuration, so the chart keeps the conventional `checksum/*` pod
+annotations: a configuration change rolls the Deployment, which is the only way it takes effect.
 
 ## State and restarts
 
@@ -77,8 +97,38 @@ metrics:
 
 Without a matching label the PodMonitor is created and never read.
 
-`env.sentryDns` additionally routes application errors to Sentry; leave it empty to keep the
-bot's egress to Discord and the netcup feed only.
+`metrics.ip` defaults to `0.0.0.0` rather than to the bot's own `127.0.0.1`, which answers
+nothing from outside the container — a PodMonitor pointed at that would scrape a refused
+connection.
+
+`telemetry.sentryDsn` additionally routes application errors to Sentry; leave it empty to keep
+the bot's egress to Discord and the netcup feed only.
+
+## Upgrading
+
+### 3.x to 4.0
+
+Chart 4.0 tracks the bot's 2.0 release, which replaced its environment-only configuration with
+the layered, file-first loader every chart in this repository now uses. The `env` block that
+described that environment is gone; a `helm upgrade` with 3.x values fails schema validation
+naming the offending key rather than starting a pod on the defaults.
+
+| Before | After |
+|---|---|
+| `env.webHook` | `discord.webhookUrl` |
+| `env.checkInterval` | `feed.checkIntervalSecs` |
+| `env.logLevel` | `telemetry.logLevel` (now `TRACE`/`DEBUG`/`INFO`/`WARN`/`ERROR`) |
+| `env.sentryDns` | `telemetry.sentryDsn` |
+
+**An existing Secret has to be re-keyed** from `webHook` to `discord__webhook_url`:
+
+```shell
+kubectl create secret generic netcup-webhook   --namespace [NAMESPACE]   --from-literal=discord__webhook_url="$(kubectl get secret netcup-webhook -n [NAMESPACE] -o jsonpath='{.data.webHook}' | base64 -d)"   --dry-run=client -o yaml | kubectl apply -f -
+```
+
+One fix rides along: `metrics.ip` is now a real value and defaults to `0.0.0.0`. The 3.x chart
+read a `metrics.ip` that its `values.yaml` never declared, so the exporter kept the bot's
+`127.0.0.1` default and the PodMonitor scraped a refused connection.
 
 ## Values
 
@@ -88,28 +138,31 @@ bot's egress to Discord and the netcup feed only.
 | automountServiceAccountToken | bool | `false` | Mount the ServiceAccount API token into the pod. Set on the pod itself, which is what actually keeps the token out of the container: the ServiceAccount-level setting is ignored as soon as a pod names a different account. |
 | commonAnnotations | object | `{}` | Annotations added to every object this chart creates. |
 | commonLabels | object | `{}` | Labels added to every object this chart creates. |
-| env.checkInterval | int | `180` | Interval in seconds between offer checks. |
-| env.logLevel | string | `"info"` | Log level for the application. |
-| env.sentryDns | string | `""` | Sentry DSN for error tracking. Leave empty to disable. |
-| env.webHook | string | `""` | Webhook URL to send updates or notifications. Required unless `existingSecret` is set. |
-| existingSecret | string | `""` | Name of an existing Secret holding the `webHook` key. When set, the chart does not create a Secret and `env.webHook` is ignored — which keeps the webhook URL out of `values.yaml` and out of the Helm release object. |
+| config | object | `{}` | Extra configuration, expressed as the TOML tree of [the bot's README](https://github.com/TimSchoenle/netcup-offer-bot#configuration) (`feed.check_interval_secs`, `metrics.port`, ...). Merged over everything the chart derives from the values above, so it can both extend and override them. Rendered into the mounted ConfigMap — never into the environment, which the loader refuses to combine with a file. |
+| configExtraToml | string | `""` | Verbatim TOML appended after the rendered configuration. The escape hatch for anything the chart's TOML renderer cannot express, notably arrays of tables. |
+| configMount.configDir | string | `"/etc/netcup-offer-bot/config"` | Directory the rendered `config.toml` is mounted at, passed as `NETCUP_OFFER_BOT_CONFIG`. |
+| configMount.secretsDir | string | `"/etc/netcup-offer-bot/secrets"` | Directory the credential file is mounted at, passed as `NETCUP_OFFER_BOT_SECRETS_DIR`. |
+| discord.webhookUrl | string | `""` | Discord webhook the offers are posted to (`discord.webhook_url`). Rendered into the chart's Secret and mounted as a file rather than passed as an environment variable, so it never appears in `kubectl describe pod` or in the environment of a child process. Required unless `existingSecret` supplies it. |
+| existingSecret | string | `""` | Name of an existing Secret holding the Discord webhook, which keeps it out of `values.yaml` and out of the Helm release object. **Its key is the configuration path, not a free-form name**: `discord__webhook_url`, because the file name is what the loader parses. Set, the chart renders no Secret of its own and `discord.webhookUrl` is ignored. |
 | extraEnv | list | `[]` | Additional environment variables for the application container. |
 | extraVolumeMounts | list | `[]` | Additional volume mounts added to the application container. |
 | extraVolumes | list | `[]` | Additional volumes added to the pod. |
+| feed.checkIntervalSecs | int | `180` | Seconds between two RSS feed checks (`feed.check_interval_secs`). |
 | fullnameOverride | string | `""` | Override the full generated resource name. |
 | image.pullPolicy | string | `""` | The image pull policy. Empty resolves automatically from the tag/digest. |
 | image.registry | string | `""` | Registry host. Empty means Docker Hub. |
 | image.repository | string | `"timmi6790/netcup-offer-bot"` | The container image repository. |
-| image.tag | string | `"v1.5.24@sha256:358897a7b824b78d32d85cec7990b5d6a74a94deedfbe66663c4ff3b7d7d994d"` | The container image tag. Defaults to the chart's `appVersion` when empty. |
+| image.tag | string | `"v2.0.0@sha256:ca4777a39e389609910492c2668ad524295512065a41bf8ffad849004b832efb"` | The container image tag. Defaults to the chart's `appVersion` when empty. |
 | imagePullSecrets | list | `[]` | Optional image pull secrets for private registries |
 | kubeVersionOverride | string | `""` | Kubernetes version to target when branching on API availability. Lets `helm template` render for a specific cluster version without a live connection. |
 | metrics.enabled | bool | `false` | Enable Prometheus metrics endpoint. |
+| metrics.ip | string | `"0.0.0.0"` | Address the Prometheus exporter binds (`metrics.ip`). The bot's own default is `127.0.0.1`, which answers nothing from outside the container — a PodMonitor pointed at it scrapes a refused connection. |
 | metrics.podMonitor | object | `{"enabled":true,"interval":"1m","labels":{},"scrapeTimeout":"30s"}` | PodMonitor configuration for Prometheus Operator integration. Renamed from `serviceMonitor`: the chart has always rendered a PodMonitor, and there is no Service to monitor. |
 | metrics.podMonitor.enabled | bool | `true` | Create the PodMonitor. Requires the Prometheus Operator CRDs. |
 | metrics.podMonitor.interval | string | `"1m"` | Metrics scrape interval (e.g., 1m, 30s). |
 | metrics.podMonitor.labels | object | `{}` | Extra labels for the PodMonitor, e.g. the `release` label a Prometheus Operator instance selects on. |
 | metrics.podMonitor.scrapeTimeout | string | `"30s"` | Timeout for metrics scraping (e.g., 30s). |
-| metrics.port | int | `9184` | Port to expose metrics on. |
+| metrics.port | int | `9184` | Port the Prometheus exporter listens on (`metrics.port`). |
 | nameOverride | string | `""` | Override the chart name used in resource names and labels. |
 | namespaceOverride | string | `""` | Deploy into a namespace other than the release namespace. |
 | networkPolicy | object | `{"egress":{"cidr":"0.0.0.0/0","customRules":[],"dns":{"enabled":true,"namespaceSelector":{"kubernetes.io/metadata.name":"kube-system"},"podSelector":{"k8s-app":"kube-dns"}},"enabled":true,"except":["10.0.0.0/8","172.16.0.0/12","192.168.0.0/16","169.254.0.0/16"],"http":{"enabled":false},"https":{"enabled":true}},"enabled":false,"ingress":{"controller":{"enabled":true,"namespace":"traefik","selector":{"app.kubernetes.io/name":"traefik"}},"customRules":[],"enabled":true,"monitoring":{"enabled":true,"namespace":"monitoring"}}}` | Network policy configuration |
@@ -169,6 +222,8 @@ bot's egress to Discord and the netcup feed only.
 | serviceAccount.create | bool | `true` | Whether to create a dedicated service account |
 | serviceAccount.name | string | `""` | Custom service account name (auto-generated if empty) |
 | strategy | object | `{}` | Deployment update strategy. Empty uses the Kubernetes default rolling update. |
+| telemetry.logLevel | string | `"INFO"` | Log level (`telemetry.log_level`). |
+| telemetry.sentryDsn | string | `""` | Sentry DSN (`telemetry.sentry_dsn`). Empty disables Sentry entirely. |
 | terminationGracePeriodSeconds | int | `30` | Grace period for pod shutdown. |
 | tolerations | list | `[]` | Tolerations for pod assignment. |
 | topologySpreadConstraints | list | `[]` | Pod topology spread constraints for availability |

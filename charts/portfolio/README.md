@@ -1,6 +1,6 @@
 # portfolio
 
-![Version: 3.0.11](https://img.shields.io/badge/Version-3.0.11-informational?style=flat-square) ![AppVersion: v2.2.3](https://img.shields.io/badge/AppVersion-v2.2.3-informational?style=flat-square)
+![Version: 4.0.0](https://img.shields.io/badge/Version-4.0.0-informational?style=flat-square) ![AppVersion: v2.3.0](https://img.shields.io/badge/AppVersion-v2.3.0-informational?style=flat-square)
 
 Personal portfolio built with Rust (Yew frontend, Axum server).
 
@@ -82,6 +82,67 @@ livenessProbe:
 > `successThreshold` is accepted only on the readiness probe. Kubernetes rejects any value
 > other than `1` on startup and liveness probes, so the chart omits it there.
 
+## Configuration
+
+The application reads its settings through a layered, file-first loader. Everything in the
+`PORTFOLIO_` namespace — `assets.dist_dir`, `isr.*` — is rendered into one `config.toml`,
+mounted as a ConfigMap and pointed at by `PORTFOLIO_CONFIG`. The loader **fails the boot on a
+key supplied by both the environment and a file** rather than resolving it by precedence, so
+keeping the chart's output in one place makes that collision impossible.
+
+`PORT`, `IP` and `RUST_LOG` are the exception, and stay environment variables: they belong to
+the Dioxus toolchain, which reads them itself. They are `server.port`, `server.host` and
+`logLevel` in this chart's values, and cannot be supplied through `config`.
+
+One more variable is set on purpose. The published image bakes
+`PORTFOLIO_ISR__CACHE_DIR=/tmp/isr`, and the environment layer outranks the TOML one — so the
+chart restates the *effective* cache directory as an environment variable alongside the file.
+Without that, moving the cache through `isr.cacheDir` would write a value the image silently
+overrode.
+
+`config` takes the raw TOML tree for anything the first-class values do not cover, merged over
+the derived one, and `configExtraToml` is appended verbatim for what the renderer cannot
+express.
+
+The server does not reload its configuration — only the loader half of the library is used — so
+the chart keeps the conventional `checksum/config` pod annotation: a configuration change rolls
+the Deployment, which is the only way it takes effect.
+
+## Incremental static regeneration
+
+ISR is on by default and caches into `/tmp/isr`, inside the writable `emptyDir` the chart
+already mounts for the read-only root filesystem. The server creates the directory itself and
+falls back to rendering every request fresh if it turns out not to be writable.
+
+```yaml
+isr:
+  cacheDir: /tmp/isr   # empty disables ISR entirely
+  ttlSecs: 0           # 0 is a permanent cache; positive opts into time-based revalidation
+```
+
+A permanent cache is right here: every page renders from compile-time data, so the only thing
+that changes the output is a redeploy, and a redeploy starts from an empty cache. Set a
+positive TTL only when a *persistent* cache volume is shared across deploys — which needs an
+`extraVolumes` mount, since the default cache lives in an `emptyDir`.
+
+## Upgrading
+
+### 3.x to 4.0
+
+Chart 4.0 tracks application 2.3.0, which moved its settings into the layered `PORTFOLIO_`
+configuration. The `application` block is gone; a `helm upgrade` with 3.x values fails schema
+validation naming the offending key rather than starting a pod on the defaults.
+
+| Before | After |
+|---|---|
+| `application.port` | `server.port` |
+| `application.logLevel` | `logLevel` |
+
+Both are still delivered as `PORT` and `RUST_LOG` — the Dioxus toolchain reads them from the
+environment and they are not part of the layered configuration. What is new is everything
+around them: `server.host`, `assets.distDir`, `isr.*`, and the `config` / `configExtraToml`
+escape hatches, all rendered into a mounted `config.toml`.
+
 ## Security
 
 The pod satisfies the [restricted Pod Security Standard][pss] as installed: non-root (UID
@@ -115,11 +176,14 @@ curl http://localhost:8080/api/health
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | affinity | object | `{}` | Explicit affinity rules. Wins over `podAntiAffinity`. |
-| application.logLevel | string | `"info"` | Log verbosity passed to the application as `RUST_LOG`. Accepts standard tracing/env_logger directives (e.g. `info`, `debug`, `warn`). |
-| application.port | int | `8080` | Port number the application listens on (exposed to the container as `PORT`). The Axum server binds to 0.0.0.0 on this port. |
+| assets.distDir | string | `"public"` | Directory holding the bundled assets (`assets.dist_dir`), relative to the working directory. Only the readiness probe consults it; the bundle itself is served by the Dioxus asset router, which resolves `public/` relative to the binary. |
 | automountServiceAccountToken | bool | `false` | Mount the ServiceAccount API token into the pod. The application never calls the Kubernetes API. |
 | commonAnnotations | object | `{}` | Annotations added to every object this chart creates. |
 | commonLabels | object | `{}` | Labels added to every object this chart creates. |
+| config | object | `{}` | Extra configuration, expressed as the TOML tree of [the application's README](https://github.com/TimSchoenle/Portfolio#configuration) (`assets.dist_dir`, `isr.ttl_secs`, ...). Merged over everything the chart derives from the values above, so it can both extend and override them. Rendered into the mounted ConfigMap — never into the environment, which the loader refuses to combine with a file. |
+| configExtraToml | string | `""` | Verbatim TOML appended after the rendered configuration. The escape hatch for anything the chart's TOML renderer cannot express, notably arrays of tables. |
+| configMount.configDir | string | `"/etc/portfolio/config"` | Directory the rendered `config.toml` is mounted at, passed as `PORTFOLIO_CONFIG`. |
+| configMount.secretsDir | string | `"/etc/portfolio/secrets"` | Directory credential files would be mounted at, passed as `PORTFOLIO_SECRETS_DIR`. The server reads no secret today — `github.token` belongs to the build-time repository builder — so nothing is mounted and the variable is not set; the value is here for an operator adding one through `extraVolumes`. |
 | extraEnv | list | `[]` | Additional environment variables for the application container. |
 | extraVolumeMounts | list | `[]` | Additional volume mounts added to the application container. |
 | extraVolumes | list | `[]` | Additional volumes added to the pod. |
@@ -127,13 +191,16 @@ curl http://localhost:8080/api/health
 | image.pullPolicy | string | `""` | Kubernetes image pull policy. Empty resolves automatically from the tag/digest. |
 | image.registry | string | `""` | Registry host. Empty means Docker Hub. |
 | image.repository | string | `"timschoenle/portfolio"` | Container image repository where the Portfolio application image is stored. |
-| image.tag | string | `"v2.2.3@sha256:b3cbdcad9b50ba79049cfafb0f219a294106647c6cb3928057f0efbd278d40dc"` | Container image tag to deploy, pinned by digest (`vX.Y.Z@sha256:...`). The digest pins the pull, while the tag stays on as the readable version marker. Defaults to the chart's `appVersion` when empty. |
+| image.tag | string | `"v2.3.0@sha256:ae594c6c61f4f5b369803ba5e5b24294428ef8d4ebebf73e383efa57d63260ae"` | Container image tag to deploy, pinned by digest (`vX.Y.Z@sha256:...`). The digest pins the pull, while the tag stays on as the readable version marker. Defaults to the chart's `appVersion` when empty. |
 | imagePullSecrets | list | `[]` | Optional image pull secrets for private registries. |
 | ingress.annotations | object | `{}` | Custom annotations for the Ingress resource. Example: ```yaml annotations:   cert-manager.io/cluster-issuer: "letsencrypt-prod"   nginx.ingress.kubernetes.io/ssl-redirect: "true" ``` |
 | ingress.enabled | bool | `false` | Enable or disable Kubernetes Ingress resource creation. |
 | ingress.hosts | list | `[]` | List of host configurations for the Ingress. Values may contain Go templates. Example: ```yaml hosts:   - host: portfolio.example.com     paths:       - path: /         pathType: Prefix ``` |
 | ingress.ingressClassName | string | `"nginx"` | Ingress class to use (e.g., "nginx", "traefik"). |
 | ingress.tls | list | `[]` | TLS configuration for securing ingress connections. Example: ```yaml tls:   - secretName: portfolio-tls     hosts:       - portfolio.example.com ``` |
+| isr | object | `{"cacheDir":"/tmp/isr","ttlSecs":0}` | Incremental static regeneration: the server caches each rendered page and serves it again instead of re-rendering. |
+| isr.cacheDir | string | `"/tmp/isr"` | Writable directory rendered HTML is cached into (`isr.cache_dir`). Empty disables ISR and renders every request fresh. Keep it under `/tmp`, which the chart already provides as a writable emptyDir under the read-only root filesystem, and outside the bundled `public/` tree so those content-hashed assets stay immutable. The server creates the directory itself and falls back to rendering fresh if it turns out not to be writable. |
+| isr.ttlSecs | int | `0` | Revalidation interval in seconds (`isr.ttl_secs`). `0` means a permanent cache, which is right for this site: every page renders from compile-time data, so the only thing that changes the output is a redeploy — and that starts from an empty cache. Set a positive value only when a *persistent* cache volume is shared across deploys. |
 | kubeVersionOverride | string | `""` | Kubernetes version to target when branching on API availability. Lets `helm template` render for a specific cluster version without a live connection. |
 | livenessProbe | object | `{"enabled":true,"failureThreshold":3,"httpGet":{"path":"/api/health","port":"http"},"initialDelaySeconds":1,"periodSeconds":10,"timeoutSeconds":5}` | Liveness probe. Restarts the container when it stops responding. |
 | livenessProbe.enabled | bool | `true` | Enable the liveness probe. |
@@ -144,6 +211,7 @@ curl http://localhost:8080/api/health
 | livenessProbe.initialDelaySeconds | int | `1` | Delay before the first probe. |
 | livenessProbe.periodSeconds | int | `10` | Probe interval. |
 | livenessProbe.timeoutSeconds | int | `5` | Probe timeout. |
+| logLevel | string | `"info"` | Log verbosity, passed as `RUST_LOG`. Accepts standard tracing directives (`info`, `debug`, `web=debug,info`). Not part of the `PORTFOLIO_` namespace — see `server`. |
 | nameOverride | string | `""` | Override the chart name used in resource names and labels. |
 | namespaceOverride | string | `""` | Deploy into a namespace other than the release namespace. |
 | networkPolicy | object | `{"egress":{"cidr":"0.0.0.0/0","customRules":[],"dns":{"enabled":true,"namespaceSelector":{"kubernetes.io/metadata.name":"kube-system"},"podSelector":{"k8s-app":"kube-dns"}},"enabled":true,"except":["10.0.0.0/8","172.16.0.0/12","192.168.0.0/16","169.254.0.0/16"],"http":{"enabled":false},"https":{"enabled":true}},"enabled":false,"extraEgress":[],"extraIngress":[],"ingress":{"controller":{"enabled":true,"namespace":"traefik","ports":[],"selector":{"app.kubernetes.io/name":"traefik"}},"customRules":[],"enabled":true,"monitoring":{"enabled":true,"namespace":"monitoring","namespaceSelector":{},"ports":[]}}}` | Network policy configuration.  Every generated egress rule is scoped by a `to:` selector. An egress rule that lists only ports is not a restriction: the NetworkPolicy API reads a missing `to` as "any destination", which would permit traffic to every in-cluster service and to the cloud instance metadata endpoint. |
@@ -208,6 +276,9 @@ curl http://localhost:8080/api/health
 | revisionHistoryLimit | int | `3` | Number of old ReplicaSets retained for rollback. |
 | securityContext | object | `{}` | Container security context, merged over the preset. The application is a statically linked binary serving pre-built assets and needs no writable root filesystem; a writable /tmp is provided automatically via an emptyDir. |
 | securityContextPreset | string | `"restricted"` | Container security context baseline. `restricted` drops all Linux capabilities and forbids privilege escalation and a writable root filesystem. |
+| server | object | `{"host":"0.0.0.0","port":8080}` | The listener, which is the one part of the configuration the `PORTFOLIO_` namespace does not own: `PORT`, `IP` and `RUST_LOG` belong to the Dioxus toolchain, which reads them from the environment itself. They are therefore still passed as environment variables, and cannot be supplied through `config`. |
+| server.host | string | `"0.0.0.0"` | Bind address, passed as `IP`. |
+| server.port | int | `8080` | Bind port, passed as `PORT`. Also the container port, the Service target and what every probe and NetworkPolicy rule is written against. |
 | service.annotations | object | `{}` | Annotations for the Service. |
 | service.port | int | `80` | Port that the Kubernetes Service will expose. |
 | service.type | string | `"ClusterIP"` | Kubernetes Service type that exposes the application. |

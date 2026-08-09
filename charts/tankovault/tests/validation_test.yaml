@@ -147,3 +147,17 @@ tests:
     asserts:
       - hasDocuments:
           count: 1
+
+  # A capability guard that skipped the routes instead would render clean in CI — `helm template`
+  # reports the built-in API surface but no CRDs — and leave a real install succeeding with the
+  # application unreachable.
+  - it: refuses Gateway API exposure when the CRDs are absent
+    set:
+      gateway.enabled: true
+      gateway.host: tankovault.example.com
+      gateway.tls.enabled: true
+      gateway.parentRefs:
+        - name: shared-gateway
+    asserts:
+      - failedTemplate:
+          errorPattern: "the cluster registers no `gateway.networking.k8s.io/v1` API"

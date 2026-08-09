@@ -1,0 +1,357 @@
+suite: common CiliumNetworkPolicy partials
+templates:
+  - networkpolicy.yaml
+tests:
+  - it: creates nothing by default
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: emits the portable pair under the default engine
+    set:
+      networkPolicy.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 2
+      - documentIndex: 0
+        isKind:
+          of: NetworkPolicy
+
+  - it: emits CiliumNetworkPolicies under the cilium engine
+    set:
+      networkPolicy.enabled: true
+      networkPolicy.engine: cilium
+    asserts:
+      - hasDocuments:
+          count: 2
+      - documentIndex: 0
+        isKind:
+          of: CiliumNetworkPolicy
+      - documentIndex: 0
+        equal:
+          path: apiVersion
+          value: cilium.io/v2
+      - documentIndex: 0
+        equal:
+          path: metadata.name
+          value: RELEASE-NAME-common-fixture-ingress
+      - documentIndex: 1
+        equal:
+          path: metadata.name
+          value: RELEASE-NAME-common-fixture-egress
+
+  # A migration setting: both dialects select the same pod and their allowances union.
+  - it: emits both dialects under the both engine
+    set:
+      networkPolicy.enabled: true
+      networkPolicy.engine: both
+    asserts:
+      - hasDocuments:
+          count: 4
+      - documentIndex: 0
+        isKind:
+          of: NetworkPolicy
+      - documentIndex: 2
+        isKind:
+          of: CiliumNetworkPolicy
+
+  # Each object turns default-deny on for its own direction and explicitly off for the other.
+  # A single object claiming both would deny all egress from a workload whose egress policy
+  # nobody asked for — including DNS.
+  - it: scopes default-deny to the direction each object covers
+    set:
+      networkPolicy.enabled: true
+      networkPolicy.engine: cilium
+    asserts:
+      - documentIndex: 0
+        equal:
+          path: spec.enableDefaultDeny
+          value:
+            ingress: true
+            egress: false
+      - documentIndex: 1
+        equal:
+          path: spec.enableDefaultDeny
+          value:
+            ingress: false
+            egress: true
+
+  - it: allows default-deny to be turned off
+    set:
+      networkPolicy.enabled: true
+      networkPolicy.engine: cilium
+      networkPolicy.cilium.enableDefaultDeny: false
+    asserts:
+      - documentIndex: 0
+        equal:
+          path: spec.enableDefaultDeny.ingress
+          value: false
+
+  # Cilium has no namespace selector: a namespace is matched through labels mirrored onto the
+  # endpoint. A selector that gets this wrong matches nothing and silently denies.
+  - it: maps the namespace name onto the Cilium endpoint label
+    documentIndex: 0
+    set:
+      networkPolicy.enabled: true
+      networkPolicy.engine: cilium
+    asserts:
+      - equal:
+          path: spec.ingress[0].fromEndpoints[0].matchLabels
+          value:
+            io.kubernetes.pod.namespace: monitoring
+
+  - it: prefixes arbitrary namespace labels
+    documentIndex: 0
+    set:
+      networkPolicy.enabled: true
+      networkPolicy.engine: cilium
+      networkPolicy.ingress.monitoring.namespaceSelector:
+        team: observability
+    asserts:
+      - equal:
+          path: spec.ingress[0].fromEndpoints[0].matchLabels
+          value:
+            io.cilium.k8s.namespace.labels.team: observability
+
+  - it: folds the controller pod selector into the endpoint selector
+    documentIndex: 0
+    set:
+      networkPolicy.enabled: true
+      networkPolicy.engine: cilium
+    asserts:
+      - equal:
+          path: spec.ingress[1].fromEndpoints[0].matchLabels
+          value:
+            io.kubernetes.pod.namespace: traefik
+            app.kubernetes.io/name: traefik
+
+  # The gateway peer is derived from the route's own parentRefs, in this dialect too.
+  - it: derives the gateway peer from the parent reference
+    documentIndex: 0
+    capabilities:
+      apiVersions:
+        - gateway.networking.k8s.io/v1
+    set:
+      networkPolicy.enabled: true
+      networkPolicy.engine: cilium
+      gateway.enabled: true
+      gateway.hostnames:
+        - app.example.com
+      gateway.parentRefs:
+        - name: shared-gateway
+          namespace: gateway-system
+    asserts:
+      - equal:
+          path: spec.ingress[2].fromEndpoints[0].matchLabels
+          value:
+            io.kubernetes.pod.namespace: gateway-system
+            gateway.networking.k8s.io/gateway-name: shared-gateway
+
+  - it: omits the gateway peer when the chart is not exposed through a Gateway
+    documentIndex: 0
+    set:
+      networkPolicy.enabled: true
+      networkPolicy.engine: cilium
+    asserts:
+      - lengthEqual:
+          path: spec.ingress
+          count: 2
+
+  # The port type differs between the two APIs: an unquoted integer is rejected by the CRD.
+  - it: renders ports as strings
+    documentIndex: 0
+    set:
+      networkPolicy.enabled: true
+      networkPolicy.engine: cilium
+      networkPolicy.ingress.monitoring.ports:
+        - port: 9090
+          protocol: TCP
+    asserts:
+      - equal:
+          path: spec.ingress[0].toPorts[0].ports[0]
+          value:
+            port: "9090"
+            protocol: TCP
+
+  # Allowing UDP/53 lets a pod resolve; the L7 DNS rule is what lets Cilium observe the answer,
+  # which is the only thing that makes a toFQDNs rule enforceable.
+  - it: attaches L7 DNS rules to the DNS egress rule
+    documentIndex: 1
+    set:
+      networkPolicy.enabled: true
+      networkPolicy.engine: cilium
+    asserts:
+      - equal:
+          path: spec.egress[0].toEndpoints[0].matchLabels
+          value:
+            io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      - equal:
+          path: spec.egress[0].toPorts[0].rules.dns
+          value:
+            - matchPattern: "*"
+
+  - it: narrows what the DNS proxy may resolve
+    documentIndex: 1
+    set:
+      networkPolicy.enabled: true
+      networkPolicy.engine: cilium
+      networkPolicy.cilium.egress.dnsMatchPatterns:
+        - matchPattern: "*.example.com"
+    asserts:
+      - equal:
+          path: spec.egress[0].toPorts[0].rules.dns
+          value:
+            - matchPattern: "*.example.com"
+
+  # The portable CIDR rules survive the translation, carve-outs and all — switching engines
+  # must not quietly widen an existing policy.
+  - it: translates the portable CIDR rules into toCIDRSet
+    documentIndex: 1
+    set:
+      networkPolicy.enabled: true
+      networkPolicy.engine: cilium
+    asserts:
+      - equal:
+          path: spec.egress[1].toCIDRSet[0].cidr
+          value: 0.0.0.0/0
+      - contains:
+          path: spec.egress[1].toCIDRSet[0].except
+          content: 169.254.0.0/16
+      - equal:
+          path: spec.egress[1].toPorts[0].ports[0].port
+          value: "443"
+
+  - it: names destinations rather than addresses
+    documentIndex: 1
+    set:
+      networkPolicy.enabled: true
+      networkPolicy.engine: cilium
+      networkPolicy.egress.https.enabled: false
+      networkPolicy.cilium.egress.toFQDNs:
+        - matchName: api.example.com
+        - matchPattern: "*.cdn.example.com"
+    asserts:
+      - equal:
+          path: spec.egress[1].toFQDNs
+          value:
+            - matchName: api.example.com
+            - matchPattern: "*.cdn.example.com"
+      - equal:
+          path: spec.egress[1].toPorts[0].ports[0]
+          value:
+            port: "443"
+            protocol: TCP
+
+  - it: layers L7 HTTP rules onto the FQDN rule
+    documentIndex: 1
+    set:
+      networkPolicy.enabled: true
+      networkPolicy.engine: cilium
+      networkPolicy.egress.https.enabled: false
+      networkPolicy.cilium.egress.toFQDNs:
+        - matchName: api.example.com
+      networkPolicy.cilium.egress.httpRules:
+        - method: GET
+          path: "/v1/.*"
+    asserts:
+      - equal:
+          path: spec.egress[1].toPorts[0].rules.http[0].method
+          value: GET
+
+  - it: allows named destination sets
+    documentIndex: 1
+    set:
+      networkPolicy.enabled: true
+      networkPolicy.engine: cilium
+      networkPolicy.egress.https.enabled: false
+      networkPolicy.cilium.egress.toEntities:
+        - kube-apiserver
+      networkPolicy.cilium.egress.entityPorts:
+        - port: 6443
+          protocol: TCP
+    asserts:
+      - equal:
+          path: spec.egress[1].toEntities
+          value:
+            - kube-apiserver
+      - equal:
+          path: spec.egress[1].toPorts[0].ports[0].port
+          value: "6443"
+
+  - it: allows named source sets
+    documentIndex: 0
+    set:
+      networkPolicy.enabled: true
+      networkPolicy.engine: cilium
+      networkPolicy.cilium.ingress.fromEntities:
+        - cluster
+    asserts:
+      - equal:
+          path: spec.ingress[2].fromEntities
+          value:
+            - cluster
+
+  - it: appends verbatim Cilium rules
+    set:
+      networkPolicy.enabled: true
+      networkPolicy.engine: cilium
+      networkPolicy.cilium.extraIngress:
+        - fromEntities:
+            - host
+      networkPolicy.cilium.extraEgress:
+        - toEntities:
+            - remote-node
+    asserts:
+      - documentIndex: 0
+        equal:
+          path: spec.ingress[2].fromEntities
+          value:
+            - host
+      - documentIndex: 1
+        equal:
+          path: spec.egress[2].toEntities
+          value:
+            - remote-node
+
+  - it: records why a rule exists where an operator debugging a drop will see it
+    documentIndex: 0
+    set:
+      networkPolicy.enabled: true
+      networkPolicy.engine: cilium
+      networkPolicy.cilium.description: only the gateway reaches this
+    asserts:
+      - equal:
+          path: spec.description
+          value: only the gateway reaches this
+
+  # An intentional default-deny: policy objects exist, rule lists are empty.
+  - it: renders an empty rule list as a stated default-deny
+    set:
+      networkPolicy.enabled: true
+      networkPolicy.engine: cilium
+      networkPolicy.ingress.enabled: false
+      networkPolicy.egress.enabled: false
+    asserts:
+      - documentIndex: 0
+        isNullOrEmpty:
+          path: spec.ingress
+      - documentIndex: 0
+        equal:
+          path: spec.enableDefaultDeny.ingress
+          value: true
+      - documentIndex: 1
+        isNullOrEmpty:
+          path: spec.egress
+
+  # With no DNS rule to observe the lookup, every FQDN destination is silently denied.
+  - it: refuses FQDN destinations with the DNS rule turned off
+    set:
+      networkPolicy.enabled: true
+      networkPolicy.engine: cilium
+      networkPolicy.egress.dns.enabled: false
+      networkPolicy.cilium.egress.toFQDNs:
+        - matchName: api.example.com
+    asserts:
+      - failedTemplate:
+          errorPattern: "the FQDN rule matches nothing"

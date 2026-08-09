@@ -251,14 +251,29 @@ The externally reachable base URL of the frontend.
 
 `anilist.redirect_uri`, `email.base_url` and `auth.webauthn_origin` all have to agree with the
 origin a browser actually uses, or OAuth round-trips, emailed links and passkeys break in ways
-that only show up at runtime. Derive them from the ingress rather than asking the operator to
-restate the same hostname four times.
+that only show up at runtime. Derive them from whichever mechanism publishes the chart rather
+than asking the operator to restate the same hostname four times.
+
+Both mechanisms are checked, because both may be enabled: `ingress` and `gateway` are independent
+switches so that a cluster can migrate between an Ingress controller and a Gateway implementation
+without an outage. When both are on the Gateway wins, which is the direction a migration runs —
+turning `gateway` on is the act of moving to it, and the derived origin should follow immediately
+rather than only once the Ingress is finally deleted.
+
+`gateway.tls.enabled` is what supplies the scheme, and it is meaningful even when the Gateway is
+somebody else's: it says this hostname is served over HTTPS, not that this chart terminates it.
 */}}
 {{- define "tankovault.externalUrl" -}}
-{{- if .Values.ingress.url -}}
+{{- if .Values.gateway.url -}}
+{{- .Values.gateway.url | trimSuffix "/" -}}
+{{- else if .Values.ingress.url -}}
 {{- .Values.ingress.url | trimSuffix "/" -}}
+{{- else if and .Values.gateway.enabled .Values.gateway.host -}}
+{{- $scheme := ternary "https" "http" .Values.gateway.tls.enabled -}}
+{{- printf "%s://%s" $scheme .Values.gateway.host -}}
 {{- else if and .Values.ingress.enabled .Values.ingress.host -}}
 {{- $scheme := ternary "https" "http" .Values.ingress.tls.enabled -}}
 {{- printf "%s://%s" $scheme .Values.ingress.host -}}
 {{- end -}}
 {{- end -}}
+

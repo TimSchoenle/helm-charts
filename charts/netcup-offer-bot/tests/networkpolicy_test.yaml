@@ -193,3 +193,72 @@ tests:
           path: spec.egress
           count: 1
         documentIndex: 1
+
+
+  - it: emits CiliumNetworkPolicies under the cilium engine
+    set:
+      networkPolicy.enabled: true
+      networkPolicy.engine: cilium
+    asserts:
+      - hasDocuments:
+          count: 2
+      - documentIndex: 0
+        isKind:
+          of: CiliumNetworkPolicy
+      - documentIndex: 0
+        equal:
+          path: apiVersion
+          value: cilium.io/v2
+      - documentIndex: 0
+        equal:
+          path: spec.enableDefaultDeny
+          value:
+            ingress: true
+            egress: false
+
+  # A migration setting: the two dialects select the same pod and their allowances union.
+  - it: emits both dialects under the both engine
+    set:
+      networkPolicy.enabled: true
+      networkPolicy.engine: both
+    asserts:
+      - hasDocuments:
+          count: 4
+      - documentIndex: 0
+        isKind:
+          of: NetworkPolicy
+      - documentIndex: 2
+        isKind:
+          of: CiliumNetworkPolicy
+
+  # The rule the CIDR-based `egress.https` was always a poor approximation of.
+  - it: names egress destinations rather than addressing them
+    documentIndex: 1
+    set:
+      networkPolicy.enabled: true
+      networkPolicy.engine: cilium
+      networkPolicy.egress.https.enabled: false
+      networkPolicy.cilium.egress.toFQDNs:
+        - matchName: api.example.com
+    asserts:
+      - equal:
+          path: spec.egress[1].toFQDNs
+          value:
+            - matchName: api.example.com
+      - equal:
+          path: spec.egress[1].toPorts[0].ports[0]
+          value:
+            port: "443"
+            protocol: TCP
+
+  # Without the L7 DNS rule Cilium never sees the lookup, so the FQDN rule matches nothing.
+  - it: refuses FQDN destinations with the DNS rule turned off
+    set:
+      networkPolicy.enabled: true
+      networkPolicy.engine: cilium
+      networkPolicy.egress.dns.enabled: false
+      networkPolicy.cilium.egress.toFQDNs:
+        - matchName: api.example.com
+    asserts:
+      - failedTemplate:
+          errorPattern: "the FQDN rule matches nothing"

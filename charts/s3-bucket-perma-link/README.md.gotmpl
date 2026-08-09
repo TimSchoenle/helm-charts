@@ -16,7 +16,9 @@ bucket has to be made public.
 - Kubernetes 1.19+
 - Helm 3.0+
 - An S3-compatible bucket and a credential pair that can read it
-- An ingress controller, if the links are meant to work outside the cluster
+- An ingress controller, or the Gateway API CRDs and a `Gateway`, if the links are meant to
+  work outside the cluster
+- Cilium 1.16+, if `networkPolicy.engine` is `cilium` or `both`
 
 ## Quick start
 
@@ -197,6 +199,160 @@ networkPolicy:
           - protocol: TCP
             port: 9000
 ```
+
+## Publishing it with Gateway API
+
+`ingress` and `gateway` are independent switches, so a cluster moving from an Ingress controller
+to a Gateway implementation can run both while it migrates. Only the route belongs to this chart:
+the `Gateway` — its listeners, its address, its certificates — is the cluster operator's, and
+`parentRefs` is how the route asks to be attached to one.
+
+```yaml
+ingress:
+  enabled: false
+
+gateway:
+  enabled: true
+  parentRefs:
+    - name: shared-gateway
+      namespace: gateway-system
+  hostnames:
+    - links.example.com
+```
+
+That is the whole configuration. With no `rules`, the route gets one prefix match on `/` pointing
+at this chart's Service, which is the Gateway API equivalent of a single-path Ingress.
+
+What used to live in controller-specific annotations is a typed field:
+
+| Ingress | Gateway API |
+|---|---|
+| `ingressClassName` | `gateway.parentRefs` — the Gateway, not the class |
+| `hosts[].host` | `gateway.hostnames` |
+| `hosts[].paths[]` | `gateway.rules[].matches`, or `gateway.path` for the single-path case |
+| `tls[]` | the Gateway listener's `certificateRefs` — not this chart's, unless it creates one |
+| `nginx.ingress.kubernetes.io/ssl-redirect` | `gateway.httpsRedirect.enabled` |
+| `nginx.ingress.kubernetes.io/rewrite-target` | a `URLRewrite` filter in `gateway.filters` |
+| `*/proxy-read-timeout` | `gateway.timeouts` |
+
+Header manipulation, redirects, rewrites, mirroring and traffic splitting are all `filters` or
+weighted `backendRefs`, which means they are schema-validated at apply time rather than being
+strings a controller may or may not recognise:
+
+```yaml
+gateway:
+  timeouts:
+    request: 30s
+  filters:
+    - type: ResponseHeaderModifier
+      responseHeaderModifier:
+        set:
+          - name: X-Content-Type-Options
+            value: nosniff
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: s3-bucket-perma-link-canary
+          port: 80
+          weight: 10
+        - name: RELEASE-NAME-s3-bucket-perma-link
+          port: 80
+          weight: 90
+```
+
+### Letting the chart own a Gateway
+
+For an install with no cluster-wide Gateway to attach to, `gateway.create` renders one. It is off
+by default because a Gateway usually provisions a load balancer, and one per application is rarely
+what you want.
+
+```yaml
+gateway:
+  enabled: true
+  create: true
+  gatewayClassName: cilium
+  hostnames:
+    - links.example.com
+  tls:
+    enabled: true
+    certificateRefs:
+      - name: s3-bucket-perma-link-tls
+  httpsRedirect:
+    enabled: true
+  infrastructure:
+    annotations:
+      io.cilium/lb-ipam-ips: 203.0.113.10
+```
+
+A route that names no parent attaches to that Gateway automatically, so the Gateway's name is
+never written twice. Listeners are `http` and — with `tls.enabled` — `https`, both accepting any
+hostname and both restricted to routes from this namespace; `gateway.listeners` replaces them
+outright when a listener needs its own hostname or certificate.
+
+> [!NOTE]
+> The chart never creates a `ReferenceGrant`. A grant lives in the namespace of the object being
+> referenced, so a chart that emitted its own would simply be authorising itself — the one thing
+> the object exists to prevent. Cross-namespace `backendRefs` and `certificateRefs` work, but the
+> grant is the target namespace owner's to create.
+
+If `gateway.enabled` is set on a cluster without the Gateway API CRDs, the render fails and says
+so. It does not quietly skip the route: that would render clean in CI and leave a real install
+succeeding with the application unreachable.
+
+## Network policies, and what Cilium adds
+
+`networkPolicy.engine` picks the dialect the same rules are written in:
+
+```yaml
+networkPolicy:
+  enabled: true
+  engine: cilium   # kubernetes (default) | cilium | both
+```
+
+Every value is translated either way, so switching is a one-line change rather than a re-authoring.
+`both` emits both objects for a CNI migration — additive, not stricter, since policies selecting
+one pod union their allowances.
+
+The portable API can only name destinations by IP, so "may reach the internet over HTTPS" has to be
+written `0.0.0.0/0` on 443 with the private ranges and the cloud metadata endpoint carved out — a
+rule that, read honestly, permits a compromised container to reach every public host that exists.
+Cilium can say the thing that was actually meant:
+
+```yaml
+networkPolicy:
+  enabled: true
+  engine: cilium
+  egress:
+    https:
+      enabled: false     # drop the CIDR rule; the FQDN rule replaces it
+  cilium:
+    description: "outbound to the hosts this actually talks to"
+    egress:
+      toFQDNs:
+        - matchName: api.example.com
+        - matchPattern: "*.cdn.example.com"
+      dnsMatchPatterns:
+        - matchPattern: "*.example.com"
+      toEntities:
+        - kube-apiserver
+      httpRules:
+        - method: GET
+          path: "/v1/.*"
+```
+
+`toFQDNs` is enforced against the addresses Cilium's DNS proxy saw returned for that name, so the
+DNS rule has to stay on — the render fails rather than leaving an FQDN rule that silently matches
+nothing. `enableDefaultDeny` is stated rather than implied, which is what makes the intentional
+default-deny case (policies enabled, rule lists empty) actually deny.
+
+When the chart is exposed through a Gateway, the policy admits the Gateway's data plane by
+deriving the peer from `gateway.parentRefs` — `gateway.networking.k8s.io/gateway-name`, the label
+Cilium, Envoy Gateway, Istio and NGINX Gateway Fabric all put on the pods they provision. Naming
+the Gateway a second time under `networkPolicy` would be a second place to edit on a rename, and a
+policy pointing at the wrong Gateway looks correct and blocks everything.
 
 {{ template "chart.valuesSection" . }}
 

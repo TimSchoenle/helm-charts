@@ -1,0 +1,40 @@
+# Gateway API exposure.
+#
+# Named without the `-values` suffix on purpose: `ct` globs `ci/*-values.yaml` for `ct install`,
+# while the render and kubeconform scripts glob `ci/*.yaml`. The kind cluster CI installs into
+# has no Gateway API CRDs, so an install would fail; this keeps render, schema-validation and
+# policy-scan coverage without asking chart-testing to install something that cannot work.
+
+ingress:
+  enabled: false
+
+gateway:
+  enabled: true
+  create: true
+  gatewayClassName: cilium
+  hostnames:
+    - portfolio.example.com
+  tls:
+    enabled: true
+    certificateRefs:
+      - name: portfolio-tls
+  httpsRedirect:
+    enabled: true
+  timeouts:
+    request: 30s
+  filters:
+    - type: ResponseHeaderModifier
+      responseHeaderModifier:
+        set:
+          - name: X-Content-Type-Options
+            value: nosniff
+  infrastructure:
+    annotations:
+      io.cilium/lb-ipam-ips: 203.0.113.10
+
+networkPolicy:
+  enabled: true
+  ingress:
+    enabled: true
+  egress:
+    enabled: true

@@ -74,3 +74,36 @@ networking.k8s.io/v1
 extensions/v1beta1
 {{- end -}}
 {{- end -}}
+
+{{/*
+Return the appropriate apiVersion for the Gateway API kinds.
+
+Unlike every helper above, this one cannot branch on the Kubernetes version: Gateway API ships
+as CRDs on its own release train, so a 1.34 cluster may have v1, v1beta1 or nothing at all.
+The only honest source is the registered API surface.
+
+The fallback is the GA version rather than an error. Callers that actually create an object
+must gate on `common.gateway.validate` first, which refuses the render when neither version is
+registered; this helper is also read by error messages, which have to name a version even in
+the case where none exists.
+*/}}
+{{- define "common.capabilities.gateway.apiVersion" -}}
+{{- if include "common.capabilities.apiVersions.has" (dict "ctx" . "api" "gateway.networking.k8s.io/v1") -}}
+gateway.networking.k8s.io/v1
+{{- else if include "common.capabilities.apiVersions.has" (dict "ctx" . "api" "gateway.networking.k8s.io/v1beta1") -}}
+gateway.networking.k8s.io/v1beta1
+{{- else -}}
+gateway.networking.k8s.io/v1
+{{- end -}}
+{{- end -}}
+
+{{/*
+Return the appropriate apiVersion for the Cilium policy CRDs.
+
+`cilium.io/v2` is the only version CiliumNetworkPolicy has ever been served under, so this is a
+constant. It exists as a helper for the same reason `common.prometheus.apiVersion` does: the
+guard, the render and the error messages must all name the same string.
+*/}}
+{{- define "common.capabilities.cilium.apiVersion" -}}
+cilium.io/v2
+{{- end -}}

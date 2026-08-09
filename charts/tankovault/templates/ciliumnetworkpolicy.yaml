@@ -1,0 +1,147 @@
+{{- /*
+The same policy graph as `networkpolicy.yaml`, in Cilium's dialect.
+
+Both files render `tankovault.netpol.plan` and neither derives anything itself, so the two engines
+cannot describe different graphs. What differs is only what each dialect is able to say.
+
+One object per workload rather than the library's ingress/egress pair: every workload here has
+rules in both directions, so `enableDefaultDeny` is true for both and there is no risk of one
+half's policy silently denying the other half's traffic — the reason `common.ciliumNetworkPolicy`
+splits.
+
+What Cilium adds over the portable rendering
+---------------------------------------------
+The internet rules are the interesting case. `worker` scrapes provider sites, `sync` talks to
+AniList, `notifier` reaches SMTP and webhook endpoints — real egress needs that the portable API
+can only express as `0.0.0.0/0` minus RFC1918 and the metadata endpoint. That permits every public
+host that exists. `networkPolicy.cilium.egress.toFQDNs` replaces it with the hosts those tiers
+actually talk to, which is the rule that was meant all along.
+
+The substitution is deliberate rather than automatic: with `toFQDNs` set, the CIDR rule is
+dropped for every service that would have carried it. Emitting both would leave the broad rule in
+place and make the narrow one decorative.
+*/ -}}
+{{- if .Values.networkPolicy.enabled }}
+{{- if has (.Values.networkPolicy.engine | default "kubernetes") (list "cilium" "both") }}
+{{- $cilium := .Values.networkPolicy.cilium | default dict }}
+{{- $ciliumEgress := $cilium.egress | default dict }}
+{{- range $policy := include "tankovault.netpol.plan" . | fromYamlArray }}
+---
+apiVersion: {{ include "common.capabilities.cilium.apiVersion" $ }}
+kind: CiliumNetworkPolicy
+metadata:
+  name: {{ $policy.name }}
+  namespace: {{ include "common.namespace" $ }}
+  labels:
+    {{- include "common.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $policy.component }}
+spec:
+  {{- with $cilium.description }}
+  description: {{ . | quote }}
+  {{- end }}
+  endpointSelector:
+    matchLabels:
+      {{- toYaml $policy.selector | nindent 6 }}
+  enableDefaultDeny:
+    ingress: true
+    egress: true
+  ingress:
+    {{- range $rule := $policy.ingress }}
+    - fromEndpoints:
+        - matchLabels:
+            {{- if $rule.namespace }}
+            {{- include "common.cilium.namespaceLabels" $rule.namespace | nindent 12 }}
+            {{- else }}
+            {{- include "common.cilium.namespaceLabels" (dict "kubernetes.io/metadata.name" (include "common.namespace" $)) | nindent 12 }}
+            {{- end }}
+            {{- with $rule.selector }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+      toPorts:
+        - ports:
+            - port: {{ $rule.port | quote }}
+              protocol: TCP
+    {{- end }}
+    {{- with ($cilium.ingress | default dict).fromEntities }}
+    - fromEntities:
+        {{- toYaml . | nindent 8 }}
+    {{- end }}
+    {{- with $cilium.extraIngress }}
+    {{- include "common.tplvalues.render" (dict "value" . "context" $) | nindent 4 }}
+    {{- end }}
+  egress:
+    {{- range $rule := $policy.egress }}
+    {{- if $rule.dns }}
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+          {{- /*
+            Allowing UDP/53 lets a pod resolve; the L7 DNS rule is what lets Cilium observe the
+            answer, and an FQDN rule is enforced against exactly the addresses the proxy saw
+            returned. Without this every `toFQDNs` entry below matches nothing.
+          */}}
+          rules:
+            dns:
+              {{- toYaml ($ciliumEgress.dnsMatchPatterns | default (list (dict "matchPattern" "*"))) | nindent 14 }}
+    {{- else if $rule.internet }}
+    {{- if $ciliumEgress.toFQDNs }}
+    - toFQDNs:
+        {{- toYaml $ciliumEgress.toFQDNs | nindent 8 }}
+      toPorts:
+        - ports:
+            {{- include "common.cilium.ports" ($ciliumEgress.fqdnPorts | default (list (dict "port" 443 "protocol" "TCP"))) | nindent 12 }}
+          {{- with $ciliumEgress.httpRules }}
+          rules:
+            http:
+              {{- toYaml . | nindent 14 }}
+          {{- end }}
+    {{- else }}
+    - toCIDRSet:
+        {{- range $cidr := $.Values.networkPolicy.internetCidrs }}
+        - cidr: {{ $cidr }}
+          except:
+            - 10.0.0.0/8
+            - 172.16.0.0/12
+            - 192.168.0.0/16
+            - 169.254.0.0/16
+        {{- end }}
+    {{- end }}
+    {{- else }}
+    - toEndpoints:
+        - matchLabels:
+            {{- if $rule.namespace }}
+            {{- include "common.cilium.namespaceLabels" $rule.namespace | nindent 12 }}
+            {{- else }}
+            {{- include "common.cilium.namespaceLabels" (dict "kubernetes.io/metadata.name" (include "common.namespace" $)) | nindent 12 }}
+            {{- end }}
+            {{- with $rule.selector }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+      toPorts:
+        - ports:
+            - port: {{ $rule.port | quote }}
+              protocol: TCP
+    {{- end }}
+    {{- end }}
+    {{- with $ciliumEgress.toEntities }}
+    - toEntities:
+        {{- toYaml . | nindent 8 }}
+      {{- with $ciliumEgress.entityPorts }}
+      toPorts:
+        - ports:
+            {{- include "common.cilium.ports" . | nindent 12 }}
+      {{- end }}
+    {{- end }}
+    {{- with $cilium.extraEgress }}
+    {{- include "common.tplvalues.render" (dict "value" . "context" $) | nindent 4 }}
+    {{- end }}
+{{- end }}
+{{- end }}
+{{- end }}

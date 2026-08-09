@@ -1,0 +1,50 @@
+# CiliumNetworkPolicy exposure.
+#
+# Named without the `-values` suffix on purpose: `ct` globs `ci/*-values.yaml` for `ct install`,
+# while the render and kubeconform scripts glob `ci/*.yaml`. The kind cluster CI installs into
+# runs no Cilium and has no `cilium.io/v2` CRDs, so an install would fail; this keeps render,
+# schema-validation and policy-scan coverage without asking chart-testing to install it.
+
+webhook:
+  targetBase: "https://test.google.com"
+  paths:
+    "/api/webhook/.*":
+      - ALL
+
+cloudflare:
+  clientId: "testId"
+  clientSecret: "testSecret"
+
+gateway:
+  enabled: true
+  parentRefs:
+    - name: shared-gateway
+      namespace: gateway-system
+  hostnames:
+    - hooks.example.com
+
+networkPolicy:
+  enabled: true
+  engine: both
+  ingress:
+    enabled: true
+  egress:
+    enabled: true
+    https:
+      enabled: false
+  cilium:
+    description: "cloudflare-access-webhook-redirect: only the shared gateway reaches it, and it only reaches named hosts"
+    ingress:
+      fromEntities:
+        - cluster
+    egress:
+      toFQDNs:
+        - matchName: api.example.com
+        - matchPattern: "*.cdn.example.com"
+      fqdnPorts:
+        - port: 443
+          protocol: TCP
+      dnsMatchPatterns:
+        - matchPattern: "*.example.com"
+      toEntities:
+        - kube-apiserver

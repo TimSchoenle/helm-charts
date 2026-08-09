@@ -1,0 +1,99 @@
+{{- /*
+The Gateway API counterpart of `templates/ingress.yaml`, publishing exactly what that publishes
+and for the same reason: the frontend serves the SPA and reverse-proxies `/v1/*` to the API, so
+one origin covers the whole application and the SPA's API calls, its SSE stream, its session
+cookies and its passkey origin all resolve without a cross-origin hop.
+
+Written out rather than delegated to `common.gateway.routes`, which builds one route to one
+Service. Two hostnames with two different backends is not that shape — but the parts that *are*
+generic (parent reference normalisation, the created Gateway, the HTTPS redirect) come from the
+library, so the two charts cannot drift on what a `parentRef` means.
+
+Validation lives in `tankovault.validateValues` rather than here, so a bad gateway configuration
+is reported alongside every other problem in one message instead of one `helm template` run per
+mistake — the same reason every other check in this chart is there.
+*/ -}}
+{{- $gateway := .Values.gateway -}}
+{{- if or $gateway.enabled $gateway.api.enabled -}}
+{{- $parentRefs := include "common.gateway.parentRefs" (dict "ctx" . "values" $gateway) -}}
+{{- if $gateway.create }}
+{{ include "common.gateway.gateway" (dict "ctx" . "values" $gateway) }}
+{{- end }}
+{{- if $gateway.enabled }}
+{{- $host := required "gateway.host is required when gateway.enabled is true" $gateway.host }}
+---
+apiVersion: {{ include "common.capabilities.gateway.apiVersion" . }}
+kind: HTTPRoute
+metadata:
+  name: {{ include "common.fullname" . }}
+  namespace: {{ include "common.namespace" . }}
+  labels:
+    {{- include "common.labels" . | nindent 4 }}
+  {{- with (include "common.tplvalues.merge" (dict "values" (list $gateway.annotations .Values.commonAnnotations) "context" $)) }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
+spec:
+  parentRefs:
+    {{- $parentRefs | nindent 4 }}
+  hostnames:
+    - {{ tpl $host . | quote }}
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: {{ $gateway.path }}
+      {{- with $gateway.filters }}
+      filters:
+        {{- include "common.tplvalues.render" (dict "value" . "context" $) | nindent 8 }}
+      {{- end }}
+      {{- with $gateway.timeouts }}
+      timeouts:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      backendRefs:
+        - name: {{ include "tankovault.fullname" (dict "ctx" . "service" "frontend") }}
+          port: 3000
+{{- if $gateway.httpsRedirect.enabled }}
+---
+{{ include "common.gateway.httpsRedirect" (dict "ctx" . "values" (merge (dict "hostnames" (list $host)) (deepCopy $gateway))) }}
+{{- end }}
+{{- end }}
+{{- if $gateway.api.enabled }}
+{{- $apiHost := required "gateway.api.host is required when gateway.api.enabled is true" $gateway.api.host }}
+---
+apiVersion: {{ include "common.capabilities.gateway.apiVersion" . }}
+kind: HTTPRoute
+metadata:
+  name: {{ include "common.fullname.suffixed" (dict "ctx" . "suffix" "api") }}
+  namespace: {{ include "common.namespace" . }}
+  labels:
+    {{- include "common.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+  {{- with (include "common.tplvalues.merge" (dict "values" (list $gateway.api.annotations .Values.commonAnnotations) "context" $)) }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
+spec:
+  parentRefs:
+    {{- $parentRefs | nindent 4 }}
+  hostnames:
+    - {{ tpl $apiHost . | quote }}
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      {{- with $gateway.api.filters }}
+      filters:
+        {{- include "common.tplvalues.render" (dict "value" . "context" $) | nindent 8 }}
+      {{- end }}
+      {{- with $gateway.api.timeouts }}
+      timeouts:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      backendRefs:
+        - name: {{ include "tankovault.fullname" (dict "ctx" . "service" "api") }}
+          port: 8080
+{{- end }}
+{{- end }}

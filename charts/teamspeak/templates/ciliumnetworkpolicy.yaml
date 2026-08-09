@@ -1,0 +1,214 @@
+{{- /*
+The same rules as `networkpolicy.yaml`, in Cilium's dialect.
+
+Where this chart gains the most
+-------------------------------
+The licensing rule. `accounting.teamspeak.com` on TCP 2008 is not optional — the server checks
+its licence there on startup and periodically afterwards, and takes the virtual server offline
+when it cannot reach it — and the hostname's address changes over time, which is exactly why the
+portable policy has to scope that rule to the whole public internet. A voice server that may
+reach every host on earth on 2008 is not what anybody meant; it is the narrowest thing
+`networking.k8s.io/v1` can say.
+
+Cilium can say the real rule, and `networkPolicy.cilium.egress.accountingFQDNs` is where it goes.
+It ships empty rather than pre-filled: an FQDN that turns out to be wrong does not fail loudly,
+it silently takes the virtual server offline the next time the licence is checked, so the
+hostname is the operator's to state. The same applies to the public server list.
+
+Written out rather than delegated to `common.ciliumNetworkPolicy` for the same reason
+`networkpolicy.yaml` is: a voice server accepting UDP from the internet on a port taken from
+values is not the library's value shape.
+*/ -}}
+{{- if .Values.networkPolicy.enabled -}}
+{{- if has (.Values.networkPolicy.engine | default "kubernetes") (list "cilium" "both") -}}
+{{- $ingress := .Values.networkPolicy.ingress -}}
+{{- $egress := .Values.networkPolicy.egress -}}
+{{- $cilium := .Values.networkPolicy.cilium | default dict -}}
+{{- $ciliumIngress := $cilium.ingress | default dict -}}
+{{- $ciliumEgress := $cilium.egress | default dict -}}
+{{- $cidrSet := list (dict "cidr" ($egress.cidr | default "0.0.0.0/0") "except" ($egress.except | default list)) -}}
+{{- /*
+  Peer for the external-database egress rule. An omitted selector has to become "every endpoint
+  in this namespace" and never "every namespace", so the namespace label is always present.
+*/ -}}
+{{- $databaseLabels := dict -}}
+{{- if $egress.database.namespaceSelector -}}
+{{- $databaseLabels = include "common.cilium.namespaceLabels" $egress.database.namespaceSelector | fromYaml -}}
+{{- else -}}
+{{- $databaseLabels = include "common.cilium.namespaceLabels" (dict "kubernetes.io/metadata.name" (include "common.namespace" .)) | fromYaml -}}
+{{- end -}}
+{{- $databaseLabels = merge $databaseLabels (deepCopy ($egress.database.podSelector | default dict)) -}}
+apiVersion: {{ include "common.capabilities.cilium.apiVersion" . }}
+kind: CiliumNetworkPolicy
+metadata:
+  {{- include "common.cilium.metadata" (dict "ctx" . "suffix" "ingress") | nindent 2 }}
+spec:
+  {{- with $cilium.description }}
+  description: {{ . | quote }}
+  {{- end }}
+  endpointSelector:
+    matchLabels:
+      {{- include "common.selectorLabels" . | nindent 6 }}
+  enableDefaultDeny:
+    ingress: {{ include "common.cilium.enableDefaultDeny" . }}
+    egress: false
+  ingress:
+    {{- if $ingress.enabled }}
+    {{- if and $ingress.clients.enabled $ingress.clients.cidrs }}
+    - fromCIDR:
+        {{- toYaml $ingress.clients.cidrs | nindent 8 }}
+      toPorts:
+        - ports:
+            - port: {{ $.Values.server.voicePort | toString | quote }}
+              protocol: UDP
+            - port: {{ $.Values.server.fileTransferPort | toString | quote }}
+              protocol: TCP
+    {{- end }}
+    {{- if and $ingress.query.enabled $ingress.query.cidrs }}
+    - fromCIDR:
+        {{- toYaml $ingress.query.cidrs | nindent 8 }}
+      toPorts:
+        - ports:
+            - port: {{ $.Values.server.queryPort | toString | quote }}
+              protocol: TCP
+            {{- if include "teamspeak.sshQueryEnabled" $ }}
+            - port: {{ $.Values.server.querySshPort | toString | quote }}
+              protocol: TCP
+            {{- end }}
+    {{- end }}
+    {{- if and $ingress.monitoring.enabled $.Values.metrics.enabled }}
+    - fromEndpoints:
+        - matchLabels:
+            {{- include "common.cilium.namespaceLabels" ($ingress.monitoring.namespaceSelector | default (dict "kubernetes.io/metadata.name" $ingress.monitoring.namespace)) | nindent 12 }}
+      toPorts:
+        - ports:
+            - port: {{ $.Values.metrics.port | toString | quote }}
+              protocol: TCP
+    {{- end }}
+    {{- with $ciliumIngress.customRules }}
+    {{- include "common.tplvalues.render" (dict "value" . "context" $) | nindent 4 }}
+    {{- end }}
+    {{- end }}
+    {{- with $ciliumIngress.fromEntities }}
+    - fromEntities:
+        {{- toYaml . | nindent 8 }}
+    {{- end }}
+    {{- with $cilium.extraIngress }}
+    {{- include "common.tplvalues.render" (dict "value" . "context" $) | nindent 4 }}
+    {{- end }}
+---
+apiVersion: {{ include "common.capabilities.cilium.apiVersion" . }}
+kind: CiliumNetworkPolicy
+metadata:
+  {{- include "common.cilium.metadata" (dict "ctx" . "suffix" "egress") | nindent 2 }}
+spec:
+  {{- with $cilium.description }}
+  description: {{ . | quote }}
+  {{- end }}
+  endpointSelector:
+    matchLabels:
+      {{- include "common.selectorLabels" . | nindent 6 }}
+  enableDefaultDeny:
+    ingress: false
+    egress: {{ include "common.cilium.enableDefaultDeny" . }}
+  egress:
+    {{- if $egress.enabled }}
+    {{- if $egress.dns.enabled }}
+    - toEndpoints:
+        - matchLabels:
+            {{- include "common.cilium.namespaceLabels" ($egress.dns.namespaceSelector | default (dict "kubernetes.io/metadata.name" "kube-system")) | nindent 12 }}
+            {{- toYaml ($egress.dns.podSelector | default (dict "k8s-app" "kube-dns")) | nindent 12 }}
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+          {{- /*
+            Allowing UDP/53 lets the server resolve; this is what lets Cilium observe the answer,
+            and an FQDN rule is enforced against exactly the addresses the proxy saw returned.
+            Without it every FQDN rule below matches nothing — and for the accounting rule that
+            means the virtual server goes offline.
+          */}}
+          rules:
+            dns:
+              {{- toYaml ($ciliumEgress.dnsMatchPatterns | default (list (dict "matchPattern" "*"))) | nindent 14 }}
+    {{- end }}
+    {{- if $egress.accounting.enabled }}
+    {{- if $ciliumEgress.accountingFQDNs }}
+    - toFQDNs:
+        {{- toYaml $ciliumEgress.accountingFQDNs | nindent 8 }}
+      toPorts:
+        - ports:
+            - port: {{ $egress.accounting.port | toString | quote }}
+              protocol: TCP
+    {{- else }}
+    - toCIDRSet:
+        {{- toYaml $cidrSet | nindent 8 }}
+      toPorts:
+        - ports:
+            - port: {{ $egress.accounting.port | toString | quote }}
+              protocol: TCP
+    {{- end }}
+    {{- end }}
+    {{- if $egress.weblist.enabled }}
+    {{- if $ciliumEgress.weblistFQDNs }}
+    - toFQDNs:
+        {{- toYaml $ciliumEgress.weblistFQDNs | nindent 8 }}
+      toPorts:
+        - ports:
+            - port: {{ $egress.weblist.port | toString | quote }}
+              protocol: UDP
+    {{- else }}
+    - toCIDRSet:
+        {{- toYaml $cidrSet | nindent 8 }}
+      toPorts:
+        - ports:
+            - port: {{ $egress.weblist.port | toString | quote }}
+              protocol: UDP
+    {{- end }}
+    {{- end }}
+    {{- if $egress.https.enabled }}
+    {{- if $ciliumEgress.httpsFQDNs }}
+    - toFQDNs:
+        {{- toYaml $ciliumEgress.httpsFQDNs | nindent 8 }}
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+    {{- else }}
+    - toCIDRSet:
+        {{- toYaml $cidrSet | nindent 8 }}
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+    {{- end }}
+    {{- end }}
+    {{- if and $egress.database.enabled (include "teamspeak.usesExternalDatabase" .) }}
+    - toEndpoints:
+        - matchLabels:
+            {{- toYaml $databaseLabels | nindent 12 }}
+      toPorts:
+        - ports:
+            - port: {{ .Values.database.port | toString | quote }}
+              protocol: TCP
+    {{- end }}
+    {{- with $ciliumEgress.customRules }}
+    {{- include "common.tplvalues.render" (dict "value" . "context" $) | nindent 4 }}
+    {{- end }}
+    {{- end }}
+    {{- with $ciliumEgress.toEntities }}
+    - toEntities:
+        {{- toYaml . | nindent 8 }}
+      {{- with $ciliumEgress.entityPorts }}
+      toPorts:
+        - ports:
+            {{- include "common.cilium.ports" . | nindent 12 }}
+      {{- end }}
+    {{- end }}
+    {{- with $cilium.extraEgress }}
+    {{- include "common.tplvalues.render" (dict "value" . "context" $) | nindent 4 }}
+    {{- end }}
+{{- end -}}
+{{- end -}}

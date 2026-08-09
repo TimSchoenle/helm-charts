@@ -60,8 +60,41 @@ extraVolumeMounts: []
 
 containerPort: 8080
 
+service:
+  port: 8080
+
+gateway:
+  enabled: false
+  create: false
+  gatewayClassName: ""
+  parentRefs: []
+  hostnames: []
+  path: /
+  rules: []
+  backendRefs: []
+  filters: []
+  timeouts: {}
+  httpsRedirect:
+    enabled: false
+    sectionName: ""
+    statusCode: 301
+    port: null
+  tls:
+    enabled: false
+    mode: Terminate
+    certificateRefs: []
+    options: {}
+  listeners: []
+  httpPort: 80
+  httpsPort: 443
+  addresses: []
+  allowedRoutes: {}
+  infrastructure: {}
+  annotations: {}
+
 networkPolicy:
   enabled: false
+  engine: kubernetes
   ingress:
     enabled: true
     monitoring:
@@ -74,6 +107,11 @@ networkPolicy:
       namespace: traefik
       selector:
         app.kubernetes.io/name: traefik
+      ports: []
+    gateway:
+      enabled: true
+      namespace: ""
+      selector: {}
       ports: []
     customRules: []
   egress:
@@ -97,6 +135,22 @@ networkPolicy:
     customRules: []
   extraIngress: []
   extraEgress: []
+  cilium:
+    description: ""
+    enableDefaultDeny: true
+    ingress:
+      fromEntities: []
+      customRules: []
+    egress:
+      toFQDNs: []
+      fqdnPorts: []
+      httpRules: []
+      toEntities: []
+      entityPorts: []
+      dnsMatchPatterns: []
+      customRules: []
+    extraIngress: []
+    extraEgress: []
 
 prometheusRule:
   enabled: false

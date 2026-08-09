@@ -146,6 +146,227 @@
           "title": "fullnameOverride",
           "type": "string"
         },
+        "gateway": {
+          "additionalProperties": true,
+          "description": "Gateway API configuration, consumed by `common.gateway.*`. The successor to `ingress`, and\nan independent switch from it: a cluster migrating between an Ingress controller and a Gateway\nimplementation runs both for a while.\n\nThe division of labour is the API's, not this chart's. A `Gateway` — the listeners, the\naddress, the certificates — belongs to the cluster operator; an application owns only the\n`HTTPRoute` that attaches to it. So the default here is route-only, and `create` is for\ninstalls that have no cluster-wide Gateway to attach to.",
+          "properties": {
+            "addresses": {
+              "description": "Addresses requested for the created Gateway, e.g. a fixed `IPAddress`.",
+              "items": {
+                "required": []
+              },
+              "required": [],
+              "title": "addresses",
+              "type": "array"
+            },
+            "allowedRoutes": {
+              "additionalProperties": true,
+              "description": "Which routes may attach to the created Gateway's listeners. Defaults to `Same`: a Gateway\nthis chart owns should not be attachable from another namespace unless that is asked for.",
+              "required": [],
+              "title": "allowedRoutes",
+              "type": "object"
+            },
+            "annotations": {
+              "additionalProperties": true,
+              "description": "Annotations for the HTTPRoute and the created Gateway. Values may contain Go templates.",
+              "required": [],
+              "title": "annotations",
+              "type": "object"
+            },
+            "backendRefs": {
+              "description": "Backends for rules that name none. Defaults to this chart's own Service. Weights are\nhonoured, so a traffic split needs no custom rule.",
+              "items": {
+                "required": []
+              },
+              "required": [],
+              "title": "backendRefs",
+              "type": "array"
+            },
+            "create": {
+              "default": false,
+              "description": "Also create the Gateway itself. Leave off when the cluster already runs one — that is the\nnormal case, and one Gateway per application usually means one load balancer per\napplication. When on, a route that names no parent attaches to it automatically.",
+              "required": [],
+              "title": "create",
+              "type": "boolean"
+            },
+            "enabled": {
+              "default": false,
+              "description": "Create the HTTPRoute. Requires the `gateway.networking.k8s.io` CRDs;\n`common.gateway.validate` fails the render loudly rather than silently dropping the route\nwhen they are absent.",
+              "required": [],
+              "title": "enabled",
+              "type": "boolean"
+            },
+            "filters": {
+              "description": "Filters applied to the default rule: `RequestHeaderModifier`, `ResponseHeaderModifier`,\n`RequestRedirect`, `URLRewrite`, `RequestMirror`, `ExtensionRef`. This is where an\nIngress controller's annotations end up, as typed fields. Ignored when `rules` is set.",
+              "items": {
+                "required": []
+              },
+              "required": [],
+              "title": "filters",
+              "type": "array"
+            },
+            "gatewayClassName": {
+              "default": "",
+              "description": "GatewayClass that programs the created Gateway, e.g. `cilium`, `istio`, `envoy-gateway`,\n`nginx`. Required by `create`; a Gateway without one is never reconciled. Ignored otherwise.",
+              "required": [],
+              "title": "gatewayClassName",
+              "type": "string"
+            },
+            "hostnames": {
+              "description": "Hostnames the route serves. Values may contain Go templates.\n\nRequired unless `create` is set. A route with no hostnames matches every name its listener\naccepts: on a Gateway this chart owns that is harmless, and sometimes the point — an install\nreached by address has no DNS name to state. On a shared Gateway it means taking over traffic\nmeant for other applications, so the render refuses it.",
+              "items": {
+                "required": []
+              },
+              "required": [],
+              "title": "hostnames",
+              "type": "array"
+            },
+            "httpPort": {
+              "default": 80,
+              "description": "Port for the derived HTTP listener.",
+              "required": [],
+              "title": "httpPort",
+              "type": "integer"
+            },
+            "httpsPort": {
+              "default": 443,
+              "description": "Port for the derived HTTPS listener.",
+              "required": [],
+              "title": "httpsPort",
+              "type": "integer"
+            },
+            "httpsRedirect": {
+              "additionalProperties": true,
+              "description": "A second route that redirects plaintext traffic to HTTPS. Under Ingress this was a\ncontroller-specific annotation; Gateway API expresses it as a typed `RequestRedirect`\nfilter, which means it has to be a real object.",
+              "properties": {
+                "enabled": {
+                  "default": false,
+                  "description": "Create the redirect route.",
+                  "required": [],
+                  "title": "enabled",
+                  "type": "boolean"
+                },
+                "port": {
+                  "default": "null",
+                  "description": "Port to redirect to. Left unset, the scheme implies it.",
+                  "required": [],
+                  "title": "port",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "sectionName": {
+                  "default": "",
+                  "description": "Listener to bind the redirect to. Must be the plaintext one: attached to every listener,\nthe redirect would also apply to the HTTPS listener and loop forever. Defaults to `http`,\nthe name of the listener `create` renders.",
+                  "required": [],
+                  "title": "sectionName",
+                  "type": "string"
+                },
+                "statusCode": {
+                  "default": 301,
+                  "description": "Redirect status code. `301` or `302`.",
+                  "required": [],
+                  "title": "statusCode",
+                  "type": "integer"
+                }
+              },
+              "required": [],
+              "title": "httpsRedirect"
+            },
+            "infrastructure": {
+              "additionalProperties": true,
+              "description": "`infrastructure.labels` / `infrastructure.annotations` for the created Gateway, passed\nthrough to the load balancer the implementation provisions. Where Cilium's LB-IPAM\nannotations go.",
+              "required": [],
+              "title": "infrastructure",
+              "type": "object"
+            },
+            "listeners": {
+              "description": "Listeners for the created Gateway, replacing the derived ones entirely. Reach for this\nwhen a listener needs its own hostname or certificate.",
+              "items": {
+                "required": []
+              },
+              "required": [],
+              "title": "listeners",
+              "type": "array"
+            },
+            "parentRefs": {
+              "description": "Gateways the route attaches to. Each entry takes `name` and optionally `namespace`,\n`sectionName` (a single listener), `port`, `group` and `kind`; the API's defaults are filled\nin. Values may contain Go templates.\n\nA route that names no parent is accepted by the API server and then does nothing — no\nlistener ever programs it — so this is required unless `create` is set.\nExample:\n```yaml\nparentRefs:\n  - name: shared-gateway\n    namespace: gateway-system\n    sectionName: https\n```",
+              "items": {
+                "required": []
+              },
+              "required": [],
+              "title": "parentRefs",
+              "type": "array"
+            },
+            "path": {
+              "default": "/",
+              "description": "Path prefix for the default rule. Ignored when `rules` is set.",
+              "required": [],
+              "title": "path",
+              "type": "string"
+            },
+            "rules": {
+              "description": "Routing rules, in full `HTTPRouteRule` form (`matches`, `filters`, `backendRefs`,\n`timeouts`). An entry that omits `backendRefs` inherits this chart's Service, so a rule that\nonly narrows the path does not have to restate where the traffic goes.\n\nLeft empty, the route gets one rule matching `path` as a prefix — the Gateway API equivalent\nof a single-path Ingress, and a complete configuration together with `hostnames`.",
+              "items": {
+                "required": []
+              },
+              "required": [],
+              "title": "rules",
+              "type": "array"
+            },
+            "timeouts": {
+              "additionalProperties": true,
+              "description": "Timeouts for the default rule: `request` and `backendRequest`, as Go durations. Ignored\nwhen `rules` is set.",
+              "required": [],
+              "title": "timeouts",
+              "type": "object"
+            },
+            "tls": {
+              "additionalProperties": true,
+              "description": "TLS for the created Gateway's HTTPS listener. Ignored without `create`, and irrelevant\nwhen attaching to somebody else's Gateway — the certificate is theirs.",
+              "properties": {
+                "certificateRefs": {
+                  "description": "Secrets holding the certificate. Required by `Terminate`: unlike an Ingress there is no\nconvention by which one is looked up from the hostname. A ref naming another namespace\nadditionally needs a `ReferenceGrant` there, which this chart deliberately does not create\n— a grant is the target namespace owner's to give.",
+                  "items": {
+                    "required": []
+                  },
+                  "required": [],
+                  "title": "certificateRefs",
+                  "type": "array"
+                },
+                "enabled": {
+                  "default": false,
+                  "description": "Add an HTTPS listener.",
+                  "required": [],
+                  "title": "enabled",
+                  "type": "boolean"
+                },
+                "mode": {
+                  "default": "Terminate",
+                  "description": "TLS mode.",
+                  "enum": [
+                    "Terminate",
+                    "Passthrough"
+                  ],
+                  "required": [],
+                  "title": "mode"
+                },
+                "options": {
+                  "additionalProperties": true,
+                  "description": "Implementation-specific TLS options.",
+                  "required": [],
+                  "title": "options",
+                  "type": "object"
+                }
+              },
+              "required": [],
+              "title": "tls"
+            }
+          },
+          "required": [],
+          "title": "gateway"
+        },
         "global": {
           "description": "Global values are values that can be accessed from any chart or subchart by exactly the same name.",
           "required": [],
@@ -338,6 +559,147 @@
           "additionalProperties": true,
           "description": "Network policy configuration.\n\nEvery generated egress rule is scoped by a `to:` selector. An egress rule that lists only\nports is not a restriction — the NetworkPolicy API reads a missing `to` as \"any\ndestination\", so such a policy permits traffic to every in-cluster service and to the\ncloud metadata endpoint.",
           "properties": {
+            "cilium": {
+              "additionalProperties": true,
+              "description": "Cilium-only additions, used when `engine` is `cilium` or `both`. Everything above is\ntranslated into the CiliumNetworkPolicy automatically; these are the rules the portable API\nhas no way to express.\n\nNote that `extraIngress`, `extraEgress` and the per-section `customRules` above are *not*\ncarried over: those are verbatim `networking.k8s.io/v1` rule objects and are not valid CNP.\nThe fields below are their counterparts.",
+              "properties": {
+                "description": {
+                  "default": "",
+                  "description": "`spec.description`, which Cilium surfaces in `cilium policy get` and in Hubble flow\nverdicts. The one place to record *why* a rule exists where an operator debugging a drop\nwill actually see it.",
+                  "required": [],
+                  "title": "description",
+                  "type": "string"
+                },
+                "egress": {
+                  "additionalProperties": true,
+                  "description": "Cilium-only egress rules.",
+                  "properties": {
+                    "customRules": {
+                      "description": "Additional egress rules in CiliumNetworkPolicy form, appended verbatim.",
+                      "items": {
+                        "required": []
+                      },
+                      "required": [],
+                      "title": "customRules",
+                      "type": "array"
+                    },
+                    "dnsMatchPatterns": {
+                      "description": "What the DNS proxy may resolve, e.g. `- matchPattern: \"*.example.com\"`. Defaults to\neverything, which only permits the lookup — an answer is still only reachable if some\nrule allows the address.",
+                      "items": {
+                        "required": []
+                      },
+                      "required": [],
+                      "title": "dnsMatchPatterns",
+                      "type": "array"
+                    },
+                    "entityPorts": {
+                      "description": "Restrict the `toEntities` rule to specific ports. Empty means all ports.",
+                      "items": {
+                        "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyPort",
+                        "required": []
+                      },
+                      "required": [],
+                      "title": "entityPorts",
+                      "type": "array"
+                    },
+                    "fqdnPorts": {
+                      "description": "Ports the `toFQDNs` rule allows. Defaults to TCP/443.",
+                      "items": {
+                        "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyPort",
+                        "required": []
+                      },
+                      "required": [],
+                      "title": "fqdnPorts",
+                      "type": "array"
+                    },
+                    "httpRules": {
+                      "description": "L7 HTTP rules layered onto the `toFQDNs` rule, e.g.\n`- method: GET` / `path: \"/v1/.*\"`. Turns \"may reach this host\" into \"may make these\nrequests to this host\". Costs a proxy hop per connection.",
+                      "items": {
+                        "required": []
+                      },
+                      "required": [],
+                      "title": "httpRules",
+                      "type": "array"
+                    },
+                    "toEntities": {
+                      "description": "Named destination sets, e.g. `world` for everything outside the cluster, or\n`kube-apiserver`. Not a synonym for the `egress.cidr`/`except` translation: `world` does\nnot carve out the cloud metadata endpoint the way those defaults do.",
+                      "items": {
+                        "required": [],
+                        "type": "string"
+                      },
+                      "required": [],
+                      "title": "toEntities",
+                      "type": "array"
+                    },
+                    "toFQDNs": {
+                      "description": "Destinations by name rather than by address, e.g. `- matchName: api.example.com` or\n`- matchPattern: \"*.example.com\"`. This is the rule the CIDR-based `egress.https` was\nalways a poor approximation of: \"may reach the internet on 443\" permits every public host\nthat exists, where this permits the ones the application actually talks to.\n\nEnforced against the addresses Cilium's DNS proxy saw returned for the name, so\n`egress.dns.enabled` must stay on — the render fails if it is not.",
+                      "items": {
+                        "required": []
+                      },
+                      "required": [],
+                      "title": "toFQDNs",
+                      "type": "array"
+                    }
+                  },
+                  "required": [],
+                  "title": "egress"
+                },
+                "enableDefaultDeny": {
+                  "default": true,
+                  "description": "State default-deny explicitly rather than relying on it being implied by the presence of\nrules. This is what makes the intentional default-deny case — a policy with an empty rule\nlist — actually deny, instead of being treated as no policy at all. Requires Cilium 1.16+.",
+                  "required": [],
+                  "title": "enableDefaultDeny",
+                  "type": "boolean"
+                },
+                "extraEgress": {
+                  "description": "Extra egress rules in CiliumNetworkPolicy form, appended regardless of `egress.enabled`.",
+                  "items": {
+                    "required": []
+                  },
+                  "required": [],
+                  "title": "extraEgress",
+                  "type": "array"
+                },
+                "extraIngress": {
+                  "description": "Extra ingress rules in CiliumNetworkPolicy form, appended regardless of\n`ingress.enabled`.",
+                  "items": {
+                    "required": []
+                  },
+                  "required": [],
+                  "title": "extraIngress",
+                  "type": "array"
+                },
+                "ingress": {
+                  "additionalProperties": true,
+                  "description": "Cilium-only ingress rules.",
+                  "properties": {
+                    "customRules": {
+                      "description": "Additional ingress rules in CiliumNetworkPolicy form, appended verbatim.",
+                      "items": {
+                        "required": []
+                      },
+                      "required": [],
+                      "title": "customRules",
+                      "type": "array"
+                    },
+                    "fromEntities": {
+                      "description": "Named source sets, e.g. `cluster`, `host`, `remote-node`, `world`, `kube-apiserver`.\nA named entity stays correct when the cluster is renumbered; a CIDR list does not.",
+                      "items": {
+                        "required": [],
+                        "type": "string"
+                      },
+                      "required": [],
+                      "title": "fromEntities",
+                      "type": "array"
+                    }
+                  },
+                  "required": [],
+                  "title": "ingress"
+                }
+              },
+              "required": [],
+              "title": "cilium"
+            },
             "egress": {
               "additionalProperties": true,
               "description": "Egress rules.",
@@ -479,6 +841,17 @@
               "title": "enabled",
               "type": "boolean"
             },
+            "engine": {
+              "default": "kubernetes",
+              "description": "Which policy dialect to render. `kubernetes` emits the portable\n`networking.k8s.io/v1` pair; `cilium` emits `CiliumNetworkPolicy`, which can express FQDN\ndestinations, named entities and L7 rules that the portable API cannot; `both` emits both,\nfor the window in which a cluster is migrating between CNIs.\n\nThe engine picks the dialect, not the rules — every value below is translated either way, so\nswitching is a one-line change. `both` is additive rather than stricter: policies selecting\none pod union their allowances, so it is a migration setting and not a hardening one.",
+              "enum": [
+                "kubernetes",
+                "cilium",
+                "both"
+              ],
+              "required": [],
+              "title": "engine"
+            },
             "extraEgress": {
               "description": "Extra egress rules appended regardless of `egress.enabled`.",
               "items": {
@@ -566,6 +939,45 @@
                   "required": [],
                   "title": "enabled",
                   "type": "boolean"
+                },
+                "gateway": {
+                  "additionalProperties": true,
+                  "description": "Allow traffic from the Gateway API data plane. Only rendered when `gateway.enabled` is\nalso set, so it costs nothing on a chart exposed through an Ingress.\n\nNeeds no configuration in the common case: the Gateway that must be admitted is by\ndefinition the one `gateway.parentRefs` names, so both fields below are derived from it.\nRestating the Gateway's identity here would be a second place to edit on a rename, and a\npolicy that names the wrong Gateway looks correct and blocks all inbound traffic.",
+                  "properties": {
+                    "enabled": {
+                      "default": true,
+                      "description": "Allow ingress from the Gateway's data plane.",
+                      "required": [],
+                      "title": "enabled",
+                      "type": "boolean"
+                    },
+                    "namespace": {
+                      "default": "",
+                      "description": "Namespace the data plane runs in. Empty derives it from `gateway.parentRefs`.",
+                      "required": [],
+                      "title": "namespace",
+                      "type": "string"
+                    },
+                    "ports": {
+                      "description": "Restrict the rule to specific ports. Empty means all ports.",
+                      "items": {
+                        "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyPort",
+                        "required": []
+                      },
+                      "required": [],
+                      "title": "ports",
+                      "type": "array"
+                    },
+                    "selector": {
+                      "additionalProperties": true,
+                      "description": "Pod selector matching the data plane. Empty derives\n`gateway.networking.k8s.io/gateway-name: \u003cparentRef\u003e`, the label Cilium, Envoy Gateway,\nIstio and NGINX Gateway Fabric all put on the pods they provision for a Gateway.",
+                      "required": [],
+                      "title": "selector",
+                      "type": "object"
+                    }
+                  },
+                  "required": [],
+                  "title": "gateway"
                 },
                 "monitoring": {
                   "additionalProperties": true,
@@ -1566,6 +1978,146 @@
       "additionalProperties": true,
       "description": "Network policy configuration.",
       "properties": {
+        "cilium": {
+          "additionalProperties": true,
+          "description": "Cilium-only additions, used when `engine` is `cilium` or `both`. Every rule above is\ntranslated automatically; these are the ones the portable API has no way to express.\n\nNote that `extraIngress`, `extraEgress` and the per-section `customRules` above are *not*\ncarried over: those are verbatim `networking.k8s.io/v1` rule objects and are not valid CNP.\nThe fields below are their counterparts.",
+          "properties": {
+            "description": {
+              "default": "",
+              "description": "`spec.description`, which Cilium surfaces in `cilium policy get` and in Hubble flow\nverdicts. The one place to record why a rule exists where an operator debugging a dropped\nvoice packet will actually see it.",
+              "required": [],
+              "title": "description",
+              "type": "string"
+            },
+            "egress": {
+              "additionalProperties": true,
+              "description": "Cilium-only egress rules.",
+              "properties": {
+                "accountingFQDNs": {
+                  "description": "The licensing endpoint by name, replacing the internet-wide CIDR rule for\n`egress.accounting`. This is the rule the portable policy cannot state: the accounting\nhost's address changes over time, so `networking.k8s.io/v1` can only permit TCP/2008 to\nthe entire public internet.\n\nShips empty on purpose. A wrong hostname here does not fail loudly — it takes the\nvirtual server offline at the next licence check — so it is stated rather than guessed.\nExample:\n```yaml\naccountingFQDNs:\n  - matchName: accounting.teamspeak.com\n```",
+                  "items": {
+                    "required": []
+                  },
+                  "required": [],
+                  "title": "accountingFQDNs",
+                  "type": "array"
+                },
+                "customRules": {
+                  "description": "Additional egress rules in CiliumNetworkPolicy form, appended verbatim.",
+                  "items": {
+                    "required": []
+                  },
+                  "required": [],
+                  "title": "customRules",
+                  "type": "array"
+                },
+                "dnsMatchPatterns": {
+                  "description": "What the DNS proxy may resolve, e.g. `- matchPattern: \"*.teamspeak.com\"`. Defaults to\neverything, which only permits the lookup — an answer is still only reachable if some\nrule allows the address.",
+                  "items": {
+                    "required": []
+                  },
+                  "required": [],
+                  "title": "dnsMatchPatterns",
+                  "type": "array"
+                },
+                "entityPorts": {
+                  "description": "Restrict the `toEntities` rule to specific ports. Empty means all ports.",
+                  "items": {
+                    "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyPort",
+                    "required": []
+                  },
+                  "required": [],
+                  "title": "entityPorts",
+                  "type": "array"
+                },
+                "httpsFQDNs": {
+                  "description": "Destinations for `egress.https` by name, replacing its internet-wide CIDR rule.",
+                  "items": {
+                    "required": []
+                  },
+                  "required": [],
+                  "title": "httpsFQDNs",
+                  "type": "array"
+                },
+                "toEntities": {
+                  "description": "Named destination sets, e.g. `world` or `kube-apiserver`. Not a synonym for the\n`cidr`/`except` translation: `world` does not carve out the cloud metadata endpoint the\nway those defaults do.",
+                  "items": {
+                    "required": [],
+                    "type": "string"
+                  },
+                  "required": [],
+                  "title": "toEntities",
+                  "type": "array"
+                },
+                "weblistFQDNs": {
+                  "description": "The public server list by name, replacing the internet-wide CIDR rule for\n`egress.weblist`. Same reasoning, and the same reason it ships empty.",
+                  "items": {
+                    "required": []
+                  },
+                  "required": [],
+                  "title": "weblistFQDNs",
+                  "type": "array"
+                }
+              },
+              "required": [],
+              "title": "egress"
+            },
+            "enableDefaultDeny": {
+              "default": true,
+              "description": "State default-deny explicitly rather than relying on it being implied by the presence of\nrules. This is what makes the intentional default-deny case — a policy with an empty rule\nlist — actually deny, instead of being treated as no policy at all. Requires Cilium 1.16+.",
+              "required": [],
+              "title": "enableDefaultDeny",
+              "type": "boolean"
+            },
+            "extraEgress": {
+              "description": "Extra egress rules in CiliumNetworkPolicy form, appended regardless of `egress.enabled`.",
+              "items": {
+                "required": []
+              },
+              "required": [],
+              "title": "extraEgress",
+              "type": "array"
+            },
+            "extraIngress": {
+              "description": "Extra ingress rules in CiliumNetworkPolicy form, appended regardless of\n`ingress.enabled`.",
+              "items": {
+                "required": []
+              },
+              "required": [],
+              "title": "extraIngress",
+              "type": "array"
+            },
+            "ingress": {
+              "additionalProperties": true,
+              "description": "Cilium-only ingress rules.",
+              "properties": {
+                "customRules": {
+                  "description": "Additional ingress rules in CiliumNetworkPolicy form, appended verbatim.",
+                  "items": {
+                    "required": []
+                  },
+                  "required": [],
+                  "title": "customRules",
+                  "type": "array"
+                },
+                "fromEntities": {
+                  "description": "Named source sets, e.g. `cluster`, `host`, `remote-node`.",
+                  "items": {
+                    "required": [],
+                    "type": "string"
+                  },
+                  "required": [],
+                  "title": "fromEntities",
+                  "type": "array"
+                }
+              },
+              "required": [],
+              "title": "ingress"
+            }
+          },
+          "required": [],
+          "title": "cilium"
+        },
         "egress": {
           "additionalProperties": true,
           "description": "Egress configuration.",
@@ -1755,6 +2307,17 @@
           "required": [],
           "title": "enabled",
           "type": "boolean"
+        },
+        "engine": {
+          "default": "kubernetes",
+          "description": "Which policy dialect to render. `kubernetes` emits the portable `networking.k8s.io/v1`\npair; `cilium` emits `CiliumNetworkPolicy`, which can name the licensing and server-list\nendpoints instead of scoping those rules to the whole public internet; `both` emits both,\nfor the window in which a cluster is migrating between CNIs.",
+          "enum": [
+            "kubernetes",
+            "cilium",
+            "both"
+          ],
+          "required": [],
+          "title": "engine"
         },
         "extraEgress": {
           "description": "Egress rules appended verbatim, whether or not `networkPolicy.egress.enabled` is set.",

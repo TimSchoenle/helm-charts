@@ -1,0 +1,218 @@
+suite: file-backed configuration partials
+# Covers `common.toml` and `common.fileConfig.*`, which every application chart in this
+# repository composes to hand a workload its settings as files instead of as environment
+# variables. The library owns the shape; this is where it is asserted.
+templates:
+  - fileconfig.yaml
+  - configmap.yaml
+tests:
+  - it: renders the configuration tree as TOML
+    documentSelector:
+      path: kind
+      value: ConfigMap
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\[server\]\nhost = "0\.0\.0\.0"\nport = 8080'
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\[telemetry\]\nlog_level = "info"'
+
+  # In TOML a key belongs to the most recent `[table]` header, so a top-level scalar emitted
+  # after a sibling table would be silently reparented into it.
+  - it: emits scalars before the tables that would swallow them
+    documentSelector:
+      path: kind
+      value: ConfigMap
+    set:
+      config:
+        zeta: "top-level"
+        alpha:
+          nested: true
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\Azeta = "top-level"\n\n\[alpha\]\nnested = true'
+
+  # TOML bare keys are [A-Za-z0-9_-]+. A request path or a regex emitted bare does not parse.
+  - it: quotes keys outside the bare-key alphabet, and only those
+    documentSelector:
+      path: kind
+      value: ConfigMap
+    set:
+      config:
+        entries:
+          "docs/handbook":
+            bucket: media
+          plain_key:
+            bucket: media
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\[entries\."docs/handbook"\]'
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\[entries\.plain_key\]'
+
+  # `toJson` would HTML-escape these into \uXXXX. TOML parses that back to the same string, so
+  # it was never wrong — only unreadable in a diff, which is the whole point of a mounted file.
+  - it: leaves URL punctuation readable instead of escaping it
+    documentSelector:
+      path: kind
+      value: ConfigMap
+    set:
+      config:
+        telemetry:
+          sentry_dsn: "https://key@sentry.example.invalid/1?a=1&b=2"
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: 'sentry_dsn = "https://key@sentry\.example\.invalid/1\?a=1&b=2"'
+
+  - it: appends configExtraToml verbatim
+    documentSelector:
+      path: kind
+      value: ConfigMap
+    set:
+      configExtraToml: |
+        [[rewrite]]
+        from = "/a"
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\[\[rewrite\]\]\nfrom = "/a"'
+
+  - it: mounts the configuration read-only and names it to the loader
+    documentSelector:
+      path: kind
+      value: Pod
+    asserts:
+      - contains:
+          path: spec.volumes
+          content:
+            name: config
+            configMap:
+              name: RELEASE-NAME-common-fixture
+      - contains:
+          path: spec.containers[0].volumeMounts
+          content:
+            name: config
+            mountPath: /etc/common-fixture/config
+            readOnly: true
+      - contains:
+          path: spec.containers[0].env
+          content:
+            name: FIXTURE_CONFIG
+            value: /etc/common-fixture/config
+
+  # A configured secrets directory that cannot be read is a boot failure naming the path, not
+  # an empty layer — so the variable, the volume and the mount appear and disappear together.
+  - it: names no secrets directory when no credential is configured
+    documentSelector:
+      path: kind
+      value: Pod
+    asserts:
+      - notContains:
+          path: spec.containers[0].env
+          content:
+            name: FIXTURE_SECRETS_DIR
+            value: /etc/common-fixture/secrets
+      - notContains:
+          path: spec.containers[0].volumeMounts
+          content:
+            name: secrets
+            mountPath: /etc/common-fixture/secrets
+            readOnly: true
+
+  - it: projects only the credentials that were actually set
+    documentSelector:
+      path: kind
+      value: Pod
+    set:
+      fileConfigSecrets.auth__token: t0ken
+    asserts:
+      - contains:
+          path: spec.volumes
+          content:
+            name: secrets
+            projected:
+              defaultMode: 256
+              sources:
+                - secret:
+                    name: RELEASE-NAME-common-fixture
+                    optional: true
+                    items:
+                      - key: auth__token
+                        path: auth__token
+      - contains:
+          path: spec.containers[0].env
+          content:
+            name: FIXTURE_SECRETS_DIR
+            value: /etc/common-fixture/secrets
+
+  # The chart cannot see inside an operator's Secret, so it projects every key it knows how to
+  # consume rather than only the ones it happens to hold values for.
+  - it: projects every known key from an existing Secret
+    documentSelector:
+      path: kind
+      value: Pod
+    set:
+      existingSecret: my-secret
+    asserts:
+      - contains:
+          path: spec.volumes
+          content:
+            name: secrets
+            projected:
+              defaultMode: 256
+              sources:
+                - secret:
+                    name: my-secret
+                    optional: true
+                    items:
+                      - key: auth__password
+                        path: auth__password
+                      - key: auth__token
+                        path: auth__token
+
+  - it: follows an existingConfigMap for the configuration volume
+    documentSelector:
+      path: kind
+      value: Pod
+    set:
+      existingConfigMap: my-config
+    asserts:
+      - contains:
+          path: spec.volumes
+          content:
+            name: config
+            configMap:
+              name: my-config
+
+  # An empty optional credential is still a *supplied* value to the loader, so it is omitted
+  # rather than written as an empty file.
+  - it: writes only non-empty credentials into the Secret
+    documentSelector:
+      path: kind
+      value: Secret
+    set:
+      fileConfigSecrets.auth__token: t0ken
+    asserts:
+      - equal:
+          path: stringData.auth__token
+          value: t0ken
+      - notExists:
+          path: stringData.auth__password
+
+  - it: renders no Secret at all when nothing is configured
+    asserts:
+      - notExists:
+          path: $[?(@.kind == "Secret")]
+
+  - it: renders no Secret when an existing one is supplied
+    set:
+      existingSecret: my-secret
+      fileConfigSecrets.auth__token: t0ken
+    asserts:
+      - notExists:
+          path: $[?(@.kind == "Secret")]

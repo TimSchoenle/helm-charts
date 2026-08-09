@@ -13,6 +13,12 @@ server:
   bind_addr: {{ printf "%s:%v" .Values.server.host (.Values.server.port | toString) | quote }}
   dist_dir: {{ .Values.server.distDir | quote }}
   data_dir: {{ .Values.server.dataDir | quote }}
+  csp:
+    enabled: {{ .Values.server.csp.enabled }}
+    cloudflare:
+      script_nonce: {{ .Values.server.csp.cloudflare.scriptNonce }}
+      turnstile: {{ .Values.server.csp.cloudflare.turnstile }}
+      web_analytics: {{ .Values.server.csp.cloudflare.webAnalytics }}
 {{- end -}}
 
 {{/*

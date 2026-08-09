@@ -923,6 +923,50 @@
       "required": [],
       "title": "configMount"
     },
+    "csp": {
+      "additionalProperties": true,
+      "description": "The `Content-Security-Policy` the server sends on every document. The policy itself is not\nconfigurable — it is built from the response body, hashing each inline `\u003cscript\u003e` the document\nactually carries, so it cannot drift from what is sent. These keys decide only what it has to\nmake room for.",
+      "properties": {
+        "cloudflare": {
+          "additionalProperties": true,
+          "description": "Concessions to the Cloudflare products running in front of this origin. Each one widens\nthe policy, so each is switched on only for a product that is actually in use.",
+          "properties": {
+            "scriptNonce": {
+              "default": true,
+              "description": "Reserve a per-response nonce in `script-src` (`csp.cloudflare.script_nonce`) for the\ninline `\u003cscript\u003e` Cloudflare's bot products — Bot Fight Mode, JavaScript Detections, the\nchallenge platform — inject at the edge, after the server has hashed what it rendered. No\nhash can cover it, and without the nonce the detection is refused and silently never runs.\nOn by default, and it carries one obligation the chart cannot enforce: **no Cloudflare\nCache Rule may cache the shell**, or a single nonce is pinned across every reader for the\nlifetime of the cache entry.",
+              "required": [],
+              "title": "scriptNonce",
+              "type": "boolean"
+            },
+            "turnstile": {
+              "default": false,
+              "description": "Admit `https://challenges.cloudflare.com` in `script-src` *and* `frame-src`\n(`csp.cloudflare.turnstile`), for a Turnstile widget rendered in a page this server serves.\nAdmitting only the first renders an empty box.",
+              "required": [],
+              "title": "turnstile",
+              "type": "boolean"
+            },
+            "webAnalytics": {
+              "default": false,
+              "description": "Admit the Cloudflare Web Analytics beacon and the endpoint it reports to\n(`csp.cloudflare.web_analytics`). For the manually embedded snippet only — the automatic\nedge injection is an inline script, which is what `scriptNonce` covers instead.",
+              "required": [],
+              "title": "webAnalytics",
+              "type": "boolean"
+            }
+          },
+          "required": [],
+          "title": "cloudflare"
+        },
+        "hashInlineScripts": {
+          "default": true,
+          "description": "Hash the document's inline scripts (`csp.hash_inline_scripts`) instead of admitting all\ninline script with `'unsafe-inline'`. An escape hatch, not a preference: turning it off also\nrequires `csp.cloudflare.scriptNonce: false`, because a browser ignores `'unsafe-inline'` as\nsoon as the policy carries a nonce. The chart refuses the mismatched pair rather than\nletting the server fail its own boot.",
+          "required": [],
+          "title": "hashInlineScripts",
+          "type": "boolean"
+        }
+      },
+      "required": [],
+      "title": "csp"
+    },
     "extraEnv": {
       "description": "Additional environment variables for the application container.",
       "items": {
@@ -996,7 +1040,7 @@
           "type": "string"
         },
         "tag": {
-          "default": "v2.3.0@sha256:ae594c6c61f4f5b369803ba5e5b24294428ef8d4ebebf73e383efa57d63260ae",
+          "default": "v2.4.0@sha256:5ddf87ca3ab9cb4b39a5555e6a494736c6f8185c881701c6a80284c0370c5fc8",
           "description": "Container image tag to deploy, pinned by digest (`vX.Y.Z\nthe pull, while the tag stays on as the readable version marker. Defaults to the chart's\n`appVersion` when empty.",
           "required": [],
           "title": "tag",

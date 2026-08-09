@@ -23,7 +23,7 @@ image:
   # -- Container image tag to deploy, pinned by digest (`vX.Y.Z@sha256:...`). The digest pins
   # the pull, while the tag stays on as the readable version marker. Defaults to the chart's
   # `appVersion` when empty.
-  tag: v2.3.0@sha256:ae594c6c61f4f5b369803ba5e5b24294428ef8d4ebebf73e383efa57d63260ae
+  tag: v2.4.0@sha256:5ddf87ca3ab9cb4b39a5555e6a494736c6f8185c881701c6a80284c0370c5fc8
 
   # @schema
   # enum: ["", Always, IfNotPresent, Never]
@@ -103,6 +103,58 @@ assets:
   # directory. Only the readiness probe consults it; the bundle itself is served by the Dioxus
   # asset router, which resolves `public/` relative to the binary.
   distDir: public
+
+# @schema
+# additionalProperties: true
+# @schema
+# -- The `Content-Security-Policy` the server sends on every document. The policy itself is not
+# configurable — it is built from the response body, hashing each inline `<script>` the document
+# actually carries, so it cannot drift from what is sent. These keys decide only what it has to
+# make room for.
+csp:
+  # @schema
+  # type: boolean
+  # @schema
+  # -- Hash the document's inline scripts (`csp.hash_inline_scripts`) instead of admitting all
+  # inline script with `'unsafe-inline'`. An escape hatch, not a preference: turning it off also
+  # requires `csp.cloudflare.scriptNonce: false`, because a browser ignores `'unsafe-inline'` as
+  # soon as the policy carries a nonce. The chart refuses the mismatched pair rather than
+  # letting the server fail its own boot.
+  hashInlineScripts: true
+
+  # @schema
+  # additionalProperties: true
+  # @schema
+  # -- Concessions to the Cloudflare products running in front of this origin. Each one widens
+  # the policy, so each is switched on only for a product that is actually in use.
+  cloudflare:
+    # @schema
+    # type: boolean
+    # @schema
+    # -- Reserve a per-response nonce in `script-src` (`csp.cloudflare.script_nonce`) for the
+    # inline `<script>` Cloudflare's bot products — Bot Fight Mode, JavaScript Detections, the
+    # challenge platform — inject at the edge, after the server has hashed what it rendered. No
+    # hash can cover it, and without the nonce the detection is refused and silently never runs.
+    # On by default, and it carries one obligation the chart cannot enforce: **no Cloudflare
+    # Cache Rule may cache the shell**, or a single nonce is pinned across every reader for the
+    # lifetime of the cache entry.
+    scriptNonce: true
+
+    # @schema
+    # type: boolean
+    # @schema
+    # -- Admit `https://challenges.cloudflare.com` in `script-src` *and* `frame-src`
+    # (`csp.cloudflare.turnstile`), for a Turnstile widget rendered in a page this server serves.
+    # Admitting only the first renders an empty box.
+    turnstile: false
+
+    # @schema
+    # type: boolean
+    # @schema
+    # -- Admit the Cloudflare Web Analytics beacon and the endpoint it reports to
+    # (`csp.cloudflare.web_analytics`). For the manually embedded snippet only — the automatic
+    # edge injection is an inline script, which is what `scriptNonce` covers instead.
+    webAnalytics: false
 
 # @schema
 # additionalProperties: true

@@ -1,6 +1,6 @@
 # portfolio
 
-![Version: 4.0.0](https://img.shields.io/badge/Version-4.0.0-informational?style=flat-square) ![AppVersion: v2.3.0](https://img.shields.io/badge/AppVersion-v2.3.0-informational?style=flat-square)
+![Version: 4.1.0](https://img.shields.io/badge/Version-4.1.0-informational?style=flat-square) ![AppVersion: v2.4.0](https://img.shields.io/badge/AppVersion-v2.4.0-informational?style=flat-square)
 
 Personal portfolio built with Rust (Yew frontend, Axum server).
 
@@ -108,6 +108,37 @@ The server does not reload its configuration — only the loader half of the lib
 the chart keeps the conventional `checksum/config` pod annotation: a configuration change rolls
 the Deployment, which is the only way it takes effect.
 
+## Content-Security-Policy
+
+The header the server sends is derived, not configured: each document's inline `<script>` tags
+are hashed out of the response body itself, so the policy cannot drift from what is sent. The
+`csp` values decide only what that policy has to make room for.
+
+```yaml
+csp:
+  hashInlineScripts: true
+  cloudflare:
+    scriptNonce: true    # for the script Cloudflare's bot products inject at the edge
+    turnstile: false     # admits challenges.cloudflare.com in script-src *and* frame-src
+    webAnalytics: false  # admits the beacon and the endpoint it reports to
+```
+
+`scriptNonce` is on by default, because a script injected at the edge lands after the server
+hashed what it rendered — no hash can cover it, and without the nonce `script-src` refuses it
+and the bot detection silently never runs. The server discharges half of what that costs by
+serving every document `Cache-Control: no-cache`. The other half is yours:
+
+> [!IMPORTANT]
+> No Cloudflare Cache Rule may cache the shell. A "Cache Everything" rule overrides the origin's
+> `Cache-Control` and pins one nonce across every reader for the lifetime of the cache entry,
+> which is exactly what the nonce exists to prevent. Nothing inside the pod can detect it.
+
+**If a page renders blank**, the policy is refusing a script it should have admitted.
+`hashInlineScripts: false` restores `'unsafe-inline'` — but only together with
+`cloudflare.scriptNonce: false`, since a browser ignores `'unsafe-inline'` as soon as the policy
+carries a nonce. The chart rejects that pair at render time rather than letting the pod
+CrashLoopBackOff on its own boot check.
+
 ## Incremental static regeneration
 
 ISR is on by default and caches into `/tmp/isr`, inside the writable `emptyDir` the chart
@@ -184,6 +215,12 @@ curl http://localhost:8080/api/health
 | configExtraToml | string | `""` | Verbatim TOML appended after the rendered configuration. The escape hatch for anything the chart's TOML renderer cannot express, notably arrays of tables. |
 | configMount.configDir | string | `"/etc/portfolio/config"` | Directory the rendered `config.toml` is mounted at, passed as `PORTFOLIO_CONFIG`. |
 | configMount.secretsDir | string | `"/etc/portfolio/secrets"` | Directory credential files would be mounted at, passed as `PORTFOLIO_SECRETS_DIR`. The server reads no secret today — `github.token` belongs to the build-time repository builder — so nothing is mounted and the variable is not set; the value is here for an operator adding one through `extraVolumes`. |
+| csp | object | `{"cloudflare":{"scriptNonce":true,"turnstile":false,"webAnalytics":false},"hashInlineScripts":true}` | The `Content-Security-Policy` the server sends on every document. The policy itself is not configurable — it is built from the response body, hashing each inline `<script>` the document actually carries, so it cannot drift from what is sent. These keys decide only what it has to make room for. |
+| csp.cloudflare | object | `{"scriptNonce":true,"turnstile":false,"webAnalytics":false}` | Concessions to the Cloudflare products running in front of this origin. Each one widens the policy, so each is switched on only for a product that is actually in use. |
+| csp.cloudflare.scriptNonce | bool | `true` | Reserve a per-response nonce in `script-src` (`csp.cloudflare.script_nonce`) for the inline `<script>` Cloudflare's bot products — Bot Fight Mode, JavaScript Detections, the challenge platform — inject at the edge, after the server has hashed what it rendered. No hash can cover it, and without the nonce the detection is refused and silently never runs. On by default, and it carries one obligation the chart cannot enforce: **no Cloudflare Cache Rule may cache the shell**, or a single nonce is pinned across every reader for the lifetime of the cache entry. |
+| csp.cloudflare.turnstile | bool | `false` | Admit `https://challenges.cloudflare.com` in `script-src` *and* `frame-src` (`csp.cloudflare.turnstile`), for a Turnstile widget rendered in a page this server serves. Admitting only the first renders an empty box. |
+| csp.cloudflare.webAnalytics | bool | `false` | Admit the Cloudflare Web Analytics beacon and the endpoint it reports to (`csp.cloudflare.web_analytics`). For the manually embedded snippet only — the automatic edge injection is an inline script, which is what `scriptNonce` covers instead. |
+| csp.hashInlineScripts | bool | `true` | Hash the document's inline scripts (`csp.hash_inline_scripts`) instead of admitting all inline script with `'unsafe-inline'`. An escape hatch, not a preference: turning it off also requires `csp.cloudflare.scriptNonce: false`, because a browser ignores `'unsafe-inline'` as soon as the policy carries a nonce. The chart refuses the mismatched pair rather than letting the server fail its own boot. |
 | extraEnv | list | `[]` | Additional environment variables for the application container. |
 | extraVolumeMounts | list | `[]` | Additional volume mounts added to the application container. |
 | extraVolumes | list | `[]` | Additional volumes added to the pod. |
@@ -191,7 +228,7 @@ curl http://localhost:8080/api/health
 | image.pullPolicy | string | `""` | Kubernetes image pull policy. Empty resolves automatically from the tag/digest. |
 | image.registry | string | `""` | Registry host. Empty means Docker Hub. |
 | image.repository | string | `"timschoenle/portfolio"` | Container image repository where the Portfolio application image is stored. |
-| image.tag | string | `"v2.3.0@sha256:ae594c6c61f4f5b369803ba5e5b24294428ef8d4ebebf73e383efa57d63260ae"` | Container image tag to deploy, pinned by digest (`vX.Y.Z@sha256:...`). The digest pins the pull, while the tag stays on as the readable version marker. Defaults to the chart's `appVersion` when empty. |
+| image.tag | string | `"v2.4.0@sha256:5ddf87ca3ab9cb4b39a5555e6a494736c6f8185c881701c6a80284c0370c5fc8"` | Container image tag to deploy, pinned by digest (`vX.Y.Z@sha256:...`). The digest pins the pull, while the tag stays on as the readable version marker. Defaults to the chart's `appVersion` when empty. |
 | imagePullSecrets | list | `[]` | Optional image pull secrets for private registries. |
 | ingress.annotations | object | `{}` | Custom annotations for the Ingress resource. Example: ```yaml annotations:   cert-manager.io/cluster-issuer: "letsencrypt-prod"   nginx.ingress.kubernetes.io/ssl-redirect: "true" ``` |
 | ingress.enabled | bool | `false` | Enable or disable Kubernetes Ingress resource creation. |

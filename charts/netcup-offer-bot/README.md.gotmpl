@@ -24,7 +24,7 @@ helm repo update
 
 helm install [RELEASE_NAME] timschoenle/{{ template "chart.name" . }} \
   --namespace [NAMESPACE] --create-namespace \
-  --set env.webHook="https://discord.com/api/webhooks/..."
+  --set discord.webhookUrl="https://discord.com/api/webhooks/..."
 ```
 
 Upgrade with `helm upgrade [RELEASE_NAME] timschoenle/{{ template "chart.name" . }} -n [NAMESPACE]`,
@@ -32,21 +32,41 @@ remove with `helm uninstall [RELEASE_NAME] -n [NAMESPACE]`.
 
 ## Keeping the webhook out of the release
 
-`env.webHook` is written into a Secret, but it still passes through `values.yaml` and stays
-readable in the Helm release object afterwards. Point `existingSecret` at a Secret you created
-yourself to avoid both:
+`discord.webhookUrl` is written into a Secret, but it still passes through `values.yaml` and
+stays readable in the Helm release object afterwards. Point `existingSecret` at a Secret you
+created yourself to avoid both:
 
 ```shell
-kubectl create secret generic netcup-webhook \
-  --namespace [NAMESPACE] \
-  --from-literal=webHook='https://discord.com/api/webhooks/...'
+kubectl create secret generic netcup-webhook   --namespace [NAMESPACE]   --from-literal=discord__webhook_url='https://discord.com/api/webhooks/...'
 ```
 
 ```yaml
 existingSecret: netcup-webhook
 ```
 
-`env.webHook` is then ignored.
+**The key name is the configuration path the bot reads, not a free-form name.** The webhook
+arrives as a file in a projected volume and the bot takes the key out of the file *name*, so
+`discord__webhook_url` is required; a Secret spelled any other way mounts cleanly, supplies
+nothing, and the bot refuses to boot naming the missing credential.
+
+`discord.webhookUrl` is then ignored.
+
+## Configuration
+
+Everything the bot reads is rendered into one `config.toml`, mounted as a ConfigMap and pointed
+at by `NETCUP_OFFER_BOT_CONFIG`; the webhook is mounted separately as a file under
+`NETCUP_OFFER_BOT_SECRETS_DIR`. Nothing is passed as an environment variable, and that is
+deliberate on two counts: the loader **fails the boot on a key supplied by both the environment
+and a file** rather than resolving it by precedence, and an environment variable is visible in
+`kubectl describe pod`, in `/proc/<pid>/environ` and in the environment of every child process
+— which for a webhook URL is exactly the exposure worth removing.
+
+The values above cover the whole documented surface. `config` takes the raw TOML tree for
+anything they do not, merged over the derived one, and `configExtraToml` is appended verbatim
+for what the renderer cannot express.
+
+The bot does not reload its configuration, so the chart keeps the conventional `checksum/*` pod
+annotations: a configuration change rolls the Deployment, which is the only way it takes effect.
 
 ## State and restarts
 
@@ -79,8 +99,38 @@ metrics:
 
 Without a matching label the PodMonitor is created and never read.
 
-`env.sentryDns` additionally routes application errors to Sentry; leave it empty to keep the
-bot's egress to Discord and the netcup feed only.
+`metrics.ip` defaults to `0.0.0.0` rather than to the bot's own `127.0.0.1`, which answers
+nothing from outside the container — a PodMonitor pointed at that would scrape a refused
+connection.
+
+`telemetry.sentryDsn` additionally routes application errors to Sentry; leave it empty to keep
+the bot's egress to Discord and the netcup feed only.
+
+## Upgrading
+
+### 3.x to 4.0
+
+Chart 4.0 tracks the bot's 2.0 release, which replaced its environment-only configuration with
+the layered, file-first loader every chart in this repository now uses. The `env` block that
+described that environment is gone; a `helm upgrade` with 3.x values fails schema validation
+naming the offending key rather than starting a pod on the defaults.
+
+| Before | After |
+|---|---|
+| `env.webHook` | `discord.webhookUrl` |
+| `env.checkInterval` | `feed.checkIntervalSecs` |
+| `env.logLevel` | `telemetry.logLevel` (now `TRACE`/`DEBUG`/`INFO`/`WARN`/`ERROR`) |
+| `env.sentryDns` | `telemetry.sentryDsn` |
+
+**An existing Secret has to be re-keyed** from `webHook` to `discord__webhook_url`:
+
+```shell
+kubectl create secret generic netcup-webhook   --namespace [NAMESPACE]   --from-literal=discord__webhook_url="$(kubectl get secret netcup-webhook -n [NAMESPACE] -o jsonpath='{.data.webHook}' | base64 -d)"   --dry-run=client -o yaml | kubectl apply -f -
+```
+
+One fix rides along: `metrics.ip` is now a real value and defaults to `0.0.0.0`. The 3.x chart
+read a `metrics.ip` that its `values.yaml` never declared, so the exporter kept the bot's
+`127.0.0.1` default and the PodMonitor scraped a refused connection.
 
 {{ template "chart.valuesSection" . }}
 

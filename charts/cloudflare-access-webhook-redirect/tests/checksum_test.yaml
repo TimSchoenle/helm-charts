@@ -1,19 +1,40 @@
 suite: config checksums
-# Guards `common.configChecksum`. The checksum exists to roll pods when mounted configuration
-# changes, so it must react to `data`/`stringData` and to nothing else. Hashing the rendered
-# manifest instead — the previous behaviour — made every chart version bump and every label
-# change roll every pod, which trains people to ignore the rollout entirely.
+# Guards `common.configChecksum` and the chart's decision not to use it by default.
+#
+# The proxy watches its configuration and secrets directories and rebuilds itself in place, so
+# rolling the Deployment on every configuration change would throw that property away. The
+# checksums are therefore opt-in — and when they are on they must react to `data`/`stringData`
+# and to nothing else. Hashing the rendered manifest instead made every chart version bump and
+# every label change roll every pod, which trains people to ignore the rollout entirely.
 templates:
   - deployment.yaml
   - configmap.yaml
   - secret.yaml
 set:
-  application.handler.targetBase: https://example.invalid
+  webhook.targetBase: https://example.invalid
+  webhook.paths:
+    "/api/webhook/.*":
+      - ALL
 tests:
+  - it: publishes no checksum by default, so a config change reloads instead of rolling
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      cloudflare.clientId: some-client-id
+      cloudflare.clientSecret: some-client-secret
+    asserts:
+      - notExists:
+          path: spec.template.metadata.annotations["checksum/configmap"]
+      - notExists:
+          path: spec.template.metadata.annotations["checksum/secret"]
+
   - it: omits the checksum for a Secret that does not render
     documentSelector:
       path: kind
       value: Deployment
+    set:
+      configMount.rolloutOnChange: true
     asserts:
       - exists:
           path: spec.template.metadata.annotations["checksum/configmap"]
@@ -25,8 +46,9 @@ tests:
       path: kind
       value: Deployment
     set:
-      application.cloudflareAccess.clientId: some-client-id
-      application.cloudflareAccess.clientSecret: some-client-secret
+      configMount.rolloutOnChange: true
+      cloudflare.clientId: some-client-id
+      cloudflare.clientSecret: some-client-secret
     asserts:
       - exists:
           path: spec.template.metadata.annotations["checksum/secret"]
@@ -35,16 +57,19 @@ tests:
     documentSelector:
       path: kind
       value: Deployment
+    set:
+      configMount.rolloutOnChange: true
     asserts:
       - equal:
           path: spec.template.metadata.annotations["checksum/configmap"]
-          value: ef5f72b54178ba13ca6d4e482b2ad65d79e79456740a8345f125088f47777d13
+          value: 47f88d7e467a38d9d7769515e58f7c82eba11e741f22624008c74afaa3e45713
 
   - it: holds the checksum steady across manifest metadata that pods do not mount
     documentSelector:
       path: kind
       value: Deployment
     set:
+      configMount.rolloutOnChange: true
       commonAnnotations:
         example.invalid/owner: platform
       commonLabels:
@@ -52,15 +77,16 @@ tests:
     asserts:
       - equal:
           path: spec.template.metadata.annotations["checksum/configmap"]
-          value: ef5f72b54178ba13ca6d4e482b2ad65d79e79456740a8345f125088f47777d13
+          value: 47f88d7e467a38d9d7769515e58f7c82eba11e741f22624008c74afaa3e45713
 
   - it: moves the checksum when mounted configuration actually changes
     documentSelector:
       path: kind
       value: Deployment
     set:
-      application.logLevel: debug
+      configMount.rolloutOnChange: true
+      telemetry.logLevel: debug
     asserts:
       - notEqual:
           path: spec.template.metadata.annotations["checksum/configmap"]
-          value: ef5f72b54178ba13ca6d4e482b2ad65d79e79456740a8345f125088f47777d13
+          value: 47f88d7e467a38d9d7769515e58f7c82eba11e741f22624008c74afaa3e45713

@@ -84,6 +84,67 @@ livenessProbe:
 > `successThreshold` is accepted only on the readiness probe. Kubernetes rejects any value
 > other than `1` on startup and liveness probes, so the chart omits it there.
 
+## Configuration
+
+The application reads its settings through a layered, file-first loader. Everything in the
+`PORTFOLIO_` namespace — `assets.dist_dir`, `isr.*` — is rendered into one `config.toml`,
+mounted as a ConfigMap and pointed at by `PORTFOLIO_CONFIG`. The loader **fails the boot on a
+key supplied by both the environment and a file** rather than resolving it by precedence, so
+keeping the chart's output in one place makes that collision impossible.
+
+`PORT`, `IP` and `RUST_LOG` are the exception, and stay environment variables: they belong to
+the Dioxus toolchain, which reads them itself. They are `server.port`, `server.host` and
+`logLevel` in this chart's values, and cannot be supplied through `config`.
+
+One more variable is set on purpose. The published image bakes
+`PORTFOLIO_ISR__CACHE_DIR=/tmp/isr`, and the environment layer outranks the TOML one — so the
+chart restates the *effective* cache directory as an environment variable alongside the file.
+Without that, moving the cache through `isr.cacheDir` would write a value the image silently
+overrode.
+
+`config` takes the raw TOML tree for anything the first-class values do not cover, merged over
+the derived one, and `configExtraToml` is appended verbatim for what the renderer cannot
+express.
+
+The server does not reload its configuration — only the loader half of the library is used — so
+the chart keeps the conventional `checksum/config` pod annotation: a configuration change rolls
+the Deployment, which is the only way it takes effect.
+
+## Incremental static regeneration
+
+ISR is on by default and caches into `/tmp/isr`, inside the writable `emptyDir` the chart
+already mounts for the read-only root filesystem. The server creates the directory itself and
+falls back to rendering every request fresh if it turns out not to be writable.
+
+```yaml
+isr:
+  cacheDir: /tmp/isr   # empty disables ISR entirely
+  ttlSecs: 0           # 0 is a permanent cache; positive opts into time-based revalidation
+```
+
+A permanent cache is right here: every page renders from compile-time data, so the only thing
+that changes the output is a redeploy, and a redeploy starts from an empty cache. Set a
+positive TTL only when a *persistent* cache volume is shared across deploys — which needs an
+`extraVolumes` mount, since the default cache lives in an `emptyDir`.
+
+## Upgrading
+
+### 3.x to 4.0
+
+Chart 4.0 tracks application 2.3.0, which moved its settings into the layered `PORTFOLIO_`
+configuration. The `application` block is gone; a `helm upgrade` with 3.x values fails schema
+validation naming the offending key rather than starting a pod on the defaults.
+
+| Before | After |
+|---|---|
+| `application.port` | `server.port` |
+| `application.logLevel` | `logLevel` |
+
+Both are still delivered as `PORT` and `RUST_LOG` — the Dioxus toolchain reads them from the
+environment and they are not part of the layered configuration. What is new is everything
+around them: `server.host`, `assets.distDir`, `isr.*`, and the `config` / `configExtraToml`
+escape hatches, all rendered into a mounted `config.toml`.
+
 ## Security
 
 The pod satisfies the [restricted Pod Security Standard][pss] as installed: non-root (UID

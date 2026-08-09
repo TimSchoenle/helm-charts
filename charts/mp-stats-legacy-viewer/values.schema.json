@@ -6,35 +6,6 @@
       "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.Affinity",
       "required": []
     },
-    "application": {
-      "additionalProperties": true,
-      "properties": {
-        "server": {
-          "additionalProperties": true,
-          "description": "HTTP server configuration.\nDefines where the application listens for incoming connections.",
-          "properties": {
-            "host": {
-              "default": "0.0.0.0",
-              "description": "Host address to bind the HTTP server.\nTypically `0.0.0.0` to listen on all network interfaces.",
-              "required": [],
-              "title": "host",
-              "type": "string"
-            },
-            "port": {
-              "default": 8080,
-              "description": "Port number the server listens on.",
-              "required": [],
-              "title": "port",
-              "type": "integer"
-            }
-          },
-          "required": [],
-          "title": "server"
-        }
-      },
-      "required": [],
-      "title": "application"
-    },
     "automountServiceAccountToken": {
       "default": false,
       "description": "Mount the ServiceAccount API token into the pod.\nSet on the pod itself, which is what actually keeps the token out of the container: the\nServiceAccount-level setting is ignored as soon as a pod names a different account.",
@@ -77,6 +48,42 @@
           "title": "component",
           "type": "string"
         },
+        "config": {
+          "additionalProperties": true,
+          "description": "Application configuration, expressed as the TOML tree the service documents. Rendered by\n`common.toml` into the ConfigMap the pod mounts, never passed as environment variables: the\nloader every application shares refuses a key supplied by both the environment and a file,\nand a value that lives in a file is one the kubelet can rotate under a running process.",
+          "required": [],
+          "title": "config",
+          "type": "object"
+        },
+        "configExtraToml": {
+          "default": "",
+          "description": "Verbatim TOML appended after the rendered `config` tree. The escape hatch for anything\n`common.toml` cannot express, notably arrays of tables.",
+          "required": [],
+          "title": "configExtraToml",
+          "type": "string"
+        },
+        "configMount": {
+          "additionalProperties": true,
+          "description": "Where the rendered configuration and the credential files land in the container. Consumed\nby `common.fileConfig.*`, which also passes both directories to the application as\n`\u003cPREFIX\u003e_CONFIG` and `\u003cPREFIX\u003e_SECRETS_DIR`.",
+          "properties": {
+            "configDir": {
+              "default": "",
+              "description": "Directory the rendered `config.toml` is mounted at.",
+              "required": [],
+              "title": "configDir",
+              "type": "string"
+            },
+            "secretsDir": {
+              "default": "",
+              "description": "Directory the credential files are mounted at, one file per configuration key.",
+              "required": [],
+              "title": "secretsDir",
+              "type": "string"
+            }
+          },
+          "required": [],
+          "title": "configMount"
+        },
         "dnsConfig": {
           "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.PodDNSConfig",
           "required": []
@@ -86,6 +93,20 @@
           "description": "Pod DNS policy.",
           "required": [],
           "title": "dnsPolicy",
+          "type": "string"
+        },
+        "existingConfigMap": {
+          "default": "",
+          "description": "Name of an existing ConfigMap holding `config.toml`, replacing the one this chart renders.",
+          "required": [],
+          "title": "existingConfigMap",
+          "type": "string"
+        },
+        "existingSecret": {
+          "default": "",
+          "description": "Name of an existing Secret holding the credential files, replacing the one this chart\nrenders. Its keys must be the configuration paths the service reads, with `__` for nesting\nand no dots — that is the file name the loader parses.",
+          "required": [],
+          "title": "existingSecret",
           "type": "string"
         },
         "extraEnv": {
@@ -853,6 +874,41 @@
       "title": "commonLabels",
       "type": "object"
     },
+    "config": {
+      "additionalProperties": true,
+      "description": "Extra configuration, expressed as the TOML tree of\n[the application's configuration reference](https://github.com/TimSchoenle/mp-stats-legacy-viewer/blob/main/docs/CONFIGURATION.md)\n(`server.bind_addr`, `converter.*`, ...). Merged over everything the chart derives from the\nvalues above, so it can both extend and override them. Rendered into the mounted ConfigMap —\nnever into the environment, which the loader refuses to combine with a file.",
+      "required": [],
+      "title": "config",
+      "type": "object"
+    },
+    "configExtraToml": {
+      "default": "",
+      "description": "Verbatim TOML appended after the rendered configuration. The escape hatch for anything the\nchart's TOML renderer cannot express, notably arrays of tables.",
+      "required": [],
+      "title": "configExtraToml",
+      "type": "string"
+    },
+    "configMount": {
+      "additionalProperties": true,
+      "properties": {
+        "configDir": {
+          "default": "/etc/mp-stats/config",
+          "description": "Directory the rendered `config.toml` is mounted at, passed as `MP_STATS_CONFIG`. Pointing\nthis at the mount **replaces** the `/config.toml` the image ships, so everything the image\ndescribed — the bind address, `dist_dir`, `data_dir` — is restated by the values above.",
+          "required": [],
+          "title": "configDir",
+          "type": "string"
+        },
+        "secretsDir": {
+          "default": "/etc/mp-stats/secrets",
+          "description": "Directory credential files would be mounted at, passed as `MP_STATS_SECRETS_DIR`. Neither\nbinary reads a secret today, so nothing is mounted and the variable is not set; the value is\nhere for an operator adding one through `extraVolumes`.",
+          "required": [],
+          "title": "secretsDir",
+          "type": "string"
+        }
+      },
+      "required": [],
+      "title": "configMount"
+    },
     "extraEnv": {
       "description": "Additional environment variables for the application container.",
       "items": {
@@ -926,7 +982,7 @@
           "type": "string"
         },
         "tag": {
-          "default": "v0.14.1@sha256:35de635c75df40c839066e23d5b1180c4a1b3e44dd8868372e717f992b7f9d18",
+          "default": "v0.15.0@sha256:f2bd04006f3942f5b725e9f2a6fff4f88fe9c03fbb558f63edb224b45b190a7a",
           "description": "The container image tag, pinned by digest (`vX.Y.Z\npull, while the tag stays on as the readable version marker. Defaults to the chart's\n`appVersion` when empty.",
           "required": [],
           "title": "tag",
@@ -1489,6 +1545,43 @@
       ],
       "required": [],
       "title": "securityContextPreset"
+    },
+    "server": {
+      "additionalProperties": true,
+      "properties": {
+        "dataDir": {
+          "default": "/dist/data",
+          "description": "The converter's output, served under `/data` (`server.data_dir`). The default is where\nthe image puts it.",
+          "required": [],
+          "title": "dataDir",
+          "type": "string"
+        },
+        "distDir": {
+          "default": "/dist",
+          "description": "Built frontend served as the SPA (`server.dist_dir`). The server refuses to start unless\nit holds an `index.html`, which is both the entry point and the fallback for unknown routes.\nThe default is where the image puts it — change it only for an image that differs.",
+          "required": [],
+          "title": "distDir",
+          "type": "string"
+        },
+        "host": {
+          "default": "0.0.0.0",
+          "description": "Host half of the bind address (`server.bind_addr`). `0.0.0.0` is what makes the Service\nreach the listener.",
+          "required": [],
+          "title": "host",
+          "type": "string"
+        },
+        "port": {
+          "default": 8080,
+          "description": "Port half of the bind address (`server.bind_addr`). Also the container port, the Service\ntarget and what every probe and NetworkPolicy rule is written against.",
+          "maximum": 65535,
+          "minimum": 1,
+          "required": [],
+          "title": "port",
+          "type": "integer"
+        }
+      },
+      "required": [],
+      "title": "server"
     },
     "service": {
       "additionalProperties": true,

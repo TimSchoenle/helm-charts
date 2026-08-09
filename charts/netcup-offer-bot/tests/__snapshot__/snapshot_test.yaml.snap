@@ -2,9 +2,12 @@ matches the committed Deployment snapshot:
   1: |
     apiVersion: v1
     data:
-      CHECK_INTERVAL: "180"
-      LOG_LEVEL: info
-      METRIC_PORT: "9184"
+      config.toml: |
+        [feed]
+        check_interval_secs = 180
+
+        [telemetry]
+        log_level = "INFO"
     kind: ConfigMap
     metadata:
       labels:
@@ -39,8 +42,8 @@ matches the committed Deployment snapshot:
       template:
         metadata:
           annotations:
-            checksum/configmap: f1554be1426471b88ae7097db5d823109398eae8a835b9472a3344aaa7697515
-            checksum/secret: 61d6ee818dcbf9d9fc090e9cdfc3fd832612413709f397300ab02523059e7cd7
+            checksum/configmap: 58c12855c71b1cf19d46cc3832e82816fa7cfe2d44e3628e1982c2961462e998
+            checksum/secret: 577aa58622be9fb6ea87495c17e4adfb9f66b67ff2ad792ea4a1f27446103956
           labels:
             app.kubernetes.io/instance: RELEASE-NAME
             app.kubernetes.io/managed-by: Helm
@@ -50,14 +53,10 @@ matches the committed Deployment snapshot:
           automountServiceAccountToken: false
           containers:
             - env:
-                - name: WEB_HOOK
-                  valueFrom:
-                    secretKeyRef:
-                      key: webHook
-                      name: RELEASE-NAME-netcup-offer-bot
-              envFrom:
-                - configMapRef:
-                    name: RELEASE-NAME-netcup-offer-bot
+                - name: NETCUP_OFFER_BOT_CONFIG
+                  value: /etc/netcup-offer-bot/config
+                - name: NETCUP_OFFER_BOT_SECRETS_DIR
+                  value: /etc/netcup-offer-bot/secrets
               image: timmi6790/netcup-offer-bot:v0.0.0@sha256:0000000000000000000000000000000000000000000000000000000000000000
               imagePullPolicy: IfNotPresent
               name: netcup-offer-bot
@@ -78,6 +77,12 @@ matches the committed Deployment snapshot:
               volumeMounts:
                 - mountPath: /tmp
                   name: tmp
+                - mountPath: /etc/netcup-offer-bot/config
+                  name: config
+                  readOnly: true
+                - mountPath: /etc/netcup-offer-bot/secrets
+                  name: secrets
+                  readOnly: true
                 - mountPath: /app/data
                   name: data
           securityContext:
@@ -93,6 +98,19 @@ matches the committed Deployment snapshot:
           volumes:
             - emptyDir: {}
               name: tmp
+            - configMap:
+                name: RELEASE-NAME-netcup-offer-bot
+              name: config
+            - name: secrets
+              projected:
+                defaultMode: 256
+                sources:
+                  - secret:
+                      items:
+                        - key: discord__webhook_url
+                          path: discord__webhook_url
+                      name: RELEASE-NAME-netcup-offer-bot
+                      optional: true
             - name: data
               persistentVolumeClaim:
                 claimName: RELEASE-NAME-netcup-offer-bot
@@ -109,15 +127,18 @@ matches the committed Deployment snapshot:
       name: RELEASE-NAME-netcup-offer-bot
       namespace: NAMESPACE
     stringData:
-      webHook: https://example.invalid/hook
+      discord__webhook_url: https://example.invalid/hook
     type: Opaque
 matches the committed Deployment snapshot with network policies and probes on:
   1: |
     apiVersion: v1
     data:
-      CHECK_INTERVAL: "180"
-      LOG_LEVEL: info
-      METRIC_PORT: "9184"
+      config.toml: |
+        [feed]
+        check_interval_secs = 180
+
+        [telemetry]
+        log_level = "INFO"
     kind: ConfigMap
     metadata:
       labels:
@@ -152,8 +173,8 @@ matches the committed Deployment snapshot with network policies and probes on:
       template:
         metadata:
           annotations:
-            checksum/configmap: f1554be1426471b88ae7097db5d823109398eae8a835b9472a3344aaa7697515
-            checksum/secret: 61d6ee818dcbf9d9fc090e9cdfc3fd832612413709f397300ab02523059e7cd7
+            checksum/configmap: 58c12855c71b1cf19d46cc3832e82816fa7cfe2d44e3628e1982c2961462e998
+            checksum/secret: 577aa58622be9fb6ea87495c17e4adfb9f66b67ff2ad792ea4a1f27446103956
           labels:
             app.kubernetes.io/instance: RELEASE-NAME
             app.kubernetes.io/managed-by: Helm
@@ -173,14 +194,10 @@ matches the committed Deployment snapshot with network policies and probes on:
           automountServiceAccountToken: false
           containers:
             - env:
-                - name: WEB_HOOK
-                  valueFrom:
-                    secretKeyRef:
-                      key: webHook
-                      name: RELEASE-NAME-netcup-offer-bot
-              envFrom:
-                - configMapRef:
-                    name: RELEASE-NAME-netcup-offer-bot
+                - name: NETCUP_OFFER_BOT_CONFIG
+                  value: /etc/netcup-offer-bot/config
+                - name: NETCUP_OFFER_BOT_SECRETS_DIR
+                  value: /etc/netcup-offer-bot/secrets
               image: timmi6790/netcup-offer-bot:v0.0.0@sha256:0000000000000000000000000000000000000000000000000000000000000000
               imagePullPolicy: IfNotPresent
               name: netcup-offer-bot
@@ -201,6 +218,12 @@ matches the committed Deployment snapshot with network policies and probes on:
               volumeMounts:
                 - mountPath: /tmp
                   name: tmp
+                - mountPath: /etc/netcup-offer-bot/config
+                  name: config
+                  readOnly: true
+                - mountPath: /etc/netcup-offer-bot/secrets
+                  name: secrets
+                  readOnly: true
                 - mountPath: /app/data
                   name: data
           nodeSelector:
@@ -218,6 +241,19 @@ matches the committed Deployment snapshot with network policies and probes on:
           volumes:
             - emptyDir: {}
               name: tmp
+            - configMap:
+                name: RELEASE-NAME-netcup-offer-bot
+              name: config
+            - name: secrets
+              projected:
+                defaultMode: 256
+                sources:
+                  - secret:
+                      items:
+                        - key: discord__webhook_url
+                          path: discord__webhook_url
+                      name: RELEASE-NAME-netcup-offer-bot
+                      optional: true
             - name: data
               persistentVolumeClaim:
                 claimName: RELEASE-NAME-netcup-offer-bot
@@ -234,5 +270,5 @@ matches the committed Deployment snapshot with network policies and probes on:
       name: RELEASE-NAME-netcup-offer-bot
       namespace: NAMESPACE
     stringData:
-      webHook: https://example.invalid/hook
+      discord__webhook_url: https://example.invalid/hook
     type: Opaque

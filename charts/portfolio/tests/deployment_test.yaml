@@ -21,7 +21,7 @@ tests:
       path: kind
       value: Deployment
     set:
-      application.port: 9090
+      server.port: 9090
     asserts:
       - equal:
           path: spec.template.spec.containers[0].ports
@@ -29,6 +29,100 @@ tests:
             - containerPort: 9090
               name: http
               protocol: TCP
+
+  # The `PORTFOLIO_` configuration arrives as a file; what is left in the environment is the
+  # loader's pointer, the ISR cache directory, and the three variables the Dioxus toolchain
+  # reads for itself.
+  # The exhaustive list is the assertion: every entry is a plain value, so no credential is
+  # injected at runtime and nothing is read from a Secret.
+  - it: passes the PORTFOLIO configuration as a file and the Dioxus knobs as environment
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].env
+          value:
+            - name: PORT
+              value: "8080"
+            - name: IP
+              value: 0.0.0.0
+            - name: RUST_LOG
+              value: info
+            - name: PORTFOLIO_CONFIG
+              value: /etc/portfolio/config
+            - name: PORTFOLIO_ISR__CACHE_DIR
+              value: /tmp/isr
+      - notExists:
+          path: spec.template.spec.containers[0].envFrom
+
+  # The published image bakes `PORTFOLIO_ISR__CACHE_DIR=/tmp/isr`, and the environment layer
+  # outranks the TOML one. Without the chart restating it, a moved cache directory would be
+  # written into `config.toml` and then silently ignored.
+  - it: restates the ISR cache directory so the image cannot shadow the file
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      isr.cacheDir: /cache/isr
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: PORTFOLIO_ISR__CACHE_DIR
+            value: /cache/isr
+
+  - it: follows the cache directory set through the raw config tree
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      config:
+        isr:
+          cache_dir: /cache/from-config
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: PORTFOLIO_ISR__CACHE_DIR
+            value: /cache/from-config
+
+  - it: mounts the rendered configuration read-only
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: config
+            configMap:
+              name: RELEASE-NAME-portfolio
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: config
+            mountPath: /etc/portfolio/config
+            readOnly: true
+
+  # The server reads no secret, so pointing it at a directory no volume provides would be a
+  # boot failure naming the path.
+  - it: names no secrets directory, because the server reads no secret
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: PORTFOLIO_SECRETS_DIR
+            value: /etc/portfolio/secrets
+      - notContains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: secrets
+            mountPath: /etc/portfolio/secrets
+            readOnly: true
 
   - it: probes the health endpoint on all three probes
     documentSelector:
@@ -76,25 +170,6 @@ tests:
           path: spec.template.spec.containers[0].startupProbe
       - exists:
           path: spec.template.spec.containers[0].livenessProbe
-
-  - it: loads configuration from the ConfigMap
-    documentSelector:
-      path: kind
-      value: Deployment
-    asserts:
-      - contains:
-          path: spec.template.spec.containers[0].envFrom
-          content:
-            configMapRef:
-              name: RELEASE-NAME-portfolio
-
-  - it: injects no secrets at runtime
-    documentSelector:
-      path: kind
-      value: Deployment
-    asserts:
-      - notExists:
-          path: spec.template.spec.containers[0].env
 
   # Without this the pod keeps running the old configuration after a values change.
   - it: rolls the pod when the ConfigMap changes

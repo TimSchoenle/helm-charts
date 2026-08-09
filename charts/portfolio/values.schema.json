@@ -6,26 +6,19 @@
       "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.Affinity",
       "required": []
     },
-    "application": {
+    "assets": {
       "additionalProperties": true,
       "properties": {
-        "logLevel": {
-          "default": "info",
-          "description": "Log verbosity passed to the application as `RUST_LOG`.\nAccepts standard tracing/env_logger directives (e.g. `info`, `debug`, `warn`).",
+        "distDir": {
+          "default": "public",
+          "description": "Directory holding the bundled assets (`assets.dist_dir`), relative to the working\ndirectory. Only the readiness probe consults it; the bundle itself is served by the Dioxus\nasset router, which resolves `public/` relative to the binary.",
           "required": [],
-          "title": "logLevel",
+          "title": "distDir",
           "type": "string"
-        },
-        "port": {
-          "default": 8080,
-          "description": "Port number the application listens on (exposed to the container as `PORT`).\nThe Axum server binds to 0.0.0.0 on this port.",
-          "required": [],
-          "title": "port",
-          "type": "integer"
         }
       },
       "required": [],
-      "title": "application"
+      "title": "assets"
     },
     "automountServiceAccountToken": {
       "default": false,
@@ -69,6 +62,42 @@
           "title": "component",
           "type": "string"
         },
+        "config": {
+          "additionalProperties": true,
+          "description": "Application configuration, expressed as the TOML tree the service documents. Rendered by\n`common.toml` into the ConfigMap the pod mounts, never passed as environment variables: the\nloader every application shares refuses a key supplied by both the environment and a file,\nand a value that lives in a file is one the kubelet can rotate under a running process.",
+          "required": [],
+          "title": "config",
+          "type": "object"
+        },
+        "configExtraToml": {
+          "default": "",
+          "description": "Verbatim TOML appended after the rendered `config` tree. The escape hatch for anything\n`common.toml` cannot express, notably arrays of tables.",
+          "required": [],
+          "title": "configExtraToml",
+          "type": "string"
+        },
+        "configMount": {
+          "additionalProperties": true,
+          "description": "Where the rendered configuration and the credential files land in the container. Consumed\nby `common.fileConfig.*`, which also passes both directories to the application as\n`\u003cPREFIX\u003e_CONFIG` and `\u003cPREFIX\u003e_SECRETS_DIR`.",
+          "properties": {
+            "configDir": {
+              "default": "",
+              "description": "Directory the rendered `config.toml` is mounted at.",
+              "required": [],
+              "title": "configDir",
+              "type": "string"
+            },
+            "secretsDir": {
+              "default": "",
+              "description": "Directory the credential files are mounted at, one file per configuration key.",
+              "required": [],
+              "title": "secretsDir",
+              "type": "string"
+            }
+          },
+          "required": [],
+          "title": "configMount"
+        },
         "dnsConfig": {
           "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.PodDNSConfig",
           "required": []
@@ -78,6 +107,20 @@
           "description": "Pod DNS policy.",
           "required": [],
           "title": "dnsPolicy",
+          "type": "string"
+        },
+        "existingConfigMap": {
+          "default": "",
+          "description": "Name of an existing ConfigMap holding `config.toml`, replacing the one this chart renders.",
+          "required": [],
+          "title": "existingConfigMap",
+          "type": "string"
+        },
+        "existingSecret": {
+          "default": "",
+          "description": "Name of an existing Secret holding the credential files, replacing the one this chart\nrenders. Its keys must be the configuration paths the service reads, with `__` for nesting\nand no dots — that is the file name the loader parses.",
+          "required": [],
+          "title": "existingSecret",
           "type": "string"
         },
         "extraEnv": {
@@ -845,6 +888,41 @@
       "title": "commonLabels",
       "type": "object"
     },
+    "config": {
+      "additionalProperties": true,
+      "description": "Extra configuration, expressed as the TOML tree of\n[the application's README](https://github.com/TimSchoenle/Portfolio#configuration)\n(`assets.dist_dir`, `isr.ttl_secs`, ...). Merged over everything the chart derives from the\nvalues above, so it can both extend and override them. Rendered into the mounted ConfigMap —\nnever into the environment, which the loader refuses to combine with a file.",
+      "required": [],
+      "title": "config",
+      "type": "object"
+    },
+    "configExtraToml": {
+      "default": "",
+      "description": "Verbatim TOML appended after the rendered configuration. The escape hatch for anything the\nchart's TOML renderer cannot express, notably arrays of tables.",
+      "required": [],
+      "title": "configExtraToml",
+      "type": "string"
+    },
+    "configMount": {
+      "additionalProperties": true,
+      "properties": {
+        "configDir": {
+          "default": "/etc/portfolio/config",
+          "description": "Directory the rendered `config.toml` is mounted at, passed as `PORTFOLIO_CONFIG`.",
+          "required": [],
+          "title": "configDir",
+          "type": "string"
+        },
+        "secretsDir": {
+          "default": "/etc/portfolio/secrets",
+          "description": "Directory credential files would be mounted at, passed as `PORTFOLIO_SECRETS_DIR`. The\nserver reads no secret today — `github.token` belongs to the build-time repository\nbuilder — so nothing is mounted and the variable is not set; the value is here for an\noperator adding one through `extraVolumes`.",
+          "required": [],
+          "title": "secretsDir",
+          "type": "string"
+        }
+      },
+      "required": [],
+      "title": "configMount"
+    },
     "extraEnv": {
       "description": "Additional environment variables for the application container.",
       "items": {
@@ -918,7 +996,7 @@
           "type": "string"
         },
         "tag": {
-          "default": "v2.2.3@sha256:b3cbdcad9b50ba79049cfafb0f219a294106647c6cb3928057f0efbd278d40dc",
+          "default": "v2.3.0@sha256:ae594c6c61f4f5b369803ba5e5b24294428ef8d4ebebf73e383efa57d63260ae",
           "description": "Container image tag to deploy, pinned by digest (`vX.Y.Z\nthe pull, while the tag stays on as the readable version marker. Defaults to the chart's\n`appVersion` when empty.",
           "required": [],
           "title": "tag",
@@ -982,6 +1060,29 @@
       },
       "required": [],
       "title": "ingress"
+    },
+    "isr": {
+      "additionalProperties": true,
+      "description": "Incremental static regeneration: the server caches each rendered page and serves it again\ninstead of re-rendering.",
+      "properties": {
+        "cacheDir": {
+          "default": "/tmp/isr",
+          "description": "Writable directory rendered HTML is cached into (`isr.cache_dir`). Empty disables ISR and\nrenders every request fresh. Keep it under `/tmp`, which the chart already provides as a\nwritable emptyDir under the read-only root filesystem, and outside the bundled `public/`\ntree so those content-hashed assets stay immutable. The server creates the directory itself\nand falls back to rendering fresh if it turns out not to be writable.",
+          "required": [],
+          "title": "cacheDir",
+          "type": "string"
+        },
+        "ttlSecs": {
+          "default": 0,
+          "description": "Revalidation interval in seconds (`isr.ttl_secs`). `0` means a permanent cache, which is\nright for this site: every page renders from compile-time data, so the only thing that\nchanges the output is a redeploy — and that starts from an empty cache. Set a positive value\nonly when a *persistent* cache volume is shared across deploys.",
+          "minimum": 0,
+          "required": [],
+          "title": "ttlSecs",
+          "type": "integer"
+        }
+      },
+      "required": [],
+      "title": "isr"
     },
     "kubeVersionOverride": {
       "default": "",
@@ -1054,6 +1155,13 @@
       },
       "required": [],
       "title": "livenessProbe"
+    },
+    "logLevel": {
+      "default": "info",
+      "description": "Log verbosity, passed as `RUST_LOG`. Accepts standard tracing directives (`info`, `debug`,\n`web=debug,info`). Not part of the `PORTFOLIO_` namespace — see `server`.",
+      "required": [],
+      "title": "logLevel",
+      "type": "string"
     },
     "nameOverride": {
       "default": "",
@@ -1528,6 +1636,30 @@
       ],
       "required": [],
       "title": "securityContextPreset"
+    },
+    "server": {
+      "additionalProperties": true,
+      "description": "The listener, which is the one part of the configuration the `PORTFOLIO_` namespace does\nnot own: `PORT`, `IP` and `RUST_LOG` belong to the Dioxus toolchain, which reads them from the\nenvironment itself. They are therefore still passed as environment variables, and cannot be\nsupplied through `config`.",
+      "properties": {
+        "host": {
+          "default": "0.0.0.0",
+          "description": "Bind address, passed as `IP`.",
+          "required": [],
+          "title": "host",
+          "type": "string"
+        },
+        "port": {
+          "default": 8080,
+          "description": "Bind port, passed as `PORT`. Also the container port, the Service target and what every\nprobe and NetworkPolicy rule is written against.",
+          "maximum": 65535,
+          "minimum": 1,
+          "required": [],
+          "title": "port",
+          "type": "integer"
+        }
+      },
+      "required": [],
+      "title": "server"
     },
     "service": {
       "additionalProperties": true,

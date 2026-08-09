@@ -6,109 +6,29 @@
       "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.Affinity",
       "required": []
     },
-    "application": {
-      "additionalProperties": true,
-      "properties": {
-        "handler": {
-          "additionalProperties": true,
-          "properties": {
-            "entries": {
-              "additionalProperties": {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              "description": "Handler configuration defining static routes and their S3 mappings.\nEach key represents a URL path, and the value is a list of \"bucket,file\" pairs.\nExample:\n```yaml\nentries:\n  myfile: [\"bucket1,file.txt\"]\n  mydir: [\"bucket2,dir/index.html\"]\n```",
-              "required": [],
-              "title": "entries",
-              "type": "object"
-            }
-          },
-          "required": [],
-          "title": "handler",
-          "type": "object"
-        },
-        "logLevel": {
-          "default": "info",
-          "description": "Log level for application output.",
-          "enum": [
-            "debug",
-            "info",
-            "warn",
-            "error"
-          ],
-          "required": [],
-          "title": "logLevel"
-        },
-        "s3": {
-          "additionalProperties": true,
-          "description": "Configuration for connecting to an S3-compatible service.",
-          "properties": {
-            "host": {
-              "default": "s3.amazon.com",
-              "description": "S3-compatible API endpoint.\nExample: \"https://s3.amazonaws.com\" or \"https://minio.yourdomain.com\"",
-              "required": [],
-              "title": "host",
-              "type": "string"
-            },
-            "region": {
-              "default": "eu-central-1",
-              "description": "AWS region or S3 region identifier.\nUsed for authenticating with region-specific endpoints.",
-              "required": [],
-              "title": "region",
-              "type": "string"
-            },
-            "secretName": {
-              "default": "",
-              "description": "Name of an existing Kubernetes Secret containing S3 credentials.\nThe secret must include `access_key` and `secret_key` fields.",
-              "required": [],
-              "title": "secretName",
-              "type": "string"
-            }
-          },
-          "required": [],
-          "title": "s3"
-        },
-        "sentryDsn": {
-          "default": "",
-          "description": "Sentry DSN for error tracking and reporting.\nLeave empty to disable Sentry integration.",
-          "required": [],
-          "title": "sentryDsn",
-          "type": "string"
-        },
-        "server": {
-          "additionalProperties": true,
-          "description": "HTTP server configuration.\nDefines where the application listens for incoming connections.",
-          "properties": {
-            "host": {
-              "default": "0.0.0.0",
-              "description": "Host address to bind the HTTP server.\nTypically `0.0.0.0` to listen on all network interfaces.",
-              "required": [],
-              "title": "host",
-              "type": "string"
-            },
-            "port": {
-              "default": 8080,
-              "description": "Port number the server listens on.",
-              "required": [],
-              "title": "port",
-              "type": "integer"
-            }
-          },
-          "required": [],
-          "title": "server"
-        }
-      },
-      "required": [],
-      "title": "application"
-    },
     "automountServiceAccountToken": {
       "default": false,
       "description": "Mount the ServiceAccount API token into the pod.\nSet on the pod itself, which is what actually keeps the token out of the container: the\nServiceAccount-level setting is ignored as soon as a pod names a different account.",
       "required": [],
       "title": "automountServiceAccountToken",
       "type": "boolean"
+    },
+    "bucket": {
+      "additionalProperties": true,
+      "properties": {
+        "entries": {
+          "additionalProperties": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "description": "One entry per permanent link (`bucket.entries`), keyed by the request path it is served\nat and valued by the bucket and object key it resolves to. Required — a server with no\nentry serves nothing.\nExample:\n```yaml\nentries:\n  \"docs/handbook\":\n    bucket: media\n    object: handbook.pdf\n  changelog:\n    bucket: media\n    object: releases/CHANGELOG.md\n```",
+          "required": [],
+          "title": "entries",
+          "type": "object"
+        }
+      },
+      "required": [],
+      "title": "bucket"
     },
     "common": {
       "description": "Shared template partials for the TimSchoenle Helm charts",
@@ -145,6 +65,42 @@
           "title": "component",
           "type": "string"
         },
+        "config": {
+          "additionalProperties": true,
+          "description": "Application configuration, expressed as the TOML tree the service documents. Rendered by\n`common.toml` into the ConfigMap the pod mounts, never passed as environment variables: the\nloader every application shares refuses a key supplied by both the environment and a file,\nand a value that lives in a file is one the kubelet can rotate under a running process.",
+          "required": [],
+          "title": "config",
+          "type": "object"
+        },
+        "configExtraToml": {
+          "default": "",
+          "description": "Verbatim TOML appended after the rendered `config` tree. The escape hatch for anything\n`common.toml` cannot express, notably arrays of tables.",
+          "required": [],
+          "title": "configExtraToml",
+          "type": "string"
+        },
+        "configMount": {
+          "additionalProperties": true,
+          "description": "Where the rendered configuration and the credential files land in the container. Consumed\nby `common.fileConfig.*`, which also passes both directories to the application as\n`\u003cPREFIX\u003e_CONFIG` and `\u003cPREFIX\u003e_SECRETS_DIR`.",
+          "properties": {
+            "configDir": {
+              "default": "",
+              "description": "Directory the rendered `config.toml` is mounted at.",
+              "required": [],
+              "title": "configDir",
+              "type": "string"
+            },
+            "secretsDir": {
+              "default": "",
+              "description": "Directory the credential files are mounted at, one file per configuration key.",
+              "required": [],
+              "title": "secretsDir",
+              "type": "string"
+            }
+          },
+          "required": [],
+          "title": "configMount"
+        },
         "dnsConfig": {
           "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.PodDNSConfig",
           "required": []
@@ -154,6 +110,20 @@
           "description": "Pod DNS policy.",
           "required": [],
           "title": "dnsPolicy",
+          "type": "string"
+        },
+        "existingConfigMap": {
+          "default": "",
+          "description": "Name of an existing ConfigMap holding `config.toml`, replacing the one this chart renders.",
+          "required": [],
+          "title": "existingConfigMap",
+          "type": "string"
+        },
+        "existingSecret": {
+          "default": "",
+          "description": "Name of an existing Secret holding the credential files, replacing the one this chart\nrenders. Its keys must be the configuration paths the service reads, with `__` for nesting\nand no dots — that is the file name the loader parses.",
+          "required": [],
+          "title": "existingSecret",
           "type": "string"
         },
         "extraEnv": {
@@ -921,6 +891,55 @@
       "title": "commonLabels",
       "type": "object"
     },
+    "config": {
+      "additionalProperties": true,
+      "description": "Extra configuration, expressed as the TOML tree of\n[the service's README](https://github.com/TimSchoenle/s3-bucket-perma-link#configuration)\n(`server.host`, `bucket.entries`, ...). Merged over everything the chart derives from the\nvalues above, so it can both extend and override them. Rendered into the mounted ConfigMap —\nnever into the environment, which the loader refuses to combine with a file.",
+      "required": [],
+      "title": "config",
+      "type": "object"
+    },
+    "configExtraToml": {
+      "default": "",
+      "description": "Verbatim TOML appended after the rendered configuration. The escape hatch for anything the\nchart's TOML renderer cannot express, notably arrays of tables.",
+      "required": [],
+      "title": "configExtraToml",
+      "type": "string"
+    },
+    "configMount": {
+      "additionalProperties": true,
+      "properties": {
+        "configDir": {
+          "default": "/etc/s3-bucket-perma-link/config",
+          "description": "Directory the rendered `config.toml` is mounted at, passed as `S3_PERMA_LINK_CONFIG`.",
+          "required": [],
+          "title": "configDir",
+          "type": "string"
+        },
+        "rolloutOnChange": {
+          "default": false,
+          "description": "Add `checksum/*` pod annotations so a configuration change rolls the Deployment. Off by\ndefault, and deliberately so: the service watches the directories its configuration came\nfrom and rebuilds its bucket clients and listener in place when the kubelet updates the\nmounted ConfigMap or Secret, which is strictly better than a rollout. Turn this on only if\nyou want configuration changes to behave like an ordinary image bump. `telemetry.*` is\ninstalled once per process and needs a restart either way.",
+          "required": [],
+          "title": "rolloutOnChange",
+          "type": "boolean"
+        },
+        "secretsDir": {
+          "default": "/etc/s3-bucket-perma-link/secrets",
+          "description": "Directory the credential files are mounted at, passed as `S3_PERMA_LINK_SECRETS_DIR`.",
+          "required": [],
+          "title": "secretsDir",
+          "type": "string"
+        }
+      },
+      "required": [],
+      "title": "configMount"
+    },
+    "existingSecret": {
+      "default": "",
+      "description": "Name of an existing Secret holding the S3 credentials, which keeps them out of\n`values.yaml` and out of the Helm release object. **Its keys are the configuration paths, not\nfree-form names**: `s3__access_key` and `s3__secret_key`, because the file name is what the\nloader parses. Set, the chart renders no Secret of its own and `s3.accessKey` / `s3.secretKey`\nare ignored.",
+      "required": [],
+      "title": "existingSecret",
+      "type": "string"
+    },
     "extraEnv": {
       "description": "Additional environment variables for the application container.",
       "items": {
@@ -994,7 +1013,7 @@
           "type": "string"
         },
         "tag": {
-          "default": "v0.3.24@sha256:f3e960670fccf8e46d268ca091fcc12950b469f82de9d08d939eb19a53fb88bf",
+          "default": "v1.0.0@sha256:eb402090337f7123a489e0a5f386d6e5e89f587e6d48d1df403b8d3c827bbdbb",
           "description": "The container image tag, pinned by digest (`vX.Y.Z\npull, while the tag stays on as the readable version marker. Defaults to the chart's\n`appVersion` when empty.",
           "required": [],
           "title": "tag",
@@ -1544,6 +1563,41 @@
       "title": "revisionHistoryLimit",
       "type": "integer"
     },
+    "s3": {
+      "additionalProperties": true,
+      "properties": {
+        "accessKey": {
+          "default": "",
+          "description": "S3 access key (`s3.access_key`). Rendered into the chart's Secret and mounted as a file,\nso a rotation is picked up without a restart. Required unless `existingSecret` supplies it.",
+          "required": [],
+          "title": "accessKey",
+          "type": "string"
+        },
+        "host": {
+          "default": "s3.amazon.com",
+          "description": "S3-compatible API endpoint (`s3.host`), e.g. `s3.eu-central-1.amazonaws.com` or\n`minio.example.com`.",
+          "required": [],
+          "title": "host",
+          "type": "string"
+        },
+        "region": {
+          "default": "eu-central-1",
+          "description": "Region identifier used when signing requests (`s3.region`).",
+          "required": [],
+          "title": "region",
+          "type": "string"
+        },
+        "secretKey": {
+          "default": "",
+          "description": "S3 secret key (`s3.secret_key`). Required unless `existingSecret` supplies it.",
+          "required": [],
+          "title": "secretKey",
+          "type": "string"
+        }
+      },
+      "required": [],
+      "title": "s3"
+    },
     "securityContext": {
       "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.SecurityContext",
       "required": []
@@ -1557,6 +1611,29 @@
       ],
       "required": [],
       "title": "securityContextPreset"
+    },
+    "server": {
+      "additionalProperties": true,
+      "properties": {
+        "host": {
+          "default": "0.0.0.0",
+          "description": "Bind address (`server.host`). `0.0.0.0` is what makes the Service reach the listener.",
+          "required": [],
+          "title": "host",
+          "type": "string"
+        },
+        "port": {
+          "default": 8080,
+          "description": "Bind port (`server.port`). Also the container port, the Service target and what every\nprobe and NetworkPolicy rule is written against.",
+          "maximum": 65535,
+          "minimum": 1,
+          "required": [],
+          "title": "port",
+          "type": "integer"
+        }
+      },
+      "required": [],
+      "title": "server"
     },
     "service": {
       "additionalProperties": true,
@@ -1686,6 +1763,33 @@
     "strategy": {
       "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.apps.v1.DeploymentStrategy",
       "required": []
+    },
+    "telemetry": {
+      "additionalProperties": true,
+      "properties": {
+        "logLevel": {
+          "default": "info",
+          "description": "Log level (`telemetry.log_level`).",
+          "enum": [
+            "trace",
+            "debug",
+            "info",
+            "warn",
+            "error"
+          ],
+          "required": [],
+          "title": "logLevel"
+        },
+        "sentryDsn": {
+          "default": "",
+          "description": "Sentry DSN (`telemetry.sentry_dsn`). Empty disables Sentry entirely.",
+          "required": [],
+          "title": "sentryDsn",
+          "type": "string"
+        }
+      },
+      "required": [],
+      "title": "telemetry"
     },
     "terminationGracePeriodSeconds": {
       "default": 30,

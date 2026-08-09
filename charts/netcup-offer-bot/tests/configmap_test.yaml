@@ -1,19 +1,86 @@
 suite: configmap
 templates:
   - configmap.yaml
+set:
+  discord.webhookUrl: https://example.invalid/hook
 tests:
-  - it: carries the bot configuration
+  - it: renders the configuration as a single TOML file
     asserts:
       - isKind:
           of: ConfigMap
       - equal:
           path: metadata.name
           value: RELEASE-NAME-netcup-offer-bot
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\[feed\]\ncheck_interval_secs = 180'
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\[telemetry\]\nlog_level = "INFO"'
 
   - it: reflects a changed check interval
     set:
-      env.checkInterval: 600
+      feed.checkIntervalSecs: 600
     asserts:
-      - equal:
-          path: data.CHECK_INTERVAL
-          value: "600"
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: 'check_interval_secs = 600'
+
+  # Written unconditionally the exporter would bind a listener nothing scrapes.
+  - it: configures the exporter only when metrics are enabled
+    asserts:
+      - notMatchRegex:
+          path: data["config.toml"]
+          pattern: '\[metrics\]'
+
+  # The bot's own default is 127.0.0.1, which answers nothing from outside the container, so a
+  # PodMonitor pointed at it would scrape a refused connection.
+  - it: binds the exporter to every interface so the PodMonitor can reach it
+    set:
+      metrics.enabled: true
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\[metrics\]\nip = "0\.0\.0\.0"\nport = 9184'
+
+  # An empty optional value is still a *supplied* value to the loader.
+  - it: omits an unset Sentry DSN rather than writing it empty
+    asserts:
+      - notMatchRegex:
+          path: data["config.toml"]
+          pattern: 'sentry_dsn'
+
+  - it: merges the raw config tree over the derived values
+    set:
+      config:
+        feed:
+          check_interval_secs: 30
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: 'check_interval_secs = 30'
+
+  # The webhook is a credential: it belongs in the projected Secret volume, never in a
+  # ConfigMap anyone with namespace read access can print.
+  - it: keeps the webhook out of the ConfigMap
+    asserts:
+      - notMatchRegex:
+          path: data["config.toml"]
+          pattern: 'webhook_url'
+
+  - it: fails loudly when no webhook is configured at all
+    set:
+      discord.webhookUrl: ""
+    asserts:
+      - failedTemplate:
+          errorPattern: "discord.webhookUrl is required unless existingSecret supplies"
+
+  # The chart cannot see inside an `existingSecret`, and a webhook it cannot see is not the
+  # same as a webhook that is missing.
+  - it: accepts an existing Secret as the webhook it cannot see
+    set:
+      discord.webhookUrl: ""
+      existingSecret: my-webhook-secret
+    asserts:
+      - isKind:
+          of: ConfigMap

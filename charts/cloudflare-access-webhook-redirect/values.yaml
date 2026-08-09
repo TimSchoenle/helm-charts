@@ -30,7 +30,7 @@ image:
   # -- The container image tag, pinned by digest (`vX.Y.Z@sha256:...`). The digest pins the
   # pull, while the tag stays on as the readable version marker. Defaults to the chart's
   # `appVersion` when empty.
-  tag: v0.3.22@sha256:41b63717cbb575be525386d6b1c731d24e1c515b2b1d5f8421bc050a64f5375c
+  tag: v1.0.0@sha256:90a8c511781fa563bca7b78149975ab34dc5a6736b469b4afc7cdd8c2b4e7afd
 
   # @schema
   # enum: ["", Always, IfNotPresent, Never]
@@ -154,83 +154,143 @@ securityContext: {}
 # @schema
 # additionalProperties: true
 # @schema
-application:
+server:
   # @schema
-  # enum: [debug, info, warn, error]
+  # type: string
   # @schema
-  # -- Application log level
+  # -- Bind address (`server.host`). The application's own default is `127.0.0.1`, which in a
+  # container answers nothing; `0.0.0.0` is what makes the Service reach it.
+  host: 0.0.0.0
+
+  # @schema
+  # type: integer
+  # minimum: 1
+  # maximum: 65535
+  # @schema
+  # -- Bind port (`server.port`). Also the container port, the Service target and what every
+  # probe and NetworkPolicy rule is written against.
+  port: 8080
+
+# @schema
+# additionalProperties: true
+# @schema
+webhook:
+  # @schema
+  # type: string
+  # @schema
+  # -- The Cloudflare Access protected service every allowed path is joined onto
+  # (`webhook.target_base`). Required.
+  targetBase: ""
+
+  # @schema
+  # type: object
+  # additionalProperties:
+  #   type: array
+  #   items:
+  #     type: string
+  # @schema
+  # -- Path regex to the methods allowed on it (`webhook.paths`). Patterns are anchored, so
+  # `/webhook/.*` matches `/webhook/github` but not `/api/webhook/github`. Methods are `ALL`,
+  # `GET`, `POST`, `PUT`, `PATCH` or `DELETE`. Required — a proxy with no allowed path
+  # forwards nothing.
+  # Example:
+  #   "/webhook/.*":
+  #     - ALL
+  #   "/api/public/.*":
+  #     - GET
+  #     - POST
+  paths: {}
+
+# @schema
+# additionalProperties: true
+# @schema
+telemetry:
+  # @schema
+  # enum: [trace, debug, info, warn, error]
+  # @schema
+  # -- Log level (`telemetry.log_level`).
   logLevel: info
 
   # @schema
   # type: string
   # @schema
-  # -- Sentry DSN for error tracking (empty disables)
+  # -- Sentry DSN (`telemetry.sentry_dsn`). Empty disables Sentry entirely.
   sentryDsn: ""
 
+# @schema
+# additionalProperties: true
+# @schema
+cloudflare:
   # @schema
-  # additionalProperties: true
+  # type: string
   # @schema
-  server:
-    # @schema
-    # type: integer
-    # @schema
-    # -- HTTP server port
-    port: 8080
-
-    # @schema
-    # type: string
-    # @schema
-    # -- Server bind address
-    host: 0.0.0.0
+  # -- Cloudflare Access service token client ID (`cloudflare.client_id`). Rendered into the
+  # chart's Secret and mounted as a file, so a rotation is picked up without a restart.
+  # Required unless `existingSecret` supplies it.
+  clientId: ""
 
   # @schema
-  # additionalProperties: true
+  # type: string
   # @schema
-  handler:
-    # @schema
-    # type: string
-    # @schema
-    # -- Base URL for redirect targets
-    targetBase: ""
+  # -- Cloudflare Access service token client secret (`cloudflare.client_secret`). Required
+  # unless `existingSecret` supplies it.
+  clientSecret: ""
 
-    # @schema
-    # type: object
-    # additionalProperties:
-    #   type: array
-    #   items:
-    #     type: string
-    # @schema
-    # -- Path configurations with allowed HTTP methods
-    # Example:
-    #   api/webhook:
-    #     - ALL
-    #   test:
-    #     - GET
-    #     - POST
-    paths: {}
+# @schema
+# type: string
+# @schema
+# -- Name of an existing Secret holding the Cloudflare Access credentials, which keeps them out
+# of `values.yaml` and out of the Helm release object. **Its keys are the configuration paths,
+# not free-form names**: `cloudflare__client_id` and `cloudflare__client_secret`, because the
+# file name is what the loader parses. Set, the chart renders no Secret of its own and
+# `cloudflare.clientId` / `cloudflare.clientSecret` are ignored.
+existingSecret: ""
+
+# @schema
+# type: object
+# additionalProperties: true
+# @schema
+# -- Extra configuration, expressed as the TOML tree of
+# [the service's README](https://github.com/TimSchoenle/cloudflare-access-webhook-redirect#-configuration)
+# (`server.host`, `webhook.target_base`, ...). Merged over everything the chart derives from
+# the values above, so it can both extend and override them. Rendered into the mounted
+# ConfigMap — never into the environment, which the loader refuses to combine with a file.
+config: {}
+
+# @schema
+# type: string
+# @schema
+# -- Verbatim TOML appended after the rendered configuration. The escape hatch for anything the
+# chart's TOML renderer cannot express, notably arrays of tables.
+configExtraToml: ""
+
+# @schema
+# additionalProperties: true
+# @schema
+configMount:
+  # @schema
+  # type: boolean
+  # @schema
+  # -- Add `checksum/*` pod annotations so a configuration change rolls the Deployment. Off by
+  # default, and deliberately so: the proxy watches the directories its configuration came from
+  # and rebuilds its client, path patterns, credentials and listener in place when the kubelet
+  # updates the mounted ConfigMap or Secret, which is strictly better than a rollout. Turn this
+  # on only if you want configuration changes to behave like an ordinary image bump.
+  # `telemetry.*` is installed once per process and needs a restart either way.
+  rolloutOnChange: false
 
   # @schema
-  # additionalProperties: true
+  # type: string
   # @schema
-  cloudflareAccess:
-    # @schema
-    # type: string
-    # @schema
-    # -- Existing secret name containing Cloudflare Access credentials
-    # Must contain client_id and client_secret keys
-    secretName: ""
+  # -- Directory the rendered `config.toml` is mounted at, passed as `WEBHOOK_REDIRECT_CONFIG`.
+  configDir: /etc/cloudflare-access-webhook-redirect/config
 
-    # @schema
-    # type: [string, "null"]
-    # @schema
-    # -- Optional client ID (alternative to secretName)
-    # clientId: ""
-
-    # @schema
-    # type: [string, "null"]
-    # @schema
-    # -- Optional client secret (alternative to secretName)
-    # clientSecret: ""
+  # @schema
+  # type: string
+  # @schema
+  # -- Directory the credential files are mounted at, passed as
+  # `WEBHOOK_REDIRECT_SECRETS_DIR`.
+  secretsDir: /etc/cloudflare-access-webhook-redirect/secrets
 
 # @schema
 # additionalProperties: true

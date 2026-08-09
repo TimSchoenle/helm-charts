@@ -34,6 +34,42 @@
       "title": "component",
       "type": "string"
     },
+    "config": {
+      "additionalProperties": true,
+      "description": "Application configuration, expressed as the TOML tree the service documents. Rendered by\n`common.toml` into the ConfigMap the pod mounts, never passed as environment variables: the\nloader every application shares refuses a key supplied by both the environment and a file,\nand a value that lives in a file is one the kubelet can rotate under a running process.",
+      "required": [],
+      "title": "config",
+      "type": "object"
+    },
+    "configExtraToml": {
+      "default": "",
+      "description": "Verbatim TOML appended after the rendered `config` tree. The escape hatch for anything\n`common.toml` cannot express, notably arrays of tables.",
+      "required": [],
+      "title": "configExtraToml",
+      "type": "string"
+    },
+    "configMount": {
+      "additionalProperties": true,
+      "description": "Where the rendered configuration and the credential files land in the container. Consumed\nby `common.fileConfig.*`, which also passes both directories to the application as\n`\u003cPREFIX\u003e_CONFIG` and `\u003cPREFIX\u003e_SECRETS_DIR`.",
+      "properties": {
+        "configDir": {
+          "default": "",
+          "description": "Directory the rendered `config.toml` is mounted at.",
+          "required": [],
+          "title": "configDir",
+          "type": "string"
+        },
+        "secretsDir": {
+          "default": "",
+          "description": "Directory the credential files are mounted at, one file per configuration key.",
+          "required": [],
+          "title": "secretsDir",
+          "type": "string"
+        }
+      },
+      "required": [],
+      "title": "configMount"
+    },
     "dnsConfig": {
       "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.PodDNSConfig",
       "required": []
@@ -43,6 +79,20 @@
       "description": "Pod DNS policy.",
       "required": [],
       "title": "dnsPolicy",
+      "type": "string"
+    },
+    "existingConfigMap": {
+      "default": "",
+      "description": "Name of an existing ConfigMap holding `config.toml`, replacing the one this chart renders.",
+      "required": [],
+      "title": "existingConfigMap",
+      "type": "string"
+    },
+    "existingSecret": {
+      "default": "",
+      "description": "Name of an existing Secret holding the credential files, replacing the one this chart\nrenders. Its keys must be the configuration paths the service reads, with `__` for nesting\nand no dots — that is the file name the loader parses.",
+      "required": [],
+      "title": "existingSecret",
       "type": "string"
     },
     "extraEnv": {

@@ -1,9 +1,4 @@
-{{- include "common.validateValues" (dict "ctx" $ "required" (list
-     "application.server.host"
-     "application.server.port"
-     "application.s3.host"
-     "application.s3.region"
-   )) }}
+{{- include "s3-bucket-perma-link.validateValues" . }}
 kind: ConfigMap
 apiVersion: v1
 metadata:
@@ -16,25 +11,12 @@ metadata:
     {{- . | nindent 4 }}
   {{- end }}
 data:
-  SERVER.HOST: {{ .Values.application.server.host | quote }}
-  SERVER.PORT: {{ .Values.application.server.port | quote }}
-  S3.HOST: {{ .Values.application.s3.host | quote }}
-  S3.REGION: {{ .Values.application.s3.region | quote }}
-  BUCKET.ENTRIES: {{ include "config.entries" . }}
-  LOG_LEVEL: {{ .Values.application.logLevel | quote }}
-  {{- with .Values.application.sentryDsn}}
-  SENTRY_DSN: {{ . | quote }}
-  {{- end}}
-
-
-{{/*
-Convert entriy values to the correct format
-Example: key:bucket,file.txt; key2:bucket2,config.yaml
-*/}}
-{{- define "config.entries" -}}
-{{- $list := list -}}
-{{- range $k, $v := .Values.application.handler.entries -}}
-{{- $list = append $list (printf "%s:%s" $k (join "," $v)) -}}
-{{- end -}}
-{{ join "; " $list }}
-{{- end -}}
+  {{- /*
+    One file rather than a set of fragments. The loader does merge every `*.toml` in the
+    directory, but relying on that would put the precedence of one value against another inside
+    a merge this chart does not own or test. Merging in the template instead makes the effective
+    configuration readable with `kubectl get configmap -o yaml`, which is what an operator wants
+    to look at when a reload did not do what they expected.
+  */}}
+  config.toml: |
+    {{- include "s3-bucket-perma-link.configToml" . | nindent 4 }}

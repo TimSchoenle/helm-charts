@@ -1,5 +1,23 @@
 matches the committed Deployment snapshot:
   1: |
+    apiVersion: v1
+    data:
+      config.toml: |
+        [server]
+        bind_addr = "0.0.0.0:8080"
+        data_dir = "/dist/data"
+        dist_dir = "/dist"
+    kind: ConfigMap
+    metadata:
+      labels:
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: mp-stats-legacy-viewer
+        app.kubernetes.io/version: 0.0.0
+        helm.sh/chart: mp-stats-legacy-viewer-0.0.0
+      name: RELEASE-NAME-mp-stats-legacy-viewer
+      namespace: NAMESPACE
+  2: |
     apiVersion: apps/v1
     kind: Deployment
     metadata:
@@ -20,6 +38,8 @@ matches the committed Deployment snapshot:
           app.kubernetes.io/name: mp-stats-legacy-viewer
       template:
         metadata:
+          annotations:
+            checksum/configmap: cefca9513426a23b31131fb777029d276ab718718f6138bbd251ea95bd74f395
           labels:
             app.kubernetes.io/instance: RELEASE-NAME
             app.kubernetes.io/managed-by: Helm
@@ -28,7 +48,10 @@ matches the committed Deployment snapshot:
         spec:
           automountServiceAccountToken: false
           containers:
-            - image: timschoenle/mp-stats-legacy-viewer:v0.0.0@sha256:0000000000000000000000000000000000000000000000000000000000000000
+            - env:
+                - name: MP_STATS_CONFIG
+                  value: /etc/mp-stats/config
+              image: timschoenle/mp-stats-legacy-viewer:v0.0.0@sha256:0000000000000000000000000000000000000000000000000000000000000000
               imagePullPolicy: IfNotPresent
               livenessProbe:
                 failureThreshold: 3
@@ -77,6 +100,9 @@ matches the committed Deployment snapshot:
               volumeMounts:
                 - mountPath: /tmp
                   name: tmp
+                - mountPath: /etc/mp-stats/config
+                  name: config
+                  readOnly: true
           securityContext:
             fsGroup: 1000
             fsGroupChangePolicy: OnRootMismatch
@@ -90,8 +116,29 @@ matches the committed Deployment snapshot:
           volumes:
             - emptyDir: {}
               name: tmp
+            - configMap:
+                name: RELEASE-NAME-mp-stats-legacy-viewer
+              name: config
 matches the committed Deployment snapshot with network policies and probes on:
   1: |
+    apiVersion: v1
+    data:
+      config.toml: |
+        [server]
+        bind_addr = "0.0.0.0:8080"
+        data_dir = "/dist/data"
+        dist_dir = "/dist"
+    kind: ConfigMap
+    metadata:
+      labels:
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: mp-stats-legacy-viewer
+        app.kubernetes.io/version: 0.0.0
+        helm.sh/chart: mp-stats-legacy-viewer-0.0.0
+      name: RELEASE-NAME-mp-stats-legacy-viewer
+      namespace: NAMESPACE
+  2: |
     apiVersion: apps/v1
     kind: Deployment
     metadata:
@@ -112,6 +159,8 @@ matches the committed Deployment snapshot with network policies and probes on:
           app.kubernetes.io/name: mp-stats-legacy-viewer
       template:
         metadata:
+          annotations:
+            checksum/configmap: cefca9513426a23b31131fb777029d276ab718718f6138bbd251ea95bd74f395
           labels:
             app.kubernetes.io/instance: RELEASE-NAME
             app.kubernetes.io/managed-by: Helm
@@ -130,7 +179,10 @@ matches the committed Deployment snapshot with network policies and probes on:
                   weight: 100
           automountServiceAccountToken: false
           containers:
-            - image: timschoenle/mp-stats-legacy-viewer:v0.0.0@sha256:0000000000000000000000000000000000000000000000000000000000000000
+            - env:
+                - name: MP_STATS_CONFIG
+                  value: /etc/mp-stats/config
+              image: timschoenle/mp-stats-legacy-viewer:v0.0.0@sha256:0000000000000000000000000000000000000000000000000000000000000000
               imagePullPolicy: IfNotPresent
               livenessProbe:
                 failureThreshold: 3
@@ -179,6 +231,9 @@ matches the committed Deployment snapshot with network policies and probes on:
               volumeMounts:
                 - mountPath: /tmp
                   name: tmp
+                - mountPath: /etc/mp-stats/config
+                  name: config
+                  readOnly: true
           nodeSelector:
             kubernetes.io/os: linux
           securityContext:
@@ -194,3 +249,6 @@ matches the committed Deployment snapshot with network policies and probes on:
           volumes:
             - emptyDir: {}
               name: tmp
+            - configMap:
+                name: RELEASE-NAME-mp-stats-legacy-viewer
+              name: config

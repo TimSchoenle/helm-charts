@@ -46,6 +46,56 @@ commonLabels: {}
 commonAnnotations: {}
 
 # @schema
+# type: object
+# additionalProperties: true
+# @schema
+# -- Application configuration, expressed as the TOML tree the service documents. Rendered by
+# `common.toml` into the ConfigMap the pod mounts, never passed as environment variables: the
+# loader every application shares refuses a key supplied by both the environment and a file,
+# and a value that lives in a file is one the kubelet can rotate under a running process.
+config: {}
+
+# @schema
+# type: string
+# @schema
+# -- Verbatim TOML appended after the rendered `config` tree. The escape hatch for anything
+# `common.toml` cannot express, notably arrays of tables.
+configExtraToml: ""
+
+# @schema
+# additionalProperties: true
+# @schema
+# -- Where the rendered configuration and the credential files land in the container. Consumed
+# by `common.fileConfig.*`, which also passes both directories to the application as
+# `<PREFIX>_CONFIG` and `<PREFIX>_SECRETS_DIR`.
+configMount:
+  # @schema
+  # type: string
+  # @schema
+  # -- Directory the rendered `config.toml` is mounted at.
+  configDir: ""
+
+  # @schema
+  # type: string
+  # @schema
+  # -- Directory the credential files are mounted at, one file per configuration key.
+  secretsDir: ""
+
+# @schema
+# type: string
+# @schema
+# -- Name of an existing ConfigMap holding `config.toml`, replacing the one this chart renders.
+existingConfigMap: ""
+
+# @schema
+# type: string
+# @schema
+# -- Name of an existing Secret holding the credential files, replacing the one this chart
+# renders. Its keys must be the configuration paths the service reads, with `__` for nesting
+# and no dots — that is the file name the loader parses.
+existingSecret: ""
+
+# @schema
 # type: string
 # @schema
 # -- Value for the `app.kubernetes.io/component` label.

@@ -21,7 +21,7 @@ image:
   # type: string
   # @schema
   # -- The container image tag. Defaults to the chart's `appVersion` when empty.
-  tag: v1.5.24@sha256:358897a7b824b78d32d85cec7990b5d6a74a94deedfbe66663c4ff3b7d7d994d
+  tag: v2.0.0@sha256:ca4777a39e389609910492c2668ad524295512065a41bf8ffad849004b832efb
 
   # @schema
   # enum: ["", Always, IfNotPresent, Never]
@@ -36,42 +36,87 @@ image:
 imagePullSecrets: []
 
 # @schema
-# type: string
+# additionalProperties: true
 # @schema
-# -- Name of an existing Secret holding the `webHook` key.
-# When set, the chart does not create a Secret and `env.webHook` is ignored — which keeps
-# the webhook URL out of `values.yaml` and out of the Helm release object.
-existingSecret: ""
+discord:
+  # @schema
+  # type: string
+  # @schema
+  # -- Discord webhook the offers are posted to (`discord.webhook_url`). Rendered into the
+  # chart's Secret and mounted as a file rather than passed as an environment variable, so it
+  # never appears in `kubectl describe pod` or in the environment of a child process.
+  # Required unless `existingSecret` supplies it.
+  webhookUrl: ""
 
 # @schema
 # additionalProperties: true
 # @schema
-env:
-  # @schema
-  # type: string
-  # @schema
-  # -- Sentry DSN for error tracking. Leave empty to disable.
-  sentryDns: ""
-
-  # @schema
-  # type: string
-  # @schema
-  # -- Webhook URL to send updates or notifications.
-  # Required unless `existingSecret` is set.
-  webHook: ""
-
+feed:
   # @schema
   # type: integer
   # minimum: 1
   # @schema
-  # -- Interval in seconds between offer checks.
-  checkInterval: 180
+  # -- Seconds between two RSS feed checks (`feed.check_interval_secs`).
+  checkIntervalSecs: 180
+
+# @schema
+# additionalProperties: true
+# @schema
+telemetry:
+  # @schema
+  # enum: [TRACE, DEBUG, INFO, WARN, ERROR]
+  # @schema
+  # -- Log level (`telemetry.log_level`).
+  logLevel: INFO
 
   # @schema
-  # enum: [debug, info, warn, error]
+  # type: string
   # @schema
-  # -- Log level for the application.
-  logLevel: info
+  # -- Sentry DSN (`telemetry.sentry_dsn`). Empty disables Sentry entirely.
+  sentryDsn: ""
+
+# @schema
+# type: string
+# @schema
+# -- Name of an existing Secret holding the Discord webhook, which keeps it out of `values.yaml`
+# and out of the Helm release object. **Its key is the configuration path, not a free-form
+# name**: `discord__webhook_url`, because the file name is what the loader parses. Set, the
+# chart renders no Secret of its own and `discord.webhookUrl` is ignored.
+existingSecret: ""
+
+# @schema
+# type: object
+# additionalProperties: true
+# @schema
+# -- Extra configuration, expressed as the TOML tree of
+# [the bot's README](https://github.com/TimSchoenle/netcup-offer-bot#configuration)
+# (`feed.check_interval_secs`, `metrics.port`, ...). Merged over everything the chart derives
+# from the values above, so it can both extend and override them. Rendered into the mounted
+# ConfigMap — never into the environment, which the loader refuses to combine with a file.
+config: {}
+
+# @schema
+# type: string
+# @schema
+# -- Verbatim TOML appended after the rendered configuration. The escape hatch for anything the
+# chart's TOML renderer cannot express, notably arrays of tables.
+configExtraToml: ""
+
+# @schema
+# additionalProperties: true
+# @schema
+configMount:
+  # @schema
+  # type: string
+  # @schema
+  # -- Directory the rendered `config.toml` is mounted at, passed as `NETCUP_OFFER_BOT_CONFIG`.
+  configDir: /etc/netcup-offer-bot/config
+
+  # @schema
+  # type: string
+  # @schema
+  # -- Directory the credential file is mounted at, passed as `NETCUP_OFFER_BOT_SECRETS_DIR`.
+  secretsDir: /etc/netcup-offer-bot/secrets
 
 # @schema
 # enum: [restricted, none]
@@ -223,9 +268,19 @@ metrics:
   enabled: false
 
   # @schema
-  # type: integer
+  # type: string
   # @schema
-  # -- Port to expose metrics on.
+  # -- Address the Prometheus exporter binds (`metrics.ip`). The bot's own default is
+  # `127.0.0.1`, which answers nothing from outside the container — a PodMonitor pointed at it
+  # scrapes a refused connection.
+  ip: 0.0.0.0
+
+  # @schema
+  # type: integer
+  # minimum: 1
+  # maximum: 65535
+  # @schema
+  # -- Port the Prometheus exporter listens on (`metrics.port`).
   port: 9184
 
   # @schema

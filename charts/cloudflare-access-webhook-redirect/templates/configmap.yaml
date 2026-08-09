@@ -1,8 +1,4 @@
-{{- include "common.validateValues" (dict "ctx" $ "required" (list
-     "application.server.host"
-     "application.server.port"
-     "application.handler.targetBase"
-   )) }}
+{{- include "cloudflare-access-webhook-redirect.validateValues" . }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -15,24 +11,12 @@ metadata:
     {{- . | nindent 4 }}
   {{- end }}
 data:
-  SERVER.HOST: {{ .Values.application.server.host | quote }}
-  SERVER.PORT: {{ .Values.application.server.port | quote }}
-  WEBHOOK.TARGET_BASE: {{ .Values.application.handler.targetBase | quote }}
-  WEBHOOK.PATHS: {{ include "config.paths" . }}
-  LOG_LEVEL: {{ .Values.application.logLevel | quote }}
-  {{- with .Values.application.sentryDsn }}
-  SENTRY_DSN: {{ . | quote }}
-  {{- end }}
-
-
-{{/*
-Convert path values to the correct format
-Example: api/webhook:ALL; test:GET,POST
-*/}}
-{{- define "config.paths" -}}
-{{- $list := list -}}
-{{- range $k, $v := .Values.application.handler.paths -}}
-{{- $list = append $list (printf "%s:%s" $k (join "," $v)) -}}
-{{- end -}}
-{{ join "; " $list }}
-{{- end -}}
+  {{- /*
+    One file rather than a set of fragments. The loader does merge every `*.toml` in the
+    directory, but relying on that would put the precedence of one value against another inside
+    a merge this chart does not own or test. Merging in the template instead makes the effective
+    configuration readable with `kubectl get configmap -o yaml`, which is what an operator wants
+    to look at when a reload did not do what they expected.
+  */}}
+  config.toml: |
+    {{- include "cloudflare-access-webhook-redirect.configToml" . | nindent 4 }}

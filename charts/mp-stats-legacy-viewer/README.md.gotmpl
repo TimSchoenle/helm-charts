@@ -48,6 +48,54 @@ ingress:
         - stats.example.com
 ```
 
+## Configuration
+
+The application reads its settings through a layered, file-first loader. This chart renders
+them into one `config.toml`, mounts it as a ConfigMap and points `MP_STATS_CONFIG` at it.
+Nothing is passed as an environment variable: the loader **fails the boot on a key supplied by
+both the environment and a file** rather than resolving it by precedence.
+
+**Pointing `MP_STATS_CONFIG` at the mount replaces the `/config.toml` the image ships** rather
+than layering over it, so this chart restates every key that file carried — the bind address,
+`server.distDir` and `server.dataDir`. The defaults match the image's own layout; change them
+only for an image that puts the frontend bundle or the converted data somewhere else. A
+`dist_dir` without an `index.html` is a boot failure, not a 404.
+
+`config` takes the raw TOML tree for anything the first-class values do not cover, merged over
+the derived one:
+
+```yaml
+config:
+  converter:
+    cache:
+      enabled: false
+```
+
+and `configExtraToml` is appended verbatim for what the renderer cannot express.
+
+The server does not reload its configuration, so the chart keeps the conventional
+`checksum/configmap` pod annotation: a configuration change rolls the Deployment, which is the
+only way it takes effect.
+
+## Upgrading
+
+### 1.x to 2.0
+
+Chart 2.0 tracks application 0.15.0, which replaced its environment-only configuration with the
+layered, file-first loader every chart in this repository now uses. The `application` block is
+gone; a `helm upgrade` with 1.x values fails schema validation naming the offending key rather
+than starting a pod on the defaults.
+
+| Before | After |
+|---|---|
+| `application.server.host` | `server.host` |
+| `application.server.port` | `server.port` |
+
+Both now feed `server.bind_addr` in the rendered file rather than a command-line flag. Two
+values are new and have no 1.x equivalent — `server.distDir` and `server.dataDir` — because the
+chart now supplies the paths the image's own `/config.toml` used to. Leave them alone unless
+you run a modified image.
+
 ## Health checks
 
 All three probes are enabled by default and point at the application's own endpoints —

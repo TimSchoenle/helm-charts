@@ -1072,6 +1072,15 @@ networkPolicy:
   enabled: false
 
   # @schema
+  # enum: [kubernetes, cilium, both]
+  # @schema
+  # -- Which policy dialect to render. `kubernetes` emits the portable `networking.k8s.io/v1`
+  # pair; `cilium` emits `CiliumNetworkPolicy`, which can name the licensing and server-list
+  # endpoints instead of scoping those rules to the whole public internet; `both` emits both,
+  # for the window in which a cluster is migrating between CNIs.
+  engine: kubernetes
+
+  # @schema
   # additionalProperties: true
   # @schema
   # -- Ingress configuration.
@@ -1314,6 +1323,131 @@ networkPolicy:
   # @schema
   # -- Egress rules appended verbatim, whether or not `networkPolicy.egress.enabled` is set.
   extraEgress: []
+
+  # @schema
+  # additionalProperties: true
+  # @schema
+  # -- Cilium-only additions, used when `engine` is `cilium` or `both`. Every rule above is
+  # translated automatically; these are the ones the portable API has no way to express.
+  #
+  # Note that `extraIngress`, `extraEgress` and the per-section `customRules` above are *not*
+  # carried over: those are verbatim `networking.k8s.io/v1` rule objects and are not valid CNP.
+  # The fields below are their counterparts.
+  cilium:
+    # @schema
+    # type: string
+    # @schema
+    # -- `spec.description`, which Cilium surfaces in `cilium policy get` and in Hubble flow
+    # verdicts. The one place to record why a rule exists where an operator debugging a dropped
+    # voice packet will actually see it.
+    description: ""
+
+    # @schema
+    # type: boolean
+    # @schema
+    # -- State default-deny explicitly rather than relying on it being implied by the presence of
+    # rules. This is what makes the intentional default-deny case — a policy with an empty rule
+    # list — actually deny, instead of being treated as no policy at all. Requires Cilium 1.16+.
+    enableDefaultDeny: true
+
+    # @schema
+    # additionalProperties: true
+    # @schema
+    # -- Cilium-only ingress rules.
+    ingress:
+      # @schema
+      # type: array
+      # items:
+      #   type: string
+      # @schema
+      # -- Named source sets, e.g. `cluster`, `host`, `remote-node`.
+      fromEntities: []
+
+      # @schema
+      # type: array
+      # @schema
+      # -- Additional ingress rules in CiliumNetworkPolicy form, appended verbatim.
+      customRules: []
+
+    # @schema
+    # additionalProperties: true
+    # @schema
+    # -- Cilium-only egress rules.
+    egress:
+      # @schema
+      # type: array
+      # @schema
+      # -- The licensing endpoint by name, replacing the internet-wide CIDR rule for
+      # `egress.accounting`. This is the rule the portable policy cannot state: the accounting
+      # host's address changes over time, so `networking.k8s.io/v1` can only permit TCP/2008 to
+      # the entire public internet.
+      #
+      # Ships empty on purpose. A wrong hostname here does not fail loudly — it takes the
+      # virtual server offline at the next licence check — so it is stated rather than guessed.
+      # Example:
+      # ```yaml
+      # accountingFQDNs:
+      #   - matchName: accounting.teamspeak.com
+      # ```
+      accountingFQDNs: []
+
+      # @schema
+      # type: array
+      # @schema
+      # -- The public server list by name, replacing the internet-wide CIDR rule for
+      # `egress.weblist`. Same reasoning, and the same reason it ships empty.
+      weblistFQDNs: []
+
+      # @schema
+      # type: array
+      # @schema
+      # -- Destinations for `egress.https` by name, replacing its internet-wide CIDR rule.
+      httpsFQDNs: []
+
+      # @schema
+      # type: array
+      # items:
+      #   type: string
+      # @schema
+      # -- Named destination sets, e.g. `world` or `kube-apiserver`. Not a synonym for the
+      # `cidr`/`except` translation: `world` does not carve out the cloud metadata endpoint the
+      # way those defaults do.
+      toEntities: []
+
+      # @schema
+      # type: array
+      # items:
+      #   $ref: https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyPort
+      # @schema
+      # -- Restrict the `toEntities` rule to specific ports. Empty means all ports.
+      entityPorts: []
+
+      # @schema
+      # type: array
+      # @schema
+      # -- What the DNS proxy may resolve, e.g. `- matchPattern: "*.teamspeak.com"`. Defaults to
+      # everything, which only permits the lookup — an answer is still only reachable if some
+      # rule allows the address.
+      dnsMatchPatterns: []
+
+      # @schema
+      # type: array
+      # @schema
+      # -- Additional egress rules in CiliumNetworkPolicy form, appended verbatim.
+      customRules: []
+
+    # @schema
+    # type: array
+    # @schema
+    # -- Extra ingress rules in CiliumNetworkPolicy form, appended regardless of
+    # `ingress.enabled`.
+    extraIngress: []
+
+    # @schema
+    # type: array
+    # @schema
+    # -- Extra egress rules in CiliumNetworkPolicy form, appended regardless of `egress.enabled`.
+    extraEgress: []
 
 # @schema
 # type: integer

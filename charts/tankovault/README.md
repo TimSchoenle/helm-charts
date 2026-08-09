@@ -1,6 +1,6 @@
 # tankovault
 
-![Version: 3.3.6](https://img.shields.io/badge/Version-3.3.6-informational?style=flat-square) ![AppVersion: 3.6.1](https://img.shields.io/badge/AppVersion-3.6.1-informational?style=flat-square)
+![Version: 3.4.0](https://img.shields.io/badge/Version-3.4.0-informational?style=flat-square) ![AppVersion: 3.6.1](https://img.shields.io/badge/AppVersion-3.6.1-informational?style=flat-square)
 
 This chart deploys the full TankoVault manga aggregator stack — frontend, api, control-plane, worker, notifier, sync, challenge-solver and render — hardened to the restricted Pod Security Standard, with file-backed configuration that reloads in place instead of restarting pods, optional bundled PostgreSQL, Valkey, NATS JetStream and TRAWL, and optional Prometheus metrics, alerting rules and Grafana dashboards.
 
@@ -45,6 +45,8 @@ the optional headless `render` tier, plus the one-shot `bootstrap` migration and
 - A NATS server with JetStream enabled, if `worker` or `control-plane` are deployed
 - The Prometheus Operator CRDs, if `metrics.serviceMonitor` or `metrics.prometheusRule` are enabled
 - An ingress controller, if `ingress.enabled=true`
+- The Gateway API CRDs and a `Gateway` to attach to, if `gateway.enabled=true`
+- Cilium 1.16+, if `networkPolicy.engine` is `cilium` or `both`
 
 ## Quick start
 
@@ -647,6 +649,110 @@ Version-by-version migration notes live in
 Read it before upgrading across 3.0.3 or 3.1.0 — both need a manual step, and neither fails in a
 way that points at it.
 
+## Exposing it through Gateway API
+
+`ingress` and `gateway` are independent switches, so a cluster moving from an Ingress controller
+to a Gateway implementation can run both while it migrates. What gets published is the same and
+for the same reason — the frontend serves the SPA and reverse-proxies `/v1/*` to the API, so one
+origin covers the whole application:
+
+```yaml
+ingress:
+  enabled: false
+
+gateway:
+  enabled: true
+  parentRefs:
+    - name: shared-gateway
+      namespace: gateway-system
+  host: tankovault.example.com
+  tls:
+    enabled: true
+```
+
+Only the route belongs to this chart; the `Gateway` — its listeners, its address, its certificates
+— is the cluster operator's, and `parentRefs` is how the route asks to be attached to one.
+`gateway.create` renders one for an install that has no cluster-wide Gateway, in which case a
+route that names no parent attaches to it automatically.
+
+> [!IMPORTANT]
+> `gateway.tls.enabled` is what the derived external URL takes its scheme from, and it is
+> meaningful even when the Gateway is somebody else's — it says this hostname is served over
+> HTTPS, not that this chart terminates it. `anilist.redirect_uri`, `email.base_url` and
+> `auth.webauthn_origin` are all derived from that URL, and the application's
+> `auth.cookie_secure` defaults to true: an `http://` origin produces a login that appears to
+> succeed and lands straight back on the sign-in page. The chart refuses that combination at
+> render time rather than letting you find it in production.
+
+The API can take its own hostname exactly as it can under Ingress, with the same warning attached
+— a split origin means CORS, `auth.webauthn_origin` and cookie `SameSite` all have to line up:
+
+```yaml
+gateway:
+  api:
+    enabled: true
+    host: api.tankovault.example.com
+```
+
+What used to live in controller-specific annotations is a typed field: `gateway.filters` for
+header manipulation, rewrites, redirects and mirroring, `gateway.timeouts` for
+`request`/`backendRequest`, and `gateway.httpsRedirect.enabled` in place of an `ssl-redirect`
+annotation.
+
+> [!NOTE]
+> Leave `gateway.timeouts.request` unset. The SPA holds the `/v1/events` SSE stream open through
+> this route, and a request timeout cuts a long-lived stream at the Gateway — the symptom is a UI
+> that quietly stops updating rather than an error anybody sees. `backendRequest` is the one to
+> set if you want a bound on ordinary requests.
+
+The NetworkPolicies follow automatically: the frontend admits the Gateway's data plane when
+`gateway.enabled` is set, the API when `gateway.api.enabled` is, and the peer is derived from
+`gateway.parentRefs` — `gateway.networking.k8s.io/gateway-name`, the label Cilium, Envoy Gateway,
+Istio and NGINX Gateway Fabric all put on the pods they provision. Restating the Gateway's
+identity under `networkPolicy` would be a second place to edit on a rename, and a policy naming
+the wrong Gateway looks correct and blocks everything. `networkPolicy.gateway` overrides either
+half for an implementation that labels its pods differently.
+
+## Network policies with Cilium
+
+`networkPolicy.engine` picks the dialect the twelve per-service policies are written in —
+`kubernetes` (default), `cilium`, or `both` for a CNI migration. Both are rendered from the same
+derived topology, so the engine changes how the rules are written and never what they are.
+
+The internet rules are what the switch buys. `worker` scrapes provider sites, `sync` talks to
+AniList and `notifier` reaches SMTP and webhook endpoints — real egress needs that the portable
+API can only express as `0.0.0.0/0` minus RFC1918 and the metadata endpoint. That permits every
+public host that exists, held by precisely the tier you least want holding it:
+
+```yaml
+networkPolicy:
+  enabled: true
+  engine: cilium
+  cilium:
+    description: "outbound to the hosts each tier actually talks to"
+    egress:
+      toFQDNs:
+        - matchName: graphql.anilist.co
+        - matchPattern: "*.mangadex.org"
+      fqdnPorts:
+        - port: 443
+          protocol: TCP
+        - port: 587      # SMTP submission, if notifier sends mail directly
+          protocol: TCP
+      dnsMatchPatterns:
+        - matchPattern: "*.anilist.co"
+        - matchPattern: "*.mangadex.org"
+```
+
+Setting `toFQDNs` *replaces* the CIDR rule for every service that carried it, rather than adding
+to it — emitting both would leave the broad rule in place and make the narrow one decorative. The
+in-cluster half of the graph is untouched: service-to-service and datastore rules are the same
+edges either way.
+
+`dnsMatchPatterns` is not optional decoration. An FQDN rule is enforced against the addresses
+Cilium's DNS proxy saw returned for that name, so the DNS rule has to be there to observe the
+lookup; the chart fails the render if FQDN destinations are named with the DNS rule turned off.
+
 ## Values
 
 | Key | Type | Default | Description |
@@ -757,6 +863,38 @@ way that points at it.
 | externalTrawl | object | `{"url":""}` | Point the challenge solver at a TRAWL you already run. |
 | externalTrawl.url | string | `""` | Endpoint URL, e.g. `http://trawl:8191`. |
 | fullnameOverride | string | `""` | Override the fully qualified release name. |
+| gateway | object | `{"addresses":[],"allowedRoutes":{},"annotations":{},"api":{"annotations":{},"enabled":false,"filters":[],"host":"","timeouts":{}},"create":false,"enabled":false,"filters":[],"gatewayClassName":"","host":"","httpPort":80,"httpsPort":443,"httpsRedirect":{"enabled":false,"sectionName":"","statusCode":301},"infrastructure":{},"listeners":[],"parentRefs":[],"path":"/","timeouts":{},"tls":{"certificateRefs":[],"enabled":false,"mode":"Terminate","options":{}},"url":""}` | Gateway API exposure, the successor to `ingress` and an independent switch from it: a cluster migrating from an Ingress controller to a Gateway implementation runs both for a while.  What it publishes is the same thing `ingress` does and for the same reason — the frontend serves the SPA and reverse-proxies `/v1/*` to the API, so one origin covers the whole application. Only the mechanism differs: the `Gateway` (its listeners, its address, its certificates) belongs to the cluster operator, and this chart owns the `HTTPRoute` that attaches to it. |
+| gateway.addresses | list | `[]` | Addresses requested for the created Gateway, e.g. a fixed `IPAddress`. |
+| gateway.allowedRoutes | object | `{}` | Which routes may attach to the created Gateway's listeners. Defaults to `Same`. |
+| gateway.annotations | object | `{}` | Annotations for the HTTPRoute. |
+| gateway.api | object | `{"annotations":{},"enabled":false,"filters":[],"host":"","timeouts":{}}` | A second route publishing the API on its own hostname, for split-origin clients. Enabling it means the browser origin no longer matches the API origin, so CORS, `auth.webauthn_origin` and cookie `SameSite` all have to be set consistently or logins break in ways that only appear at runtime. |
+| gateway.api.annotations | object | `{}` | Annotations for the API HTTPRoute. |
+| gateway.api.enabled | bool | `false` | Create the API HTTPRoute. |
+| gateway.api.filters | list | `[]` | Filters applied to the API route. |
+| gateway.api.host | string | `""` | Hostname the API is served on. |
+| gateway.api.timeouts | object | `{}` | Timeouts for the API route. |
+| gateway.create | bool | `false` | Also create the Gateway itself, for an install with no cluster-wide one to attach to. A route that names no parent attaches to it automatically. |
+| gateway.enabled | bool | `false` | Create an HTTPRoute for the frontend. Requires the `gateway.networking.k8s.io` CRDs; the render fails loudly rather than silently dropping the route when they are absent. |
+| gateway.filters | list | `[]` | Filters applied to the frontend route: `RequestHeaderModifier`, `ResponseHeaderModifier`, `RequestRedirect`, `URLRewrite`, `RequestMirror`, `ExtensionRef`. This is where an Ingress controller's annotations end up, as typed fields. |
+| gateway.gatewayClassName | string | `""` | GatewayClass that programs the created Gateway, e.g. `cilium`, `istio`, `envoy-gateway`. Required by `create`; a Gateway without one is never reconciled. |
+| gateway.host | string | `""` | Hostname the application is served on. |
+| gateway.httpPort | int | `80` | Port for the derived HTTP listener. |
+| gateway.httpsPort | int | `443` | Port for the derived HTTPS listener. |
+| gateway.httpsRedirect | object | `{"enabled":false,"sectionName":"","statusCode":301}` | A second route that redirects plaintext traffic to HTTPS. Under Ingress this was a controller-specific annotation; Gateway API expresses it as a typed `RequestRedirect` filter, which means it has to be a real object. |
+| gateway.httpsRedirect.enabled | bool | `false` | Create the redirect route. |
+| gateway.httpsRedirect.sectionName | string | `""` | Listener to bind the redirect to. Must be the plaintext one: attached to every listener the redirect would also apply to the HTTPS listener and loop forever. Defaults to `http`, the name of the listener `create` renders. |
+| gateway.httpsRedirect.statusCode | int | `301` | Redirect status code. `301` or `302`. |
+| gateway.infrastructure | object | `{}` | `infrastructure.labels` / `infrastructure.annotations` for the created Gateway, passed through to the load balancer the implementation provisions. Where Cilium's LB-IPAM annotations go. |
+| gateway.listeners | list | `[]` | Listeners for the created Gateway, replacing the derived `http`/`https` pair entirely. |
+| gateway.parentRefs | list | `[]` | Gateways the routes attach to. Each entry takes `name` and optionally `namespace`, `sectionName`, `port`, `group` and `kind`. Required unless `create` is set: a route with no parent is accepted by the API server and then never programmed by any listener. |
+| gateway.path | string | `"/"` | Path prefix the route matches. |
+| gateway.timeouts | object | `{}` | Timeouts for the frontend route: `request` and `backendRequest`, as Go durations.  Leave `request` unset or generous if the SPA holds the `/v1/events` SSE stream open through this route — a request timeout cuts a long-lived stream at the Gateway, and the symptom is a UI that quietly stops updating rather than an error anybody sees. |
+| gateway.tls | object | `{"certificateRefs":[],"enabled":false,"mode":"Terminate","options":{}}` | TLS for the route's hostname. |
+| gateway.tls.certificateRefs | list | `[]` | Secrets holding the certificate for the created Gateway's listener. Required by `Terminate`: unlike an Ingress there is no convention by which one is looked up from the hostname. Ignored without `create` — otherwise the certificate is the Gateway owner's. |
+| gateway.tls.enabled | bool | `false` | The hostname is served over HTTPS. Two effects: it adds the HTTPS listener when `create` is set, and it is what the derived external URL takes its scheme from — so set it even when the Gateway is somebody else's and it is their listener terminating TLS. Note `auth.cookie_secure` defaults to true, so sessions are lost over plain HTTP on any host other than `localhost`. |
+| gateway.tls.mode | string | `"Terminate"` | TLS mode for the created Gateway's listener. |
+| gateway.tls.options | object | `{}` | Implementation-specific TLS options for the created Gateway's listener. |
+| gateway.url | string | `""` | Override the derived external URL used for `anilist.redirect_uri`, `email.base_url` and `auth.webauthn_origin`. Takes precedence over `ingress.url`. Set this when TLS terminates on a proxy in front of the Gateway. |
 | image.pullPolicy | string | `""` | Image pull policy. Empty derives it from the tag: pinned digests and versions get `IfNotPresent`, `latest` gets `Always`. |
 | image.registry | string | `""` | Registry host shared by every TankoVault image. Empty means Docker Hub. |
 | imagePullSecrets | list | `[]` | Image pull secrets for private registries. |
@@ -813,10 +951,27 @@ way that points at it.
 | nats.persistence.size | string | `"10Gi"` | Requested volume size. |
 | nats.persistence.storageClassName | string | `""` | Storage class. Empty uses the cluster default. |
 | nats.resourcesPreset | string | `"medium"` | Resource t-shirt size. |
-| networkPolicy | object | `{"enabled":false,"extraEgress":[],"extraIngress":[],"ingressController":{"namespaceSelector":{},"podSelector":{}},"internetCidrs":["0.0.0.0/0"],"monitoring":{"namespaceSelector":{}}}` | NetworkPolicies. Default-deny per service, then exactly the peers each one needs. Written per service rather than through the `common` builder, which cannot express pod-to-pod rules between nine workloads. |
+| networkPolicy | object | `{"cilium":{"description":"","egress":{"dnsMatchPatterns":[],"entityPorts":[],"fqdnPorts":[],"httpRules":[],"toEntities":[],"toFQDNs":[]},"extraEgress":[],"extraIngress":[],"ingress":{"fromEntities":[]}},"enabled":false,"engine":"kubernetes","extraEgress":[],"extraIngress":[],"gateway":{"namespaceSelector":{},"podSelector":{}},"ingressController":{"namespaceSelector":{},"podSelector":{}},"internetCidrs":["0.0.0.0/0"],"monitoring":{"namespaceSelector":{}}}` | NetworkPolicies. Default-deny per service, then exactly the peers each one needs. Written per service rather than through the `common` builder, which cannot express pod-to-pod rules between nine workloads. |
+| networkPolicy.cilium | object | `{"description":"","egress":{"dnsMatchPatterns":[],"entityPorts":[],"fqdnPorts":[],"httpRules":[],"toEntities":[],"toFQDNs":[]},"extraEgress":[],"extraIngress":[],"ingress":{"fromEntities":[]}}` | Cilium-only additions, used when `engine` is `cilium` or `both`. The whole topology above is rendered into the CiliumNetworkPolicies automatically; these are the rules the portable API has no way to express.  Note that `extraIngress` and `extraEgress` above are *not* carried over: those are verbatim `networking.k8s.io/v1` rule objects and are not valid CNP. The fields below are their counterparts. |
+| networkPolicy.cilium.description | string | `""` | `spec.description`, which Cilium surfaces in `cilium policy get` and in Hubble flow verdicts. The one place to record why a rule exists where an operator debugging a drop will actually see it. |
+| networkPolicy.cilium.egress | object | `{"dnsMatchPatterns":[],"entityPorts":[],"fqdnPorts":[],"httpRules":[],"toEntities":[],"toFQDNs":[]}` | Cilium-only egress rules. |
+| networkPolicy.cilium.egress.dnsMatchPatterns | list | `[]` | What the DNS proxy may resolve, e.g. `- matchPattern: "*.example.com"`. Defaults to everything, which only permits the lookup — an answer is still only reachable if some rule allows the address. |
+| networkPolicy.cilium.egress.entityPorts | list | `[]` | Restrict the `toEntities` rule to specific ports. Empty means all ports. |
+| networkPolicy.cilium.egress.fqdnPorts | list | `[]` | Ports the `toFQDNs` rule allows. Defaults to TCP/443. SMTP submission needs 587 here if `notifier` sends mail directly. |
+| networkPolicy.cilium.egress.httpRules | list | `[]` | L7 HTTP rules layered onto the `toFQDNs` rule, e.g. `- method: GET` / `path: "/v1/.*"`. Costs a proxy hop per connection. |
+| networkPolicy.cilium.egress.toEntities | list | `[]` | Named destination sets added to every policy, e.g. `kube-apiserver`. |
+| networkPolicy.cilium.egress.toFQDNs | list | `[]` | The hosts the internet-facing tiers may reach, by name: `- matchName: api.anilist.co` or `- matchPattern: "*.example.com"`. Set, this *replaces* the `internetCidrs` rule for every service that carries it — `worker`, `sync`, `notifier`, `render` and the bundled TRAWL. That is the point: `0.0.0.0/0` on 443 permits every public host that exists, and a scraping tier is precisely the one you do not want holding that.  Emitting both would leave the broad rule in place and make this one decorative, so it is a substitution rather than an addition. |
+| networkPolicy.cilium.extraEgress | list | `[]` | Extra egress rules in CiliumNetworkPolicy form, appended to every service's policy. |
+| networkPolicy.cilium.extraIngress | list | `[]` | Extra ingress rules in CiliumNetworkPolicy form, appended to every service's policy. |
+| networkPolicy.cilium.ingress | object | `{"fromEntities":[]}` | Cilium-only ingress rules, added to every service's policy. |
+| networkPolicy.cilium.ingress.fromEntities | list | `[]` | Named source sets, e.g. `cluster`, `host`, `remote-node`, `kube-apiserver`. |
 | networkPolicy.enabled | bool | `false` | Create NetworkPolicies. |
+| networkPolicy.engine | string | `"kubernetes"` | Which policy dialect to render. `kubernetes` emits the portable `networking.k8s.io/v1` objects; `cilium` emits `CiliumNetworkPolicy`, which can express FQDN destinations, named entities and L7 rules that the portable API cannot; `both` emits both, for the window in which a cluster is migrating between CNIs.  Both dialects are rendered from the same derived topology, so they cannot describe different graphs — the engine picks how the rules are written, never what they are. |
 | networkPolicy.extraEgress | list | `[]` | Extra egress rules appended to every service's policy. |
 | networkPolicy.extraIngress | list | `[]` | Extra ingress rules appended to every service's policy. |
+| networkPolicy.gateway | object | `{"namespaceSelector":{},"podSelector":{}}` | Selectors matching the Gateway API data plane, allowed to reach the frontend (and the API when `gateway.api.enabled` is set). Left empty they are derived from `gateway.parentRefs`: the namespace of the first parent, and `gateway.networking.k8s.io/gateway-name` — the label Cilium, Envoy Gateway, Istio and NGINX Gateway Fabric all put on the pods they provision.  Restating the Gateway's identity here would be a second place to edit on a rename, and a policy naming the wrong Gateway looks correct and blocks all inbound traffic. |
+| networkPolicy.gateway.namespaceSelector | object | `{}` | Namespace selector matching the Gateway's data plane. Empty derives it. |
+| networkPolicy.gateway.podSelector | object | `{}` | Pod selector matching the Gateway's data plane. Empty derives it. |
 | networkPolicy.ingressController.namespaceSelector | object | `{}` | Namespace selector matching the ingress controller, allowed to reach the frontend. |
 | networkPolicy.ingressController.podSelector | object | `{}` | Pod selector matching the ingress controller. |
 | networkPolicy.internetCidrs | list | `["0.0.0.0/0"]` | Egress CIDRs treated as "the internet". The worker scrapes provider sites, sync talks to AniList and the notifier reaches SMTP and webhook endpoints, so these tiers need it. RFC1918 ranges and the cloud metadata endpoint are excluded automatically. |

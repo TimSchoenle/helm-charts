@@ -1,0 +1,469 @@
+suite: common gateway partials
+templates:
+  - httproute.yaml
+tests:
+  - it: creates nothing by default
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  # The whole point of the default rule: hostnames plus a parent is a complete configuration,
+  # and the backend is inferred from the chart's own Service rather than restated.
+  - it: routes to the chart's own Service with no rules configured
+    capabilities:
+      apiVersions:
+        - gateway.networking.k8s.io/v1
+    set:
+      gateway.enabled: true
+      gateway.parentRefs:
+        - name: shared-gateway
+      gateway.hostnames:
+        - app.example.com
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: HTTPRoute
+      - equal:
+          path: apiVersion
+          value: gateway.networking.k8s.io/v1
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-common-fixture
+      - equal:
+          path: spec.hostnames[0]
+          value: app.example.com
+      - equal:
+          path: spec.rules[0].backendRefs[0]
+          value:
+            name: RELEASE-NAME-common-fixture
+            port: 8080
+      - equal:
+          path: spec.rules[0].matches[0].path
+          value:
+            type: PathPrefix
+            value: /
+
+  # An omitted `group`/`kind` is not the same as an absent one — the API has defaults, and
+  # every consumer that reads a parentRef (the NetworkPolicy peer below, most of all) would
+  # otherwise have to re-implement them.
+  - it: fills in the API defaults on a parent reference
+    capabilities:
+      apiVersions:
+        - gateway.networking.k8s.io/v1
+    set:
+      gateway.enabled: true
+      gateway.parentRefs:
+        - name: shared-gateway
+          namespace: gateway-system
+          sectionName: https
+          port: 443
+      gateway.hostnames:
+        - app.example.com
+    asserts:
+      - equal:
+          path: spec.parentRefs[0]
+          value:
+            group: gateway.networking.k8s.io
+            kind: Gateway
+            name: shared-gateway
+            namespace: gateway-system
+            sectionName: https
+            port: 443
+
+  # `sectionName: ""` is a reference to a listener named the empty string, not the absence of
+  # one, so optional fields have to be omitted rather than emitted empty.
+  - it: omits the optional parentRef fields rather than emitting them empty
+    capabilities:
+      apiVersions:
+        - gateway.networking.k8s.io/v1
+    set:
+      gateway.enabled: true
+      gateway.parentRefs:
+        - name: shared-gateway
+      gateway.hostnames:
+        - app.example.com
+    asserts:
+      - equal:
+          path: spec.parentRefs[0]
+          value:
+            group: gateway.networking.k8s.io
+            kind: Gateway
+            name: shared-gateway
+
+  - it: templates hostnames and parent names
+    capabilities:
+      apiVersions:
+        - gateway.networking.k8s.io/v1
+    set:
+      gateway.enabled: true
+      gateway.parentRefs:
+        - name: '{{ .Release.Name }}-gw'
+      gateway.hostnames:
+        - '{{ .Release.Name }}.example.com'
+    asserts:
+      - equal:
+          path: spec.parentRefs[0].name
+          value: RELEASE-NAME-gw
+      - equal:
+          path: spec.hostnames[0]
+          value: RELEASE-NAME.example.com
+
+  - it: carries filters and timeouts onto the default rule
+    capabilities:
+      apiVersions:
+        - gateway.networking.k8s.io/v1
+    set:
+      gateway.enabled: true
+      gateway.parentRefs:
+        - name: shared-gateway
+      gateway.hostnames:
+        - app.example.com
+      gateway.filters:
+        - type: RequestHeaderModifier
+          requestHeaderModifier:
+            set:
+              - name: X-Forwarded-Proto
+                value: https
+      gateway.timeouts:
+        request: 30s
+        backendRequest: 25s
+    asserts:
+      - equal:
+          path: spec.rules[0].filters[0].requestHeaderModifier.set[0].name
+          value: X-Forwarded-Proto
+      - equal:
+          path: spec.rules[0].timeouts.request
+          value: 30s
+
+  # A rule that only narrows the path should not have to restate where the traffic goes.
+  - it: fills the default backend into an explicit rule that names none
+    capabilities:
+      apiVersions:
+        - gateway.networking.k8s.io/v1
+    set:
+      gateway.enabled: true
+      gateway.parentRefs:
+        - name: shared-gateway
+      gateway.hostnames:
+        - app.example.com
+      gateway.rules:
+        - matches:
+            - path:
+                type: PathPrefix
+                value: /api
+    asserts:
+      - equal:
+          path: spec.rules[0].backendRefs[0]
+          value:
+            name: RELEASE-NAME-common-fixture
+            port: 8080
+
+  - it: leaves an explicit backend alone
+    capabilities:
+      apiVersions:
+        - gateway.networking.k8s.io/v1
+    set:
+      gateway.enabled: true
+      gateway.parentRefs:
+        - name: shared-gateway
+      gateway.hostnames:
+        - app.example.com
+      gateway.rules:
+        - matches:
+            - path:
+                type: PathPrefix
+                value: /
+          backendRefs:
+            - name: canary
+              port: 8080
+              weight: 10
+            - name: stable
+              port: 8080
+              weight: 90
+    asserts:
+      - equal:
+          path: spec.rules[0].backendRefs[0].weight
+          value: 10
+      - lengthEqual:
+          path: spec.rules[0].backendRefs
+          count: 2
+
+  - it: honours a chart-wide backend override
+    capabilities:
+      apiVersions:
+        - gateway.networking.k8s.io/v1
+    set:
+      gateway.enabled: true
+      gateway.parentRefs:
+        - name: shared-gateway
+      gateway.hostnames:
+        - app.example.com
+      gateway.backendRefs:
+        - name: somewhere-else
+          port: 9000
+    asserts:
+      - equal:
+          path: spec.rules[0].backendRefs[0].name
+          value: somewhere-else
+
+  - it: merges commonAnnotations into the route
+    capabilities:
+      apiVersions:
+        - gateway.networking.k8s.io/v1
+    set:
+      gateway.enabled: true
+      gateway.parentRefs:
+        - name: shared-gateway
+      gateway.hostnames:
+        - app.example.com
+      gateway.annotations:
+        example.com/owner: platform
+      commonAnnotations:
+        example.com/release: '{{ .Release.Name }}'
+    asserts:
+      - equal:
+          path: metadata.annotations["example.com/owner"]
+          value: platform
+      - equal:
+          path: metadata.annotations["example.com/release"]
+          value: RELEASE-NAME
+
+  # Attaching to a Gateway this chart renders should not mean naming it twice.
+  - it: attaches to the Gateway it creates when no parent is named
+    capabilities:
+      apiVersions:
+        - gateway.networking.k8s.io/v1
+    set:
+      gateway.enabled: true
+      gateway.create: true
+      gateway.gatewayClassName: cilium
+      gateway.hostnames:
+        - app.example.com
+    asserts:
+      - hasDocuments:
+          count: 2
+      - documentSelector:
+          path: kind
+          value: HTTPRoute
+        equal:
+          path: spec.parentRefs[0].name
+          value: RELEASE-NAME-common-fixture
+      - documentSelector:
+          path: kind
+          value: Gateway
+        equal:
+          path: spec.gatewayClassName
+          value: cilium
+
+  - it: derives listeners for the created Gateway
+    capabilities:
+      apiVersions:
+        - gateway.networking.k8s.io/v1
+    documentSelector:
+      path: kind
+      value: Gateway
+    set:
+      gateway.enabled: true
+      gateway.create: true
+      gateway.gatewayClassName: cilium
+      gateway.hostnames:
+        - app.example.com
+      gateway.tls.enabled: true
+      gateway.tls.certificateRefs:
+        - name: app-tls
+    asserts:
+      - lengthEqual:
+          path: spec.listeners
+          count: 2
+      - equal:
+          path: spec.listeners[0].name
+          value: http
+      - equal:
+          path: spec.listeners[1].tls.certificateRefs[0].name
+          value: app-tls
+      # A Gateway this chart owns must not be attachable from another namespace by default.
+      - equal:
+          path: spec.listeners[0].allowedRoutes.namespaces.from
+          value: Same
+
+  - it: passes infrastructure annotations through to the load balancer
+    capabilities:
+      apiVersions:
+        - gateway.networking.k8s.io/v1
+    documentSelector:
+      path: kind
+      value: Gateway
+    set:
+      gateway.enabled: true
+      gateway.create: true
+      gateway.gatewayClassName: cilium
+      gateway.hostnames:
+        - app.example.com
+      gateway.infrastructure:
+        annotations:
+          io.cilium/lb-ipam-ips: 203.0.113.10
+    asserts:
+      - equal:
+          path: spec.infrastructure.annotations["io.cilium/lb-ipam-ips"]
+          value: 203.0.113.10
+
+  - it: replaces the derived listeners when listeners are given
+    capabilities:
+      apiVersions:
+        - gateway.networking.k8s.io/v1
+    documentSelector:
+      path: kind
+      value: Gateway
+    set:
+      gateway.enabled: true
+      gateway.create: true
+      gateway.gatewayClassName: cilium
+      gateway.hostnames:
+        - app.example.com
+      gateway.listeners:
+        - name: custom
+          protocol: HTTP
+          port: 8000
+          hostname: app.example.com
+    asserts:
+      - lengthEqual:
+          path: spec.listeners
+          count: 1
+      - equal:
+          path: spec.listeners[0].name
+          value: custom
+
+  # Bound to every listener the redirect would also apply to the HTTPS one and loop forever,
+  # so the section binding is the correctness property, not a nicety.
+  - it: binds the HTTPS redirect to the plaintext listener only
+    capabilities:
+      apiVersions:
+        - gateway.networking.k8s.io/v1
+    set:
+      gateway.enabled: true
+      gateway.create: true
+      gateway.gatewayClassName: cilium
+      gateway.hostnames:
+        - app.example.com
+      gateway.tls.enabled: true
+      gateway.tls.certificateRefs:
+        - name: app-tls
+      gateway.httpsRedirect.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 3
+      - documentSelector:
+          path: metadata.name
+          value: RELEASE-NAME-common-fixture-https-redirect
+        equal:
+          path: spec.parentRefs[0].sectionName
+          value: http
+      - documentSelector:
+          path: metadata.name
+          value: RELEASE-NAME-common-fixture-https-redirect
+        equal:
+          path: spec.rules[0].filters[0].requestRedirect
+          value:
+            scheme: https
+            statusCode: 301
+
+  # A capability guard that skipped the object would render clean in CI and leave a real
+  # install succeeding with the application unreachable.
+  - it: refuses to render when the Gateway API CRDs are absent
+    set:
+      gateway.enabled: true
+      gateway.parentRefs:
+        - name: shared-gateway
+      gateway.hostnames:
+        - app.example.com
+    asserts:
+      - failedTemplate:
+          errorPattern: "the cluster registers no `gateway.networking.k8s.io/v1` API"
+
+  - it: refuses a route with no parent to attach to
+    capabilities:
+      apiVersions:
+        - gateway.networking.k8s.io/v1
+    set:
+      gateway.enabled: true
+      gateway.hostnames:
+        - app.example.com
+    asserts:
+      - failedTemplate:
+          errorPattern: "gateway.parentRefs is empty and gateway.create is false"
+
+  # A Gateway this chart owns has no other tenant to steal traffic from, and an install reached
+  # by address has no DNS name to state.
+  - it: allows a hostname-less route on a Gateway it owns
+    capabilities:
+      apiVersions:
+        - gateway.networking.k8s.io/v1
+    set:
+      gateway.enabled: true
+      gateway.create: true
+      gateway.gatewayClassName: cilium
+    asserts:
+      - hasDocuments:
+          count: 2
+      - documentSelector:
+          path: kind
+          value: HTTPRoute
+        notExists:
+          path: spec.hostnames
+
+  # An unhostnamed route on a shared Gateway silently takes traffic meant for other apps.
+  - it: refuses a route with no hostnames
+    capabilities:
+      apiVersions:
+        - gateway.networking.k8s.io/v1
+    set:
+      gateway.enabled: true
+      gateway.parentRefs:
+        - name: shared-gateway
+    asserts:
+      - failedTemplate:
+          errorPattern: "gateway.hostnames is empty"
+
+  - it: refuses a created Gateway with no class to program it
+    capabilities:
+      apiVersions:
+        - gateway.networking.k8s.io/v1
+    set:
+      gateway.enabled: true
+      gateway.create: true
+      gateway.hostnames:
+        - app.example.com
+    asserts:
+      - failedTemplate:
+          errorPattern: "gateway.gatewayClassName is empty"
+
+  - it: refuses a Terminate listener with no certificate
+    capabilities:
+      apiVersions:
+        - gateway.networking.k8s.io/v1
+    set:
+      gateway.enabled: true
+      gateway.create: true
+      gateway.gatewayClassName: cilium
+      gateway.hostnames:
+        - app.example.com
+      gateway.tls.enabled: true
+    asserts:
+      - failedTemplate:
+          errorPattern: "gateway.tls.certificateRefs is empty"
+
+  - it: refuses an HTTPS redirect with nothing to redirect to
+    capabilities:
+      apiVersions:
+        - gateway.networking.k8s.io/v1
+    set:
+      gateway.enabled: true
+      gateway.create: true
+      gateway.gatewayClassName: cilium
+      gateway.hostnames:
+        - app.example.com
+      gateway.httpsRedirect.enabled: true
+    asserts:
+      - failedTemplate:
+          errorPattern: "nothing in this chart terminates TLS"

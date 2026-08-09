@@ -9,21 +9,84 @@ the cloud metadata endpoint at 169.254.169.254.
 */}}
 
 {{/*
-Both NetworkPolicies for a chart.
+Every policy object for a chart, in whichever dialect `networkPolicy.engine` selects.
 
 `networkPolicy.enabled` decides whether the policies exist at all; the nested
 `ingress.enabled` / `egress.enabled` flags decide whether they carry rules. Creating a
 policy with its rule list empty is the default-deny case and is supported on purpose.
+
+`engine` picks the dialect, not the rules — both engines are driven by the same value tree, so
+switching is a one-line change and not a re-authoring:
+
+  kubernetes  the portable `networking.k8s.io/v1` pair. The default.
+  cilium      `CiliumNetworkPolicy`, which can express what the portable API cannot: FQDN
+              destinations, named entities, L7, and default-deny stated rather than implied.
+  both        emit both, for the window in which a cluster is migrating between CNIs.
+
+`both` is safe because NetworkPolicies are additive — two policies selecting one pod union
+their allowances, they do not intersect. Cilium honours vanilla NetworkPolicy objects too, so
+on a Cilium cluster `both` is strictly more permissive than `cilium` alone; it is a migration
+setting, not a hardening one.
 
 Usage (templates/networkpolicy.yaml):
   {{ include "common.networkPolicy" . }}
 */}}
 {{- define "common.networkPolicy" -}}
 {{- if .Values.networkPolicy.enabled -}}
+{{- $engine := .Values.networkPolicy.engine | default "kubernetes" -}}
+{{- if has $engine (list "kubernetes" "both") -}}
 {{- include "common.networkPolicy.ingress" . }}
 ---
 {{ include "common.networkPolicy.egress" . }}
 {{- end -}}
+{{- if has $engine (list "cilium" "both") -}}
+{{- /* Only `both` needs a separator here; on its own the Cilium pair is the first document. */ -}}
+{{- if eq $engine "both" }}
+---
+{{ end }}
+{{- include "common.ciliumNetworkPolicy" . }}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+The peer that fronts this chart from outside the cluster, as a NetworkPolicy `from` selector.
+
+Two mechanisms can be in front of a workload and they are found in completely different ways.
+An Ingress controller is a deployment an operator names (`networkPolicy.ingress.controller`);
+a Gateway API data plane is provisioned by the implementation in response to a Gateway object,
+and is labelled `gateway.networking.k8s.io/gateway-name: <gateway>` — a convention Cilium,
+Envoy Gateway, Istio and NGINX Gateway Fabric all follow.
+
+That label is why the gateway peer needs no configuration at all in the common case: the
+Gateway the policy must admit is by definition the one the chart's own route attaches to, so
+both the namespace and the selector are derived from `gateway.parentRefs`. Restating the
+Gateway's identity under `networkPolicy` would be a second place to edit on a rename, and the
+failure mode of getting it wrong is a policy that looks correct and blocks all inbound traffic.
+
+Arguments:
+  ctx     (required) root context
+  values  the `networkPolicy.ingress.gateway` value tree
+*/}}
+{{- define "common.networkPolicy.gatewayPeer" -}}
+{{- $ctx := .ctx -}}
+{{- $values := .values | default dict -}}
+{{- $gateway := $ctx.Values.gateway | default dict -}}
+{{- $namespace := $values.namespace | default (include "common.gateway.namespace" (dict "ctx" $ctx "values" $gateway)) -}}
+{{- $selector := $values.selector | default dict -}}
+{{- if not $selector -}}
+{{- with (include "common.gateway.name" (dict "ctx" $ctx "values" $gateway)) -}}
+{{- $selector = dict "gateway.networking.k8s.io/gateway-name" . -}}
+{{- end -}}
+{{- end -}}
+- namespaceSelector:
+    matchLabels:
+      kubernetes.io/metadata.name: {{ $namespace }}
+  {{- with $selector }}
+  podSelector:
+    matchLabels:
+      {{- toYaml . | nindent 6 }}
+  {{- end }}
 {{- end -}}
 
 {{/*
@@ -103,6 +166,15 @@ spec:
             matchLabels:
               {{- toYaml $controller.selector | nindent 14 }}
       {{- with $controller.ports }}
+      ports:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    {{- end }}
+    {{- $gateway := $ingress.gateway | default dict }}
+    {{- if and $gateway.enabled (.Values.gateway | default dict).enabled }}
+    - from:
+        {{- include "common.networkPolicy.gatewayPeer" (dict "ctx" . "values" $gateway) | nindent 8 }}
+      {{- with $gateway.ports }}
       ports:
         {{- toYaml . | nindent 8 }}
       {{- end }}

@@ -1,6 +1,6 @@
 # teamspeak
 
-![Version: 1.0.7](https://img.shields.io/badge/Version-1.0.7-informational?style=flat-square) ![AppVersion: 3.13.8](https://img.shields.io/badge/AppVersion-3.13.8-informational?style=flat-square)
+![Version: 1.1.0](https://img.shields.io/badge/Version-1.1.0-informational?style=flat-square) ![AppVersion: 3.13.8](https://img.shields.io/badge/AppVersion-3.13.8-informational?style=flat-square)
 
 This chart deploys a TeamSpeak 3 server hardened to the restricted Pod Security Standard, with optional persistence, an optional Prometheus metrics exporter sidecar, Grafana dashboards and Prometheus alerting rules.
 
@@ -18,6 +18,7 @@ is printed once and never again ([First start](#first-start)).
 - A `LoadBalancer` implementation, or another way to publish a UDP port, if clients outside the
   cluster are meant to connect
 - The Prometheus Operator CRDs, if `metrics.podMonitor` or `metrics.prometheusRule` are enabled
+- Cilium 1.16+, if `networkPolicy.engine` is `cilium` or `both`
 
 ## Quick start
 
@@ -255,6 +256,42 @@ extraServerConfig:
 
 Never put credentials there — `extraServerConfig` lands in the ConfigMap, not the Secret.
 
+### With Cilium
+
+`networkPolicy.engine` picks the dialect the same rules are written in — `kubernetes` (default),
+`cilium`, or `both` for a CNI migration. Every value above is translated either way, so switching
+is a one-line change.
+
+One rule is worth the switch on its own. The licence check against TeamSpeak's accounting service
+is not optional: the server contacts it on startup and periodically afterwards, and takes the
+virtual server offline when it cannot reach it. That host's address changes over time, so the
+portable API can only express the rule as "TCP/2008 to the entire public internet" — a voice
+server allowed to reach every host on earth. Cilium can name it:
+
+```yaml
+networkPolicy:
+  enabled: true
+  engine: cilium
+  cilium:
+    description: "voice in, licensing out"
+    egress:
+      accountingFQDNs:
+        - matchName: accounting.teamspeak.com
+      weblistFQDNs:
+        - matchName: weblist.teamspeak.com
+      dnsMatchPatterns:
+        - matchPattern: "*.teamspeak.com"
+```
+
+`accountingFQDNs` and `weblistFQDNs` ship **empty**, and an unconfigured install keeps the
+portable CIDR rule. That is deliberate: a wrong hostname here does not fail loudly, it takes the
+virtual server offline at the next licence check, so the endpoint is yours to state rather than
+the chart's to guess. Setting one replaces that rule's CIDR form rather than adding to it —
+emitting both would leave the broad rule in place and make the narrow one decorative.
+
+`dnsMatchPatterns` is what makes any of it enforceable: an FQDN rule matches the addresses
+Cilium's DNS proxy saw returned for the name, so the DNS rule has to observe the lookup.
+
 ## Values
 
 | Key | Type | Default | Description |
@@ -353,7 +390,23 @@ Never put credentials there — `extraServerConfig` lands in the ConfigMap, not 
 | metrics.user | string | `"serveradmin"` | ServerQuery account the exporter logs in as. |
 | nameOverride | string | `""` | Override the chart name used in resource names and labels. |
 | namespaceOverride | string | `""` | Deploy into a namespace other than the release namespace. |
-| networkPolicy | object | `{"egress":{"accounting":{"enabled":true,"port":2008},"cidr":"0.0.0.0/0","customRules":[],"database":{"enabled":true,"namespaceSelector":{},"podSelector":{}},"dns":{"enabled":true,"namespaceSelector":{"kubernetes.io/metadata.name":"kube-system"},"podSelector":{"k8s-app":"kube-dns"}},"enabled":true,"except":["10.0.0.0/8","172.16.0.0/12","192.168.0.0/16","169.254.0.0/16"],"https":{"enabled":false},"weblist":{"enabled":false,"port":2010}},"enabled":false,"extraEgress":[],"extraIngress":[],"ingress":{"clients":{"cidrs":["0.0.0.0/0"],"enabled":true},"customRules":[],"enabled":true,"monitoring":{"enabled":true,"namespace":"monitoring","namespaceSelector":{}},"query":{"cidrs":[],"enabled":false}}}` | Network policy configuration. |
+| networkPolicy | object | `{"cilium":{"description":"","egress":{"accountingFQDNs":[],"customRules":[],"dnsMatchPatterns":[],"entityPorts":[],"httpsFQDNs":[],"toEntities":[],"weblistFQDNs":[]},"enableDefaultDeny":true,"extraEgress":[],"extraIngress":[],"ingress":{"customRules":[],"fromEntities":[]}},"egress":{"accounting":{"enabled":true,"port":2008},"cidr":"0.0.0.0/0","customRules":[],"database":{"enabled":true,"namespaceSelector":{},"podSelector":{}},"dns":{"enabled":true,"namespaceSelector":{"kubernetes.io/metadata.name":"kube-system"},"podSelector":{"k8s-app":"kube-dns"}},"enabled":true,"except":["10.0.0.0/8","172.16.0.0/12","192.168.0.0/16","169.254.0.0/16"],"https":{"enabled":false},"weblist":{"enabled":false,"port":2010}},"enabled":false,"engine":"kubernetes","extraEgress":[],"extraIngress":[],"ingress":{"clients":{"cidrs":["0.0.0.0/0"],"enabled":true},"customRules":[],"enabled":true,"monitoring":{"enabled":true,"namespace":"monitoring","namespaceSelector":{}},"query":{"cidrs":[],"enabled":false}}}` | Network policy configuration. |
+| networkPolicy.cilium | object | `{"description":"","egress":{"accountingFQDNs":[],"customRules":[],"dnsMatchPatterns":[],"entityPorts":[],"httpsFQDNs":[],"toEntities":[],"weblistFQDNs":[]},"enableDefaultDeny":true,"extraEgress":[],"extraIngress":[],"ingress":{"customRules":[],"fromEntities":[]}}` | Cilium-only additions, used when `engine` is `cilium` or `both`. Every rule above is translated automatically; these are the ones the portable API has no way to express.  Note that `extraIngress`, `extraEgress` and the per-section `customRules` above are *not* carried over: those are verbatim `networking.k8s.io/v1` rule objects and are not valid CNP. The fields below are their counterparts. |
+| networkPolicy.cilium.description | string | `""` | `spec.description`, which Cilium surfaces in `cilium policy get` and in Hubble flow verdicts. The one place to record why a rule exists where an operator debugging a dropped voice packet will actually see it. |
+| networkPolicy.cilium.egress | object | `{"accountingFQDNs":[],"customRules":[],"dnsMatchPatterns":[],"entityPorts":[],"httpsFQDNs":[],"toEntities":[],"weblistFQDNs":[]}` | Cilium-only egress rules. |
+| networkPolicy.cilium.egress.accountingFQDNs | list | `[]` | The licensing endpoint by name, replacing the internet-wide CIDR rule for `egress.accounting`. This is the rule the portable policy cannot state: the accounting host's address changes over time, so `networking.k8s.io/v1` can only permit TCP/2008 to the entire public internet.  Ships empty on purpose. A wrong hostname here does not fail loudly — it takes the virtual server offline at the next licence check — so it is stated rather than guessed. Example: ```yaml accountingFQDNs:   - matchName: accounting.teamspeak.com ``` |
+| networkPolicy.cilium.egress.customRules | list | `[]` | Additional egress rules in CiliumNetworkPolicy form, appended verbatim. |
+| networkPolicy.cilium.egress.dnsMatchPatterns | list | `[]` | What the DNS proxy may resolve, e.g. `- matchPattern: "*.teamspeak.com"`. Defaults to everything, which only permits the lookup — an answer is still only reachable if some rule allows the address. |
+| networkPolicy.cilium.egress.entityPorts | list | `[]` | Restrict the `toEntities` rule to specific ports. Empty means all ports. |
+| networkPolicy.cilium.egress.httpsFQDNs | list | `[]` | Destinations for `egress.https` by name, replacing its internet-wide CIDR rule. |
+| networkPolicy.cilium.egress.toEntities | list | `[]` | Named destination sets, e.g. `world` or `kube-apiserver`. Not a synonym for the `cidr`/`except` translation: `world` does not carve out the cloud metadata endpoint the way those defaults do. |
+| networkPolicy.cilium.egress.weblistFQDNs | list | `[]` | The public server list by name, replacing the internet-wide CIDR rule for `egress.weblist`. Same reasoning, and the same reason it ships empty. |
+| networkPolicy.cilium.enableDefaultDeny | bool | `true` | State default-deny explicitly rather than relying on it being implied by the presence of rules. This is what makes the intentional default-deny case — a policy with an empty rule list — actually deny, instead of being treated as no policy at all. Requires Cilium 1.16+. |
+| networkPolicy.cilium.extraEgress | list | `[]` | Extra egress rules in CiliumNetworkPolicy form, appended regardless of `egress.enabled`. |
+| networkPolicy.cilium.extraIngress | list | `[]` | Extra ingress rules in CiliumNetworkPolicy form, appended regardless of `ingress.enabled`. |
+| networkPolicy.cilium.ingress | object | `{"customRules":[],"fromEntities":[]}` | Cilium-only ingress rules. |
+| networkPolicy.cilium.ingress.customRules | list | `[]` | Additional ingress rules in CiliumNetworkPolicy form, appended verbatim. |
+| networkPolicy.cilium.ingress.fromEntities | list | `[]` | Named source sets, e.g. `cluster`, `host`, `remote-node`. |
 | networkPolicy.egress | object | `{"accounting":{"enabled":true,"port":2008},"cidr":"0.0.0.0/0","customRules":[],"database":{"enabled":true,"namespaceSelector":{},"podSelector":{}},"dns":{"enabled":true,"namespaceSelector":{"kubernetes.io/metadata.name":"kube-system"},"podSelector":{"k8s-app":"kube-dns"}},"enabled":true,"except":["10.0.0.0/8","172.16.0.0/12","192.168.0.0/16","169.254.0.0/16"],"https":{"enabled":false},"weblist":{"enabled":false,"port":2010}}` | Egress configuration. |
 | networkPolicy.egress.accounting | object | `{"enabled":true,"port":2008}` | TeamSpeak licensing/accounting service on TCP 2008. The server contacts it on startup and periodically afterwards; blocking it takes the virtual server offline. |
 | networkPolicy.egress.accounting.enabled | bool | `true` | Allow egress to the accounting service. |
@@ -376,6 +429,7 @@ Never put credentials there — `extraServerConfig` lands in the ConfigMap, not 
 | networkPolicy.egress.weblist.enabled | bool | `false` | Allow egress to the server list. |
 | networkPolicy.egress.weblist.port | int | `2010` | Weblist port. |
 | networkPolicy.enabled | bool | `false` | Enable network policies. |
+| networkPolicy.engine | string | `"kubernetes"` | Which policy dialect to render. `kubernetes` emits the portable `networking.k8s.io/v1` pair; `cilium` emits `CiliumNetworkPolicy`, which can name the licensing and server-list endpoints instead of scoping those rules to the whole public internet; `both` emits both, for the window in which a cluster is migrating between CNIs. |
 | networkPolicy.extraEgress | list | `[]` | Egress rules appended verbatim, whether or not `networkPolicy.egress.enabled` is set. |
 | networkPolicy.extraIngress | list | `[]` | Ingress rules appended verbatim, whether or not `networkPolicy.ingress.enabled` is set. |
 | networkPolicy.ingress | object | `{"clients":{"cidrs":["0.0.0.0/0"],"enabled":true},"customRules":[],"enabled":true,"monitoring":{"enabled":true,"namespace":"monitoring","namespaceSelector":{}},"query":{"cidrs":[],"enabled":false}}` | Ingress configuration. |

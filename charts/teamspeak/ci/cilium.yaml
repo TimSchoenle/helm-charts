@@ -1,0 +1,57 @@
+# CiliumNetworkPolicy for the voice server.
+#
+# Named without the `-values` suffix on purpose: `ct` globs `ci/*-values.yaml` for `ct install`,
+# while the render and kubeconform scripts glob `ci/*.yaml`. The kind cluster CI installs into
+# runs no Cilium and has no `cilium.io/v2` CRDs, so an install would fail; this keeps render,
+# schema-validation and policy-scan coverage without asking chart-testing to install it.
+#
+# `engine: both` so this fixture renders every policy object the chart can emit at once.
+
+license:
+  accept: true
+
+serverQuery:
+  adminPassword: ci-serveradmin-password
+
+# ClusterIP rather than the chart default, because `helm --wait` blocks until a LoadBalancer is
+# assigned an address, which never happens on a kind cluster.
+service:
+  type: ClusterIP
+
+networkPolicy:
+  enabled: true
+  engine: both
+  ingress:
+    enabled: true
+    clients:
+      enabled: true
+      cidrs:
+        - 0.0.0.0/0
+    query:
+      enabled: true
+      cidrs:
+        - 10.0.0.0/8
+    monitoring:
+      enabled: true
+  egress:
+    enabled: true
+    accounting:
+      enabled: true
+    weblist:
+      enabled: true
+    https:
+      enabled: true
+  cilium:
+    description: "teamspeak: licensing and server list by name, not by CIDR"
+    egress:
+      # The rule the portable policy cannot state. Blocking the licensing endpoint takes the
+      # virtual server offline, so naming it is worth more here than almost anywhere else.
+      accountingFQDNs:
+        - matchName: accounting.teamspeak.com
+      weblistFQDNs:
+        - matchName: weblist.teamspeak.com
+      dnsMatchPatterns:
+        - matchPattern: "*.teamspeak.com"
+
+metrics:
+  enabled: true

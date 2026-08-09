@@ -1,0 +1,315 @@
+suite: test Gateway API exposure and the Cilium policy engine
+templates:
+  - httproute.yaml
+  - networkpolicy.yaml
+  - ciliumnetworkpolicy.yaml
+  - serviceaccount.yaml
+values:
+  - ../ci/gateway.yaml
+# The Gateway API and Cilium ship as CRDs, and `helm template` reports only the built-in API
+# surface. Declaring them here is the unit-test equivalent of the `--api-versions` flags
+# `.github/configs/render-api-versions.txt` supplies to every renderer.
+capabilities:
+  apiVersions:
+    - gateway.networking.k8s.io/v1
+    - cilium.io/v2
+    - monitoring.coreos.com/v1
+    - grafana.integreatly.org/v1beta1
+tests:
+  - it: creates no route when the Gateway API is not used
+    template: httproute.yaml
+    set:
+      gateway.enabled: false
+      gateway.api.enabled: false
+      # Nothing publishes the chart in this case, so the callback URL has to be given rather
+      # than derived — otherwise the failure under test is the missing URL, not the missing route.
+      anilist.redirectUri: https://tankovault.example.com/account/anilist-callback
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  # The frontend serves the SPA and proxies /v1/* to the api, so one origin covers the whole
+  # application — the same reason the Ingress publishes the frontend and not the api.
+  - it: routes the public hostname to the frontend, not the api
+    template: httproute.yaml
+    documentSelector:
+      path: spec.rules[0].backendRefs[0].name
+      value: RELEASE-NAME-tankovault-frontend
+    asserts:
+      - isKind:
+          of: HTTPRoute
+      - equal:
+          path: spec.hostnames[0]
+          value: tankovault.example.com
+      - equal:
+          path: spec.rules[0].backendRefs[0]
+          value:
+            name: RELEASE-NAME-tankovault-frontend
+            port: 3000
+
+  - it: publishes the api only on its own opt-in hostname
+    template: httproute.yaml
+    documentSelector:
+      path: spec.rules[0].backendRefs[0].name
+      value: RELEASE-NAME-tankovault-api
+    asserts:
+      - equal:
+          path: spec.hostnames[0]
+          value: api.tankovault.example.com
+      - equal:
+          path: spec.rules[0].backendRefs[0]
+          value:
+            name: RELEASE-NAME-tankovault-api
+            port: 8080
+      - equal:
+          path: metadata.labels["app.kubernetes.io/component"]
+          value: api
+
+  - it: attaches both routes to the Gateway it creates
+    template: httproute.yaml
+    asserts:
+      - documentSelector:
+          path: spec.rules[0].backendRefs[0].name
+          value: RELEASE-NAME-tankovault-frontend
+        equal:
+          path: spec.parentRefs[0].name
+          value: RELEASE-NAME-tankovault
+      - documentSelector:
+          path: spec.rules[0].backendRefs[0].name
+          value: RELEASE-NAME-tankovault-api
+        equal:
+          path: spec.parentRefs[0].name
+          value: RELEASE-NAME-tankovault
+
+  - it: carries filters and timeouts as typed fields
+    template: httproute.yaml
+    documentSelector:
+      path: spec.rules[0].backendRefs[0].name
+      value: RELEASE-NAME-tankovault-frontend
+    asserts:
+      - equal:
+          path: spec.rules[0].filters[0].responseHeaderModifier.set[0].value
+          value: nosniff
+      - equal:
+          path: spec.rules[0].timeouts.backendRequest
+          value: 30s
+
+  # Bound to every listener the redirect would also apply to the HTTPS one and loop forever.
+  - it: binds the HTTPS redirect to the plaintext listener only
+    template: httproute.yaml
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-https-redirect
+    asserts:
+      - equal:
+          path: spec.parentRefs[0].sectionName
+          value: http
+      - equal:
+          path: spec.rules[0].filters[0].requestRedirect.scheme
+          value: https
+
+  # `anilist.redirect_uri`, `email.base_url` and `auth.webauthn_origin` have to agree with the
+  # origin a browser actually uses, or OAuth, emailed links and passkeys break at runtime with
+  # nothing failing at render time. Enabling the Gateway instead of the Ingress must not leave
+  # them empty.
+  - it: derives the external URL from the Gateway when the Ingress is off
+    template: serviceaccount.yaml
+    asserts:
+      - notFailedTemplate: {}
+
+  - it: admits the Gateway data plane, derived from the route's parent
+    template: networkpolicy.yaml
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-frontend
+    asserts:
+      - contains:
+          path: spec.ingress
+          content:
+            from:
+              - namespaceSelector:
+                  matchLabels:
+                    kubernetes.io/metadata.name: NAMESPACE
+                podSelector:
+                  matchLabels:
+                    gateway.networking.k8s.io/gateway-name: RELEASE-NAME-tankovault
+            ports:
+              - port: 3000
+                protocol: TCP
+
+  - it: admits the Gateway on the api only when the api route exists
+    template: networkpolicy.yaml
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-api
+    set:
+      gateway.api.enabled: false
+    asserts:
+      - notContains:
+          path: spec.ingress
+          content:
+            from:
+              - namespaceSelector:
+                  matchLabels:
+                    kubernetes.io/metadata.name: NAMESPACE
+                podSelector:
+                  matchLabels:
+                    gateway.networking.k8s.io/gateway-name: RELEASE-NAME-tankovault
+            ports:
+              - port: 8080
+                protocol: TCP
+
+  - it: honours an explicit gateway peer for an implementation that labels pods differently
+    template: networkpolicy.yaml
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-frontend
+    set:
+      networkPolicy.gateway.namespaceSelector:
+        kubernetes.io/metadata.name: envoy-gateway-system
+      networkPolicy.gateway.podSelector:
+        app.kubernetes.io/name: envoy
+    asserts:
+      - contains:
+          path: spec.ingress
+          content:
+            from:
+              - namespaceSelector:
+                  matchLabels:
+                    kubernetes.io/metadata.name: envoy-gateway-system
+                podSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: envoy
+            ports:
+              - port: 3000
+                protocol: TCP
+
+  - it: renders no CiliumNetworkPolicy under the default engine
+    template: ciliumnetworkpolicy.yaml
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders the same graph in Cilium's dialect
+    template: ciliumnetworkpolicy.yaml
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-frontend
+    set:
+      networkPolicy.engine: cilium
+    asserts:
+      - isKind:
+          of: CiliumNetworkPolicy
+      - equal:
+          path: apiVersion
+          value: cilium.io/v2
+      - equal:
+          path: spec.enableDefaultDeny
+          value:
+            ingress: true
+            egress: true
+      - contains:
+          path: spec.ingress
+          content:
+            fromEndpoints:
+              - matchLabels:
+                  io.kubernetes.pod.namespace: NAMESPACE
+                  gateway.networking.k8s.io/gateway-name: RELEASE-NAME-tankovault
+            toPorts:
+              - ports:
+                  - port: "3000"
+                    protocol: TCP
+
+  # Emitting both would leave the broad rule in place and make the narrow one decorative.
+  - it: replaces the internet CIDR rule with named destinations
+    template: ciliumnetworkpolicy.yaml
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-worker
+    set:
+      networkPolicy.engine: cilium
+      networkPolicy.cilium.egress.toFQDNs:
+        - matchName: graphql.anilist.co
+    asserts:
+      - contains:
+          path: spec.egress
+          content:
+            toFQDNs:
+              - matchName: graphql.anilist.co
+            toPorts:
+              - ports:
+                  - port: "443"
+                    protocol: TCP
+      - notContains:
+          path: spec.egress
+          content:
+            toCIDRSet:
+              - cidr: 0.0.0.0/0
+                except:
+                  - 10.0.0.0/8
+                  - 172.16.0.0/12
+                  - 192.168.0.0/16
+                  - 169.254.0.0/16
+
+  # Without the L7 DNS rule Cilium never observes the lookup, so every FQDN rule matches nothing.
+  - it: attaches L7 DNS rules so the FQDN rules are enforceable
+    template: ciliumnetworkpolicy.yaml
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-worker
+    set:
+      networkPolicy.engine: cilium
+    asserts:
+      - equal:
+          path: spec.egress[0].toPorts[0].rules.dns
+          value:
+            - matchPattern: "*"
+
+  - it: emits both dialects during a CNI migration
+    templates:
+      - networkpolicy.yaml
+      - ciliumnetworkpolicy.yaml
+    set:
+      networkPolicy.engine: both
+    asserts:
+      - hasDocuments:
+          count: 10
+
+  - it: refuses a route with no Gateway to attach to
+    template: serviceaccount.yaml
+    set:
+      gateway.create: false
+    asserts:
+      - failedTemplate:
+          errorPattern: "gateway.parentRefs is empty and gateway.create is false"
+
+  - it: refuses two routes claiming one hostname
+    template: serviceaccount.yaml
+    set:
+      gateway.api.host: tankovault.example.com
+    asserts:
+      - failedTemplate:
+          errorPattern: "name the same hostname"
+
+  # A Secure session cookie is never sent back over http://, so the login silently loops.
+  - it: refuses a plaintext origin while the session cookie is Secure
+    template: serviceaccount.yaml
+    set:
+      gateway.tls.enabled: false
+      gateway.create: false
+      gateway.parentRefs:
+        - name: shared-gateway
+    asserts:
+      - failedTemplate:
+          errorPattern: "auth.cookie_secure defaults to true"
+
+  - it: accepts a plaintext origin once the cookie is not Secure
+    template: serviceaccount.yaml
+    set:
+      gateway.tls.enabled: false
+      gateway.create: false
+      gateway.parentRefs:
+        - name: shared-gateway
+      config.auth.cookie_secure: false
+    asserts:
+      - notFailedTemplate: {}

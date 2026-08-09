@@ -1,0 +1,77 @@
+# CiliumNetworkPolicy across the whole service graph, with the Ingress and the Gateway both
+# enabled — the migration window this chart supports, and the one configuration in which every
+# inbound peer the policies can carry is rendered at once.
+#
+# A render fixture, not an install fixture: external datastores that do not resolve, plus a kind
+# cluster with neither the Gateway API nor the `cilium.io/v2` CRDs. `ct install` takes every
+# `ci/*-values.yaml`, while the render and policy jobs glob `ci/*.yaml`.
+auth:
+  jwtSecret: ci-jwt-secret-0123456789abcdef0123
+internal:
+  token: ci-internal-token-0123456789abcdef01
+anilist:
+  clientId: "12345"
+  clientSecret: ci-anilist-client-secret
+  tokenEncryptionKey: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
+externalDatabase:
+  url: postgres://tankovault:ci@postgresql.example.com:5432/tankovault
+externalNats:
+  url: nats://nats.example.com:4222
+trawl:
+  enabled: true
+valkey:
+  enabled: true
+services:
+  render:
+    enabled: true
+
+ingress:
+  enabled: true
+  className: nginx
+  host: tankovault.example.com
+  tls:
+    enabled: true
+
+gateway:
+  enabled: true
+  host: tankovault.example.com
+  tls:
+    enabled: true
+  parentRefs:
+    - name: shared-gateway
+      namespace: gateway-system
+  api:
+    enabled: true
+    host: api.tankovault.example.com
+
+networkPolicy:
+  enabled: true
+  engine: both
+  ingressController:
+    namespaceSelector:
+      kubernetes.io/metadata.name: ingress-nginx
+    podSelector:
+      app.kubernetes.io/name: ingress-nginx
+  monitoring:
+    namespaceSelector:
+      kubernetes.io/metadata.name: monitoring
+  cilium:
+    description: "tankovault: outbound to the hosts each tier actually talks to"
+    ingress:
+      fromEntities:
+        - cluster
+    # This is what the CIDR rule was always a poor approximation of. `worker` scrapes provider
+    # sites, `sync` talks to AniList and `notifier` reaches SMTP — naming them replaces
+    # "0.0.0.0/0 on 443" for every tier that carries it.
+    egress:
+      toFQDNs:
+        - matchName: graphql.anilist.co
+        - matchPattern: "*.mangadex.org"
+      fqdnPorts:
+        - port: 443
+          protocol: TCP
+        - port: 587
+          protocol: TCP
+      dnsMatchPatterns:
+        - matchPattern: "*.anilist.co"
+        - matchPattern: "*.mangadex.org"

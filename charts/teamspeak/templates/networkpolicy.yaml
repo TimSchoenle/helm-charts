@@ -12,6 +12,7 @@ Rendering either policy with no rules enabled is meaningful and intentional: a p
 selects the pod and declares its policyType with an empty rule list is a default-deny.
 */ -}}
 {{- if .Values.networkPolicy.enabled -}}
+{{- if has (.Values.networkPolicy.engine | default "kubernetes") (list "kubernetes" "both") -}}
 {{- $ingress := .Values.networkPolicy.ingress -}}
 {{- $egress := .Values.networkPolicy.egress -}}
 {{- /*
@@ -160,4 +161,5 @@ spec:
     {{- with .Values.networkPolicy.extraEgress }}
     {{- include "common.tplvalues.render" (dict "value" . "context" $) | nindent 4 }}
     {{- end }}
+{{- end }}
 {{- end }}

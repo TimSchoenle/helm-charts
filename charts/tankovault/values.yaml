@@ -2077,6 +2077,236 @@ ingress:
 # @schema
 # additionalProperties: true
 # @schema
+# -- Gateway API exposure, the successor to `ingress` and an independent switch from it: a
+# cluster migrating from an Ingress controller to a Gateway implementation runs both for a while.
+#
+# What it publishes is the same thing `ingress` does and for the same reason — the frontend
+# serves the SPA and reverse-proxies `/v1/*` to the API, so one origin covers the whole
+# application. Only the mechanism differs: the `Gateway` (its listeners, its address, its
+# certificates) belongs to the cluster operator, and this chart owns the `HTTPRoute` that
+# attaches to it.
+gateway:
+  # @schema
+  # type: boolean
+  # @schema
+  # -- Create an HTTPRoute for the frontend. Requires the `gateway.networking.k8s.io` CRDs; the
+  # render fails loudly rather than silently dropping the route when they are absent.
+  enabled: false
+
+  # @schema
+  # type: boolean
+  # @schema
+  # -- Also create the Gateway itself, for an install with no cluster-wide one to attach to.
+  # A route that names no parent attaches to it automatically.
+  create: false
+
+  # @schema
+  # type: string
+  # @schema
+  # -- GatewayClass that programs the created Gateway, e.g. `cilium`, `istio`, `envoy-gateway`.
+  # Required by `create`; a Gateway without one is never reconciled.
+  gatewayClassName: ""
+
+  # @schema
+  # type: array
+  # @schema
+  # -- Gateways the routes attach to. Each entry takes `name` and optionally `namespace`,
+  # `sectionName`, `port`, `group` and `kind`. Required unless `create` is set: a route with no
+  # parent is accepted by the API server and then never programmed by any listener.
+  parentRefs: []
+
+  # @schema
+  # type: string
+  # @schema
+  # -- Hostname the application is served on.
+  host: ""
+
+  # @schema
+  # type: string
+  # @schema
+  # -- Override the derived external URL used for `anilist.redirect_uri`, `email.base_url` and
+  # `auth.webauthn_origin`. Takes precedence over `ingress.url`. Set this when TLS terminates on
+  # a proxy in front of the Gateway.
+  url: ""
+
+  # @schema
+  # type: string
+  # @schema
+  # -- Path prefix the route matches.
+  path: /
+
+  # @schema
+  # type: array
+  # @schema
+  # -- Filters applied to the frontend route: `RequestHeaderModifier`,
+  # `ResponseHeaderModifier`, `RequestRedirect`, `URLRewrite`, `RequestMirror`, `ExtensionRef`.
+  # This is where an Ingress controller's annotations end up, as typed fields.
+  filters: []
+
+  # @schema
+  # type: object
+  # additionalProperties: true
+  # @schema
+  # -- Timeouts for the frontend route: `request` and `backendRequest`, as Go durations.
+  #
+  # Leave `request` unset or generous if the SPA holds the `/v1/events` SSE stream open through
+  # this route — a request timeout cuts a long-lived stream at the Gateway, and the symptom is a
+  # UI that quietly stops updating rather than an error anybody sees.
+  timeouts: {}
+
+  # @schema
+  # type: object
+  # additionalProperties: true
+  # @schema
+  # -- Annotations for the HTTPRoute.
+  annotations: {}
+
+  # @schema
+  # additionalProperties: true
+  # @schema
+  # -- A second route that redirects plaintext traffic to HTTPS. Under Ingress this was a
+  # controller-specific annotation; Gateway API expresses it as a typed `RequestRedirect` filter,
+  # which means it has to be a real object.
+  httpsRedirect:
+    # @schema
+    # type: boolean
+    # @schema
+    # -- Create the redirect route.
+    enabled: false
+
+    # @schema
+    # type: string
+    # @schema
+    # -- Listener to bind the redirect to. Must be the plaintext one: attached to every listener
+    # the redirect would also apply to the HTTPS listener and loop forever. Defaults to `http`,
+    # the name of the listener `create` renders.
+    sectionName: ""
+
+    # @schema
+    # type: integer
+    # @schema
+    # -- Redirect status code. `301` or `302`.
+    statusCode: 301
+
+  # @schema
+  # additionalProperties: true
+  # @schema
+  # -- TLS for the route's hostname.
+  tls:
+    # @schema
+    # type: boolean
+    # @schema
+    # -- The hostname is served over HTTPS. Two effects: it adds the HTTPS listener when
+    # `create` is set, and it is what the derived external URL takes its scheme from — so set it
+    # even when the Gateway is somebody else's and it is their listener terminating TLS.
+    # Note `auth.cookie_secure` defaults to true, so sessions are lost over plain HTTP on any
+    # host other than `localhost`.
+    enabled: false
+
+    # @schema
+    # enum: [Terminate, Passthrough]
+    # @schema
+    # -- TLS mode for the created Gateway's listener.
+    mode: Terminate
+
+    # @schema
+    # type: array
+    # @schema
+    # -- Secrets holding the certificate for the created Gateway's listener. Required by
+    # `Terminate`: unlike an Ingress there is no convention by which one is looked up from the
+    # hostname. Ignored without `create` — otherwise the certificate is the Gateway owner's.
+    certificateRefs: []
+
+    # @schema
+    # type: object
+    # additionalProperties: true
+    # @schema
+    # -- Implementation-specific TLS options for the created Gateway's listener.
+    options: {}
+
+  # @schema
+  # type: array
+  # @schema
+  # -- Listeners for the created Gateway, replacing the derived `http`/`https` pair entirely.
+  listeners: []
+
+  # @schema
+  # type: integer
+  # @schema
+  # -- Port for the derived HTTP listener.
+  httpPort: 80
+
+  # @schema
+  # type: integer
+  # @schema
+  # -- Port for the derived HTTPS listener.
+  httpsPort: 443
+
+  # @schema
+  # type: array
+  # @schema
+  # -- Addresses requested for the created Gateway, e.g. a fixed `IPAddress`.
+  addresses: []
+
+  # @schema
+  # type: object
+  # additionalProperties: true
+  # @schema
+  # -- Which routes may attach to the created Gateway's listeners. Defaults to `Same`.
+  allowedRoutes: {}
+
+  # @schema
+  # type: object
+  # additionalProperties: true
+  # @schema
+  # -- `infrastructure.labels` / `infrastructure.annotations` for the created Gateway, passed
+  # through to the load balancer the implementation provisions. Where Cilium's LB-IPAM
+  # annotations go.
+  infrastructure: {}
+
+  # @schema
+  # additionalProperties: true
+  # @schema
+  # -- A second route publishing the API on its own hostname, for split-origin clients.
+  # Enabling it means the browser origin no longer matches the API origin, so CORS,
+  # `auth.webauthn_origin` and cookie `SameSite` all have to be set consistently or logins
+  # break in ways that only appear at runtime.
+  api:
+    # @schema
+    # type: boolean
+    # @schema
+    # -- Create the API HTTPRoute.
+    enabled: false
+
+    # @schema
+    # type: string
+    # @schema
+    # -- Hostname the API is served on.
+    host: ""
+
+    # @schema
+    # type: array
+    # @schema
+    # -- Filters applied to the API route.
+    filters: []
+
+    # @schema
+    # type: object
+    # additionalProperties: true
+    # @schema
+    # -- Timeouts for the API route.
+    timeouts: {}
+
+    # @schema
+    # type: object
+    # additionalProperties: true
+    # @schema
+    # -- Annotations for the API HTTPRoute.
+    annotations: {}
+
+# @schema
+# additionalProperties: true
+# @schema
 # -- What the frontend's Content-Security-Policy concedes to Cloudflare, one flag per product.
 # Both default off and both belong off on a deployment that is not behind Cloudflare: each admits
 # something the policy otherwise refuses, and an unused concession is only a weakness. Nothing
@@ -2388,6 +2618,45 @@ networkPolicy:
   enabled: false
 
   # @schema
+  # enum: [kubernetes, cilium, both]
+  # @schema
+  # -- Which policy dialect to render. `kubernetes` emits the portable `networking.k8s.io/v1`
+  # objects; `cilium` emits `CiliumNetworkPolicy`, which can express FQDN destinations, named
+  # entities and L7 rules that the portable API cannot; `both` emits both, for the window in
+  # which a cluster is migrating between CNIs.
+  #
+  # Both dialects are rendered from the same derived topology, so they cannot describe different
+  # graphs — the engine picks how the rules are written, never what they are.
+  engine: kubernetes
+
+  # @schema
+  # additionalProperties: true
+  # @schema
+  # -- Selectors matching the Gateway API data plane, allowed to reach the frontend (and the API
+  # when `gateway.api.enabled` is set). Left empty they are derived from `gateway.parentRefs`:
+  # the namespace of the first parent, and `gateway.networking.k8s.io/gateway-name` — the label
+  # Cilium, Envoy Gateway, Istio and NGINX Gateway Fabric all put on the pods they provision.
+  #
+  # Restating the Gateway's identity here would be a second place to edit on a rename, and a
+  # policy naming the wrong Gateway looks correct and blocks all inbound traffic.
+  gateway:
+    # @schema
+    # type: object
+    # additionalProperties:
+    #   type: string
+    # @schema
+    # -- Namespace selector matching the Gateway's data plane. Empty derives it.
+    namespaceSelector: {}
+
+    # @schema
+    # type: object
+    # additionalProperties:
+    #   type: string
+    # @schema
+    # -- Pod selector matching the Gateway's data plane. Empty derives it.
+    podSelector: {}
+
+  # @schema
   # additionalProperties: true
   # @schema
   ingressController:
@@ -2445,6 +2714,108 @@ networkPolicy:
   # @schema
   # -- Extra egress rules appended to every service's policy.
   extraEgress: []
+
+  # @schema
+  # additionalProperties: true
+  # @schema
+  # -- Cilium-only additions, used when `engine` is `cilium` or `both`. The whole topology above
+  # is rendered into the CiliumNetworkPolicies automatically; these are the rules the portable API
+  # has no way to express.
+  #
+  # Note that `extraIngress` and `extraEgress` above are *not* carried over: those are verbatim
+  # `networking.k8s.io/v1` rule objects and are not valid CNP. The fields below are their
+  # counterparts.
+  cilium:
+    # @schema
+    # type: string
+    # @schema
+    # -- `spec.description`, which Cilium surfaces in `cilium policy get` and in Hubble flow
+    # verdicts. The one place to record why a rule exists where an operator debugging a drop
+    # will actually see it.
+    description: ""
+
+    # @schema
+    # additionalProperties: true
+    # @schema
+    # -- Cilium-only ingress rules, added to every service's policy.
+    ingress:
+      # @schema
+      # type: array
+      # items:
+      #   type: string
+      # @schema
+      # -- Named source sets, e.g. `cluster`, `host`, `remote-node`, `kube-apiserver`.
+      fromEntities: []
+
+    # @schema
+    # additionalProperties: true
+    # @schema
+    # -- Cilium-only egress rules.
+    egress:
+      # @schema
+      # type: array
+      # @schema
+      # -- The hosts the internet-facing tiers may reach, by name: `- matchName: api.anilist.co`
+      # or `- matchPattern: "*.example.com"`. Set, this *replaces* the `internetCidrs` rule for
+      # every service that carries it — `worker`, `sync`, `notifier`, `render` and the bundled
+      # TRAWL. That is the point: `0.0.0.0/0` on 443 permits every public host that exists, and
+      # a scraping tier is precisely the one you do not want holding that.
+      #
+      # Emitting both would leave the broad rule in place and make this one decorative, so it is
+      # a substitution rather than an addition.
+      toFQDNs: []
+
+      # @schema
+      # type: array
+      # items:
+      #   $ref: https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyPort
+      # @schema
+      # -- Ports the `toFQDNs` rule allows. Defaults to TCP/443. SMTP submission needs 587 here
+      # if `notifier` sends mail directly.
+      fqdnPorts: []
+
+      # @schema
+      # type: array
+      # @schema
+      # -- L7 HTTP rules layered onto the `toFQDNs` rule, e.g. `- method: GET` / `path: "/v1/.*"`.
+      # Costs a proxy hop per connection.
+      httpRules: []
+
+      # @schema
+      # type: array
+      # items:
+      #   type: string
+      # @schema
+      # -- Named destination sets added to every policy, e.g. `kube-apiserver`.
+      toEntities: []
+
+      # @schema
+      # type: array
+      # items:
+      #   $ref: https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyPort
+      # @schema
+      # -- Restrict the `toEntities` rule to specific ports. Empty means all ports.
+      entityPorts: []
+
+      # @schema
+      # type: array
+      # @schema
+      # -- What the DNS proxy may resolve, e.g. `- matchPattern: "*.example.com"`. Defaults to
+      # everything, which only permits the lookup — an answer is still only reachable if some
+      # rule allows the address.
+      dnsMatchPatterns: []
+
+    # @schema
+    # type: array
+    # @schema
+    # -- Extra ingress rules in CiliumNetworkPolicy form, appended to every service's policy.
+    extraIngress: []
+
+    # @schema
+    # type: array
+    # @schema
+    # -- Extra egress rules in CiliumNetworkPolicy form, appended to every service's policy.
+    extraEgress: []
 
 # @schema
 # additionalProperties: true

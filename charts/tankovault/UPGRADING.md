@@ -16,6 +16,56 @@ Some of them require a manual step that nothing will remind you about:
 The values contract is enforced by `values.schema.json`, so a key a new major removed or
 renamed fails the render with the offending path named, rather than being silently ignored.
 
+## 3.4.0
+
+**Gateway API exposure and a Cilium policy engine.** Nothing to do: both are opt-in, both default
+off, and a release that changes neither renders byte-identically to 3.3.6 apart from the chart
+version label.
+
+### `gateway.*`
+
+`ingress` and `gateway` are independent switches, so there is no migration window to schedule —
+turn `gateway` on while the Ingress is still serving, cut DNS over, then turn `ingress` off. What
+this chart owns is the `HTTPRoute`; the `Gateway` belongs to whoever runs the cluster, and
+`gateway.parentRefs` names it.
+
+| Ingress | Gateway API |
+|---|---|
+| `ingress.className` | `gateway.parentRefs` — the Gateway, not the class |
+| `ingress.host` | `gateway.host` |
+| `ingress.path` / `ingress.pathType` | `gateway.path`, or `gateway.filters` for anything richer |
+| `ingress.tls.enabled` | `gateway.tls.enabled` |
+| `ingress.tls.secretName` | the Gateway listener's `certificateRefs` — theirs, unless `gateway.create` |
+| `ingress.url` | `gateway.url` (takes precedence over `ingress.url`) |
+| `ingress.api.*` | `gateway.api.*` |
+| an `ssl-redirect` annotation | `gateway.httpsRedirect.enabled` |
+| a `proxy-read-timeout` annotation | `gateway.timeouts` |
+
+> [!IMPORTANT]
+> `gateway.tls.enabled` is what the derived external URL takes its scheme from — the same job
+> `ingress.tls.enabled` does — and it applies even when the Gateway is somebody else's, because it
+> states that the hostname is served over HTTPS, not that this chart terminates it. Leaving it off
+> while the application's `auth.cookie_secure` is true yields an `http://` origin, a session
+> cookie that is never sent back, and a login that lands straight back on the sign-in page. The
+> chart now refuses that combination at render time.
+
+The NetworkPolicies follow on their own: the frontend admits the Gateway's data plane when
+`gateway.enabled` is set, the API when `gateway.api.enabled` is, and the peer is derived from
+`gateway.parentRefs`.
+
+### `networkPolicy.engine`
+
+`kubernetes` (the default, and what every existing release already renders), `cilium`, or `both`
+for a CNI migration. The twelve per-service policies are now rendered from one derived topology
+that both dialects read, so they cannot describe different graphs — and the portable output is
+unchanged from 3.3.6.
+
+The reason to switch is the internet rules. `worker`, `sync`, `notifier`, `render` and the bundled
+TRAWL need outbound access, and `networking.k8s.io/v1` can only say that as `0.0.0.0/0` minus
+RFC1918 and the metadata endpoint. `networkPolicy.cilium.egress.toFQDNs` replaces it with the
+hosts those tiers actually talk to. Note it *replaces* rather than adds: emitting both would leave
+the broad rule in place.
+
 ## 3.3.0
 
 **`appVersion` moves to 3.3.0**, and with it the nine image digests.

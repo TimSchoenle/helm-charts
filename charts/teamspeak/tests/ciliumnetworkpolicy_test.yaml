@@ -1,0 +1,195 @@
+suite: test the Cilium policy engine
+templates:
+  - networkpolicy.yaml
+  - ciliumnetworkpolicy.yaml
+values:
+  - ../ci/networkpolicy-values.yaml
+capabilities:
+  apiVersions:
+    - cilium.io/v2
+    - monitoring.coreos.com/v1
+tests:
+  - it: renders no CiliumNetworkPolicy under the default engine
+    template: ciliumnetworkpolicy.yaml
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders no portable policy under the cilium engine
+    template: networkpolicy.yaml
+    set:
+      networkPolicy.engine: cilium
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  # A migration setting: the two dialects select the same pod and their allowances union.
+  - it: emits both dialects under the both engine
+    templates:
+      - networkpolicy.yaml
+      - ciliumnetworkpolicy.yaml
+    set:
+      networkPolicy.engine: both
+    asserts:
+      - hasDocuments:
+          count: 2
+
+  # Each object turns default-deny on for its own direction and explicitly off for the other.
+  # A single object claiming both, with only ingress rules, would deny all egress — including
+  # the licence check that keeps the virtual server online.
+  - it: scopes default-deny to the direction each object covers
+    template: ciliumnetworkpolicy.yaml
+    set:
+      networkPolicy.engine: cilium
+    asserts:
+      - documentIndex: 0
+        equal:
+          path: spec.enableDefaultDeny
+          value:
+            ingress: true
+            egress: false
+      - documentIndex: 1
+        equal:
+          path: spec.enableDefaultDeny
+          value:
+            ingress: false
+            egress: true
+
+  - it: admits voice clients from the configured CIDRs
+    template: ciliumnetworkpolicy.yaml
+    documentIndex: 0
+    set:
+      networkPolicy.engine: cilium
+    asserts:
+      - equal:
+          path: spec.ingress[0].fromCIDR
+          value:
+            - 0.0.0.0/0
+      # The port a client dials has to be the port the server listens on, so both come from
+      # `server.*` rather than from a Service allocation.
+      - equal:
+          path: spec.ingress[0].toPorts[0].ports[0]
+          value:
+            port: "9987"
+            protocol: UDP
+
+  - it: admits the metrics port from the monitoring namespace
+    template: ciliumnetworkpolicy.yaml
+    documentIndex: 0
+    set:
+      networkPolicy.engine: cilium
+    asserts:
+      - contains:
+          path: spec.ingress
+          content:
+            fromEndpoints:
+              - matchLabels:
+                  io.kubernetes.pod.namespace: monitoring
+            toPorts:
+              - ports:
+                  - port: "9189"
+                    protocol: TCP
+
+  # Without the L7 DNS rule Cilium never observes the lookup, so an FQDN rule matches nothing —
+  # and for the accounting rule that means the virtual server goes offline.
+  - it: attaches L7 DNS rules so the FQDN rules are enforceable
+    template: ciliumnetworkpolicy.yaml
+    documentIndex: 1
+    set:
+      networkPolicy.engine: cilium
+      networkPolicy.cilium.egress.dnsMatchPatterns:
+        - matchPattern: "*.teamspeak.com"
+    asserts:
+      - equal:
+          path: spec.egress[0].toPorts[0].rules.dns
+          value:
+            - matchPattern: "*.teamspeak.com"
+
+  # The rule the portable API cannot state: the accounting host's address changes over time, so
+  # `networking.k8s.io/v1` can only permit TCP/2008 to the entire public internet.
+  - it: names the licensing endpoint instead of the whole internet
+    template: ciliumnetworkpolicy.yaml
+    documentIndex: 1
+    set:
+      networkPolicy.engine: cilium
+      networkPolicy.cilium.egress.accountingFQDNs:
+        - matchName: accounting.teamspeak.com
+    asserts:
+      - contains:
+          path: spec.egress
+          content:
+            toFQDNs:
+              - matchName: accounting.teamspeak.com
+            toPorts:
+              - ports:
+                  - port: "2008"
+                    protocol: TCP
+      - notContains:
+          path: spec.egress
+          content:
+            toCIDRSet:
+              - cidr: 0.0.0.0/0
+                except:
+                  - 10.0.0.0/8
+                  - 172.16.0.0/12
+                  - 192.168.0.0/16
+                  - 169.254.0.0/16
+            toPorts:
+              - ports:
+                  - port: "2008"
+                    protocol: TCP
+
+  # Ships empty: a wrong hostname here does not fail loudly, it takes the server offline at the
+  # next licence check. So the portable behaviour is what an unconfigured install keeps.
+  - it: falls back to the CIDR rule when no endpoint is named
+    template: ciliumnetworkpolicy.yaml
+    documentIndex: 1
+    set:
+      networkPolicy.engine: cilium
+    asserts:
+      - contains:
+          path: spec.egress
+          content:
+            toCIDRSet:
+              - cidr: 0.0.0.0/0
+                except:
+                  - 10.0.0.0/8
+                  - 172.16.0.0/12
+                  - 192.168.0.0/16
+                  - 169.254.0.0/16
+            toPorts:
+              - ports:
+                  - port: "2008"
+                    protocol: TCP
+
+  # An omitted database selector has to mean "every endpoint in this namespace", never
+  # "every namespace".
+  - it: scopes the database peer to the release namespace by default
+    template: ciliumnetworkpolicy.yaml
+    documentIndex: 1
+    set:
+      networkPolicy.engine: cilium
+      database.plugin: ts3db_mariadb
+      database.host: mariadb.example.com
+    asserts:
+      - contains:
+          path: spec.egress
+          content:
+            toEndpoints:
+              - matchLabels:
+                  io.kubernetes.pod.namespace: NAMESPACE
+            toPorts:
+              - ports:
+                  - port: "3306"
+                    protocol: TCP
+
+  - it: records why a rule exists where an operator debugging a drop will see it
+    template: ciliumnetworkpolicy.yaml
+    documentIndex: 0
+    set:
+      networkPolicy.engine: cilium
+      networkPolicy.cilium.description: voice in, licensing out
+    asserts:
+      - equal:
+          path: spec.description
+          value: voice in, licensing out

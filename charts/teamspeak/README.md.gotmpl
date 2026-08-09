@@ -20,6 +20,7 @@ is printed once and never again ([First start](#first-start)).
 - A `LoadBalancer` implementation, or another way to publish a UDP port, if clients outside the
   cluster are meant to connect
 - The Prometheus Operator CRDs, if `metrics.podMonitor` or `metrics.prometheusRule` are enabled
+- Cilium 1.16+, if `networkPolicy.engine` is `cilium` or `both`
 
 ## Quick start
 
@@ -256,6 +257,43 @@ extraServerConfig:
 ```
 
 Never put credentials there — `extraServerConfig` lands in the ConfigMap, not the Secret.
+
+
+### With Cilium
+
+`networkPolicy.engine` picks the dialect the same rules are written in — `kubernetes` (default),
+`cilium`, or `both` for a CNI migration. Every value above is translated either way, so switching
+is a one-line change.
+
+One rule is worth the switch on its own. The licence check against TeamSpeak's accounting service
+is not optional: the server contacts it on startup and periodically afterwards, and takes the
+virtual server offline when it cannot reach it. That host's address changes over time, so the
+portable API can only express the rule as "TCP/2008 to the entire public internet" — a voice
+server allowed to reach every host on earth. Cilium can name it:
+
+```yaml
+networkPolicy:
+  enabled: true
+  engine: cilium
+  cilium:
+    description: "voice in, licensing out"
+    egress:
+      accountingFQDNs:
+        - matchName: accounting.teamspeak.com
+      weblistFQDNs:
+        - matchName: weblist.teamspeak.com
+      dnsMatchPatterns:
+        - matchPattern: "*.teamspeak.com"
+```
+
+`accountingFQDNs` and `weblistFQDNs` ship **empty**, and an unconfigured install keeps the
+portable CIDR rule. That is deliberate: a wrong hostname here does not fail loudly, it takes the
+virtual server offline at the next licence check, so the endpoint is yours to state rather than
+the chart's to guess. Setting one replaces that rule's CIDR form rather than adding to it —
+emitting both would leave the broad rule in place and make the narrow one decorative.
+
+`dnsMatchPatterns` is what makes any of it enforceable: an FQDN rule matches the addresses
+Cilium's DNS proxy saw returned for the name, so the DNS rule has to observe the lookup.
 
 {{ template "chart.valuesSection" . }}
 

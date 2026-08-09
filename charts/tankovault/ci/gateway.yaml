@@ -1,0 +1,68 @@
+# Gateway API exposure (frontend and the opt-in API host) with the full NetworkPolicy set, so the
+# policy scan and kubeconform see every object this chart can emit through a Gateway.
+#
+# A render fixture, not an install fixture, for two reasons: it runs on external datastores whose
+# endpoints do not resolve, and the kind cluster has no Gateway API CRDs. Hence the name —
+# `ct install` takes every `ci/*-values.yaml`, while the render and policy jobs glob `ci/*.yaml`.
+auth:
+  jwtSecret: ci-jwt-secret-0123456789abcdef0123
+internal:
+  token: ci-internal-token-0123456789abcdef01
+anilist:
+  clientId: "12345"
+  clientSecret: ci-anilist-client-secret
+  tokenEncryptionKey: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
+externalDatabase:
+  url: postgres://tankovault:ci@postgresql.example.com:5432/tankovault
+externalNats:
+  url: nats://nats.example.com:4222
+trawl:
+  enabled: true
+valkey:
+  enabled: true
+services:
+  render:
+    enabled: true
+
+# The Ingress is off: this fixture is the Gateway API path, not both at once. Both together is
+# supported (that is the migration window) and is what `ci/cilium.yaml` renders.
+ingress:
+  enabled: false
+
+gateway:
+  enabled: true
+  create: true
+  gatewayClassName: cilium
+  host: tankovault.example.com
+  tls:
+    enabled: true
+    certificateRefs:
+      - name: tankovault-tls
+  httpsRedirect:
+    enabled: true
+  # No `request` timeout: the SPA holds the /v1/events SSE stream open through this route, and a
+  # request timeout cuts a long-lived stream at the Gateway.
+  timeouts:
+    backendRequest: 30s
+  filters:
+    - type: ResponseHeaderModifier
+      responseHeaderModifier:
+        set:
+          - name: X-Content-Type-Options
+            value: nosniff
+  infrastructure:
+    annotations:
+      io.cilium/lb-ipam-ips: 203.0.113.10
+  api:
+    enabled: true
+    host: api.tankovault.example.com
+
+cloudflare:
+  scriptNonce: true
+  turnstile: true
+
+networkPolicy:
+  enabled: true
+  monitoring:
+    namespaceSelector:
+      kubernetes.io/metadata.name: monitoring

@@ -189,6 +189,62 @@ forever rather than as an error, which is why it is refused here.
 {{- end -}}
 {{- end -}}
 
+{{- /*
+Gateway API exposure. Checked here rather than in `templates/httproute.yaml` for the reason every
+other check is here: one message naming everything wrong beats one `helm template` run per
+mistake. The CRD guard is the library's, so this chart and the four that use
+`common.gateway.routes` refuse an absent Gateway API in exactly the same words.
+
+`gateway.*` and `ingress.*` are independent switches and both may be on — that is the migration
+window, not a mistake — so nothing here objects to the pair.
+*/ -}}
+{{- $gateway := $ctx.Values.gateway -}}
+{{- if or $gateway.enabled $gateway.api.enabled -}}
+{{- with (include "common.gateway.crdErrors" (dict "ctx" $ctx "feature" "gateway.enabled")) -}}
+{{- $errors = append $errors . -}}
+{{- end -}}
+{{- if and (not $gateway.parentRefs) (not $gateway.create) -}}
+{{- $errors = append $errors "gateway is enabled but gateway.parentRefs is empty and gateway.create is false, so the routes would name no Gateway to attach to. An HTTPRoute without a parent is accepted by the API server and then does nothing at all — no listener ever programs it, and the failure is invisible until somebody tries the hostname. Either name the Gateway your cluster operator runs, or set gateway.create to have this chart render one." -}}
+{{- end -}}
+{{- range $i, $ref := $gateway.parentRefs | default list -}}
+{{- if not $ref.name -}}
+{{- $errors = append $errors (printf "gateway.parentRefs[%d] has no `name`. A parent reference is resolved by name; there is no default." $i) -}}
+{{- end -}}
+{{- end -}}
+{{- if and $gateway.enabled (not $gateway.host) -}}
+{{- $errors = append $errors "gateway.enabled is set but gateway.host is empty. An HTTPRoute with no hostnames matches every hostname its listener accepts, which on a shared Gateway means this release silently takes over traffic meant for other applications." -}}
+{{- end -}}
+{{- if and $gateway.api.enabled (not $gateway.api.host) -}}
+{{- $errors = append $errors "gateway.api.enabled is set but gateway.api.host is empty. The API route needs its own hostname — that is the entire point of publishing it separately." -}}
+{{- end -}}
+{{- if and $gateway.api.enabled $gateway.enabled (eq $gateway.api.host $gateway.host) -}}
+{{- $errors = append $errors "gateway.api.host and gateway.host name the same hostname. Two routes claiming one hostname on one Gateway is resolved by Gateway API's own precedence rules, not by intent, and the loser is silently ignored. The frontend already proxies /v1/* — publish the API separately only when it needs an origin of its own." -}}
+{{- end -}}
+{{- if and $gateway.create (not $gateway.gatewayClassName) -}}
+{{- $errors = append $errors "gateway.create is set but gateway.gatewayClassName is empty. The class is what selects the implementation that programs the Gateway (`cilium`, `istio`, `envoy-gateway`, ...); a Gateway without one is never reconciled." -}}
+{{- end -}}
+{{- if and $gateway.create $gateway.tls.enabled (not $gateway.tls.certificateRefs) (not $gateway.listeners) -}}
+{{- $errors = append $errors "gateway.create and gateway.tls.enabled are set but gateway.tls.certificateRefs is empty. A `Terminate` listener needs a certificate to terminate with; unlike an Ingress there is no convention by which one is looked up from the hostname." -}}
+{{- end -}}
+{{- if and $gateway.httpsRedirect.enabled $gateway.create (not $gateway.tls.enabled) (not $gateway.listeners) -}}
+{{- $errors = append $errors "gateway.httpsRedirect.enabled is set but the Gateway this chart creates terminates no TLS, so the redirect would send every client to a port that refuses the connection." -}}
+{{- end -}}
+{{- /*
+The scheme of the derived external URL comes from `gateway.tls.enabled`. The application defaults
+`auth.cookie_secure` to true, and a cookie marked Secure is never sent back over plain HTTP — so
+an http:// origin produces a login that appears to succeed and lands straight back on the sign-in
+page, with nothing in any log to say why. `localhost` is the exception browsers make, and the one
+case where a plaintext origin is genuinely fine.
+
+Read out of the free-form `config` tree because that is the only place this setting can be
+changed from: it has no first-class value.
+*/ -}}
+{{- $cookieSecure := dig "auth" "cookie_secure" true ($ctx.Values.config | default dict) -}}
+{{- if and $gateway.enabled $gateway.host (not $gateway.tls.enabled) (not $gateway.url) $cookieSecure (ne $gateway.host "localhost") -}}
+{{- $errors = append $errors "gateway.enabled is set without gateway.tls.enabled and without gateway.url, so the derived origin is http:// — and the application's auth.cookie_secure defaults to true, meaning the session cookie is never sent back and every login lands straight back on the sign-in page. Set gateway.tls.enabled when the Gateway terminates TLS for this hostname (it does not have to be a Gateway this chart creates), set gateway.url if TLS terminates on a proxy in front of it, or set config.auth.cookie_secure=false if you really are serving plain HTTP." -}}
+{{- end -}}
+{{- end -}}
+
 {{- if $errors -}}
 {{- fail (printf "\n\nTankoVault chart configuration is invalid:\n\n  - %s\n" (join "\n  - " $errors)) -}}
 {{- end -}}

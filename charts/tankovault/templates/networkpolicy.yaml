@@ -1,296 +1,118 @@
 {{- /*
-Per-service NetworkPolicies, written here rather than through `common.networkPolicy`.
+Per-service NetworkPolicies, rendered from `tankovault.netpol.plan`.
 
-The library builder emits one ingress and one egress policy for a single-workload chart and
-keys them off a `networkPolicy.egress.{dns,http,https,cidr}` value shape. Neither fits: this
-chart has twelve workloads whose rules are pod-to-pod and asymmetric, and the interesting part
-is exactly which service may talk to which. The topology lives in `tankovault.serviceSpecs`
-(`ingressFrom`, `egressServices`, `egressInternet`) so it stays declarative and testable in one
-place instead of being spread across a dozen literal rules.
+The library builder emits one ingress and one egress policy for a single-workload chart and keys
+them off a `networkPolicy.egress.{dns,http,https,cidr}` value shape. Neither fits: this chart has
+twelve workloads whose rules are pod-to-pod and asymmetric. What the topology *is* lives in
+`_netpol.tpl`, derived from `tankovault.serviceSpecs`; this file only knows how to say it in
+`networking.k8s.io/v1`. `ciliumnetworkpolicy.yaml` says the same plan in Cilium's dialect, which
+is why the two engines cannot describe different graphs.
 
-Default-deny is implicit: every policy names both policy types, so anything not listed below is
-denied.
+Default-deny is implicit: every policy names both policy types, so anything not listed is denied.
+
+The central rule the egress side enforces: every rule carries a `to:` selector. A rule that lists
+only `ports:` is not a restriction — the API reads a missing `to` as "all destinations", so
+"the pod may talk HTTPS" actually reads "the pod may talk to anything, anywhere, on 443",
+including the cloud metadata endpoint at 169.254.169.254.
 */ -}}
-{{- define "tankovault.netpol.servicePeer" -}}
-- podSelector:
-    matchLabels:
-      app.kubernetes.io/name: {{ include "tankovault.name" (dict "ctx" .ctx "service" .service) }}
-      app.kubernetes.io/instance: {{ .ctx.Release.Name }}
-{{- end -}}
 
-{{- define "tankovault.netpol.componentPeer" -}}
+{{- define "tankovault.netpol.peer" -}}
+{{- if .namespace }}
+- namespaceSelector:
+    matchLabels:
+      {{- toYaml .namespace | nindent 6 }}
+  {{- with .selector }}
+  podSelector:
+    matchLabels:
+      {{- toYaml . | nindent 6 }}
+  {{- end }}
+{{- else }}
 - podSelector:
     matchLabels:
-      app.kubernetes.io/name: {{ include "common.name" .ctx }}
-      app.kubernetes.io/instance: {{ .ctx.Release.Name }}
-      app.kubernetes.io/component: {{ .component }}
+      {{- toYaml .selector | nindent 6 }}
+{{- end }}
 {{- end -}}
 
 {{- define "tankovault.netpol.dnsPeers" -}}
-- to:
-    - namespaceSelector:
-        matchLabels:
-          kubernetes.io/metadata.name: kube-system
-      podSelector:
-        matchLabels:
-          k8s-app: kube-dns
-  ports:
-    - port: 53
-      protocol: UDP
-    - port: 53
-      protocol: TCP
+- namespaceSelector:
+    matchLabels:
+      kubernetes.io/metadata.name: kube-system
+  podSelector:
+    matchLabels:
+      k8s-app: kube-dns
 {{- end -}}
 
 {{- /*
 "The internet" with the private ranges and the cloud metadata endpoint carved out. The worker
-fetches provider sites, sync talks to AniList and the notifier reaches SMTP and webhooks, so
-these tiers genuinely need egress — but a scraping tier that can also reach 169.254.169.254 is
-an SSRF away from the node's instance credentials.
+fetches provider sites, sync talks to AniList and the notifier reaches SMTP and webhooks, so these
+tiers genuinely need egress — but a scraping tier that can also reach 169.254.169.254 is an SSRF
+away from the node's instance credentials.
 */ -}}
 {{- define "tankovault.netpol.internetPeers" -}}
-- to:
-    {{- range $cidr := .Values.networkPolicy.internetCidrs }}
-    - ipBlock:
-        cidr: {{ $cidr }}
-        except:
-          - 10.0.0.0/8
-          - 172.16.0.0/12
-          - 192.168.0.0/16
-          - 169.254.0.0/16
-    {{- end }}
+{{- range $cidr := .Values.networkPolicy.internetCidrs }}
+- ipBlock:
+    cidr: {{ $cidr }}
+    except:
+      - 10.0.0.0/8
+      - 172.16.0.0/12
+      - 192.168.0.0/16
+      - 169.254.0.0/16
+{{- end }}
 {{- end -}}
 
 {{- if .Values.networkPolicy.enabled }}
-{{- $specs := include "tankovault.serviceSpecs" . | fromYaml }}
-{{- $dbConsumers := list }}
-{{- $redisConsumers := list }}
-{{- $natsConsumers := list }}
-{{- range $service, $spec := $specs }}
-{{- if (index $.Values.services $service).enabled }}
-{{- if $spec.needsDatabase }}{{ $dbConsumers = append $dbConsumers $service }}{{ end }}
-{{- if $spec.needsRedis }}{{ $redisConsumers = append $redisConsumers $service }}{{ end }}
-{{- if $spec.needsNats }}{{ $natsConsumers = append $natsConsumers $service }}{{ end }}
-{{- end }}
-{{- end }}
-
-{{- /*
-The bundled TRAWL is the one datastore that is also a *client* of another one: it keeps its
-solved-cookie jar in Redis. The rule is derived by comparing the URL it resolved against the
-bundled Valkey's, so an explicit `trawl.redis.url` that happens to name the same instance is
-covered too, and one pointing anywhere else is not silently granted in-cluster access.
-*/ -}}
-{{- $trawlUsesValkey := and $.Values.trawl.enabled $.Values.valkey.enabled
-      (include "tankovault.trawlRedisUrl" $)
-      (eq (include "tankovault.trawlRedisUrl" $) (include "tankovault.redisUrl" $)) }}
-
-{{- range $service, $spec := $specs }}
-{{- if (index $.Values.services $service).enabled }}
+{{- if has (.Values.networkPolicy.engine | default "kubernetes") (list "kubernetes" "both") }}
+{{- range $policy := include "tankovault.netpol.plan" . | fromYamlArray }}
 ---
 apiVersion: {{ include "common.capabilities.networkPolicy.apiVersion" $ }}
 kind: NetworkPolicy
 metadata:
-  name: {{ include "tankovault.fullname" (dict "ctx" $ "service" $service) }}
+  name: {{ $policy.name }}
   namespace: {{ include "common.namespace" $ }}
   labels:
     {{- include "common.labels" $ | nindent 4 }}
-    app.kubernetes.io/component: {{ $spec.slug }}
+    app.kubernetes.io/component: {{ $policy.component }}
 spec:
   podSelector:
     matchLabels:
-      app.kubernetes.io/name: {{ include "tankovault.name" (dict "ctx" $ "service" $service) }}
-      app.kubernetes.io/instance: {{ $.Release.Name }}
+      {{- toYaml $policy.selector | nindent 6 }}
   policyTypes:
     - Ingress
     - Egress
   ingress:
-    {{- range $peer := $spec.ingressFrom }}
-    {{- if (index $.Values.services $peer).enabled }}
+    {{- range $rule := $policy.ingress }}
     - from:
-        {{- include "tankovault.netpol.servicePeer" (dict "ctx" $ "service" $peer) | nindent 8 }}
+        {{- include "tankovault.netpol.peer" $rule | nindent 8 }}
       ports:
-        - port: {{ $spec.port }}
-          protocol: TCP
-    {{- end }}
-    {{- end }}
-    {{- if and $.Values.ingress.enabled (eq $service "frontend") }}
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              {{- toYaml $.Values.networkPolicy.ingressController.namespaceSelector | nindent 14 }}
-          podSelector:
-            matchLabels:
-              {{- toYaml $.Values.networkPolicy.ingressController.podSelector | nindent 14 }}
-      ports:
-        - port: {{ $spec.port }}
-          protocol: TCP
-    {{- end }}
-    {{- if and $.Values.ingress.api.enabled (eq $service "api") }}
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              {{- toYaml $.Values.networkPolicy.ingressController.namespaceSelector | nindent 14 }}
-          podSelector:
-            matchLabels:
-              {{- toYaml $.Values.networkPolicy.ingressController.podSelector | nindent 14 }}
-      ports:
-        - port: {{ $spec.port }}
-          protocol: TCP
-    {{- end }}
-    {{- if $.Values.metrics.enabled }}
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              {{- toYaml $.Values.networkPolicy.monitoring.namespaceSelector | nindent 14 }}
-      ports:
-        - port: {{ $.Values.metrics.port }}
+        - port: {{ $rule.port }}
           protocol: TCP
     {{- end }}
     {{- with $.Values.networkPolicy.extraIngress }}
     {{- toYaml . | nindent 4 }}
     {{- end }}
   egress:
-    {{- include "tankovault.netpol.dnsPeers" $ | nindent 4 }}
-    {{- range $peer := $spec.egressServices }}
-    {{- if (index $.Values.services $peer).enabled }}
-    {{- $peerSpec := include "tankovault.spec" $peer | fromYaml }}
+    {{- range $rule := $policy.egress }}
+    {{- if $rule.dns }}
     - to:
-        {{- include "tankovault.netpol.servicePeer" (dict "ctx" $ "service" $peer) | nindent 8 }}
+        {{- include "tankovault.netpol.dnsPeers" $ | nindent 8 }}
       ports:
-        - port: {{ $peerSpec.port }}
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    {{- else if $rule.internet }}
+    - to:
+        {{- include "tankovault.netpol.internetPeers" $ | nindent 8 }}
+    {{- else }}
+    - to:
+        {{- include "tankovault.netpol.peer" $rule | nindent 8 }}
+      ports:
+        - port: {{ $rule.port }}
           protocol: TCP
     {{- end }}
-    {{- end }}
-    {{- if and $spec.needsDatabase $.Values.postgresql.enabled }}
-    - to:
-        {{- include "tankovault.netpol.componentPeer" (dict "ctx" $ "component" "postgresql") | nindent 8 }}
-      ports:
-        - port: 5432
-          protocol: TCP
-    {{- end }}
-    {{- if and $spec.needsRedis $.Values.valkey.enabled }}
-    - to:
-        {{- include "tankovault.netpol.componentPeer" (dict "ctx" $ "component" "valkey") | nindent 8 }}
-      ports:
-        - port: 6379
-          protocol: TCP
-    {{- end }}
-    {{- if and $spec.needsNats $.Values.nats.enabled }}
-    - to:
-        {{- include "tankovault.netpol.componentPeer" (dict "ctx" $ "component" "nats") | nindent 8 }}
-      ports:
-        - port: 4222
-          protocol: TCP
-    {{- end }}
-    {{- if and (eq $service "challengeSolver") $.Values.trawl.enabled }}
-    - to:
-        {{- include "tankovault.netpol.componentPeer" (dict "ctx" $ "component" "trawl") | nindent 8 }}
-      ports:
-        - port: 8191
-          protocol: TCP
-    {{- end }}
-    {{- if $spec.egressInternet }}
-    {{- include "tankovault.netpol.internetPeers" $ | nindent 4 }}
     {{- end }}
     {{- with $.Values.networkPolicy.extraEgress }}
     {{- toYaml . | nindent 4 }}
-    {{- end }}
-{{- end }}
-{{- end }}
-
-{{- /*
-The bundled datastores. Their ingress lists are computed from the same `needs*` flags that
-drive each service's egress, so the two halves of every rule cannot drift apart.
-
-`consumers` names services (matched by their per-service name label); `componentConsumers` and
-`componentEgress` name other bundled datastores, which carry the shared name label and are
-distinguished by `app.kubernetes.io/component`. Both halves of the TRAWL/Valkey rule are
-derived from the same `$trawlUsesValkey` predicate for the same reason.
-*/ -}}
-{{- /*
-The exporter is the one component that scrapes a datastore rather than using it, so it appears on
-both halves of a rule the others do not have: NATS gains an ingress on its *monitoring* port
-(8222, not the client 4222 every service uses), and the exporter gains the matching egress. It is
-granted only when it is pointed at the bundled NATS — an exporter aimed elsewhere is reaching
-outside this release and gets no in-cluster grant, exactly as `trawl.redis.url` is handled above.
-*/ -}}
-{{- $natsExporterEnabled := and $.Values.metrics.enabled $.Values.metrics.natsExporter.enabled }}
-{{- $exporterUsesBundledNats := and $natsExporterEnabled $.Values.nats.enabled (not $.Values.metrics.natsExporter.url) }}
-{{- range $ds := list
-      (dict "component" "postgresql" "enabled" $.Values.postgresql.enabled "port" 5432 "consumers" $dbConsumers "bootstrap" true "internet" false)
-      (dict "component" "valkey" "enabled" $.Values.valkey.enabled "port" 6379 "consumers" $redisConsumers "bootstrap" false "internet" false "componentConsumers" (ternary (list "trawl") list $trawlUsesValkey))
-      (dict "component" "nats" "enabled" $.Values.nats.enabled "port" 4222 "consumers" $natsConsumers "bootstrap" false "internet" false "extraIngress" (ternary (list (dict "component" "nats-exporter" "port" 8222)) list $exporterUsesBundledNats))
-      (dict "component" "nats-exporter" "enabled" $natsExporterEnabled "port" 7777 "consumers" list "bootstrap" false "internet" false "scraped" true "componentEgress" (ternary (list (dict "component" "nats" "port" 8222)) list $exporterUsesBundledNats))
-      (dict "component" "trawl" "enabled" $.Values.trawl.enabled "port" 8191 "consumers" (list "challengeSolver") "bootstrap" false "internet" true "componentEgress" (ternary (list (dict "component" "valkey" "port" 6379)) list $trawlUsesValkey)) }}
-{{- if $ds.enabled }}
----
-apiVersion: {{ include "common.capabilities.networkPolicy.apiVersion" $ }}
-kind: NetworkPolicy
-metadata:
-  name: {{ include "common.fullname.suffixed" (dict "ctx" $ "suffix" $ds.component) }}
-  namespace: {{ include "common.namespace" $ }}
-  labels:
-    {{- include "common.labels" $ | nindent 4 }}
-    app.kubernetes.io/component: {{ $ds.component }}
-spec:
-  podSelector:
-    matchLabels:
-      app.kubernetes.io/name: {{ include "common.name" $ }}
-      app.kubernetes.io/instance: {{ $.Release.Name }}
-      app.kubernetes.io/component: {{ $ds.component }}
-  policyTypes:
-    - Ingress
-    - Egress
-  ingress:
-    {{- range $consumer := $ds.consumers }}
-    {{- if (index $.Values.services $consumer).enabled }}
-    - from:
-        {{- include "tankovault.netpol.servicePeer" (dict "ctx" $ "service" $consumer) | nindent 8 }}
-      ports:
-        - port: {{ $ds.port }}
-          protocol: TCP
-    {{- end }}
-    {{- end }}
-    {{- if $ds.bootstrap }}
-    - from:
-        {{- include "tankovault.netpol.componentPeer" (dict "ctx" $ "component" "bootstrap") | nindent 8 }}
-      ports:
-        - port: {{ $ds.port }}
-          protocol: TCP
-    {{- end }}
-    {{- range $consumer := $ds.componentConsumers }}
-    - from:
-        {{- include "tankovault.netpol.componentPeer" (dict "ctx" $ "component" $consumer) | nindent 8 }}
-      ports:
-        - port: {{ $ds.port }}
-          protocol: TCP
-    {{- end }}
-    {{- range $peer := $ds.extraIngress }}
-    - from:
-        {{- include "tankovault.netpol.componentPeer" (dict "ctx" $ "component" $peer.component) | nindent 8 }}
-      ports:
-        - port: {{ $peer.port }}
-          protocol: TCP
-    {{- end }}
-    {{- if $ds.scraped }}
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              {{- toYaml $.Values.networkPolicy.monitoring.namespaceSelector | nindent 14 }}
-      ports:
-        - port: {{ $ds.port }}
-          protocol: TCP
-    {{- end }}
-  egress:
-    {{- include "tankovault.netpol.dnsPeers" $ | nindent 4 }}
-    {{- range $peer := $ds.componentEgress }}
-    - to:
-        {{- include "tankovault.netpol.componentPeer" (dict "ctx" $ "component" $peer.component) | nindent 8 }}
-      ports:
-        - port: {{ $peer.port }}
-          protocol: TCP
-    {{- end }}
-    {{- if $ds.internet }}
-    {{- include "tankovault.netpol.internetPeers" $ | nindent 4 }}
     {{- end }}
 {{- end }}
 {{- end }}

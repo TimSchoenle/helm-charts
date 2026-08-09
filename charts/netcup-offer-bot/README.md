@@ -1,6 +1,6 @@
 # netcup-offer-bot
 
-![Version: 4.0.0](https://img.shields.io/badge/Version-4.0.0-informational?style=flat-square) ![AppVersion: v2.0.0](https://img.shields.io/badge/AppVersion-v2.0.0-informational?style=flat-square)
+![Version: 4.1.0](https://img.shields.io/badge/Version-4.1.0-informational?style=flat-square) ![AppVersion: v2.0.0](https://img.shields.io/badge/AppVersion-v2.0.0-informational?style=flat-square)
 
 This chart deploys the Netcup Offer Bot, which monitors https://www.netcup-sonderangebote.de/ RSS feed and sends notifications to Discord webhooks when new offers are available.
 
@@ -13,6 +13,7 @@ offers; everything else is defaults.
 - Helm 3.0+
 - A Discord webhook URL
 - The Prometheus Operator CRDs, if `metrics.podMonitor` is enabled
+- Cilium 1.16+, if `networkPolicy.engine` is `cilium` or `both`
 
 ## Quick start
 
@@ -130,6 +131,58 @@ One fix rides along: `metrics.ip` is now a real value and defaults to `0.0.0.0`.
 read a `metrics.ip` that its `values.yaml` never declared, so the exporter kept the bot's
 `127.0.0.1` default and the PodMonitor scraped a refused connection.
 
+## Network policies, and what Cilium adds
+
+`networkPolicy.engine` picks the dialect the same rules are written in:
+
+```yaml
+networkPolicy:
+  enabled: true
+  engine: cilium   # kubernetes (default) | cilium | both
+```
+
+Every value is translated either way, so switching is a one-line change rather than a re-authoring.
+`both` emits both objects for a CNI migration — additive, not stricter, since policies selecting
+one pod union their allowances.
+
+The portable API can only name destinations by IP, so "may reach the internet over HTTPS" has to be
+written `0.0.0.0/0` on 443 with the private ranges and the cloud metadata endpoint carved out — a
+rule that, read honestly, permits a compromised container to reach every public host that exists.
+Cilium can say the thing that was actually meant:
+
+```yaml
+networkPolicy:
+  enabled: true
+  engine: cilium
+  egress:
+    https:
+      enabled: false     # drop the CIDR rule; the FQDN rule replaces it
+  cilium:
+    description: "outbound to the hosts this actually talks to"
+    egress:
+      toFQDNs:
+        - matchName: api.example.com
+        - matchPattern: "*.cdn.example.com"
+      dnsMatchPatterns:
+        - matchPattern: "*.example.com"
+      toEntities:
+        - kube-apiserver
+      httpRules:
+        - method: GET
+          path: "/v1/.*"
+```
+
+`toFQDNs` is enforced against the addresses Cilium's DNS proxy saw returned for that name, so the
+DNS rule has to stay on — the render fails rather than leaving an FQDN rule that silently matches
+nothing. `enableDefaultDeny` is stated rather than implied, which is what makes the intentional
+default-deny case (policies enabled, rule lists empty) actually deny.
+
+When the chart is exposed through a Gateway, the policy admits the Gateway's data plane by
+deriving the peer from `gateway.parentRefs` — `gateway.networking.k8s.io/gateway-name`, the label
+Cilium, Envoy Gateway, Istio and NGINX Gateway Fabric all put on the pods they provision. Naming
+the Gateway a second time under `networkPolicy` would be a second place to edit on a rename, and a
+policy pointing at the wrong Gateway looks correct and blocks everything.
+
 ## Values
 
 | Key | Type | Default | Description |
@@ -165,7 +218,23 @@ read a `metrics.ip` that its `values.yaml` never declared, so the exporter kept 
 | metrics.port | int | `9184` | Port the Prometheus exporter listens on (`metrics.port`). |
 | nameOverride | string | `""` | Override the chart name used in resource names and labels. |
 | namespaceOverride | string | `""` | Deploy into a namespace other than the release namespace. |
-| networkPolicy | object | `{"egress":{"cidr":"0.0.0.0/0","customRules":[],"dns":{"enabled":true,"namespaceSelector":{"kubernetes.io/metadata.name":"kube-system"},"podSelector":{"k8s-app":"kube-dns"}},"enabled":true,"except":["10.0.0.0/8","172.16.0.0/12","192.168.0.0/16","169.254.0.0/16"],"http":{"enabled":false},"https":{"enabled":true}},"enabled":false,"ingress":{"controller":{"enabled":true,"namespace":"traefik","selector":{"app.kubernetes.io/name":"traefik"}},"customRules":[],"enabled":true,"monitoring":{"enabled":true,"namespace":"monitoring"}}}` | Network policy configuration |
+| networkPolicy | object | `{"cilium":{"description":"","egress":{"customRules":[],"dnsMatchPatterns":[],"entityPorts":[],"fqdnPorts":[],"httpRules":[],"toEntities":[],"toFQDNs":[]},"enableDefaultDeny":true,"extraEgress":[],"extraIngress":[],"ingress":{"customRules":[],"fromEntities":[]}},"egress":{"cidr":"0.0.0.0/0","customRules":[],"dns":{"enabled":true,"namespaceSelector":{"kubernetes.io/metadata.name":"kube-system"},"podSelector":{"k8s-app":"kube-dns"}},"enabled":true,"except":["10.0.0.0/8","172.16.0.0/12","192.168.0.0/16","169.254.0.0/16"],"http":{"enabled":false},"https":{"enabled":true}},"enabled":false,"engine":"kubernetes","ingress":{"controller":{"enabled":true,"namespace":"traefik","selector":{"app.kubernetes.io/name":"traefik"}},"customRules":[],"enabled":true,"monitoring":{"enabled":true,"namespace":"monitoring"}}}` | Network policy configuration |
+| networkPolicy.cilium | object | `{"description":"","egress":{"customRules":[],"dnsMatchPatterns":[],"entityPorts":[],"fqdnPorts":[],"httpRules":[],"toEntities":[],"toFQDNs":[]},"enableDefaultDeny":true,"extraEgress":[],"extraIngress":[],"ingress":{"customRules":[],"fromEntities":[]}}` | Cilium-only additions, used when `engine` is `cilium` or `both`. Everything above is translated into the CiliumNetworkPolicy automatically; these are the rules the portable API has no way to express.  Note that `extraIngress`, `extraEgress` and the per-section `customRules` above are *not* carried over: those are verbatim `networking.k8s.io/v1` rule objects and are not valid CNP. The fields below are their counterparts. |
+| networkPolicy.cilium.description | string | `""` | `spec.description`, which Cilium surfaces in `cilium policy get` and in Hubble flow verdicts. The one place to record why a rule exists where an operator debugging a drop will actually see it. |
+| networkPolicy.cilium.egress | object | `{"customRules":[],"dnsMatchPatterns":[],"entityPorts":[],"fqdnPorts":[],"httpRules":[],"toEntities":[],"toFQDNs":[]}` | Cilium-only egress rules. |
+| networkPolicy.cilium.egress.customRules | list | `[]` | Additional egress rules in CiliumNetworkPolicy form, appended verbatim. |
+| networkPolicy.cilium.egress.dnsMatchPatterns | list | `[]` | What the DNS proxy may resolve, e.g. `- matchPattern: "*.example.com"`. Defaults to everything, which only permits the lookup — an answer is still only reachable if some rule allows the address. |
+| networkPolicy.cilium.egress.entityPorts | list | `[]` | Restrict the `toEntities` rule to specific ports. Empty means all ports. |
+| networkPolicy.cilium.egress.fqdnPorts | list | `[]` | Ports the `toFQDNs` rule allows. Defaults to TCP/443. |
+| networkPolicy.cilium.egress.httpRules | list | `[]` | L7 HTTP rules layered onto the `toFQDNs` rule, e.g. `- method: GET` / `path: "/v1/.*"`. Turns "may reach this host" into "may make these requests to this host". Costs a proxy hop per connection. |
+| networkPolicy.cilium.egress.toEntities | list | `[]` | Named destination sets, e.g. `world` for everything outside the cluster, or `kube-apiserver`. Not a synonym for the `egress.cidr`/`except` translation: `world` does not carve out the cloud metadata endpoint the way those defaults do. |
+| networkPolicy.cilium.egress.toFQDNs | list | `[]` | Destinations by name rather than by address, e.g. `- matchName: api.example.com` or `- matchPattern: "*.example.com"`. This is the rule the CIDR-based `egress.https` was always a poor approximation of: "may reach the internet on 443" permits every public host that exists, where this permits the ones the application actually talks to.  Enforced against the addresses Cilium's DNS proxy saw returned for the name, so `egress.dns.enabled` must stay on — the render fails if it is not. |
+| networkPolicy.cilium.enableDefaultDeny | bool | `true` | State default-deny explicitly rather than relying on it being implied by the presence of rules. This is what makes the intentional default-deny case — a policy with an empty rule list — actually deny, instead of being treated as no policy at all. Cilium 1.16+. |
+| networkPolicy.cilium.extraEgress | list | `[]` | Extra egress rules in CiliumNetworkPolicy form, appended regardless of `egress.enabled`. |
+| networkPolicy.cilium.extraIngress | list | `[]` | Extra ingress rules in CiliumNetworkPolicy form, appended regardless of `ingress.enabled`. |
+| networkPolicy.cilium.ingress | object | `{"customRules":[],"fromEntities":[]}` | Cilium-only ingress rules. |
+| networkPolicy.cilium.ingress.customRules | list | `[]` | Additional ingress rules in CiliumNetworkPolicy form, appended verbatim. |
+| networkPolicy.cilium.ingress.fromEntities | list | `[]` | Named source sets, e.g. `cluster`, `host`, `remote-node`, `world`, `kube-apiserver`. A named entity stays correct when the cluster is renumbered; a CIDR list does not. |
 | networkPolicy.egress | object | `{"cidr":"0.0.0.0/0","customRules":[],"dns":{"enabled":true,"namespaceSelector":{"kubernetes.io/metadata.name":"kube-system"},"podSelector":{"k8s-app":"kube-dns"}},"enabled":true,"except":["10.0.0.0/8","172.16.0.0/12","192.168.0.0/16","169.254.0.0/16"],"http":{"enabled":false},"https":{"enabled":true}}` | Egress configuration |
 | networkPolicy.egress.cidr | string | `"0.0.0.0/0"` | Destination CIDR for the HTTP/HTTPS rules |
 | networkPolicy.egress.customRules | list | `[]` | Custom egress rules |
@@ -180,6 +249,7 @@ read a `metrics.ip` that its `values.yaml` never declared, so the exporter kept 
 | networkPolicy.egress.https | object | `{"enabled":true}` | HTTPS configuration for egress |
 | networkPolicy.egress.https.enabled | bool | `true` | Allow egress to HTTPS (TCP/443) |
 | networkPolicy.enabled | bool | `false` | Enable network policies |
+| networkPolicy.engine | string | `"kubernetes"` | Which policy dialect to render. `kubernetes` emits the portable `networking.k8s.io/v1` pair; `cilium` emits `CiliumNetworkPolicy`, which can express FQDN destinations, named entities and L7 rules that the portable API cannot; `both` emits both, for the window in which a cluster is migrating between CNIs.  The engine picks the dialect, not the rules: every value below is translated either way. |
 | networkPolicy.ingress | object | `{"controller":{"enabled":true,"namespace":"traefik","selector":{"app.kubernetes.io/name":"traefik"}},"customRules":[],"enabled":true,"monitoring":{"enabled":true,"namespace":"monitoring"}}` | Ingress configuration |
 | networkPolicy.ingress.controller | object | `{"enabled":true,"namespace":"traefik","selector":{"app.kubernetes.io/name":"traefik"}}` | Ingress Controller configuration |
 | networkPolicy.ingress.controller.enabled | bool | `true` | Allow ingress from Ingress Controller |

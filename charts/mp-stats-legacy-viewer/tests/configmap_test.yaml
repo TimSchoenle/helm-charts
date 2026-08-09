@@ -1,0 +1,62 @@
+suite: configmap
+templates:
+  - configmap.yaml
+tests:
+  - it: renders the configuration as a single TOML file
+    asserts:
+      - isKind:
+          of: ConfigMap
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-mp-stats-legacy-viewer
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\[server\]\nbind_addr = "0\.0\.0\.0:8080"'
+
+  # Pointing `MP_STATS_CONFIG` at this mount replaces the `/config.toml` the image ships rather
+  # than layering over it, so the paths that file carried have to be restated here. Without
+  # them the server falls back to workspace-relative defaults and refuses to start on a missing
+  # `index.html`.
+  - it: restates the paths the image's own config.toml carried
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: 'dist_dir = "/dist"'
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: 'data_dir = "/dist/data"'
+
+  - it: builds the bind address from host and port
+    set:
+      server.host: 127.0.0.1
+      server.port: 9090
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: 'bind_addr = "127\.0\.0\.1:9090"'
+
+  - it: merges the raw config tree over the derived values
+    set:
+      config:
+        server:
+          data_dir: /srv/data
+        converter:
+          cache:
+            enabled: false
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: 'data_dir = "/srv/data"'
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\[converter\.cache\]\nenabled = false'
+
+  - it: appends configExtraToml verbatim
+    set:
+      configExtraToml: |
+        [converter]
+        input_dir = "/data"
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\[converter\]\ninput_dir = "/data"'

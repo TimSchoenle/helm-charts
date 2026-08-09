@@ -23,7 +23,7 @@ image:
   # -- The container image tag, pinned by digest (`vX.Y.Z@sha256:...`). The digest pins the
   # pull, while the tag stays on as the readable version marker. Defaults to the chart's
   # `appVersion` when empty.
-  tag: v0.3.24@sha256:f3e960670fccf8e46d268ca091fcc12950b469f82de9d08d939eb19a53fb88bf
+  tag: v1.0.0@sha256:eb402090337f7123a489e0a5f386d6e5e89f587e6d48d1df403b8d3c827bbdbb
 
   # @schema
   # enum: ["", Always, IfNotPresent, Never]
@@ -34,98 +34,147 @@ image:
 # @schema
 # additionalProperties: true
 # @schema
-application:
+server:
   # @schema
-  # enum: [debug, info, warn, error]
+  # type: string
   # @schema
-  # -- Log level for application output.
+  # -- Bind address (`server.host`). `0.0.0.0` is what makes the Service reach the listener.
+  host: 0.0.0.0
+
+  # @schema
+  # type: integer
+  # minimum: 1
+  # maximum: 65535
+  # @schema
+  # -- Bind port (`server.port`). Also the container port, the Service target and what every
+  # probe and NetworkPolicy rule is written against.
+  port: 8080
+
+# @schema
+# additionalProperties: true
+# @schema
+s3:
+  # @schema
+  # type: string
+  # @schema
+  # -- S3-compatible API endpoint (`s3.host`), e.g. `s3.eu-central-1.amazonaws.com` or
+  # `minio.example.com`.
+  host: "s3.amazon.com"
+
+  # @schema
+  # type: string
+  # @schema
+  # -- Region identifier used when signing requests (`s3.region`).
+  region: "eu-central-1"
+
+  # @schema
+  # type: string
+  # @schema
+  # -- S3 access key (`s3.access_key`). Rendered into the chart's Secret and mounted as a file,
+  # so a rotation is picked up without a restart. Required unless `existingSecret` supplies it.
+  accessKey: ""
+
+  # @schema
+  # type: string
+  # @schema
+  # -- S3 secret key (`s3.secret_key`). Required unless `existingSecret` supplies it.
+  secretKey: ""
+
+# @schema
+# additionalProperties: true
+# @schema
+bucket:
+  # @schema
+  # type: object
+  # additionalProperties:
+  #   type: object
+  #   additionalProperties: true
+  # @schema
+  # -- One entry per permanent link (`bucket.entries`), keyed by the request path it is served
+  # at and valued by the bucket and object key it resolves to. Required — a server with no
+  # entry serves nothing.
+  # Example:
+  # ```yaml
+  # entries:
+  #   "docs/handbook":
+  #     bucket: media
+  #     object: handbook.pdf
+  #   changelog:
+  #     bucket: media
+  #     object: releases/CHANGELOG.md
+  # ```
+  entries: {}
+
+# @schema
+# additionalProperties: true
+# @schema
+telemetry:
+  # @schema
+  # enum: [trace, debug, info, warn, error]
+  # @schema
+  # -- Log level (`telemetry.log_level`).
   logLevel: info
 
   # @schema
   # type: string
   # @schema
-  # -- Sentry DSN for error tracking and reporting.
-  # Leave empty to disable Sentry integration.
+  # -- Sentry DSN (`telemetry.sentry_dsn`). Empty disables Sentry entirely.
   sentryDsn: ""
 
+# @schema
+# type: string
+# @schema
+# -- Name of an existing Secret holding the S3 credentials, which keeps them out of
+# `values.yaml` and out of the Helm release object. **Its keys are the configuration paths, not
+# free-form names**: `s3__access_key` and `s3__secret_key`, because the file name is what the
+# loader parses. Set, the chart renders no Secret of its own and `s3.accessKey` / `s3.secretKey`
+# are ignored.
+existingSecret: ""
+
+# @schema
+# type: object
+# additionalProperties: true
+# @schema
+# -- Extra configuration, expressed as the TOML tree of
+# [the service's README](https://github.com/TimSchoenle/s3-bucket-perma-link#configuration)
+# (`server.host`, `bucket.entries`, ...). Merged over everything the chart derives from the
+# values above, so it can both extend and override them. Rendered into the mounted ConfigMap —
+# never into the environment, which the loader refuses to combine with a file.
+config: {}
+
+# @schema
+# type: string
+# @schema
+# -- Verbatim TOML appended after the rendered configuration. The escape hatch for anything the
+# chart's TOML renderer cannot express, notably arrays of tables.
+configExtraToml: ""
+
+# @schema
+# additionalProperties: true
+# @schema
+configMount:
   # @schema
-  # additionalProperties: true
+  # type: boolean
   # @schema
-  # -- HTTP server configuration.
-  # Defines where the application listens for incoming connections.
-  server:
-    # @schema
-    # type: integer
-    # @schema
-    # -- Port number the server listens on.
-    port: 8080
-
-    # @schema
-    # type: string
-    # @schema
-    # -- Host address to bind the HTTP server.
-    # Typically `0.0.0.0` to listen on all network interfaces.
-    host: 0.0.0.0
+  # -- Add `checksum/*` pod annotations so a configuration change rolls the Deployment. Off by
+  # default, and deliberately so: the service watches the directories its configuration came
+  # from and rebuilds its bucket clients and listener in place when the kubelet updates the
+  # mounted ConfigMap or Secret, which is strictly better than a rollout. Turn this on only if
+  # you want configuration changes to behave like an ordinary image bump. `telemetry.*` is
+  # installed once per process and needs a restart either way.
+  rolloutOnChange: false
 
   # @schema
-  # type: object
-  # additionalProperties: true
+  # type: string
   # @schema
-  handler:
-    # @schema
-    # type: object
-    # additionalProperties:
-    #   type: array
-    #   items:
-    #     type: string
-    # @schema
-    # -- Handler configuration defining static routes and their S3 mappings.
-    # Each key represents a URL path, and the value is a list of "bucket,file" pairs.
-    # Example:
-    # ```yaml
-    # entries:
-    #   myfile: ["bucket1,file.txt"]
-    #   mydir: ["bucket2,dir/index.html"]
-    # ```
-    entries: {}
+  # -- Directory the rendered `config.toml` is mounted at, passed as `S3_PERMA_LINK_CONFIG`.
+  configDir: /etc/s3-bucket-perma-link/config
 
   # @schema
-  # additionalProperties: true
+  # type: string
   # @schema
-  # -- Configuration for connecting to an S3-compatible service.
-  s3:
-    # @schema
-    # type: string
-    # @schema
-    # -- Name of an existing Kubernetes Secret containing S3 credentials.
-    # The secret must include `access_key` and `secret_key` fields.
-    secretName: ""
-
-    # @schema
-    # type: [string, "null"]
-    # @schema
-    # -- Optional access key (alternative to secretName)
-    # accessKey: ""
-
-    # @schema
-    # type: [string, "null"]
-    # @schema
-    # -- Optional secret key (alternative to secretName)
-    # secretKey: ""
-
-    # @schema
-    # type: string
-    # @schema
-    # -- S3-compatible API endpoint.
-    # Example: "https://s3.amazonaws.com" or "https://minio.yourdomain.com"
-    host: "s3.amazon.com"
-
-    # @schema
-    # type: string
-    # @schema
-    # -- AWS region or S3 region identifier.
-    # Used for authenticating with region-specific endpoints.
-    region: "eu-central-1"
+  # -- Directory the credential files are mounted at, passed as `S3_PERMA_LINK_SECRETS_DIR`.
+  secretsDir: /etc/s3-bucket-perma-link/secrets
 
 # @schema
 # additionalProperties: true

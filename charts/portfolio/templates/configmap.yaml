@@ -10,5 +10,11 @@ metadata:
     {{- . | nindent 4 }}
   {{- end }}
 data:
-  PORT: {{ .Values.application.port | quote }}
-  RUST_LOG: {{ .Values.application.logLevel | quote }}
+  {{- /*
+    One file rather than a set of fragments. The loader does merge every `*.toml` in the
+    directory, but relying on that would put the precedence of one value against another inside
+    a merge this chart does not own or test. Merging in the template instead makes the effective
+    configuration readable with `kubectl get configmap -o yaml`.
+  */}}
+  config.toml: |
+    {{- include "portfolio.configToml" . | nindent 4 }}

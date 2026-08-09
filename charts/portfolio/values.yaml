@@ -23,7 +23,7 @@ image:
   # -- Container image tag to deploy, pinned by digest (`vX.Y.Z@sha256:...`). The digest pins
   # the pull, while the tag stays on as the readable version marker. Defaults to the chart's
   # `appVersion` when empty.
-  tag: v2.2.3@sha256:b3cbdcad9b50ba79049cfafb0f219a294106647c6cb3928057f0efbd278d40dc
+  tag: v2.3.0@sha256:ae594c6c61f4f5b369803ba5e5b24294428ef8d4ebebf73e383efa57d63260ae
 
   # @schema
   # enum: ["", Always, IfNotPresent, Never]
@@ -65,20 +65,107 @@ terminationGracePeriodSeconds: 30
 # @schema
 # additionalProperties: true
 # @schema
-application:
+# -- The listener, which is the one part of the configuration the `PORTFOLIO_` namespace does
+# not own: `PORT`, `IP` and `RUST_LOG` belong to the Dioxus toolchain, which reads them from the
+# environment itself. They are therefore still passed as environment variables, and cannot be
+# supplied through `config`.
+server:
+  # @schema
+  # type: string
+  # @schema
+  # -- Bind address, passed as `IP`.
+  host: 0.0.0.0
+
   # @schema
   # type: integer
+  # minimum: 1
+  # maximum: 65535
   # @schema
-  # -- Port number the application listens on (exposed to the container as `PORT`).
-  # The Axum server binds to 0.0.0.0 on this port.
+  # -- Bind port, passed as `PORT`. Also the container port, the Service target and what every
+  # probe and NetworkPolicy rule is written against.
   port: 8080
+
+# @schema
+# type: string
+# @schema
+# -- Log verbosity, passed as `RUST_LOG`. Accepts standard tracing directives (`info`, `debug`,
+# `web=debug,info`). Not part of the `PORTFOLIO_` namespace — see `server`.
+logLevel: info
+
+# @schema
+# additionalProperties: true
+# @schema
+assets:
+  # @schema
+  # type: string
+  # @schema
+  # -- Directory holding the bundled assets (`assets.dist_dir`), relative to the working
+  # directory. Only the readiness probe consults it; the bundle itself is served by the Dioxus
+  # asset router, which resolves `public/` relative to the binary.
+  distDir: public
+
+# @schema
+# additionalProperties: true
+# @schema
+# -- Incremental static regeneration: the server caches each rendered page and serves it again
+# instead of re-rendering.
+isr:
+  # @schema
+  # type: string
+  # @schema
+  # -- Writable directory rendered HTML is cached into (`isr.cache_dir`). Empty disables ISR and
+  # renders every request fresh. Keep it under `/tmp`, which the chart already provides as a
+  # writable emptyDir under the read-only root filesystem, and outside the bundled `public/`
+  # tree so those content-hashed assets stay immutable. The server creates the directory itself
+  # and falls back to rendering fresh if it turns out not to be writable.
+  cacheDir: /tmp/isr
+
+  # @schema
+  # type: integer
+  # minimum: 0
+  # @schema
+  # -- Revalidation interval in seconds (`isr.ttl_secs`). `0` means a permanent cache, which is
+  # right for this site: every page renders from compile-time data, so the only thing that
+  # changes the output is a redeploy — and that starts from an empty cache. Set a positive value
+  # only when a *persistent* cache volume is shared across deploys.
+  ttlSecs: 0
+
+# @schema
+# type: object
+# additionalProperties: true
+# @schema
+# -- Extra configuration, expressed as the TOML tree of
+# [the application's README](https://github.com/TimSchoenle/Portfolio#configuration)
+# (`assets.dist_dir`, `isr.ttl_secs`, ...). Merged over everything the chart derives from the
+# values above, so it can both extend and override them. Rendered into the mounted ConfigMap —
+# never into the environment, which the loader refuses to combine with a file.
+config: {}
+
+# @schema
+# type: string
+# @schema
+# -- Verbatim TOML appended after the rendered configuration. The escape hatch for anything the
+# chart's TOML renderer cannot express, notably arrays of tables.
+configExtraToml: ""
+
+# @schema
+# additionalProperties: true
+# @schema
+configMount:
+  # @schema
+  # type: string
+  # @schema
+  # -- Directory the rendered `config.toml` is mounted at, passed as `PORTFOLIO_CONFIG`.
+  configDir: /etc/portfolio/config
 
   # @schema
   # type: string
   # @schema
-  # -- Log verbosity passed to the application as `RUST_LOG`.
-  # Accepts standard tracing/env_logger directives (e.g. `info`, `debug`, `warn`).
-  logLevel: info
+  # -- Directory credential files would be mounted at, passed as `PORTFOLIO_SECRETS_DIR`. The
+  # server reads no secret today — `github.token` belongs to the build-time repository
+  # builder — so nothing is mounted and the variable is not set; the value is here for an
+  # operator adding one through `extraVolumes`.
+  secretsDir: /etc/portfolio/secrets
 
 # @schema
 # additionalProperties: true

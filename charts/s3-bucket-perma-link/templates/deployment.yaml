@@ -21,7 +21,7 @@ spec:
       {{- include "common.selectorLabels" . | nindent 6 }}
   template:
     metadata:
-      {{- with (include "common.podAnnotations" (dict "ctx" $ "templates" (list "configmap.yaml" "secret.yaml"))) }}
+      {{- with (include "s3-bucket-perma-link.podAnnotations" .) }}
       annotations:
         {{- . | nindent 8 }}
       {{- end }}
@@ -30,17 +30,20 @@ spec:
     spec:
       {{- include "common.podSpec.common" . | nindent 6 }}
       containers:
-        {{- $secret := include "s3-bucket-perma-link.s3-secretName" . }}
+        {{- /*
+          Configuration reaches the container as files, never as environment variables: the
+          loader fails the boot on a key supplied by both, and only a file can be rotated under
+          a running process. The two variables below decide what the file layers *are*, so they
+          are the one thing that cannot itself be file-sourced.
+        */}}
+        {{- $secretKeys := include "s3-bucket-perma-link.secretKeys" . | fromYamlArray }}
         {{- include "common.container" (dict
               "ctx" $
-              "ports" (list (dict "name" "http" "containerPort" (int .Values.application.server.port) "protocol" "TCP"))
-              "envFrom" (list (dict "configMapRef" (dict "name" (include "common.fullname" .))))
-              "env" (list
-                (dict "name" "S3.ACCESS_KEY" "valueFrom" (dict "secretKeyRef" (dict "name" $secret "key" "access_key")))
-                (dict "name" "S3.SECRET_KEY" "valueFrom" (dict "secretKeyRef" (dict "name" $secret "key" "secret_key")))
-              )
+              "ports" (list (dict "name" "http" "containerPort" (int .Values.server.port) "protocol" "TCP"))
+              "env" (include "common.fileConfig.env" (dict "ctx" $ "prefix" "S3_PERMA_LINK" "secretKeys" $secretKeys) | fromYamlArray)
+              "volumeMounts" (include "common.fileConfig.volumeMounts" (dict "ctx" $ "secretKeys" $secretKeys) | fromYamlArray)
             ) | nindent 8 }}
-      {{- with (include "common.volumes" (dict "ctx" $)) }}
+      {{- with (include "common.volumes" (dict "ctx" $ "volumes" (include "common.fileConfig.volumes" (dict "ctx" $ "secretKeys" $secretKeys) | fromYamlArray))) }}
       volumes:
         {{- . | nindent 8 }}
       {{- end }}

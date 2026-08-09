@@ -2,30 +2,47 @@ suite: test configmap
 templates:
   - configmap.yaml
 tests:
-  - it: should create a ConfigMap
+  - it: renders the configuration as a single TOML file
     asserts:
       - isKind:
           of: ConfigMap
       - equal:
           path: metadata.name
           value: RELEASE-NAME-portfolio
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\[assets\]\ndist_dir = "public"'
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\[isr\]\ncache_dir = "/tmp/isr"\nttl_secs = 0'
 
-  - it: should set PORT correctly
-    asserts:
-      - equal:
-          path: data.PORT
-          value: "8080"
-
-  - it: should set RUST_LOG from logLevel
-    asserts:
-      - equal:
-          path: data.RUST_LOG
-          value: info
-
-  - it: should override RUST_LOG when logLevel is set
+  - it: reflects a changed ISR cache directory and TTL
     set:
-      application.logLevel: debug
+      isr.cacheDir: /cache/isr
+      isr.ttlSecs: 300
     asserts:
-      - equal:
-          path: data.RUST_LOG
-          value: debug
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: 'cache_dir = "/cache/isr"'
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: 'ttl_secs = 300'
+
+  - it: merges the raw config tree over the derived values
+    set:
+      config:
+        assets:
+          dist_dir: /srv/public
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: 'dist_dir = "/srv/public"'
+
+  # `PORT`, `IP` and `RUST_LOG` belong to the Dioxus toolchain, which reads them from the
+  # environment itself. Writing them into the `PORTFOLIO_` configuration file would be writing
+  # keys nothing reads.
+  - it: keeps the Dioxus variables out of the configuration file
+    asserts:
+      - notMatchRegex:
+          path: data["config.toml"]
+          pattern: '(?i)(rust_log|\bport\b)'

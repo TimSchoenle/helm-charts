@@ -1,44 +1,108 @@
 suite: configmap
 templates:
   - configmap.yaml
+set:
+  bucket.entries:
+    logo:
+      bucket: my-bucket
+      object: logo.png
 tests:
-  - it: carries the server and S3 configuration
+  - it: renders the configuration as a single TOML file
     asserts:
       - isKind:
           of: ConfigMap
-      - equal:
-          path: data["SERVER.PORT"]
-          value: "8080"
-      - equal:
-          path: data["S3.REGION"]
-          value: eu-central-1
-      - equal:
-          path: data.LOG_LEVEL
-          value: info
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\[server\]\nhost = "0\.0\.0\.0"\nport = 8080'
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\[s3\]\nhost = "s3\.amazon\.com"\nregion = "eu-central-1"'
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\[telemetry\]\nlog_level = "info"'
 
-  - it: flattens bucket entries into the expected wire format
+  - it: renders one table per permanent link
     set:
-      application.handler.entries:
+      bucket.entries:
         logo:
-          - my-bucket
-          - logo.png
+          bucket: my-bucket
+          object: logo.png
         readme:
-          - other-bucket
-          - README.md
+          bucket: other-bucket
+          object: docs/README.md
     asserts:
-      - equal:
-          path: data["BUCKET.ENTRIES"]
-          value: "logo:my-bucket,logo.png; readme:other-bucket,README.md"
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\[bucket\.entries\.logo\]\nbucket = "my-bucket"\nobject = "logo\.png"'
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\[bucket\.entries\.readme\]\nbucket = "other-bucket"\nobject = "docs/README\.md"'
 
-  - it: omits the Sentry DSN unless configured
-    asserts:
-      - notExists:
-          path: data.SENTRY_DSN
-
-  - it: includes the Sentry DSN when configured
+  # A request path is not a TOML bare key. Emitted unquoted it would not parse, and the service
+  # would fail the boot on a file the chart wrote.
+  - it: quotes a request path that is not a bare TOML key
     set:
-      application.sentryDsn: https://key@sentry.example.com/1
+      bucket.entries:
+        "docs/handbook":
+          bucket: media
+          object: handbook.pdf
     asserts:
-      - equal:
-          path: data.SENTRY_DSN
-          value: https://key@sentry.example.com/1
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\[bucket\.entries\."docs/handbook"\]'
+
+  # An empty optional value is still a *supplied* value to the loader, and "Sentry configured
+  # with a blank DSN" is not what leaving it unset meant.
+  - it: omits an unset Sentry DSN rather than writing it empty
+    asserts:
+      - notMatchRegex:
+          path: data["config.toml"]
+          pattern: 'sentry_dsn'
+
+  - it: writes the Sentry DSN once it is set
+    set:
+      telemetry.sentryDsn: https://key@sentry.example.invalid/1
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: 'sentry_dsn = "https://key@sentry\.example\.invalid/1"'
+
+  - it: merges the raw config tree over the derived values
+    set:
+      config:
+        s3:
+          region: us-east-1
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: 'region = "us-east-1"'
+
+  - it: refuses a render with nothing to serve
+    set:
+      bucket.entries: null
+    asserts:
+      - failedTemplate:
+          errorPattern: "bucket.entries is required but was not set"
+
+  # The old value shape was a list of `bucket,object` strings. `bucket.entries` is typed, so
+  # the schema rejects that outright; the raw `config` tree is not, and rendering it as-is
+  # would emit a TOML array where the service expects a table — a failure that would otherwise
+  # surface at boot.
+  - it: names an entry that is not a bucket and object mapping
+    set:
+      config:
+        bucket:
+          entries:
+            legacy:
+              - my-bucket
+              - logo.png
+    asserts:
+      - failedTemplate:
+          errorPattern: 'bucket.entries\["legacy"\] must be a mapping of `bucket` and `object`'
+
+  - it: names an entry missing its object key
+    set:
+      bucket.entries.logo.object: null
+    asserts:
+      - failedTemplate:
+          errorPattern: 'bucket.entries\["logo"\].object is required but was not set'

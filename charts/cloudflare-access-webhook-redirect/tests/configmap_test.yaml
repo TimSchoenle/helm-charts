@@ -2,43 +2,123 @@ suite: configmap
 templates:
   - configmap.yaml
 set:
-  application.handler.targetBase: https://example.invalid
+  webhook.targetBase: https://example.invalid
+  webhook.paths:
+    "/api/webhook/.*":
+      - ALL
 tests:
-  - it: carries the server and webhook configuration
+  - it: renders the configuration as a single TOML file
     asserts:
       - isKind:
           of: ConfigMap
-      - equal:
-          path: data["SERVER.PORT"]
-          value: "8080"
-      - equal:
-          path: data["WEBHOOK.TARGET_BASE"]
-          value: https://example.invalid
-      - equal:
-          path: data.LOG_LEVEL
-          value: info
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\[server\]\nhost = "0\.0\.0\.0"\nport = 8080'
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\[telemetry\]\nlog_level = "info"'
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: 'target_base = "https://example\.invalid"'
 
-  - it: flattens webhook paths into the expected wire format
+  # A path pattern is not a TOML bare key. Emitted unquoted it would not parse, and the
+  # service would fail the boot on a file the chart wrote.
+  - it: quotes path patterns, which are not bare TOML keys
     set:
-      application.handler.paths:
-        api/webhook:
+      webhook.paths:
+        "/api/webhook/.*":
           - ALL
-        test:
+        "/public/.*":
           - GET
           - POST
     asserts:
-      - equal:
-          path: data["WEBHOOK.PATHS"]
-          value: "api/webhook:ALL; test:GET,POST"
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\[webhook\.paths\]'
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '"/api/webhook/\.\*" = \["ALL"\]'
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '"/public/\.\*" = \["GET","POST"\]'
 
-  # One pass reports everything that is missing, rather than one `required` failure per
-  # render.
+  # An empty optional value is still a *supplied* value to the loader, and "Sentry configured
+  # with a blank DSN" is not what leaving it unset meant.
+  - it: omits an unset Sentry DSN rather than writing it empty
+    asserts:
+      - notMatchRegex:
+          path: data["config.toml"]
+          pattern: 'sentry_dsn'
+
+  - it: writes the Sentry DSN once it is set
+    set:
+      telemetry.sentryDsn: https://key@sentry.example.invalid/1
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: 'sentry_dsn = "https://key@sentry\.example\.invalid/1"'
+
+  - it: merges the raw config tree over the derived values
+    set:
+      config:
+        server:
+          host: 127.0.0.1
+        extra:
+          knob: true
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: 'host = "127\.0\.0\.1"'
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\[extra\]\nknob = true'
+
+  - it: appends configExtraToml verbatim
+    set:
+      configExtraToml: |
+        [[webhook.rewrite]]
+        from = "/a"
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\[\[webhook\.rewrite\]\]\nfrom = "/a"'
+
+  # One pass reports everything that is missing, rather than one `required` failure per render.
   - it: reports every missing required value at once
     set:
-      application.handler.targetBase: ""
-      application.server.host: ""
+      webhook.targetBase: ""
+      webhook.paths: null
     asserts:
       - failedTemplate:
-          errorPattern: "application.server.host is required but was not set"
+          errorPattern: "webhook.targetBase is required but was not set"
       - failedTemplate:
-          errorPattern: "application.handler.targetBase is required but was not set"
+          errorPattern: "webhook.paths is required but was not set"
+
+  # Validation reads the effective tree, so supplying a required key through `config` is as
+  # valid as supplying it through the first-class value.
+  - it: accepts a required value supplied through the raw config tree
+    set:
+      webhook.targetBase: ""
+      webhook.paths: null
+      config:
+        webhook:
+          target_base: https://example.invalid
+          paths:
+            "/hook/.*":
+              - ALL
+    asserts:
+      - isKind:
+          of: ConfigMap
+
+  # `configExtraToml` is appended verbatim and never parsed, so the chart cannot see what it
+  # supplies and must not reject a configuration on the strength of what it cannot read.
+  - it: steps out of the way when verbatim TOML is in play
+    set:
+      webhook.targetBase: ""
+      webhook.paths: null
+      configExtraToml: |
+        [webhook]
+        target_base = "https://example.invalid"
+    asserts:
+      - isKind:
+          of: ConfigMap

@@ -48,6 +48,42 @@
           "title": "component",
           "type": "string"
         },
+        "config": {
+          "additionalProperties": true,
+          "description": "Application configuration, expressed as the TOML tree the service documents. Rendered by\n`common.toml` into the ConfigMap the pod mounts, never passed as environment variables: the\nloader every application shares refuses a key supplied by both the environment and a file,\nand a value that lives in a file is one the kubelet can rotate under a running process.",
+          "required": [],
+          "title": "config",
+          "type": "object"
+        },
+        "configExtraToml": {
+          "default": "",
+          "description": "Verbatim TOML appended after the rendered `config` tree. The escape hatch for anything\n`common.toml` cannot express, notably arrays of tables.",
+          "required": [],
+          "title": "configExtraToml",
+          "type": "string"
+        },
+        "configMount": {
+          "additionalProperties": true,
+          "description": "Where the rendered configuration and the credential files land in the container. Consumed\nby `common.fileConfig.*`, which also passes both directories to the application as\n`\u003cPREFIX\u003e_CONFIG` and `\u003cPREFIX\u003e_SECRETS_DIR`.",
+          "properties": {
+            "configDir": {
+              "default": "",
+              "description": "Directory the rendered `config.toml` is mounted at.",
+              "required": [],
+              "title": "configDir",
+              "type": "string"
+            },
+            "secretsDir": {
+              "default": "",
+              "description": "Directory the credential files are mounted at, one file per configuration key.",
+              "required": [],
+              "title": "secretsDir",
+              "type": "string"
+            }
+          },
+          "required": [],
+          "title": "configMount"
+        },
         "dnsConfig": {
           "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.PodDNSConfig",
           "required": []
@@ -57,6 +93,20 @@
           "description": "Pod DNS policy.",
           "required": [],
           "title": "dnsPolicy",
+          "type": "string"
+        },
+        "existingConfigMap": {
+          "default": "",
+          "description": "Name of an existing ConfigMap holding `config.toml`, replacing the one this chart renders.",
+          "required": [],
+          "title": "existingConfigMap",
+          "type": "string"
+        },
+        "existingSecret": {
+          "default": "",
+          "description": "Name of an existing Secret holding the credential files, replacing the one this chart\nrenders. Its keys must be the configuration paths the service reads, with `__` for nesting\nand no dots — that is the file name the loader parses.",
+          "required": [],
+          "title": "existingSecret",
           "type": "string"
         },
         "extraEnv": {
@@ -824,50 +874,58 @@
       "title": "commonLabels",
       "type": "object"
     },
-    "env": {
+    "config": {
+      "additionalProperties": true,
+      "description": "Extra configuration, expressed as the TOML tree of\n[the bot's README](https://github.com/TimSchoenle/netcup-offer-bot#configuration)\n(`feed.check_interval_secs`, `metrics.port`, ...). Merged over everything the chart derives\nfrom the values above, so it can both extend and override them. Rendered into the mounted\nConfigMap — never into the environment, which the loader refuses to combine with a file.",
+      "required": [],
+      "title": "config",
+      "type": "object"
+    },
+    "configExtraToml": {
+      "default": "",
+      "description": "Verbatim TOML appended after the rendered configuration. The escape hatch for anything the\nchart's TOML renderer cannot express, notably arrays of tables.",
+      "required": [],
+      "title": "configExtraToml",
+      "type": "string"
+    },
+    "configMount": {
       "additionalProperties": true,
       "properties": {
-        "checkInterval": {
-          "default": 180,
-          "description": "Interval in seconds between offer checks.",
-          "minimum": 1,
+        "configDir": {
+          "default": "/etc/netcup-offer-bot/config",
+          "description": "Directory the rendered `config.toml` is mounted at, passed as `NETCUP_OFFER_BOT_CONFIG`.",
           "required": [],
-          "title": "checkInterval",
-          "type": "integer"
-        },
-        "logLevel": {
-          "default": "info",
-          "description": "Log level for the application.",
-          "enum": [
-            "debug",
-            "info",
-            "warn",
-            "error"
-          ],
-          "required": [],
-          "title": "logLevel"
-        },
-        "sentryDns": {
-          "default": "",
-          "description": "Sentry DSN for error tracking. Leave empty to disable.",
-          "required": [],
-          "title": "sentryDns",
+          "title": "configDir",
           "type": "string"
         },
-        "webHook": {
-          "default": "",
-          "description": "Webhook URL to send updates or notifications.\nRequired unless `existingSecret` is set.",
+        "secretsDir": {
+          "default": "/etc/netcup-offer-bot/secrets",
+          "description": "Directory the credential file is mounted at, passed as `NETCUP_OFFER_BOT_SECRETS_DIR`.",
           "required": [],
-          "title": "webHook",
+          "title": "secretsDir",
           "type": "string"
         }
       },
       "required": [],
-      "title": "env"
+      "title": "configMount"
+    },
+    "discord": {
+      "additionalProperties": true,
+      "properties": {
+        "webhookUrl": {
+          "default": "",
+          "description": "Discord webhook the offers are posted to (`discord.webhook_url`). Rendered into the\nchart's Secret and mounted as a file rather than passed as an environment variable, so it\nnever appears in `kubectl describe pod` or in the environment of a child process.\nRequired unless `existingSecret` supplies it.",
+          "required": [],
+          "title": "webhookUrl",
+          "type": "string"
+        }
+      },
+      "required": [],
+      "title": "discord"
     },
     "existingSecret": {
       "default": "",
-      "description": "Name of an existing Secret holding the `webHook` key.\nWhen set, the chart does not create a Secret and `env.webHook` is ignored — which keeps\nthe webhook URL out of `values.yaml` and out of the Helm release object.",
+      "description": "Name of an existing Secret holding the Discord webhook, which keeps it out of `values.yaml`\nand out of the Helm release object. **Its key is the configuration path, not a free-form\nname**: `discord__webhook_url`, because the file name is what the loader parses. Set, the\nchart renders no Secret of its own and `discord.webhookUrl` is ignored.",
       "required": [],
       "title": "existingSecret",
       "type": "string"
@@ -901,6 +959,21 @@
       "required": [],
       "title": "extraVolumes",
       "type": "array"
+    },
+    "feed": {
+      "additionalProperties": true,
+      "properties": {
+        "checkIntervalSecs": {
+          "default": 180,
+          "description": "Seconds between two RSS feed checks (`feed.check_interval_secs`).",
+          "minimum": 1,
+          "required": [],
+          "title": "checkIntervalSecs",
+          "type": "integer"
+        }
+      },
+      "required": [],
+      "title": "feed"
     },
     "fullnameOverride": {
       "default": "",
@@ -945,7 +1018,7 @@
           "type": "string"
         },
         "tag": {
-          "default": "v1.5.24@sha256:358897a7b824b78d32d85cec7990b5d6a74a94deedfbe66663c4ff3b7d7d994d",
+          "default": "v2.0.0@sha256:ca4777a39e389609910492c2668ad524295512065a41bf8ffad849004b832efb",
           "description": "The container image tag. Defaults to the chart's `appVersion` when empty.",
           "required": [],
           "title": "tag",
@@ -980,6 +1053,13 @@
           "required": [],
           "title": "enabled",
           "type": "boolean"
+        },
+        "ip": {
+          "default": "0.0.0.0",
+          "description": "Address the Prometheus exporter binds (`metrics.ip`). The bot's own default is\n`127.0.0.1`, which answers nothing from outside the container — a PodMonitor pointed at it\nscrapes a refused connection.",
+          "required": [],
+          "title": "ip",
+          "type": "string"
         },
         "podMonitor": {
           "additionalProperties": true,
@@ -1019,7 +1099,9 @@
         },
         "port": {
           "default": 9184,
-          "description": "Port to expose metrics on.",
+          "description": "Port the Prometheus exporter listens on (`metrics.port`).",
+          "maximum": 65535,
+          "minimum": 1,
           "required": [],
           "title": "port",
           "type": "integer"
@@ -1482,6 +1564,33 @@
     "strategy": {
       "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.apps.v1.DeploymentStrategy",
       "required": []
+    },
+    "telemetry": {
+      "additionalProperties": true,
+      "properties": {
+        "logLevel": {
+          "default": "INFO",
+          "description": "Log level (`telemetry.log_level`).",
+          "enum": [
+            "TRACE",
+            "DEBUG",
+            "INFO",
+            "WARN",
+            "ERROR"
+          ],
+          "required": [],
+          "title": "logLevel"
+        },
+        "sentryDsn": {
+          "default": "",
+          "description": "Sentry DSN (`telemetry.sentry_dsn`). Empty disables Sentry entirely.",
+          "required": [],
+          "title": "sentryDsn",
+          "type": "string"
+        }
+      },
+      "required": [],
+      "title": "telemetry"
     },
     "terminationGracePeriodSeconds": {
       "default": 30,

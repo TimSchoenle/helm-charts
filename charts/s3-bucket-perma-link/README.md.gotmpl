@@ -23,22 +23,19 @@ bucket has to be made public.
 Create the credential Secret first — the chart never takes the keys as values:
 
 ```shell
-kubectl create secret generic s3-credentials \
-  --namespace [NAMESPACE] \
-  --from-literal=access_key='...' \
-  --from-literal=secret_key='...'
+kubectl create secret generic s3-credentials   --namespace [NAMESPACE]   --from-literal=s3__access_key='...'   --from-literal=s3__secret_key='...'
 ```
 
-The key names matter: the chart reads `access_key` and `secret_key`, and a Secret with any
-other spelling produces a pod that starts and then fails every request.
+**The key names are the configuration paths the service reads, not free-form names.** The
+credential arrives as a file and the service takes the key out of the file *name*, so
+`s3__access_key` is required; a Secret spelled any other way mounts cleanly, supplies nothing,
+and the service refuses to boot naming the missing credential.
 
 ```shell
 helm repo add timschoenle https://timschoenle.github.io/helm-charts
 helm repo update
 
-helm install [RELEASE_NAME] timschoenle/{{ template "chart.name" . }} \
-  --namespace [NAMESPACE] --create-namespace \
-  --values values.yaml
+helm install [RELEASE_NAME] timschoenle/{{ template "chart.name" . }}   --namespace [NAMESPACE] --create-namespace   --values values.yaml
 ```
 
 Upgrade with `helm upgrade [RELEASE_NAME] timschoenle/{{ template "chart.name" . }} -n [NAMESPACE]`,
@@ -46,42 +43,116 @@ remove with `helm uninstall [RELEASE_NAME] -n [NAMESPACE]`.
 
 ## Mapping paths to objects
 
-`application.handler.entries` is the whole configuration: one key per URL path, whose value is
-a list of `"bucket,key"` pairs.
+`bucket.entries` is the whole configuration: one entry per URL path, naming the bucket and the
+object key it resolves to.
 
 ```yaml
-application:
-  handler:
-    entries:
-      latest-report:
-        - "company-reports,2024/q4-report.pdf"
-      user-guide:
-        - "documentation,guides/user-guide.pdf"
+bucket:
+  entries:
+    latest-report:
+      bucket: company-reports
+      object: 2024/q4-report.pdf
+    "guides/user-guide":
+      bucket: documentation
+      object: guides/user-guide.pdf
 
-  s3:
-    secretName: s3-credentials
-    host: s3.eu-central-1.amazonaws.com
-    region: eu-central-1
+s3:
+  host: s3.eu-central-1.amazonaws.com
+  region: eu-central-1
+
+existingSecret: s3-credentials
 ```
 
 `GET /latest-report` then serves `2024/q4-report.pdf` out of `company-reports`. Paths are
 declared, not derived — a request for anything not listed here is not proxied, so the bucket
 cannot be walked through this service.
 
-Changing an entry is a values change and a rollout; the URL is unaffected.
+Changing an entry is a values change and no rollout: the service watches its configuration
+directory and rebuilds its bucket clients in place. The URL is unaffected either way.
+
+## Configuration
+
+Everything the service reads is rendered into one `config.toml`, mounted as a ConfigMap and
+pointed at by `S3_PERMA_LINK_CONFIG`. Nothing is passed as an environment variable, and that is
+deliberate: the loader **fails the boot on a key supplied by both the environment and a file**
+rather than resolving it by precedence, and a value that lives in a file is one the kubelet can
+rotate under a running process — which is what lets a rotated S3 credential take effect without
+a restart.
+
+The values above cover the whole documented surface. `config` takes the raw TOML tree for
+anything they do not, merged over the derived one, and `configExtraToml` is appended verbatim
+for what the renderer cannot express, notably arrays of tables.
+
+Because the service rebuilds itself when a mount changes, this chart publishes **no
+`checksum/*` pod annotations by default** — a configuration change reloads rather than rolls.
+Set `configMount.rolloutOnChange: true` to make it behave like an ordinary image bump instead.
+`telemetry.*` is installed once per process and needs a restart either way.
+
+`s3.accessKey` / `s3.secretKey` are accepted as an alternative to `existingSecret` and make the
+chart render the Secret itself. That puts the credentials into `values.yaml` and into the Helm
+release object, where anyone who can run `helm get values` can read them — use it for a
+throwaway cluster, not for anything real. `existingSecret` wins if both are set.
 
 ## Non-AWS endpoints
 
-`application.s3.host` takes any S3-compatible API endpoint, including a port. `region` is still
-required — most implementations only use it to build the request signature, but the signature
-is rejected if it disagrees with what the server expects.
+`s3.host` takes any S3-compatible API endpoint, including a port. `region` is still required —
+most implementations only use it to build the request signature, but the signature is rejected
+if it disagrees with what the server expects.
 
 ```yaml
+s3:
+  host: minio.example.com:9000
+  region: us-east-1
+
+existingSecret: s3-credentials
+```
+
+## Upgrading
+
+### 2.x to 3.0
+
+Chart 3.0 tracks the service's 1.0 release, which replaced its environment-only configuration
+with the layered, file-first loader every chart in this repository now uses. The values that
+described that environment are gone; a `helm upgrade` with 2.x values fails schema validation
+naming the offending key rather than starting a pod on the defaults.
+
+| Before | After |
+|---|---|
+| `application.server.host` | `server.host` |
+| `application.server.port` | `server.port` |
+| `application.s3.host` | `s3.host` |
+| `application.s3.region` | `s3.region` |
+| `application.s3.accessKey` | `s3.accessKey` |
+| `application.s3.secretKey` | `s3.secretKey` |
+| `application.s3.secretName` | `existingSecret` |
+| `application.handler.entries` | `bucket.entries` |
+| `application.logLevel` | `telemetry.logLevel` |
+| `application.sentryDsn` | `telemetry.sentryDsn` |
+
+Two changes need work beyond a rename:
+
+**Entries are mappings, not `"bucket,object"` strings.**
+
+```yaml
+# before
 application:
-  s3:
-    secretName: s3-credentials
-    host: minio.example.com:9000
-    region: us-east-1
+  handler:
+    entries:
+      latest-report:
+        - "company-reports,2024/q4-report.pdf"
+
+# after
+bucket:
+  entries:
+    latest-report:
+      bucket: company-reports
+      object: 2024/q4-report.pdf
+```
+
+**An existing Secret has to be re-keyed** to `s3__access_key` and `s3__secret_key`:
+
+```shell
+kubectl create secret generic s3-credentials   --namespace [NAMESPACE]   --from-literal=s3__access_key="$(kubectl get secret s3-credentials -n [NAMESPACE] -o jsonpath='{.data.access_key}' | base64 -d)"   --from-literal=s3__secret_key="$(kubectl get secret s3-credentials -n [NAMESPACE] -o jsonpath='{.data.secret_key}' | base64 -d)"   --dry-run=client -o yaml | kubectl apply -f -
 ```
 
 ## Publishing it

@@ -3,6 +3,11 @@ templates:
   - deployment.yaml
   - configmap.yaml
   - secret.yaml
+set:
+  bucket.entries:
+    logo:
+      bucket: my-bucket
+      object: logo.png
 tests:
   - it: creates a Deployment named after the release
     documentSelector:
@@ -21,7 +26,7 @@ tests:
       path: kind
       value: Deployment
     set:
-      application.server.port: 9090
+      server.port: 9090
     asserts:
       - equal:
           path: spec.template.spec.containers[0].ports
@@ -33,53 +38,135 @@ tests:
           path: spec.template.spec.containers[0].readinessProbe.httpGet.port
           value: http
 
-  - it: reads S3 credentials from the generated Secret
-    documentSelector:
-      path: kind
-      value: Deployment
-    asserts:
-      - contains:
-          path: spec.template.spec.containers[0].env
-          content:
-            name: S3.ACCESS_KEY
-            valueFrom:
-              secretKeyRef:
-                name: RELEASE-NAME-s3-bucket-perma-link
-                key: access_key
-      - contains:
-          path: spec.template.spec.containers[0].env
-          content:
-            name: S3.SECRET_KEY
-            valueFrom:
-              secretKeyRef:
-                name: RELEASE-NAME-s3-bucket-perma-link
-                key: secret_key
-
-  - it: reads them from an existing Secret when one is given
+  # The whole point of the migration: the loader refuses a key supplied by both the environment
+  # and a file, and only a file can be rotated under a running process. The only variables left
+  # are the two that decide what the file layers are.
+  - it: passes configuration as files, not as environment
     documentSelector:
       path: kind
       value: Deployment
     set:
-      application.s3.secretName: my-s3-secret
+      s3.accessKey: test-access
+      s3.secretKey: test-secret
     asserts:
-      - contains:
+      - equal:
           path: spec.template.spec.containers[0].env
-          content:
-            name: S3.ACCESS_KEY
-            valueFrom:
-              secretKeyRef:
-                name: my-s3-secret
-                key: access_key
+          value:
+            - name: S3_PERMA_LINK_CONFIG
+              value: /etc/s3-bucket-perma-link/config
+            - name: S3_PERMA_LINK_SECRETS_DIR
+              value: /etc/s3-bucket-perma-link/secrets
+      - notExists:
+          path: spec.template.spec.containers[0].envFrom
 
-  - it: loads configuration from the ConfigMap and rolls on change
+  - it: mounts the rendered configuration read-only
     documentSelector:
       path: kind
       value: Deployment
     asserts:
       - contains:
-          path: spec.template.spec.containers[0].envFrom
+          path: spec.template.spec.volumes
           content:
-            configMapRef:
+            name: config
+            configMap:
               name: RELEASE-NAME-s3-bucket-perma-link
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: config
+            mountPath: /etc/s3-bucket-perma-link/config
+            readOnly: true
+
+  # A projected volume, so the kubelet keeps it up to date in place and the service — which
+  # follows the `..data` symlink — rebuilds its bucket clients without a restart.
+  - it: projects the credentials the service reads by file name
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      s3.accessKey: test-access
+      s3.secretKey: test-secret
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: secrets
+            projected:
+              defaultMode: 256
+              sources:
+                - secret:
+                    name: RELEASE-NAME-s3-bucket-perma-link
+                    optional: true
+                    items:
+                      - key: s3__access_key
+                        path: s3__access_key
+                      - key: s3__secret_key
+                        path: s3__secret_key
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: secrets
+            mountPath: /etc/s3-bucket-perma-link/secrets
+            readOnly: true
+
+  - it: projects an existing Secret when one is given
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      existingSecret: my-s3-secret
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: secrets
+            projected:
+              defaultMode: 256
+              sources:
+                - secret:
+                    name: my-s3-secret
+                    optional: true
+                    items:
+                      - key: s3__access_key
+                        path: s3__access_key
+                      - key: s3__secret_key
+                        path: s3__secret_key
+
+  # A configured secrets directory that cannot be read is a boot failure naming the path, not
+  # an empty layer — so the variable and the mount have to appear and disappear together.
+  - it: names no secrets directory when no credential is configured
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: S3_PERMA_LINK_SECRETS_DIR
+            value: /etc/s3-bucket-perma-link/secrets
+      - notContains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: secrets
+            mountPath: /etc/s3-bucket-perma-link/secrets
+            readOnly: true
+
+  # The service rebuilds itself when a mount changes, so a configuration change must not roll
+  # the Deployment unless the operator asks for it.
+  - it: publishes no checksum by default and one on request
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - notExists:
+          path: spec.template.metadata.annotations["checksum/configmap"]
+
+  - it: publishes the checksum when rolloutOnChange is set
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      configMount.rolloutOnChange: true
+    asserts:
       - exists:
           path: spec.template.metadata.annotations["checksum/configmap"]

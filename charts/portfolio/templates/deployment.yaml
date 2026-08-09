@@ -30,12 +30,21 @@ spec:
     spec:
       {{- include "common.podSpec.common" . | nindent 6 }}
       containers:
+        {{- /*
+          The `PORTFOLIO_` configuration reaches the container as a file: the loader fails the
+          boot on a key supplied by both the environment and a file, so keeping the chart's
+          output entirely in one place makes that collision impossible. The variables that
+          remain are the loader's own pointer, the ISR cache directory the image bakes in — see
+          `portfolio.env` — and the three the Dioxus toolchain reads for itself.
+        */}}
+        {{- $secretKeys := list }}
         {{- include "common.container" (dict
               "ctx" $
-              "ports" (list (dict "name" "http" "containerPort" (int .Values.application.port) "protocol" "TCP"))
-              "envFrom" (list (dict "configMapRef" (dict "name" (include "common.fullname" .))))
+              "ports" (list (dict "name" "http" "containerPort" (int .Values.server.port) "protocol" "TCP"))
+              "env" (include "portfolio.env" . | fromYamlArray)
+              "volumeMounts" (include "common.fileConfig.volumeMounts" (dict "ctx" $ "secretKeys" $secretKeys) | fromYamlArray)
             ) | nindent 8 }}
-      {{- with (include "common.volumes" (dict "ctx" $)) }}
+      {{- with (include "common.volumes" (dict "ctx" $ "volumes" (include "common.fileConfig.volumes" (dict "ctx" $ "secretKeys" $secretKeys) | fromYamlArray))) }}
       volumes:
         {{- . | nindent 8 }}
       {{- end }}

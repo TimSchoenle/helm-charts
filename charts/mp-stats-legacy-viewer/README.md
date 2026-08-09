@@ -1,6 +1,6 @@
 # mp-stats-legacy-viewer
 
-![Version: 1.0.11](https://img.shields.io/badge/Version-1.0.11-informational?style=flat-square) ![AppVersion: v0.14.1](https://img.shields.io/badge/AppVersion-v0.14.1-informational?style=flat-square)
+![Version: 2.0.0](https://img.shields.io/badge/Version-2.0.0-informational?style=flat-square) ![AppVersion: v0.15.0](https://img.shields.io/badge/AppVersion-v0.15.0-informational?style=flat-square)
 
 MP Stats Legacy Viewer
 
@@ -46,6 +46,54 @@ ingress:
         - stats.example.com
 ```
 
+## Configuration
+
+The application reads its settings through a layered, file-first loader. This chart renders
+them into one `config.toml`, mounts it as a ConfigMap and points `MP_STATS_CONFIG` at it.
+Nothing is passed as an environment variable: the loader **fails the boot on a key supplied by
+both the environment and a file** rather than resolving it by precedence.
+
+**Pointing `MP_STATS_CONFIG` at the mount replaces the `/config.toml` the image ships** rather
+than layering over it, so this chart restates every key that file carried — the bind address,
+`server.distDir` and `server.dataDir`. The defaults match the image's own layout; change them
+only for an image that puts the frontend bundle or the converted data somewhere else. A
+`dist_dir` without an `index.html` is a boot failure, not a 404.
+
+`config` takes the raw TOML tree for anything the first-class values do not cover, merged over
+the derived one:
+
+```yaml
+config:
+  converter:
+    cache:
+      enabled: false
+```
+
+and `configExtraToml` is appended verbatim for what the renderer cannot express.
+
+The server does not reload its configuration, so the chart keeps the conventional
+`checksum/configmap` pod annotation: a configuration change rolls the Deployment, which is the
+only way it takes effect.
+
+## Upgrading
+
+### 1.x to 2.0
+
+Chart 2.0 tracks application 0.15.0, which replaced its environment-only configuration with the
+layered, file-first loader every chart in this repository now uses. The `application` block is
+gone; a `helm upgrade` with 1.x values fails schema validation naming the offending key rather
+than starting a pod on the defaults.
+
+| Before | After |
+|---|---|
+| `application.server.host` | `server.host` |
+| `application.server.port` | `server.port` |
+
+Both now feed `server.bind_addr` in the rendered file rather than a command-line flag. Two
+values are new and have no 1.x equivalent — `server.distDir` and `server.dataDir` — because the
+chart now supplies the paths the image's own `/config.toml` used to. Leave them alone unless
+you run a modified image.
+
 ## Health checks
 
 All three probes are enabled by default and point at the application's own endpoints —
@@ -61,12 +109,13 @@ on the startup and liveness probes, so the chart omits it there.
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | affinity | object | `{}` | Explicit affinity rules. Wins over `podAntiAffinity`. |
-| application.server | object | `{"host":"0.0.0.0","port":8080}` | HTTP server configuration. Defines where the application listens for incoming connections. |
-| application.server.host | string | `"0.0.0.0"` | Host address to bind the HTTP server. Typically `0.0.0.0` to listen on all network interfaces. |
-| application.server.port | int | `8080` | Port number the server listens on. |
 | automountServiceAccountToken | bool | `false` | Mount the ServiceAccount API token into the pod. Set on the pod itself, which is what actually keeps the token out of the container: the ServiceAccount-level setting is ignored as soon as a pod names a different account. |
 | commonAnnotations | object | `{}` | Annotations added to every object this chart creates. |
 | commonLabels | object | `{}` | Labels added to every object this chart creates. |
+| config | object | `{}` | Extra configuration, expressed as the TOML tree of [the application's configuration reference](https://github.com/TimSchoenle/mp-stats-legacy-viewer/blob/main/docs/CONFIGURATION.md) (`server.bind_addr`, `converter.*`, ...). Merged over everything the chart derives from the values above, so it can both extend and override them. Rendered into the mounted ConfigMap — never into the environment, which the loader refuses to combine with a file. |
+| configExtraToml | string | `""` | Verbatim TOML appended after the rendered configuration. The escape hatch for anything the chart's TOML renderer cannot express, notably arrays of tables. |
+| configMount.configDir | string | `"/etc/mp-stats/config"` | Directory the rendered `config.toml` is mounted at, passed as `MP_STATS_CONFIG`. Pointing this at the mount **replaces** the `/config.toml` the image ships, so everything the image described — the bind address, `dist_dir`, `data_dir` — is restated by the values above. |
+| configMount.secretsDir | string | `"/etc/mp-stats/secrets"` | Directory credential files would be mounted at, passed as `MP_STATS_SECRETS_DIR`. Neither binary reads a secret today, so nothing is mounted and the variable is not set; the value is here for an operator adding one through `extraVolumes`. |
 | extraEnv | list | `[]` | Additional environment variables for the application container. |
 | extraVolumeMounts | list | `[]` | Additional volume mounts added to the application container. |
 | extraVolumes | list | `[]` | Additional volumes added to the pod. |
@@ -74,7 +123,7 @@ on the startup and liveness probes, so the chart omits it there.
 | image.pullPolicy | string | `""` | The image pull policy. Empty resolves automatically from the tag/digest. |
 | image.registry | string | `""` | Registry host. Empty means Docker Hub. |
 | image.repository | string | `"timschoenle/mp-stats-legacy-viewer"` | The container image repository. |
-| image.tag | string | `"v0.14.1@sha256:35de635c75df40c839066e23d5b1180c4a1b3e44dd8868372e717f992b7f9d18"` | The container image tag, pinned by digest (`vX.Y.Z@sha256:...`). The digest pins the pull, while the tag stays on as the readable version marker. Defaults to the chart's `appVersion` when empty. |
+| image.tag | string | `"v0.15.0@sha256:f2bd04006f3942f5b725e9f2a6fff4f88fe9c03fbb558f63edb224b45b190a7a"` | The container image tag, pinned by digest (`vX.Y.Z@sha256:...`). The digest pins the pull, while the tag stays on as the readable version marker. Defaults to the chart's `appVersion` when empty. |
 | imagePullSecrets | list | `[]` | Optional image pull secrets for private registries. |
 | ingress.annotations | object | `{}` | Custom annotations for the Ingress resource. Useful for configuring ingress controllers (e.g., cert-manager, rate limits). |
 | ingress.enabled | bool | `false` | Enable or disable Kubernetes Ingress resource creation. Set to `true` to expose the service externally via Ingress. |
@@ -148,6 +197,10 @@ on the startup and liveness probes, so the chart omits it there.
 | revisionHistoryLimit | int | `3` | Number of old ReplicaSets retained for rollback. |
 | securityContext | object | `{}` | Container security context, merged over the preset. A writable /tmp is provided automatically via an emptyDir volume. |
 | securityContextPreset | string | `"restricted"` | Container security context baseline. `restricted` drops all Linux capabilities and forbids privilege escalation, running as root and a writable root filesystem. |
+| server.dataDir | string | `"/dist/data"` | The converter's output, served under `/data` (`server.data_dir`). The default is where the image puts it. |
+| server.distDir | string | `"/dist"` | Built frontend served as the SPA (`server.dist_dir`). The server refuses to start unless it holds an `index.html`, which is both the entry point and the fallback for unknown routes. The default is where the image puts it — change it only for an image that differs. |
+| server.host | string | `"0.0.0.0"` | Host half of the bind address (`server.bind_addr`). `0.0.0.0` is what makes the Service reach the listener. |
+| server.port | int | `8080` | Port half of the bind address (`server.bind_addr`). Also the container port, the Service target and what every probe and NetworkPolicy rule is written against. |
 | service.port | int | `80` | Port that the Kubernetes Service will expose. Typically maps to `application.server.port`. |
 | service.type | string | `"ClusterIP"` | Kubernetes Service type that exposes the application. |
 | serviceAccount.annotations | object | `{}` | Additional annotations for the service account |

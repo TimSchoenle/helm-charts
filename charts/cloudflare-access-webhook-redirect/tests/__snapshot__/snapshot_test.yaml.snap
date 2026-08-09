@@ -2,11 +2,19 @@ matches the committed Deployment snapshot:
   1: |
     apiVersion: v1
     data:
-      LOG_LEVEL: info
-      SERVER.HOST: 0.0.0.0
-      SERVER.PORT: "8080"
-      WEBHOOK.PATHS: null
-      WEBHOOK.TARGET_BASE: https://example.invalid
+      config.toml: |
+        [server]
+        host = "0.0.0.0"
+        port = 8080
+
+        [telemetry]
+        log_level = "info"
+
+        [webhook]
+        target_base = "https://example.invalid"
+
+        [webhook.paths]
+        "/api/webhook/.*" = ["ALL"]
     kind: ConfigMap
     metadata:
       labels:
@@ -38,8 +46,6 @@ matches the committed Deployment snapshot:
           app.kubernetes.io/name: cloudflare-access-webhook-redirect
       template:
         metadata:
-          annotations:
-            checksum/configmap: ef5f72b54178ba13ca6d4e482b2ad65d79e79456740a8345f125088f47777d13
           labels:
             app.kubernetes.io/instance: RELEASE-NAME
             app.kubernetes.io/managed-by: Helm
@@ -49,19 +55,8 @@ matches the committed Deployment snapshot:
           automountServiceAccountToken: false
           containers:
             - env:
-                - name: CLOUDFLARE.CLIENT_ID
-                  valueFrom:
-                    secretKeyRef:
-                      key: client_id
-                      name: RELEASE-NAME-cloudflare-access-webhook-redirect
-                - name: CLOUDFLARE.CLIENT_SECRET
-                  valueFrom:
-                    secretKeyRef:
-                      key: client_secret
-                      name: RELEASE-NAME-cloudflare-access-webhook-redirect
-              envFrom:
-                - configMapRef:
-                    name: RELEASE-NAME-cloudflare-access-webhook-redirect
+                - name: WEBHOOK_REDIRECT_CONFIG
+                  value: /etc/cloudflare-access-webhook-redirect/config
               image: timmi6790/cloudflare-access-webhook-redirect:v0.0.0@sha256:0000000000000000000000000000000000000000000000000000000000000000
               imagePullPolicy: IfNotPresent
               livenessProbe:
@@ -111,6 +106,9 @@ matches the committed Deployment snapshot:
               volumeMounts:
                 - mountPath: /tmp
                   name: tmp
+                - mountPath: /etc/cloudflare-access-webhook-redirect/config
+                  name: config
+                  readOnly: true
           securityContext:
             fsGroup: 10001
             fsGroupChangePolicy: OnRootMismatch
@@ -124,15 +122,26 @@ matches the committed Deployment snapshot:
           volumes:
             - emptyDir: {}
               name: tmp
+            - configMap:
+                name: RELEASE-NAME-cloudflare-access-webhook-redirect
+              name: config
 matches the committed Deployment snapshot with network policies and probes on:
   1: |
     apiVersion: v1
     data:
-      LOG_LEVEL: info
-      SERVER.HOST: 0.0.0.0
-      SERVER.PORT: "8080"
-      WEBHOOK.PATHS: null
-      WEBHOOK.TARGET_BASE: https://example.invalid
+      config.toml: |
+        [server]
+        host = "0.0.0.0"
+        port = 8080
+
+        [telemetry]
+        log_level = "info"
+
+        [webhook]
+        target_base = "https://example.invalid"
+
+        [webhook.paths]
+        "/api/webhook/.*" = ["ALL"]
     kind: ConfigMap
     metadata:
       labels:
@@ -164,8 +173,6 @@ matches the committed Deployment snapshot with network policies and probes on:
           app.kubernetes.io/name: cloudflare-access-webhook-redirect
       template:
         metadata:
-          annotations:
-            checksum/configmap: ef5f72b54178ba13ca6d4e482b2ad65d79e79456740a8345f125088f47777d13
           labels:
             app.kubernetes.io/instance: RELEASE-NAME
             app.kubernetes.io/managed-by: Helm
@@ -185,19 +192,8 @@ matches the committed Deployment snapshot with network policies and probes on:
           automountServiceAccountToken: false
           containers:
             - env:
-                - name: CLOUDFLARE.CLIENT_ID
-                  valueFrom:
-                    secretKeyRef:
-                      key: client_id
-                      name: RELEASE-NAME-cloudflare-access-webhook-redirect
-                - name: CLOUDFLARE.CLIENT_SECRET
-                  valueFrom:
-                    secretKeyRef:
-                      key: client_secret
-                      name: RELEASE-NAME-cloudflare-access-webhook-redirect
-              envFrom:
-                - configMapRef:
-                    name: RELEASE-NAME-cloudflare-access-webhook-redirect
+                - name: WEBHOOK_REDIRECT_CONFIG
+                  value: /etc/cloudflare-access-webhook-redirect/config
               image: timmi6790/cloudflare-access-webhook-redirect:v0.0.0@sha256:0000000000000000000000000000000000000000000000000000000000000000
               imagePullPolicy: IfNotPresent
               livenessProbe:
@@ -247,6 +243,9 @@ matches the committed Deployment snapshot with network policies and probes on:
               volumeMounts:
                 - mountPath: /tmp
                   name: tmp
+                - mountPath: /etc/cloudflare-access-webhook-redirect/config
+                  name: config
+                  readOnly: true
           nodeSelector:
             kubernetes.io/os: linux
           securityContext:
@@ -262,3 +261,6 @@ matches the committed Deployment snapshot with network policies and probes on:
           volumes:
             - emptyDir: {}
               name: tmp
+            - configMap:
+                name: RELEASE-NAME-cloudflare-access-webhook-redirect
+              name: config

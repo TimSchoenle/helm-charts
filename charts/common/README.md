@@ -1,6 +1,6 @@
 # common
 
-![Version: 1.3.0](https://img.shields.io/badge/Version-1.3.0-informational?style=flat-square) ![Type: library](https://img.shields.io/badge/Type-library-informational?style=flat-square)
+![Version: 1.4.0](https://img.shields.io/badge/Version-1.4.0-informational?style=flat-square) ![Type: library](https://img.shields.io/badge/Type-library-informational?style=flat-square)
 
 Shared template partials for the TimSchoenle Helm charts
 
@@ -171,8 +171,15 @@ and act as the reference shape for consuming charts.
 | commonAnnotations | object | `{}` | Annotations added to every object the chart creates. Values may contain Go templates. |
 | commonLabels | object | `{}` | Labels added to every object the chart creates. Values may contain Go templates. |
 | component | string | `""` | Value for the `app.kubernetes.io/component` label. |
+| config | object | `{}` | Application configuration, expressed as the TOML tree the service documents. Rendered by `common.toml` into the ConfigMap the pod mounts, never passed as environment variables: the loader every application shares refuses a key supplied by both the environment and a file, and a value that lives in a file is one the kubelet can rotate under a running process. |
+| configExtraToml | string | `""` | Verbatim TOML appended after the rendered `config` tree. The escape hatch for anything `common.toml` cannot express, notably arrays of tables. |
+| configMount | object | `{"configDir":"","secretsDir":""}` | Where the rendered configuration and the credential files land in the container. Consumed by `common.fileConfig.*`, which also passes both directories to the application as `<PREFIX>_CONFIG` and `<PREFIX>_SECRETS_DIR`. |
+| configMount.configDir | string | `""` | Directory the rendered `config.toml` is mounted at. |
+| configMount.secretsDir | string | `""` | Directory the credential files are mounted at, one file per configuration key. |
 | dnsConfig | object | `{}` | Pod DNS configuration. |
 | dnsPolicy | string | `""` | Pod DNS policy. |
+| existingConfigMap | string | `""` | Name of an existing ConfigMap holding `config.toml`, replacing the one this chart renders. |
+| existingSecret | string | `""` | Name of an existing Secret holding the credential files, replacing the one this chart renders. Its keys must be the configuration paths the service reads, with `__` for nesting and no dots — that is the file name the loader parses. |
 | extraEnv | list | `[]` | Additional environment variables appended to the application container. |
 | extraVolumeMounts | list | `[]` | Additional volume mounts added to the application container. |
 | extraVolumes | list | `[]` | Additional volumes added to the pod. |

@@ -4,7 +4,10 @@ templates:
   - configmap.yaml
   - secret.yaml
 set:
-  application.handler.targetBase: https://example.invalid
+  webhook.targetBase: https://example.invalid
+  webhook.paths:
+    "/api/webhook/.*":
+      - ALL
 tests:
   - it: creates a Deployment named after the release
     documentSelector:
@@ -22,7 +25,7 @@ tests:
       path: kind
       value: Deployment
     set:
-      application.server.port: 9090
+      server.port: 9090
     asserts:
       - equal:
           path: spec.template.spec.containers[0].ports
@@ -31,70 +34,118 @@ tests:
               name: http
               protocol: TCP
 
-  - it: reads Cloudflare Access credentials from the generated Secret
-    documentSelector:
-      path: kind
-      value: Deployment
-    asserts:
-      - contains:
-          path: spec.template.spec.containers[0].env
-          content:
-            name: CLOUDFLARE.CLIENT_ID
-            valueFrom:
-              secretKeyRef:
-                name: RELEASE-NAME-cloudflare-access-webhook-redirect
-                key: client_id
-      - contains:
-          path: spec.template.spec.containers[0].env
-          content:
-            name: CLOUDFLARE.CLIENT_SECRET
-            valueFrom:
-              secretKeyRef:
-                name: RELEASE-NAME-cloudflare-access-webhook-redirect
-                key: client_secret
-
-  - it: reads them from an existing Secret when one is given
+  # The whole point of the migration: the loader refuses a key supplied by both the environment
+  # and a file, and only a file can be rotated under a running process. The only variables left
+  # are the two that decide what the file layers are.
+  - it: passes configuration as files, not as environment
     documentSelector:
       path: kind
       value: Deployment
     set:
-      application.cloudflareAccess.secretName: my-access-secret
+      cloudflare.clientId: test-id
+      cloudflare.clientSecret: test-secret
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].env
+          value:
+            - name: WEBHOOK_REDIRECT_CONFIG
+              value: /etc/cloudflare-access-webhook-redirect/config
+            - name: WEBHOOK_REDIRECT_SECRETS_DIR
+              value: /etc/cloudflare-access-webhook-redirect/secrets
+      - notExists:
+          path: spec.template.spec.containers[0].envFrom
+
+  - it: mounts the rendered configuration read-only
+    documentSelector:
+      path: kind
+      value: Deployment
     asserts:
       - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: config
+            configMap:
+              name: RELEASE-NAME-cloudflare-access-webhook-redirect
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: config
+            mountPath: /etc/cloudflare-access-webhook-redirect/config
+            readOnly: true
+
+  # A projected volume, so the kubelet keeps it up to date in place and the proxy — which
+  # follows the `..data` symlink — sees a rotated credential without a restart.
+  - it: projects the credentials the service reads by file name
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      cloudflare.clientId: test-id
+      cloudflare.clientSecret: test-secret
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: secrets
+            projected:
+              defaultMode: 256
+              sources:
+                - secret:
+                    name: RELEASE-NAME-cloudflare-access-webhook-redirect
+                    optional: true
+                    items:
+                      - key: cloudflare__client_id
+                        path: cloudflare__client_id
+                      - key: cloudflare__client_secret
+                        path: cloudflare__client_secret
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: secrets
+            mountPath: /etc/cloudflare-access-webhook-redirect/secrets
+            readOnly: true
+
+  - it: projects an existing Secret when one is given
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      existingSecret: my-access-secret
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: secrets
+            projected:
+              defaultMode: 256
+              sources:
+                - secret:
+                    name: my-access-secret
+                    optional: true
+                    items:
+                      - key: cloudflare__client_id
+                        path: cloudflare__client_id
+                      - key: cloudflare__client_secret
+                        path: cloudflare__client_secret
+
+  # A configured secrets directory that cannot be read is a boot failure naming the path, not
+  # an empty layer — so the variable and the mount have to appear and disappear together.
+  - it: names no secrets directory when no credential is configured
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - notContains:
           path: spec.template.spec.containers[0].env
           content:
-            name: CLOUDFLARE.CLIENT_ID
-            valueFrom:
-              secretKeyRef:
-                name: my-access-secret
-                key: client_id
-
-  # The chart used to declare a `config` volume from the ConfigMap that no container ever
-  # mounted; only the /tmp scratch volume should exist.
-  - it: mounts no dead volumes
-    documentSelector:
-      path: kind
-      value: Deployment
-    asserts:
-      - lengthEqual:
-          path: spec.template.spec.volumes
-          count: 1
-      - equal:
-          path: spec.template.spec.volumes[0].name
-          value: tmp
-
-  - it: loads configuration from the ConfigMap and rolls on change
-    documentSelector:
-      path: kind
-      value: Deployment
-    asserts:
-      - contains:
-          path: spec.template.spec.containers[0].envFrom
+            name: WEBHOOK_REDIRECT_SECRETS_DIR
+            value: /etc/cloudflare-access-webhook-redirect/secrets
+      - notContains:
+          path: spec.template.spec.containers[0].volumeMounts
           content:
-            configMapRef:
-              name: RELEASE-NAME-cloudflare-access-webhook-redirect
-      - exists:
-          path: spec.template.metadata.annotations["checksum/configmap"]
+            name: secrets
+            mountPath: /etc/cloudflare-access-webhook-redirect/secrets
+            readOnly: true
 
   - it: hands replica count to the autoscaler when one is enabled
     documentSelector:

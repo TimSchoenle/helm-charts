@@ -1,0 +1,44 @@
+{{- /*
+Exercises the file-backed configuration partials the way a real consuming chart uses them:
+`common.fileConfig.secretData` into a Secret, and the volumes, mounts and loader variables onto
+a pod. The `config.toml` itself lives in `configmap.yaml`, because `common.fileConfig.volumes`
+names the config volume after `common.configMapName` and the two have to agree.
+
+A `Pod` rather than a second Deployment, so the assertions in `fileconfig_test.yaml` can select
+it without competing with the Deployment the rest of the fixture renders.
+*/ -}}
+{{- $secrets := .Values.fileConfigSecrets | default dict -}}
+{{- $secretKeys := include "common.fileConfig.secretKeys" (dict "ctx" . "data" $secrets) | fromYamlArray -}}
+{{- if (include "common.fileConfig.createSecret" (dict "ctx" . "data" $secrets)) }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ include "common.fullname" . }}
+  namespace: {{ include "common.namespace" . }}
+  labels:
+    {{- include "common.labels" . | nindent 4 }}
+type: Opaque
+stringData:
+  {{- include "common.fileConfig.secretData" (dict "data" $secrets) | nindent 2 }}
+---
+{{- end }}
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ include "common.fullname" . }}-fileconfig
+  namespace: {{ include "common.namespace" . }}
+  labels:
+    {{- include "common.labels" . | nindent 4 }}
+spec:
+  {{- include "common.podSpec.common" . | nindent 2 }}
+  containers:
+    {{- include "common.container" (dict
+          "ctx" $
+          "name" "fileconfig"
+          "env" (include "common.fileConfig.env" (dict "ctx" $ "prefix" "FIXTURE" "secretKeys" $secretKeys) | fromYamlArray)
+          "volumeMounts" (include "common.fileConfig.volumeMounts" (dict "ctx" $ "secretKeys" $secretKeys) | fromYamlArray)
+        ) | nindent 4 }}
+  {{- with (include "common.volumes" (dict "ctx" $ "volumes" (include "common.fileConfig.volumes" (dict "ctx" $ "secretKeys" $secretKeys) | fromYamlArray))) }}
+  volumes:
+    {{- . | nindent 4 }}
+  {{- end }}

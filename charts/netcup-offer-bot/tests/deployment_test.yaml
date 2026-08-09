@@ -4,7 +4,7 @@ templates:
   - configmap.yaml
   - secret.yaml
 set:
-  env.webHook: https://example.invalid/hook
+  discord.webhookUrl: https://example.invalid/hook
 tests:
   - it: creates a Deployment named after the release
     documentSelector:
@@ -17,35 +17,89 @@ tests:
           path: metadata.name
           value: RELEASE-NAME-netcup-offer-bot
 
-  - it: reads the webhook from the generated Secret
+  # The whole point of the migration: the loader refuses a key supplied by both the environment
+  # and a file, and the webhook no longer appears in `kubectl describe pod` or in the
+  # environment of a child process. The only variables left are the two that decide what the
+  # file layers are.
+  - it: passes configuration as files, not as environment
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].env
+          value:
+            - name: NETCUP_OFFER_BOT_CONFIG
+              value: /etc/netcup-offer-bot/config
+            - name: NETCUP_OFFER_BOT_SECRETS_DIR
+              value: /etc/netcup-offer-bot/secrets
+      - notExists:
+          path: spec.template.spec.containers[0].envFrom
+
+  - it: mounts the rendered configuration read-only
     documentSelector:
       path: kind
       value: Deployment
     asserts:
       - contains:
-          path: spec.template.spec.containers[0].env
+          path: spec.template.spec.volumes
           content:
-            name: WEB_HOOK
-            valueFrom:
-              secretKeyRef:
-                name: RELEASE-NAME-netcup-offer-bot
-                key: webHook
+            name: config
+            configMap:
+              name: RELEASE-NAME-netcup-offer-bot
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: config
+            mountPath: /etc/netcup-offer-bot/config
+            readOnly: true
 
-  - it: reads it from an existing Secret when one is given
+  - it: projects the webhook the bot reads by file name
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: secrets
+            projected:
+              defaultMode: 256
+              sources:
+                - secret:
+                    name: RELEASE-NAME-netcup-offer-bot
+                    optional: true
+                    items:
+                      - key: discord__webhook_url
+                        path: discord__webhook_url
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: secrets
+            mountPath: /etc/netcup-offer-bot/secrets
+            readOnly: true
+
+  - it: projects an existing Secret when one is given
     documentSelector:
       path: kind
       value: Deployment
     set:
+      discord.webhookUrl: null
       existingSecret: my-webhook-secret
     asserts:
       - contains:
-          path: spec.template.spec.containers[0].env
+          path: spec.template.spec.volumes
           content:
-            name: WEB_HOOK
-            valueFrom:
-              secretKeyRef:
-                name: my-webhook-secret
-                key: webHook
+            name: secrets
+            projected:
+              defaultMode: 256
+              sources:
+                - secret:
+                    name: my-webhook-secret
+                    optional: true
+                    items:
+                      - key: discord__webhook_url
+                        path: discord__webhook_url
 
   - it: mounts the state volume the bot needs to avoid re-announcing offers
     documentSelector:

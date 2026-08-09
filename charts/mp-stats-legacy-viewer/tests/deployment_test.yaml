@@ -1,8 +1,14 @@
 suite: deployment
 templates:
   - deployment.yaml
+  - configmap.yaml
+# The Deployment annotates a checksum of the ConfigMap, so both templates must render; the
+# selector keeps every assertion below on the Deployment.
 tests:
   - it: creates a Deployment named after the release
+    documentSelector:
+      path: kind
+      value: Deployment
     asserts:
       - isKind:
           of: Deployment
@@ -12,8 +18,11 @@ tests:
 
   # The Service targets this port by number, and the probes address it by name.
   - it: exposes the server port as http
+    documentSelector:
+      path: kind
+      value: Deployment
     set:
-      application.server.port: 9090
+      server.port: 9090
     asserts:
       - equal:
           path: spec.template.spec.containers[0].ports
@@ -25,7 +34,72 @@ tests:
           path: spec.template.spec.containers[0].startupProbe.httpGet.port
           value: http
 
+  # The whole point of the migration: the loader refuses a key supplied by both the environment
+  # and a file. `MP_STATS_CONFIG` is the only variable left, and it is the one that cannot be
+  # file-sourced because it decides what the file layer is.
+  - it: passes configuration as a file, not as environment
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].env
+          value:
+            - name: MP_STATS_CONFIG
+              value: /etc/mp-stats/config
+      - notExists:
+          path: spec.template.spec.containers[0].envFrom
+
+  - it: mounts the rendered configuration read-only
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: config
+            configMap:
+              name: RELEASE-NAME-mp-stats-legacy-viewer
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: config
+            mountPath: /etc/mp-stats/config
+            readOnly: true
+
+  # Neither binary reads a secret, and a configured secrets directory that cannot be read is a
+  # boot failure naming the path, not an empty layer.
+  - it: names no secrets directory, because neither binary reads a secret
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: MP_STATS_SECRETS_DIR
+            value: /etc/mp-stats/secrets
+      - notContains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: secrets
+            mountPath: /etc/mp-stats/secrets
+            readOnly: true
+
+  # The server does not reload, so a configuration change has to roll the pod to take effect.
+  - it: rolls the pod when the mounted configuration changes
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - exists:
+          path: spec.template.metadata.annotations["checksum/configmap"]
+
   - it: probes the three distinct health endpoints
+    documentSelector:
+      path: kind
+      value: Deployment
     asserts:
       - equal:
           path: spec.template.spec.containers[0].startupProbe.httpGet.path
@@ -38,14 +112,10 @@ tests:
           value: /health/ready
 
   # This chart mounts no configuration, so there is nothing to checksum.
-  - it: injects no configuration or secrets
-    asserts:
-      - notExists:
-          path: spec.template.spec.containers[0].envFrom
-      - notExists:
-          path: spec.template.spec.containers[0].env
-
   - it: scales to the requested replica count
+    documentSelector:
+      path: kind
+      value: Deployment
     set:
       replicaCount: 2
     asserts:

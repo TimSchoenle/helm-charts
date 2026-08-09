@@ -6,93 +6,6 @@
       "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.Affinity",
       "required": []
     },
-    "application": {
-      "additionalProperties": true,
-      "properties": {
-        "cloudflareAccess": {
-          "additionalProperties": true,
-          "properties": {
-            "secretName": {
-              "default": "",
-              "description": "Existing secret name containing Cloudflare Access credentials\nMust contain client_id and client_secret keys",
-              "required": [],
-              "title": "secretName",
-              "type": "string"
-            }
-          },
-          "required": [],
-          "title": "cloudflareAccess"
-        },
-        "handler": {
-          "additionalProperties": true,
-          "properties": {
-            "paths": {
-              "additionalProperties": {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              "description": "Path configurations with allowed HTTP methods\nExample:\n  api/webhook:\n    - ALL\n  test:\n    - GET\n    - POST",
-              "required": [],
-              "title": "paths",
-              "type": "object"
-            },
-            "targetBase": {
-              "default": "",
-              "description": "Base URL for redirect targets",
-              "required": [],
-              "title": "targetBase",
-              "type": "string"
-            }
-          },
-          "required": [],
-          "title": "handler"
-        },
-        "logLevel": {
-          "default": "info",
-          "description": "Application log level",
-          "enum": [
-            "debug",
-            "info",
-            "warn",
-            "error"
-          ],
-          "required": [],
-          "title": "logLevel"
-        },
-        "sentryDsn": {
-          "default": "",
-          "description": "Sentry DSN for error tracking (empty disables)",
-          "required": [],
-          "title": "sentryDsn",
-          "type": "string"
-        },
-        "server": {
-          "additionalProperties": true,
-          "properties": {
-            "host": {
-              "default": "0.0.0.0",
-              "description": "Server bind address",
-              "required": [],
-              "title": "host",
-              "type": "string"
-            },
-            "port": {
-              "default": 8080,
-              "description": "HTTP server port",
-              "required": [],
-              "title": "port",
-              "type": "integer"
-            }
-          },
-          "required": [],
-          "title": "server"
-        }
-      },
-      "required": [],
-      "title": "application"
-    },
     "automountServiceAccountToken": {
       "default": false,
       "description": "Mount the ServiceAccount API token into the pod.\nSet on the pod itself, which is what actually keeps the token out of the container: the\nServiceAccount-level setting is ignored as soon as a pod names a different account.",
@@ -148,6 +61,27 @@
       "required": [],
       "title": "autoscaling"
     },
+    "cloudflare": {
+      "additionalProperties": true,
+      "properties": {
+        "clientId": {
+          "default": "",
+          "description": "Cloudflare Access service token client ID (`cloudflare.client_id`). Rendered into the\nchart's Secret and mounted as a file, so a rotation is picked up without a restart.\nRequired unless `existingSecret` supplies it.",
+          "required": [],
+          "title": "clientId",
+          "type": "string"
+        },
+        "clientSecret": {
+          "default": "",
+          "description": "Cloudflare Access service token client secret (`cloudflare.client_secret`). Required\nunless `existingSecret` supplies it.",
+          "required": [],
+          "title": "clientSecret",
+          "type": "string"
+        }
+      },
+      "required": [],
+      "title": "cloudflare"
+    },
     "common": {
       "description": "Shared template partials for the TimSchoenle Helm charts",
       "properties": {
@@ -183,6 +117,42 @@
           "title": "component",
           "type": "string"
         },
+        "config": {
+          "additionalProperties": true,
+          "description": "Application configuration, expressed as the TOML tree the service documents. Rendered by\n`common.toml` into the ConfigMap the pod mounts, never passed as environment variables: the\nloader every application shares refuses a key supplied by both the environment and a file,\nand a value that lives in a file is one the kubelet can rotate under a running process.",
+          "required": [],
+          "title": "config",
+          "type": "object"
+        },
+        "configExtraToml": {
+          "default": "",
+          "description": "Verbatim TOML appended after the rendered `config` tree. The escape hatch for anything\n`common.toml` cannot express, notably arrays of tables.",
+          "required": [],
+          "title": "configExtraToml",
+          "type": "string"
+        },
+        "configMount": {
+          "additionalProperties": true,
+          "description": "Where the rendered configuration and the credential files land in the container. Consumed\nby `common.fileConfig.*`, which also passes both directories to the application as\n`\u003cPREFIX\u003e_CONFIG` and `\u003cPREFIX\u003e_SECRETS_DIR`.",
+          "properties": {
+            "configDir": {
+              "default": "",
+              "description": "Directory the rendered `config.toml` is mounted at.",
+              "required": [],
+              "title": "configDir",
+              "type": "string"
+            },
+            "secretsDir": {
+              "default": "",
+              "description": "Directory the credential files are mounted at, one file per configuration key.",
+              "required": [],
+              "title": "secretsDir",
+              "type": "string"
+            }
+          },
+          "required": [],
+          "title": "configMount"
+        },
         "dnsConfig": {
           "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.PodDNSConfig",
           "required": []
@@ -192,6 +162,20 @@
           "description": "Pod DNS policy.",
           "required": [],
           "title": "dnsPolicy",
+          "type": "string"
+        },
+        "existingConfigMap": {
+          "default": "",
+          "description": "Name of an existing ConfigMap holding `config.toml`, replacing the one this chart renders.",
+          "required": [],
+          "title": "existingConfigMap",
+          "type": "string"
+        },
+        "existingSecret": {
+          "default": "",
+          "description": "Name of an existing Secret holding the credential files, replacing the one this chart\nrenders. Its keys must be the configuration paths the service reads, with `__` for nesting\nand no dots — that is the file name the loader parses.",
+          "required": [],
+          "title": "existingSecret",
           "type": "string"
         },
         "extraEnv": {
@@ -959,6 +943,55 @@
       "title": "commonLabels",
       "type": "object"
     },
+    "config": {
+      "additionalProperties": true,
+      "description": "Extra configuration, expressed as the TOML tree of\n[the service's README](https://github.com/TimSchoenle/cloudflare-access-webhook-redirect#-configuration)\n(`server.host`, `webhook.target_base`, ...). Merged over everything the chart derives from\nthe values above, so it can both extend and override them. Rendered into the mounted\nConfigMap — never into the environment, which the loader refuses to combine with a file.",
+      "required": [],
+      "title": "config",
+      "type": "object"
+    },
+    "configExtraToml": {
+      "default": "",
+      "description": "Verbatim TOML appended after the rendered configuration. The escape hatch for anything the\nchart's TOML renderer cannot express, notably arrays of tables.",
+      "required": [],
+      "title": "configExtraToml",
+      "type": "string"
+    },
+    "configMount": {
+      "additionalProperties": true,
+      "properties": {
+        "configDir": {
+          "default": "/etc/cloudflare-access-webhook-redirect/config",
+          "description": "Directory the rendered `config.toml` is mounted at, passed as `WEBHOOK_REDIRECT_CONFIG`.",
+          "required": [],
+          "title": "configDir",
+          "type": "string"
+        },
+        "rolloutOnChange": {
+          "default": false,
+          "description": "Add `checksum/*` pod annotations so a configuration change rolls the Deployment. Off by\ndefault, and deliberately so: the proxy watches the directories its configuration came from\nand rebuilds its client, path patterns, credentials and listener in place when the kubelet\nupdates the mounted ConfigMap or Secret, which is strictly better than a rollout. Turn this\non only if you want configuration changes to behave like an ordinary image bump.\n`telemetry.*` is installed once per process and needs a restart either way.",
+          "required": [],
+          "title": "rolloutOnChange",
+          "type": "boolean"
+        },
+        "secretsDir": {
+          "default": "/etc/cloudflare-access-webhook-redirect/secrets",
+          "description": "Directory the credential files are mounted at, passed as\n`WEBHOOK_REDIRECT_SECRETS_DIR`.",
+          "required": [],
+          "title": "secretsDir",
+          "type": "string"
+        }
+      },
+      "required": [],
+      "title": "configMount"
+    },
+    "existingSecret": {
+      "default": "",
+      "description": "Name of an existing Secret holding the Cloudflare Access credentials, which keeps them out\nof `values.yaml` and out of the Helm release object. **Its keys are the configuration paths,\nnot free-form names**: `cloudflare__client_id` and `cloudflare__client_secret`, because the\nfile name is what the loader parses. Set, the chart renders no Secret of its own and\n`cloudflare.clientId` / `cloudflare.clientSecret` are ignored.",
+      "required": [],
+      "title": "existingSecret",
+      "type": "string"
+    },
     "extraEnv": {
       "description": "Additional environment variables for the application container.",
       "items": {
@@ -1032,7 +1065,7 @@
           "type": "string"
         },
         "tag": {
-          "default": "v0.3.22@sha256:41b63717cbb575be525386d6b1c731d24e1c515b2b1d5f8421bc050a64f5375c",
+          "default": "v1.0.0@sha256:90a8c511781fa563bca7b78149975ab34dc5a6736b469b4afc7cdd8c2b4e7afd",
           "description": "The container image tag, pinned by digest (`vX.Y.Z\npull, while the tag stays on as the readable version marker. Defaults to the chart's\n`appVersion` when empty.",
           "required": [],
           "title": "tag",
@@ -1619,6 +1652,29 @@
       "required": [],
       "title": "securityContextPreset"
     },
+    "server": {
+      "additionalProperties": true,
+      "properties": {
+        "host": {
+          "default": "0.0.0.0",
+          "description": "Bind address (`server.host`). The application's own default is `127.0.0.1`, which in a\ncontainer answers nothing; `0.0.0.0` is what makes the Service reach it.",
+          "required": [],
+          "title": "host",
+          "type": "string"
+        },
+        "port": {
+          "default": 8080,
+          "description": "Bind port (`server.port`). Also the container port, the Service target and what every\nprobe and NetworkPolicy rule is written against.",
+          "maximum": 65535,
+          "minimum": 1,
+          "required": [],
+          "title": "port",
+          "type": "integer"
+        }
+      },
+      "required": [],
+      "title": "server"
+    },
     "service": {
       "additionalProperties": true,
       "properties": {
@@ -1760,6 +1816,33 @@
       "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.apps.v1.DeploymentStrategy",
       "required": []
     },
+    "telemetry": {
+      "additionalProperties": true,
+      "properties": {
+        "logLevel": {
+          "default": "info",
+          "description": "Log level (`telemetry.log_level`).",
+          "enum": [
+            "trace",
+            "debug",
+            "info",
+            "warn",
+            "error"
+          ],
+          "required": [],
+          "title": "logLevel"
+        },
+        "sentryDsn": {
+          "default": "",
+          "description": "Sentry DSN (`telemetry.sentry_dsn`). Empty disables Sentry entirely.",
+          "required": [],
+          "title": "sentryDsn",
+          "type": "string"
+        }
+      },
+      "required": [],
+      "title": "telemetry"
+    },
     "terminationGracePeriodSeconds": {
       "default": 30,
       "description": "Grace period for pod shutdown.",
@@ -1786,6 +1869,32 @@
       "required": [],
       "title": "topologySpreadConstraints",
       "type": "array"
+    },
+    "webhook": {
+      "additionalProperties": true,
+      "properties": {
+        "paths": {
+          "additionalProperties": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "description": "Path regex to the methods allowed on it (`webhook.paths`). Patterns are anchored, so\n`/webhook/.*` matches `/webhook/github` but not `/api/webhook/github`. Methods are `ALL`,\n`GET`, `POST`, `PUT`, `PATCH` or `DELETE`. Required — a proxy with no allowed path\nforwards nothing.\nExample:\n  \"/webhook/.*\":\n    - ALL\n  \"/api/public/.*\":\n    - GET\n    - POST",
+          "required": [],
+          "title": "paths",
+          "type": "object"
+        },
+        "targetBase": {
+          "default": "",
+          "description": "The Cloudflare Access protected service every allowed path is joined onto\n(`webhook.target_base`). Required.",
+          "required": [],
+          "title": "targetBase",
+          "type": "string"
+        }
+      },
+      "required": [],
+      "title": "webhook"
     }
   },
   "required": [],

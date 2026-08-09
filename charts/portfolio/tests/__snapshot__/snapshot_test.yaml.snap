@@ -2,8 +2,13 @@ matches the committed Deployment snapshot:
   1: |
     apiVersion: v1
     data:
-      PORT: "8080"
-      RUST_LOG: info
+      config.toml: |
+        [assets]
+        dist_dir = "public"
+
+        [isr]
+        cache_dir = "/tmp/isr"
+        ttl_secs = 0
     kind: ConfigMap
     metadata:
       labels:
@@ -36,7 +41,7 @@ matches the committed Deployment snapshot:
       template:
         metadata:
           annotations:
-            checksum/configmap: e1a3b4e15a2bbe6986ebdd0a3898bcbd69372b7760e6cf1a247ba0cae2b2ba48
+            checksum/configmap: 30d787efc49cddd7af7db2b5c8c5620a2260c3ecdb57c3c4455f43f3a584b1fb
           labels:
             app.kubernetes.io/instance: RELEASE-NAME
             app.kubernetes.io/managed-by: Helm
@@ -45,9 +50,17 @@ matches the committed Deployment snapshot:
         spec:
           automountServiceAccountToken: false
           containers:
-            - envFrom:
-                - configMapRef:
-                    name: RELEASE-NAME-portfolio
+            - env:
+                - name: PORT
+                  value: "8080"
+                - name: IP
+                  value: 0.0.0.0
+                - name: RUST_LOG
+                  value: info
+                - name: PORTFOLIO_CONFIG
+                  value: /etc/portfolio/config
+                - name: PORTFOLIO_ISR__CACHE_DIR
+                  value: /tmp/isr
               image: timschoenle/portfolio:v0.0.0@sha256:0000000000000000000000000000000000000000000000000000000000000000
               imagePullPolicy: IfNotPresent
               livenessProbe:
@@ -98,6 +111,9 @@ matches the committed Deployment snapshot:
               volumeMounts:
                 - mountPath: /tmp
                   name: tmp
+                - mountPath: /etc/portfolio/config
+                  name: config
+                  readOnly: true
           securityContext:
             fsGroup: 1001
             fsGroupChangePolicy: OnRootMismatch
@@ -111,12 +127,20 @@ matches the committed Deployment snapshot:
           volumes:
             - emptyDir: {}
               name: tmp
+            - configMap:
+                name: RELEASE-NAME-portfolio
+              name: config
 matches the committed Deployment snapshot with network policies and probes on:
   1: |
     apiVersion: v1
     data:
-      PORT: "8080"
-      RUST_LOG: info
+      config.toml: |
+        [assets]
+        dist_dir = "public"
+
+        [isr]
+        cache_dir = "/tmp/isr"
+        ttl_secs = 0
     kind: ConfigMap
     metadata:
       labels:
@@ -149,7 +173,7 @@ matches the committed Deployment snapshot with network policies and probes on:
       template:
         metadata:
           annotations:
-            checksum/configmap: e1a3b4e15a2bbe6986ebdd0a3898bcbd69372b7760e6cf1a247ba0cae2b2ba48
+            checksum/configmap: 30d787efc49cddd7af7db2b5c8c5620a2260c3ecdb57c3c4455f43f3a584b1fb
           labels:
             app.kubernetes.io/instance: RELEASE-NAME
             app.kubernetes.io/managed-by: Helm
@@ -168,9 +192,17 @@ matches the committed Deployment snapshot with network policies and probes on:
                   weight: 100
           automountServiceAccountToken: false
           containers:
-            - envFrom:
-                - configMapRef:
-                    name: RELEASE-NAME-portfolio
+            - env:
+                - name: PORT
+                  value: "8080"
+                - name: IP
+                  value: 0.0.0.0
+                - name: RUST_LOG
+                  value: info
+                - name: PORTFOLIO_CONFIG
+                  value: /etc/portfolio/config
+                - name: PORTFOLIO_ISR__CACHE_DIR
+                  value: /tmp/isr
               image: timschoenle/portfolio:v0.0.0@sha256:0000000000000000000000000000000000000000000000000000000000000000
               imagePullPolicy: IfNotPresent
               livenessProbe:
@@ -221,6 +253,9 @@ matches the committed Deployment snapshot with network policies and probes on:
               volumeMounts:
                 - mountPath: /tmp
                   name: tmp
+                - mountPath: /etc/portfolio/config
+                  name: config
+                  readOnly: true
           nodeSelector:
             kubernetes.io/os: linux
           securityContext:
@@ -236,3 +271,6 @@ matches the committed Deployment snapshot with network policies and probes on:
           volumes:
             - emptyDir: {}
               name: tmp
+            - configMap:
+                name: RELEASE-NAME-portfolio
+              name: config

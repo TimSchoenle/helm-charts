@@ -1,6 +1,6 @@
 # s3-bucket-perma-link
 
-![Version: 2.0.10](https://img.shields.io/badge/Version-2.0.10-informational?style=flat-square) ![AppVersion: v0.3.24](https://img.shields.io/badge/AppVersion-v0.3.24-informational?style=flat-square)
+![Version: 3.0.0](https://img.shields.io/badge/Version-3.0.0-informational?style=flat-square) ![AppVersion: v1.0.0](https://img.shields.io/badge/AppVersion-v1.0.0-informational?style=flat-square)
 
 This chart deploys a simple web server that provides permanent links to specific S3 bucket resources. It allows you to define static URL paths that always point to specific files in your S3 buckets.
 
@@ -21,22 +21,19 @@ bucket has to be made public.
 Create the credential Secret first — the chart never takes the keys as values:
 
 ```shell
-kubectl create secret generic s3-credentials \
-  --namespace [NAMESPACE] \
-  --from-literal=access_key='...' \
-  --from-literal=secret_key='...'
+kubectl create secret generic s3-credentials   --namespace [NAMESPACE]   --from-literal=s3__access_key='...'   --from-literal=s3__secret_key='...'
 ```
 
-The key names matter: the chart reads `access_key` and `secret_key`, and a Secret with any
-other spelling produces a pod that starts and then fails every request.
+**The key names are the configuration paths the service reads, not free-form names.** The
+credential arrives as a file and the service takes the key out of the file *name*, so
+`s3__access_key` is required; a Secret spelled any other way mounts cleanly, supplies nothing,
+and the service refuses to boot naming the missing credential.
 
 ```shell
 helm repo add timschoenle https://timschoenle.github.io/helm-charts
 helm repo update
 
-helm install [RELEASE_NAME] timschoenle/s3-bucket-perma-link \
-  --namespace [NAMESPACE] --create-namespace \
-  --values values.yaml
+helm install [RELEASE_NAME] timschoenle/s3-bucket-perma-link   --namespace [NAMESPACE] --create-namespace   --values values.yaml
 ```
 
 Upgrade with `helm upgrade [RELEASE_NAME] timschoenle/s3-bucket-perma-link -n [NAMESPACE]`,
@@ -44,42 +41,116 @@ remove with `helm uninstall [RELEASE_NAME] -n [NAMESPACE]`.
 
 ## Mapping paths to objects
 
-`application.handler.entries` is the whole configuration: one key per URL path, whose value is
-a list of `"bucket,key"` pairs.
+`bucket.entries` is the whole configuration: one entry per URL path, naming the bucket and the
+object key it resolves to.
 
 ```yaml
-application:
-  handler:
-    entries:
-      latest-report:
-        - "company-reports,2024/q4-report.pdf"
-      user-guide:
-        - "documentation,guides/user-guide.pdf"
+bucket:
+  entries:
+    latest-report:
+      bucket: company-reports
+      object: 2024/q4-report.pdf
+    "guides/user-guide":
+      bucket: documentation
+      object: guides/user-guide.pdf
 
-  s3:
-    secretName: s3-credentials
-    host: s3.eu-central-1.amazonaws.com
-    region: eu-central-1
+s3:
+  host: s3.eu-central-1.amazonaws.com
+  region: eu-central-1
+
+existingSecret: s3-credentials
 ```
 
 `GET /latest-report` then serves `2024/q4-report.pdf` out of `company-reports`. Paths are
 declared, not derived — a request for anything not listed here is not proxied, so the bucket
 cannot be walked through this service.
 
-Changing an entry is a values change and a rollout; the URL is unaffected.
+Changing an entry is a values change and no rollout: the service watches its configuration
+directory and rebuilds its bucket clients in place. The URL is unaffected either way.
+
+## Configuration
+
+Everything the service reads is rendered into one `config.toml`, mounted as a ConfigMap and
+pointed at by `S3_PERMA_LINK_CONFIG`. Nothing is passed as an environment variable, and that is
+deliberate: the loader **fails the boot on a key supplied by both the environment and a file**
+rather than resolving it by precedence, and a value that lives in a file is one the kubelet can
+rotate under a running process — which is what lets a rotated S3 credential take effect without
+a restart.
+
+The values above cover the whole documented surface. `config` takes the raw TOML tree for
+anything they do not, merged over the derived one, and `configExtraToml` is appended verbatim
+for what the renderer cannot express, notably arrays of tables.
+
+Because the service rebuilds itself when a mount changes, this chart publishes **no
+`checksum/*` pod annotations by default** — a configuration change reloads rather than rolls.
+Set `configMount.rolloutOnChange: true` to make it behave like an ordinary image bump instead.
+`telemetry.*` is installed once per process and needs a restart either way.
+
+`s3.accessKey` / `s3.secretKey` are accepted as an alternative to `existingSecret` and make the
+chart render the Secret itself. That puts the credentials into `values.yaml` and into the Helm
+release object, where anyone who can run `helm get values` can read them — use it for a
+throwaway cluster, not for anything real. `existingSecret` wins if both are set.
 
 ## Non-AWS endpoints
 
-`application.s3.host` takes any S3-compatible API endpoint, including a port. `region` is still
-required — most implementations only use it to build the request signature, but the signature
-is rejected if it disagrees with what the server expects.
+`s3.host` takes any S3-compatible API endpoint, including a port. `region` is still required —
+most implementations only use it to build the request signature, but the signature is rejected
+if it disagrees with what the server expects.
 
 ```yaml
+s3:
+  host: minio.example.com:9000
+  region: us-east-1
+
+existingSecret: s3-credentials
+```
+
+## Upgrading
+
+### 2.x to 3.0
+
+Chart 3.0 tracks the service's 1.0 release, which replaced its environment-only configuration
+with the layered, file-first loader every chart in this repository now uses. The values that
+described that environment are gone; a `helm upgrade` with 2.x values fails schema validation
+naming the offending key rather than starting a pod on the defaults.
+
+| Before | After |
+|---|---|
+| `application.server.host` | `server.host` |
+| `application.server.port` | `server.port` |
+| `application.s3.host` | `s3.host` |
+| `application.s3.region` | `s3.region` |
+| `application.s3.accessKey` | `s3.accessKey` |
+| `application.s3.secretKey` | `s3.secretKey` |
+| `application.s3.secretName` | `existingSecret` |
+| `application.handler.entries` | `bucket.entries` |
+| `application.logLevel` | `telemetry.logLevel` |
+| `application.sentryDsn` | `telemetry.sentryDsn` |
+
+Two changes need work beyond a rename:
+
+**Entries are mappings, not `"bucket,object"` strings.**
+
+```yaml
+# before
 application:
-  s3:
-    secretName: s3-credentials
-    host: minio.example.com:9000
-    region: us-east-1
+  handler:
+    entries:
+      latest-report:
+        - "company-reports,2024/q4-report.pdf"
+
+# after
+bucket:
+  entries:
+    latest-report:
+      bucket: company-reports
+      object: 2024/q4-report.pdf
+```
+
+**An existing Secret has to be re-keyed** to `s3__access_key` and `s3__secret_key`:
+
+```shell
+kubectl create secret generic s3-credentials   --namespace [NAMESPACE]   --from-literal=s3__access_key="$(kubectl get secret s3-credentials -n [NAMESPACE] -o jsonpath='{.data.access_key}' | base64 -d)"   --from-literal=s3__secret_key="$(kubectl get secret s3-credentials -n [NAMESPACE] -o jsonpath='{.data.secret_key}' | base64 -d)"   --dry-run=client -o yaml | kubectl apply -f -
 ```
 
 ## Publishing it
@@ -130,19 +201,16 @@ networkPolicy:
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | affinity | object | `{}` | Explicit affinity rules. Wins over `podAntiAffinity`. |
-| application.handler.entries | object | `{}` | Handler configuration defining static routes and their S3 mappings. Each key represents a URL path, and the value is a list of "bucket,file" pairs. Example: ```yaml entries:   myfile: ["bucket1,file.txt"]   mydir: ["bucket2,dir/index.html"] ``` |
-| application.logLevel | string | `"info"` | Log level for application output. |
-| application.s3 | object | `{"host":"s3.amazon.com","region":"eu-central-1","secretName":""}` | Configuration for connecting to an S3-compatible service. |
-| application.s3.host | string | `"s3.amazon.com"` | S3-compatible API endpoint. Example: "https://s3.amazonaws.com" or "https://minio.yourdomain.com" |
-| application.s3.region | string | `"eu-central-1"` | AWS region or S3 region identifier. Used for authenticating with region-specific endpoints. |
-| application.s3.secretName | string | `""` | Name of an existing Kubernetes Secret containing S3 credentials. The secret must include `access_key` and `secret_key` fields. |
-| application.sentryDsn | string | `""` | Sentry DSN for error tracking and reporting. Leave empty to disable Sentry integration. |
-| application.server | object | `{"host":"0.0.0.0","port":8080}` | HTTP server configuration. Defines where the application listens for incoming connections. |
-| application.server.host | string | `"0.0.0.0"` | Host address to bind the HTTP server. Typically `0.0.0.0` to listen on all network interfaces. |
-| application.server.port | int | `8080` | Port number the server listens on. |
 | automountServiceAccountToken | bool | `false` | Mount the ServiceAccount API token into the pod. Set on the pod itself, which is what actually keeps the token out of the container: the ServiceAccount-level setting is ignored as soon as a pod names a different account. |
+| bucket.entries | object | `{}` | One entry per permanent link (`bucket.entries`), keyed by the request path it is served at and valued by the bucket and object key it resolves to. Required — a server with no entry serves nothing. Example: ```yaml entries:   "docs/handbook":     bucket: media     object: handbook.pdf   changelog:     bucket: media     object: releases/CHANGELOG.md ``` |
 | commonAnnotations | object | `{}` | Annotations added to every object this chart creates. |
 | commonLabels | object | `{}` | Labels added to every object this chart creates. |
+| config | object | `{}` | Extra configuration, expressed as the TOML tree of [the service's README](https://github.com/TimSchoenle/s3-bucket-perma-link#configuration) (`server.host`, `bucket.entries`, ...). Merged over everything the chart derives from the values above, so it can both extend and override them. Rendered into the mounted ConfigMap — never into the environment, which the loader refuses to combine with a file. |
+| configExtraToml | string | `""` | Verbatim TOML appended after the rendered configuration. The escape hatch for anything the chart's TOML renderer cannot express, notably arrays of tables. |
+| configMount.configDir | string | `"/etc/s3-bucket-perma-link/config"` | Directory the rendered `config.toml` is mounted at, passed as `S3_PERMA_LINK_CONFIG`. |
+| configMount.rolloutOnChange | bool | `false` | Add `checksum/*` pod annotations so a configuration change rolls the Deployment. Off by default, and deliberately so: the service watches the directories its configuration came from and rebuilds its bucket clients and listener in place when the kubelet updates the mounted ConfigMap or Secret, which is strictly better than a rollout. Turn this on only if you want configuration changes to behave like an ordinary image bump. `telemetry.*` is installed once per process and needs a restart either way. |
+| configMount.secretsDir | string | `"/etc/s3-bucket-perma-link/secrets"` | Directory the credential files are mounted at, passed as `S3_PERMA_LINK_SECRETS_DIR`. |
+| existingSecret | string | `""` | Name of an existing Secret holding the S3 credentials, which keeps them out of `values.yaml` and out of the Helm release object. **Its keys are the configuration paths, not free-form names**: `s3__access_key` and `s3__secret_key`, because the file name is what the loader parses. Set, the chart renders no Secret of its own and `s3.accessKey` / `s3.secretKey` are ignored. |
 | extraEnv | list | `[]` | Additional environment variables for the application container. |
 | extraVolumeMounts | list | `[]` | Additional volume mounts added to the application container. |
 | extraVolumes | list | `[]` | Additional volumes added to the pod. |
@@ -150,7 +218,7 @@ networkPolicy:
 | image.pullPolicy | string | `""` | The image pull policy. Empty resolves automatically from the tag/digest. |
 | image.registry | string | `""` | Registry host. Empty means Docker Hub. |
 | image.repository | string | `"timmi6790/s3-bucket-perma-link"` | The container image repository. |
-| image.tag | string | `"v0.3.24@sha256:f3e960670fccf8e46d268ca091fcc12950b469f82de9d08d939eb19a53fb88bf"` | The container image tag, pinned by digest (`vX.Y.Z@sha256:...`). The digest pins the pull, while the tag stays on as the readable version marker. Defaults to the chart's `appVersion` when empty. |
+| image.tag | string | `"v1.0.0@sha256:eb402090337f7123a489e0a5f386d6e5e89f587e6d48d1df403b8d3c827bbdbb"` | The container image tag, pinned by digest (`vX.Y.Z@sha256:...`). The digest pins the pull, while the tag stays on as the readable version marker. Defaults to the chart's `appVersion` when empty. |
 | imagePullSecrets | list | `[]` | Optional image pull secrets for private registries. |
 | ingress.annotations | object | `{}` | Custom annotations for the Ingress resource. Useful for configuring ingress controllers (e.g., cert-manager, rate limits). |
 | ingress.enabled | bool | `false` | Enable or disable Kubernetes Ingress resource creation. Set to `true` to expose the service externally via Ingress. |
@@ -222,8 +290,14 @@ networkPolicy:
 | resources.requests.memory | string | `"15Mi"` | Minimum memory requested by the container. |
 | resourcesPreset | string | `""` | Named resource sizing. Ignored when `resources` is set. |
 | revisionHistoryLimit | int | `3` | Number of old ReplicaSets retained for rollback. |
+| s3.accessKey | string | `""` | S3 access key (`s3.access_key`). Rendered into the chart's Secret and mounted as a file, so a rotation is picked up without a restart. Required unless `existingSecret` supplies it. |
+| s3.host | string | `"s3.amazon.com"` | S3-compatible API endpoint (`s3.host`), e.g. `s3.eu-central-1.amazonaws.com` or `minio.example.com`. |
+| s3.region | string | `"eu-central-1"` | Region identifier used when signing requests (`s3.region`). |
+| s3.secretKey | string | `""` | S3 secret key (`s3.secret_key`). Required unless `existingSecret` supplies it. |
 | securityContext | object | `{}` | Container security context, merged over the preset. A writable /tmp is provided automatically via an emptyDir volume. |
 | securityContextPreset | string | `"restricted"` | Container security context baseline. `restricted` drops all Linux capabilities and forbids privilege escalation, running as root and a writable root filesystem. |
+| server.host | string | `"0.0.0.0"` | Bind address (`server.host`). `0.0.0.0` is what makes the Service reach the listener. |
+| server.port | int | `8080` | Bind port (`server.port`). Also the container port, the Service target and what every probe and NetworkPolicy rule is written against. |
 | service.port | int | `80` | Port that the Kubernetes Service will expose. Typically maps to `application.server.port`. |
 | service.type | string | `"ClusterIP"` | Kubernetes Service type that exposes the application. |
 | serviceAccount.annotations | object | `{}` | Additional annotations for the service account |
@@ -240,6 +314,8 @@ networkPolicy:
 | startupProbe.periodSeconds | int | `5` | Probe interval. |
 | startupProbe.timeoutSeconds | int | `3` | Probe timeout. |
 | strategy | object | `{}` | Deployment update strategy. Empty uses the Kubernetes default rolling update. |
+| telemetry.logLevel | string | `"info"` | Log level (`telemetry.log_level`). |
+| telemetry.sentryDsn | string | `""` | Sentry DSN (`telemetry.sentry_dsn`). Empty disables Sentry entirely. |
 | terminationGracePeriodSeconds | int | `30` | Grace period for pod shutdown. |
 | tolerations | list | `[]` | Tolerations for pod assignment. |
 | topologySpreadConstraints | list | `[]` | Pod topology spread constraints for availability. |

@@ -39,12 +39,25 @@ spec:
         {{- if and .Values.metrics.enabled .Values.metrics.port }}
         {{- $ports = list (dict "name" "metrics" "containerPort" (int .Values.metrics.port) "protocol" "TCP") }}
         {{- end }}
+        {{- /*
+          Configuration reaches the container as files, never as environment variables: the
+          loader fails the boot on a key supplied by both, and the webhook stays out of
+          `kubectl describe pod` and out of every child process's environment. The two
+          variables below decide what the file layers *are*, so they are the one thing that
+          cannot itself be file-sourced.
+        */}}
+        {{- $secretKeys := include "netcup-offer-bot.secretKeys" . | fromYamlArray }}
+        {{- $mounts := concat
+              (include "common.fileConfig.volumeMounts" (dict "ctx" $ "secretKeys" $secretKeys) | fromYamlArray)
+              (list (dict "name" "data" "mountPath" "/app/data")) }}
         {{- include "common.container" (dict
               "ctx" $
               "ports" $ports
-              "envFrom" (list (dict "configMapRef" (dict "name" (include "common.fullname" .))))
-              "env" (list (dict "name" "WEB_HOOK" "valueFrom" (dict "secretKeyRef" (dict "name" (include "common.secretName" .) "key" "webHook"))))
-              "volumeMounts" (list (dict "name" "data" "mountPath" "/app/data"))
+              "env" (include "common.fileConfig.env" (dict "ctx" $ "prefix" "NETCUP_OFFER_BOT" "secretKeys" $secretKeys) | fromYamlArray)
+              "volumeMounts" $mounts
             ) | nindent 8 }}
+      {{- $volumes := concat
+            (include "common.fileConfig.volumes" (dict "ctx" $ "secretKeys" $secretKeys) | fromYamlArray)
+            (list (include "netcup-offer-bot.dataVolume" . | fromYaml)) }}
       volumes:
-        {{- include "common.volumes" (dict "ctx" $ "volumes" (list (include "netcup-offer-bot.dataVolume" . | fromYaml))) | nindent 8 }}
+        {{- include "common.volumes" (dict "ctx" $ "volumes" $volumes) | nindent 8 }}

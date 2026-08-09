@@ -110,6 +110,37 @@ The server does not reload its configuration — only the loader half of the lib
 the chart keeps the conventional `checksum/config` pod annotation: a configuration change rolls
 the Deployment, which is the only way it takes effect.
 
+## Content-Security-Policy
+
+The header the server sends is derived, not configured: each document's inline `<script>` tags
+are hashed out of the response body itself, so the policy cannot drift from what is sent. The
+`csp` values decide only what that policy has to make room for.
+
+```yaml
+csp:
+  hashInlineScripts: true
+  cloudflare:
+    scriptNonce: true    # for the script Cloudflare's bot products inject at the edge
+    turnstile: false     # admits challenges.cloudflare.com in script-src *and* frame-src
+    webAnalytics: false  # admits the beacon and the endpoint it reports to
+```
+
+`scriptNonce` is on by default, because a script injected at the edge lands after the server
+hashed what it rendered — no hash can cover it, and without the nonce `script-src` refuses it
+and the bot detection silently never runs. The server discharges half of what that costs by
+serving every document `Cache-Control: no-cache`. The other half is yours:
+
+> [!IMPORTANT]
+> No Cloudflare Cache Rule may cache the shell. A "Cache Everything" rule overrides the origin's
+> `Cache-Control` and pins one nonce across every reader for the lifetime of the cache entry,
+> which is exactly what the nonce exists to prevent. Nothing inside the pod can detect it.
+
+**If a page renders blank**, the policy is refusing a script it should have admitted.
+`hashInlineScripts: false` restores `'unsafe-inline'` — but only together with
+`cloudflare.scriptNonce: false`, since a browser ignores `'unsafe-inline'` as soon as the policy
+carries a nonce. The chart rejects that pair at render time rather than letting the pod
+CrashLoopBackOff on its own boot check.
+
 ## Incremental static regeneration
 
 ISR is on by default and caches into `/tmp/isr`, inside the writable `emptyDir` the chart

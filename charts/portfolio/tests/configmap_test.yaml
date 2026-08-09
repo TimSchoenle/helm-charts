@@ -38,6 +38,82 @@ tests:
           path: data["config.toml"]
           pattern: 'dist_dir = "/srv/public"'
 
+  # The policy itself is derived from the response body and is not configurable; what the chart
+  # writes is only what it has to make room for. `script_nonce` is on by default because this
+  # site is delivered through a Cloudflare Tunnel with the bot products active.
+  - it: renders the Content-Security-Policy defaults
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\[csp\]\nhash_inline_scripts = true'
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\[csp\.cloudflare\]\nscript_nonce = true\nturnstile = false\nweb_analytics = false'
+
+  - it: admits the Cloudflare products that are switched on
+    set:
+      csp.cloudflare.turnstile: true
+      csp.cloudflare.webAnalytics: true
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: 'turnstile = true\nweb_analytics = true'
+
+  # A deployment with no Cloudflare bot product in front of it. Legitimate, and deliberately
+  # not caught by the validation below.
+  - it: allows the edge nonce to be dropped while the hashes stay on
+    set:
+      csp.cloudflare.scriptNonce: false
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: 'hash_inline_scripts = true'
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: 'script_nonce = false'
+
+  # The escape hatch, which only works as a pair: `'unsafe-inline'` is what dropping the hashes
+  # restores, and a browser ignores it as soon as the policy carries a nonce.
+  - it: allows the escape hatch when both keys move together
+    set:
+      csp.hashInlineScripts: false
+      csp.cloudflare.scriptNonce: false
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: 'hash_inline_scripts = false'
+
+  - it: refuses hashes off while the edge nonce is still on
+    set:
+      csp.hashInlineScripts: false
+    asserts:
+      - failedTemplate:
+          errorPattern: "csp.hashInlineScripts is false while csp.cloudflare.scriptNonce is true"
+
+  # The pair is checked against the effective tree, so supplying it through `config` is caught
+  # exactly as the first-class values are.
+  - it: catches the refused pair supplied through the raw config tree
+    set:
+      config:
+        csp:
+          hash_inline_scripts: false
+    asserts:
+      - failedTemplate:
+          errorPattern: "csp.hashInlineScripts is false while csp.cloudflare.scriptNonce is true"
+
+  # `configExtraToml` is appended verbatim and never parsed, so the chart cannot see the whole
+  # configuration and steps out of the way rather than rejecting what it cannot check.
+  - it: steps aside when configExtraToml is in play
+    set:
+      csp.hashInlineScripts: false
+      configExtraToml: |
+        [csp.cloudflare]
+        script_nonce = false
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: 'hash_inline_scripts = false'
+
   # `PORT`, `IP` and `RUST_LOG` belong to the Dioxus toolchain, which reads them from the
   # environment itself. Writing them into the `PORTFOLIO_` configuration file would be writing
   # keys nothing reads.

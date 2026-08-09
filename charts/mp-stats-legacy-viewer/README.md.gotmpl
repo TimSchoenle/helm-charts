@@ -77,6 +77,39 @@ The server does not reload its configuration, so the chart keeps the conventiona
 `checksum/configmap` pod annotation: a configuration change rolls the Deployment, which is the
 only way it takes effect.
 
+## Content-Security-Policy
+
+The header is derived, not configured: at startup the server reads the `index.html` in
+`server.distDir` and hashes every inline `<script>` in it, so the policy cannot drift from the
+frontend build. An unreadable or unscannable shell fails the boot before the listener binds.
+
+What the values decide is which Cloudflare products this deployment runs. All are off, because
+each one widens the policy:
+
+```yaml
+server:
+  csp:
+    enabled: true
+    cloudflare:
+      scriptNonce: false   # for the script Cloudflare's bot products inject at the edge
+      turnstile: false     # admits challenges.cloudflare.com in script-src and frame-src
+      webAnalytics: false  # admits the beacon and the endpoint it reports to
+```
+
+Turn `scriptNonce` on when Bot Fight Mode, JavaScript Detections or the challenge platform sit
+in front of this origin: they inject an inline script at the edge, after the shell was hashed,
+so no hash can cover it and `script-src` refuses it — bot management looks enabled and does
+nothing. The nonce also makes every document `Cache-Control: no-cache`, which comes with one
+condition the chart cannot enforce:
+
+> [!IMPORTANT]
+> No Cloudflare Cache Rule may cache the shell. A "Cache Everything" rule overrides the origin's
+> `Cache-Control`, satisfying the obligation at the origin and violating it at the edge — one
+> nonce shared by every reader of that cache entry.
+
+`enabled: false` drops the header entirely, and is only right when something in front of this
+server already sets one.
+
 ## Upgrading
 
 ### 1.x to 2.0

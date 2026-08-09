@@ -51,6 +51,36 @@ tests:
           path: data["config.toml"]
           pattern: '\[converter\.cache\]\nenabled = false'
 
+  # The policy itself is derived from the shell at startup and is not configurable; what the
+  # chart writes is only which Cloudflare products it has to make room for. All off by default,
+  # because each one widens the policy.
+  - it: renders the Content-Security-Policy defaults
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\[server\.csp\]\nenabled = true'
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\[server\.csp\.cloudflare\]\nscript_nonce = false\nturnstile = false\nweb_analytics = false'
+
+  - it: admits the Cloudflare products that are switched on
+    set:
+      server.csp.cloudflare.scriptNonce: true
+      server.csp.cloudflare.turnstile: true
+      server.csp.cloudflare.webAnalytics: true
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: 'script_nonce = true\nturnstile = true\nweb_analytics = true'
+
+  - it: allows the header to be turned off for a proxy that sets its own
+    set:
+      server.csp.enabled: false
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\[server\.csp\]\nenabled = false'
+
   - it: appends configExtraToml verbatim
     set:
       configExtraToml: |

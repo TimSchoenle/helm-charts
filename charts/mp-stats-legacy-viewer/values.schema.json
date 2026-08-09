@@ -982,7 +982,7 @@
           "type": "string"
         },
         "tag": {
-          "default": "v0.15.0@sha256:f2bd04006f3942f5b725e9f2a6fff4f88fe9c03fbb558f63edb224b45b190a7a",
+          "default": "v0.16.0@sha256:3bd63be239ea5a290c59bdc9527d0869e25b7a6adb6f6c3ab1b360e3a7ec74a4",
           "description": "The container image tag, pinned by digest (`vX.Y.Z\npull, while the tag stays on as the readable version marker. Defaults to the chart's\n`appVersion` when empty.",
           "required": [],
           "title": "tag",
@@ -1549,6 +1549,50 @@
     "server": {
       "additionalProperties": true,
       "properties": {
+        "csp": {
+          "additionalProperties": true,
+          "description": "The `Content-Security-Policy` the server attaches to every document. The policy itself is\nnot configurable — it is derived at startup from the `index.html` in `distDir`, hashing every\ninline `\u003cscript\u003e` in it, so it cannot drift from the frontend build. An unreadable shell\nfails the boot before the listener binds.",
+          "properties": {
+            "cloudflare": {
+              "additionalProperties": true,
+              "description": "Concessions to the Cloudflare products running in front of this deployment. All off:\neach one widens the policy, and only for a product that is actually switched on.",
+              "properties": {
+                "scriptNonce": {
+                  "default": false,
+                  "description": "Reserve a per-response nonce in `script-src` and serve documents `Cache-Control:\nno-cache` (`server.csp.cloudflare.script_nonce`). Needed by the products that inject an\ninline script at the edge — Bot Fight Mode, JavaScript Detections, the challenge\nplatform — which no hash can cover, because they run after the shell was hashed. It\ncarries one obligation the chart cannot enforce: **no Cloudflare Cache Rule may cache\nthe shell**, or a single nonce is shared by every reader of that cache entry.",
+                  "required": [],
+                  "title": "scriptNonce",
+                  "type": "boolean"
+                },
+                "turnstile": {
+                  "default": false,
+                  "description": "Admit `https://challenges.cloudflare.com` in `script-src` and `frame-src`\n(`server.csp.cloudflare.turnstile`), for a Turnstile widget rendered in a page this\nserver serves.",
+                  "required": [],
+                  "title": "turnstile",
+                  "type": "boolean"
+                },
+                "webAnalytics": {
+                  "default": false,
+                  "description": "Admit the Web Analytics beacon and the endpoint it reports to\n(`server.csp.cloudflare.web_analytics`). For the manually embedded snippet only — the\nautomatic edge injection needs `scriptNonce` instead.",
+                  "required": [],
+                  "title": "webAnalytics",
+                  "type": "boolean"
+                }
+              },
+              "required": [],
+              "title": "cloudflare"
+            },
+            "enabled": {
+              "default": true,
+              "description": "Attach the header at all (`server.csp.enabled`). Turn it off only when something in\nfront of this server already sets one.",
+              "required": [],
+              "title": "enabled",
+              "type": "boolean"
+            }
+          },
+          "required": [],
+          "title": "csp"
+        },
         "dataDir": {
           "default": "/dist/data",
           "description": "The converter's output, served under `/data` (`server.data_dir`). The default is where\nthe image puts it.",

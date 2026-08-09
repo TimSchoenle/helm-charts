@@ -1,6 +1,6 @@
 # mp-stats-legacy-viewer
 
-![Version: 2.0.0](https://img.shields.io/badge/Version-2.0.0-informational?style=flat-square) ![AppVersion: v0.15.0](https://img.shields.io/badge/AppVersion-v0.15.0-informational?style=flat-square)
+![Version: 2.1.0](https://img.shields.io/badge/Version-2.1.0-informational?style=flat-square) ![AppVersion: v0.16.0](https://img.shields.io/badge/AppVersion-v0.16.0-informational?style=flat-square)
 
 MP Stats Legacy Viewer
 
@@ -75,6 +75,39 @@ The server does not reload its configuration, so the chart keeps the conventiona
 `checksum/configmap` pod annotation: a configuration change rolls the Deployment, which is the
 only way it takes effect.
 
+## Content-Security-Policy
+
+The header is derived, not configured: at startup the server reads the `index.html` in
+`server.distDir` and hashes every inline `<script>` in it, so the policy cannot drift from the
+frontend build. An unreadable or unscannable shell fails the boot before the listener binds.
+
+What the values decide is which Cloudflare products this deployment runs. All are off, because
+each one widens the policy:
+
+```yaml
+server:
+  csp:
+    enabled: true
+    cloudflare:
+      scriptNonce: false   # for the script Cloudflare's bot products inject at the edge
+      turnstile: false     # admits challenges.cloudflare.com in script-src and frame-src
+      webAnalytics: false  # admits the beacon and the endpoint it reports to
+```
+
+Turn `scriptNonce` on when Bot Fight Mode, JavaScript Detections or the challenge platform sit
+in front of this origin: they inject an inline script at the edge, after the shell was hashed,
+so no hash can cover it and `script-src` refuses it — bot management looks enabled and does
+nothing. The nonce also makes every document `Cache-Control: no-cache`, which comes with one
+condition the chart cannot enforce:
+
+> [!IMPORTANT]
+> No Cloudflare Cache Rule may cache the shell. A "Cache Everything" rule overrides the origin's
+> `Cache-Control`, satisfying the obligation at the origin and violating it at the edge — one
+> nonce shared by every reader of that cache entry.
+
+`enabled: false` drops the header entirely, and is only right when something in front of this
+server already sets one.
+
 ## Upgrading
 
 ### 1.x to 2.0
@@ -123,7 +156,7 @@ on the startup and liveness probes, so the chart omits it there.
 | image.pullPolicy | string | `""` | The image pull policy. Empty resolves automatically from the tag/digest. |
 | image.registry | string | `""` | Registry host. Empty means Docker Hub. |
 | image.repository | string | `"timschoenle/mp-stats-legacy-viewer"` | The container image repository. |
-| image.tag | string | `"v0.15.0@sha256:f2bd04006f3942f5b725e9f2a6fff4f88fe9c03fbb558f63edb224b45b190a7a"` | The container image tag, pinned by digest (`vX.Y.Z@sha256:...`). The digest pins the pull, while the tag stays on as the readable version marker. Defaults to the chart's `appVersion` when empty. |
+| image.tag | string | `"v0.16.0@sha256:3bd63be239ea5a290c59bdc9527d0869e25b7a6adb6f6c3ab1b360e3a7ec74a4"` | The container image tag, pinned by digest (`vX.Y.Z@sha256:...`). The digest pins the pull, while the tag stays on as the readable version marker. Defaults to the chart's `appVersion` when empty. |
 | imagePullSecrets | list | `[]` | Optional image pull secrets for private registries. |
 | ingress.annotations | object | `{}` | Custom annotations for the Ingress resource. Useful for configuring ingress controllers (e.g., cert-manager, rate limits). |
 | ingress.enabled | bool | `false` | Enable or disable Kubernetes Ingress resource creation. Set to `true` to expose the service externally via Ingress. |
@@ -197,6 +230,12 @@ on the startup and liveness probes, so the chart omits it there.
 | revisionHistoryLimit | int | `3` | Number of old ReplicaSets retained for rollback. |
 | securityContext | object | `{}` | Container security context, merged over the preset. A writable /tmp is provided automatically via an emptyDir volume. |
 | securityContextPreset | string | `"restricted"` | Container security context baseline. `restricted` drops all Linux capabilities and forbids privilege escalation, running as root and a writable root filesystem. |
+| server.csp | object | `{"cloudflare":{"scriptNonce":false,"turnstile":false,"webAnalytics":false},"enabled":true}` | The `Content-Security-Policy` the server attaches to every document. The policy itself is not configurable — it is derived at startup from the `index.html` in `distDir`, hashing every inline `<script>` in it, so it cannot drift from the frontend build. An unreadable shell fails the boot before the listener binds. |
+| server.csp.cloudflare | object | `{"scriptNonce":false,"turnstile":false,"webAnalytics":false}` | Concessions to the Cloudflare products running in front of this deployment. All off: each one widens the policy, and only for a product that is actually switched on. |
+| server.csp.cloudflare.scriptNonce | bool | `false` | Reserve a per-response nonce in `script-src` and serve documents `Cache-Control: no-cache` (`server.csp.cloudflare.script_nonce`). Needed by the products that inject an inline script at the edge — Bot Fight Mode, JavaScript Detections, the challenge platform — which no hash can cover, because they run after the shell was hashed. It carries one obligation the chart cannot enforce: **no Cloudflare Cache Rule may cache the shell**, or a single nonce is shared by every reader of that cache entry. |
+| server.csp.cloudflare.turnstile | bool | `false` | Admit `https://challenges.cloudflare.com` in `script-src` and `frame-src` (`server.csp.cloudflare.turnstile`), for a Turnstile widget rendered in a page this server serves. |
+| server.csp.cloudflare.webAnalytics | bool | `false` | Admit the Web Analytics beacon and the endpoint it reports to (`server.csp.cloudflare.web_analytics`). For the manually embedded snippet only — the automatic edge injection needs `scriptNonce` instead. |
+| server.csp.enabled | bool | `true` | Attach the header at all (`server.csp.enabled`). Turn it off only when something in front of this server already sets one. |
 | server.dataDir | string | `"/dist/data"` | The converter's output, served under `/data` (`server.data_dir`). The default is where the image puts it. |
 | server.distDir | string | `"/dist"` | Built frontend served as the SPA (`server.dist_dir`). The server refuses to start unless it holds an `index.html`, which is both the entry point and the fallback for unknown routes. The default is where the image puts it — change it only for an image that differs. |
 | server.host | string | `"0.0.0.0"` | Host half of the bind address (`server.bind_addr`). `0.0.0.0` is what makes the Service reach the listener. |

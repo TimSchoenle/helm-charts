@@ -341,6 +341,30 @@ internal:
     # cert-manager Secret and a trust-manager ConfigMap — and a volume can only carry one.
     caDir: /etc/tankovault/tls-ca
 
+    # @schema
+    # type: integer
+    # minimum: 1
+    # maximum: 65535
+    # @schema
+    # -- Container port carrying `/health` and `/ready` in **plaintext**, beside the mutually
+    # authenticated listener. A kubelet probe presents no client certificate, so on the mTLS port
+    # its plain `GET /health` is answered with a TLS alert and every replica is killed by its own
+    # startup probe — the chart therefore opens this port and points the three probes at it on
+    # every service that serves the mTLS listener (`control-plane`, `worker`, `sync`,
+    # `challenge-solver`, `render`). `api` and `notifier` hold a certificate but serve no mTLS
+    # listener, and their probes are untouched.
+    #
+    # It carries the two probes and nothing else: the scrape stays on `metrics.port`, so a
+    # deployment that deliberately merged the scrape onto an authenticated port keeps it there.
+    # The port is opened on the container only and not published on the Service — the kubelet
+    # reaches the pod directly.
+    #
+    # There is no off switch: upstream drops the listener only for a literal `null`, which this
+    # chart's TOML renderer cannot express, and turning it off would break the probes the chart
+    # writes. Ignored entirely under `identity: token`, where the probes answer on the request
+    # port like everywhere else.
+    probePort: 9091
+
   # @schema
   # type: object
   # additionalProperties:

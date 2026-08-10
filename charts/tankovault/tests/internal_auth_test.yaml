@@ -4,6 +4,7 @@ templates:
   - deployment.yaml
   - certificate.yaml
   - bundle.yaml
+  - service.yaml
 values:
   - ../ci/internal-mtls.yaml
 capabilities:
@@ -178,10 +179,10 @@ tests:
           path: spec.template.spec.volumes[?(@.name=="internal-ca")].configMap.name
           value: tankovault-ca
 
-  - it: leaves the probes on the plain listener
-    # `/health` and `/ready` are mounted outside the authenticated stack and stay plaintext
-    # under mtls, because a kubelet probe presents no client certificate. Giving these an
-    # `HTTPS` scheme would fail every probe on every pod.
+  - it: leaves the probes of a service that serves no mTLS listener where they are
+    # `api` holds a certificate to present to its peers, but serves its own port to the frontend
+    # as ordinary public traffic — so its probes stay on `http` and stay plaintext. Giving any of
+    # these an `HTTPS` scheme would fail every probe on every pod.
     template: deployment.yaml
     documentSelector:
       path: metadata.name
@@ -190,12 +191,153 @@ tests:
       - equal:
           path: spec.template.spec.containers[0].livenessProbe.httpGet.path
           value: /health
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe.httpGet.port
+          value: http
       - notExists:
           path: spec.template.spec.containers[0].livenessProbe.httpGet.scheme
       - notExists:
           path: spec.template.spec.containers[0].readinessProbe.httpGet.scheme
       - notExists:
           path: spec.template.spec.containers[0].startupProbe.httpGet.scheme
+      - notContains:
+          path: spec.template.spec.containers[0].ports
+          content:
+            name: probes
+            containerPort: 9091
+            protocol: TCP
+
+  - it: moves the probes onto the plaintext port on a service that serves mTLS
+    # The failure this exists to prevent: a kubelet probe presents no client certificate, so on
+    # the mTLS listener its plain `GET /health` is answered with a TLS alert and every replica of
+    # every internal service is killed by its own startup probe.
+    template: deployment.yaml
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-control-plane
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].ports
+          content:
+            name: probes
+            containerPort: 9091
+            protocol: TCP
+      - equal:
+          path: spec.template.spec.containers[0].startupProbe.httpGet.port
+          value: probes
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe.httpGet.port
+          value: probes
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.httpGet.port
+          value: probes
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.httpGet.path
+          value: /ready
+
+  - it: tells each mTLS-serving service where to bind the plaintext probes
+    template: configmap.yaml
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-worker-config
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: 'probe_listen = "0\.0\.0\.0:9091"'
+
+  - it: gives no probe listener to a service that only presents a certificate
+    # `notifier` presents its certificate to the broker and serves nothing mutually
+    # authenticated, so a probe listener would be a key it never acts on and a port nothing binds.
+    template: configmap.yaml
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-notifier-config
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: 'cert = "/etc/tankovault/tls/tls\.crt"'
+      - notMatchRegex:
+          path: data["config.toml"]
+          pattern: 'probe_listen'
+
+  - it: keeps the scrape off the probe port
+    # The probe listener carries `/health` and `/ready` and nothing else: a deployment that
+    # merged the scrape onto its mutually authenticated port did so to keep it there.
+    template: deployment.yaml
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-render
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].ports
+          content:
+            name: metrics
+            containerPort: 9090
+            protocol: TCP
+      - contains:
+          path: spec.template.spec.containers[0].ports
+          content:
+            name: probes
+            containerPort: 9091
+            protocol: TCP
+
+  - it: does not publish the probe port on the Service
+    # The kubelet reaches the pod directly, and a credential-free listener needs no second door.
+    template: service.yaml
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-control-plane
+    asserts:
+      - notContains:
+          path: spec.ports
+          content:
+            name: probes
+            port: 9091
+            targetPort: probes
+            protocol: TCP
+
+  - it: honours a probe an operator has already pointed somewhere
+    # Moving a default off a port that cannot answer it is a fix; moving a handler the operator
+    # chose is overriding a decision. Only a handler still aimed at `http` is touched.
+    set:
+      services.controlPlane.livenessProbe.httpGet.port: metrics
+      services.controlPlane.readinessProbe.httpGet.port: 8081
+    template: deployment.yaml
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-control-plane
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe.httpGet.port
+          value: metrics
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.httpGet.port
+          value: 8081
+      - equal:
+          path: spec.template.spec.containers[0].startupProbe.httpGet.port
+          value: probes
+
+  - it: takes an operator's probe port on both halves at once
+    set:
+      internal.tls.probePort: 9191
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].ports
+          content:
+            name: probes
+            containerPort: 9191
+            protocol: TCP
+        template: deployment.yaml
+        documentSelector:
+          path: metadata.name
+          value: RELEASE-NAME-tankovault-sync
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: 'probe_listen = "0\.0\.0\.0:9191"'
+        template: configmap.yaml
+        documentSelector:
+          path: metadata.name
+          value: RELEASE-NAME-tankovault-sync-config
 
   - it: confines the trust bundle to this release's namespace
     # A Bundle is cluster-scoped and one with no selector writes its ConfigMap into every
@@ -373,3 +515,35 @@ tests:
           path: spec.template.spec.volumes[?(@.name=="internal-tls")]
       - notExists:
           path: spec.template.spec.volumes[?(@.name=="internal-ca")]
+
+  - it: opens no probe listener under token identity
+    # Nothing verifies a client certificate in this mode, so `/health` and `/ready` answer on the
+    # request port as they do everywhere else. A second copy of them would be surface nobody
+    # asked for.
+    values:
+      - ../ci/default.yaml
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe.httpGet.port
+          value: http
+        template: deployment.yaml
+        documentSelector:
+          path: metadata.name
+          value: RELEASE-NAME-tankovault-control-plane
+      - notContains:
+          path: spec.template.spec.containers[0].ports
+          content:
+            name: probes
+            containerPort: 9091
+            protocol: TCP
+        template: deployment.yaml
+        documentSelector:
+          path: metadata.name
+          value: RELEASE-NAME-tankovault-control-plane
+      - notMatchRegex:
+          path: data["config.toml"]
+          pattern: 'probe_listen'
+        template: configmap.yaml
+        documentSelector:
+          path: metadata.name
+          value: RELEASE-NAME-tankovault-control-plane-config

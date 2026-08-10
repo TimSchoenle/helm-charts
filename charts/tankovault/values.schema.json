@@ -2860,6 +2860,15 @@
               "title": "existingSecrets",
               "type": "object"
             },
+            "probePort": {
+              "default": 9091,
+              "description": "Container port carrying `/health` and `/ready` in **plaintext**, beside the mutually\nauthenticated listener. A kubelet probe presents no client certificate, so on the mTLS port\nits plain `GET /health` is answered with a TLS alert and every replica is killed by its own\nstartup probe — the chart therefore opens this port and points the three probes at it on\nevery service that serves the mTLS listener (`control-plane`, `worker`, `sync`,\n`challenge-solver`, `render`). `api` and `notifier` hold a certificate but serve no mTLS\nlistener, and their probes are untouched.\n\nIt carries the two probes and nothing else: the scrape stays on `metrics.port`, so a\ndeployment that deliberately merged the scrape onto an authenticated port keeps it there.\nThe port is opened on the container only and not published on the Service — the kubelet\nreaches the pod directly.\n\nThere is no off switch: upstream drops the listener only for a literal `null`, which this\nchart's TOML renderer cannot express, and turning it off would break the probes the chart\nwrites. Ignored entirely under `identity: token`, where the probes answer on the request\nport like everywhere else.",
+              "maximum": 65535,
+              "minimum": 1,
+              "required": [],
+              "title": "probePort",
+              "type": "integer"
+            },
             "sans": {
               "additionalProperties": {
                 "type": "string"

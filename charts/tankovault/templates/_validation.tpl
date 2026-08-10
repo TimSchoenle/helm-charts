@@ -115,6 +115,21 @@ the whole point of per-caller identity is that they cannot.
 {{- end -}}
 {{- end -}}
 
+{{- /*
+The plaintext probe port. It is a third listener inside a pod that already binds two, and a
+collision is not a render-time error anywhere else — it is a container that binds one of them,
+fails on the second with `Address already in use`, and restarts forever.
+*/ -}}
+{{- $probePort := $tls.probePort -}}
+{{- if eq ($probePort | toString) ($ctx.Values.metrics.port | toString) -}}
+{{- $errors = append $errors (printf "internal.tls.probePort and metrics.port are both %v. They are two listeners in the same pod, so the second to bind fails with `Address already in use` and the container restarts forever. Move one of them." $probePort) -}}
+{{- end -}}
+{{- range $service, $spec := (include "tankovault.serviceSpecs" $ctx | fromYaml) -}}
+{{- if and (include "tankovault.servesInternalTls" (dict "ctx" $ctx "service" $service)) (index $ctx.Values.services $service).enabled (eq ($probePort | toString) ($spec.port | toString)) -}}
+{{- $errors = append $errors (printf "internal.tls.probePort is %v, which is also the port %s serves its requests on. The probe listener is a second socket in the same pod and cannot share it." $probePort $spec.slug) -}}
+{{- end -}}
+{{- end -}}
+
 {{- $setTokens := list -}}
 {{- range $caller, $token := ($internal.tokens | default dict) -}}
 {{- if $token -}}{{- $setTokens = append $setTokens (printf "internal.tokens.%s" $caller) -}}{{- end -}}

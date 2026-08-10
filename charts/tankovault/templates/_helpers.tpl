@@ -382,6 +382,26 @@ collapse two services onto one name.
 {{- $_ := set $values "serviceAccount" (dict
       "create" $ctx.Values.serviceAccount.create
       "name" (include "tankovault.serviceAccountName" $ctx)) -}}
+{{- /*
+  Move the probes off the request port on a service that serves mutual TLS. A kubelet probe
+  presents no client certificate, so on that listener its plain `GET /health` is answered with a
+  TLS alert and every replica is killed by its own startup probe; upstream publishes `/health`
+  and `/ready` in plaintext on `internal.tls.probe_listen` for exactly this, and this is the half
+  of the pair that points the probes at it.
+
+  Only a handler still aimed at the `http` port is moved. A probe an operator has already pointed
+  somewhere — another named port, or an `exec`/`tcpSocket` handler entirely — is left alone,
+  because a chart that overrode that would be overriding a decision rather than fixing a default.
+*/ -}}
+{{- if include "tankovault.servesInternalTls" (dict "ctx" $ctx "service" $service) -}}
+{{- range $type := list "startupProbe" "livenessProbe" "readinessProbe" -}}
+{{- $probe := index $values $type | default dict -}}
+{{- $httpGet := $probe.httpGet | default dict -}}
+{{- if eq ($httpGet.port | toString) "http" -}}
+{{- $_ := set $httpGet "port" "probes" -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
 {{- toYaml $values -}}
 {{- end -}}
 

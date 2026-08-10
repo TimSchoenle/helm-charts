@@ -309,6 +309,14 @@ tls:
   cert: {{ printf "%s/tls.crt" $certDir | quote }}
   key: {{ printf "%s/tls.key" $certDir | quote }}
   ca: {{ printf "%s/%s" $caDir $tls.ca.key | quote }}
+  {{- /*
+    Only for a service that actually serves the mTLS listener. `api` and `notifier` hold a
+    certificate to present elsewhere and never bind a probe listener, so the key would sit in
+    their configuration doing nothing. See `tankovault.servesInternalTls`.
+  */}}
+  {{- if include "tankovault.servesInternalTls" (dict "ctx" $ctx "service" $service) }}
+  probe_listen: {{ include "tankovault.probeListen" $ctx | quote }}
+  {{- end }}
 {{- end }}
 {{- with $spec.internalCaller }}
 caller:
@@ -472,6 +480,40 @@ Args: ctx (root), service.
 {{- define "tankovault.hasInternalTls" -}}
 {{- $spec := include "tankovault.spec" .service | fromYaml -}}
 {{- if and $spec.internalIdentity (eq .ctx.Values.internal.identity "mtls") -}}true{{- end -}}
+{{- end -}}
+
+{{/*
+Whether one service *serves* mutual TLS on its own listener — as opposed to merely holding a
+certificate to present elsewhere. Emits "true" or "".
+
+The distinction is the whole reason the probes need a second port. A service that accepts
+privileged callers verifies a client certificate on every connection to its request port, and an
+orchestrator probe presents none: the plain `GET /health` is answered with a TLS alert
+(`malformed HTTP response "\x15\x03\x03…"`) and the kubelet restarts a replica that is perfectly
+healthy. `api` holds a certificate but serves its port to the frontend as ordinary public traffic,
+and `notifier` presents one only to the broker, so neither changes anything about its probes.
+
+`internalPeers` is that predicate exactly: it is the list of callers a service accepts, and it is
+non-empty on precisely the five services upstream hands a plaintext probe router to.
+
+Args: ctx (root), service.
+*/}}
+{{- define "tankovault.servesInternalTls" -}}
+{{- $spec := include "tankovault.spec" .service | fromYaml -}}
+{{- if and $spec.internalPeers (eq .ctx.Values.internal.identity "mtls") -}}true{{- end -}}
+{{- end -}}
+
+{{/*
+The plaintext address `/health` and `/ready` are served on beside an mTLS listener.
+
+`0.0.0.0` rather than the pod IP for the same reason every other listener in this chart binds the
+wildcard: the address is assigned after the container starts, and the kubelet probes whatever it
+was given.
+
+Args: ctx (root).
+*/}}
+{{- define "tankovault.probeListen" -}}
+{{- printf "0.0.0.0:%v" .Values.internal.tls.probePort -}}
 {{- end -}}
 
 {{- define "tankovault.volumes" -}}

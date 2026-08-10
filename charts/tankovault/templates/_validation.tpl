@@ -217,6 +217,38 @@ would otherwise look like a working configuration.
 {{- end -}}
 
 {{- /*
+Branding. Nothing here is required — every field defaults upstream and the shipped identity is a
+complete one — so what is checked is only the settings that would render something no reader ever
+sees, which is the failure mode a rebranded deployment discovers from a screenshot weeks later.
+
+Read through `default dict` at each level: a values file that empties one of these sub-blocks
+outright (`wordmark: ~`) is a strange thing to write but a legal one, and it must produce the same
+"nothing set" as an untouched block rather than a nil-pointer trace from the validator whose whole
+job is to keep operators away from those.
+*/ -}}
+{{- $branding := $ctx.Values.branding | default dict -}}
+{{- $wordmark := $branding.wordmark | default dict -}}
+{{- $copyright := $branding.copyright | default dict -}}
+{{- $licence := $branding.licence | default dict -}}
+{{- if and $wordmark.accent (not $wordmark.lead) -}}
+{{- $errors = append $errors "branding.wordmark.accent is set without branding.wordmark.lead. The accent half is only ever drawn beside a lead half; on its own it is ignored and the lockup falls back to `branding.name` drawn as one word, so this renders none of what you asked for. Set both halves, or neither." -}}
+{{- end -}}
+{{- $dead := list -}}
+{{- if $copyright.holder -}}{{- $dead = append $dead "branding.copyright.holder" -}}{{- end -}}
+{{- if $copyright.year -}}{{- $dead = append $dead "branding.copyright.year" -}}{{- end -}}
+{{- if and $copyright.notice $dead -}}
+{{- $errors = append $errors (printf "branding.copyright.notice is set alongside %s. The notice is printed verbatim and outranks both fields as well as the catalogue's translation of the line, so %s would sit in the release meaning nothing. Keep the notice for a line that `© {year} {holder}` cannot express, or clear it and let the two fields build one." (join " and " $dead) (ternary "they" "it" (gt (len $dead) 1))) -}}
+{{- end -}}
+{{- range $key, $url := (dict "branding.licence.url" $licence.url "branding.projectUrl" $branding.projectUrl "branding.releasesUrl" $branding.releasesUrl) -}}
+{{- if and $url (not (regexMatch "^https?://" $url)) -}}
+{{- $errors = append $errors (printf "%s is %q. Only absolute http(s) URLs are accepted — a scheme-less or relative value is resolved by the browser against this deployment's own origin, so the footer link lands back on the app rather than where you meant." $key $url) -}}
+{{- end -}}
+{{- end -}}
+{{- if and $branding.botUserAgent (not $ctx.Values.services.worker.enabled) -}}
+{{- $errors = append $errors "branding.botUserAgent is set but services.worker.enabled=false. The worker is the only service that makes provider requests, so nothing in this release would send that user-agent. Enable the worker, or clear the value." -}}
+{{- end -}}
+
+{{- /*
 The Cloudflare CSP concessions. Only the frontend assembles a Content-Security-Policy, so with
 that service disabled these flags reach no reader at all — and an operator who set them believes
 their edge-injected scripts are admitted when nothing is serving the header.

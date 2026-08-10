@@ -1,6 +1,9 @@
 # tankovault
 
-![Version: 4.0.1](https://img.shields.io/badge/Version-4.0.1-informational?style=flat-square) ![AppVersion: 4.0.1](https://img.shields.io/badge/AppVersion-4.0.1-informational?style=flat-square)
+
+
+
+![Version: 4.0.1](https://img.shields.io/badge/Version-4.0.1-informational?style=flat-square) ![AppVersion: 4.0.1](https://img.shields.io/badge/AppVersion-4.0.1-informational?style=flat-square) 
 
 This chart deploys the full TankoVault manga aggregator stack — frontend, api, control-plane, worker, notifier, sync, challenge-solver and render — hardened to the restricted Pod Security Standard, with file-backed configuration that reloads in place instead of restarting pods, optional bundled PostgreSQL, Valkey, NATS JetStream and TRAWL, and optional Prometheus metrics, alerting rules and Grafana dashboards.
 
@@ -32,6 +35,7 @@ the optional headless `render` tier, plus the one-shot `bootstrap` migration and
 | supplying secrets yourself | [Generated credentials](#generated-credentials), [Configuration and secrets](#configuration-and-secrets) |
 | deploying through Argo CD | [Argo CD and `bootstrap.migrate.ordering`](#argo-cd-and-bootstrapmigrateordering) |
 | hooking up Prometheus or Grafana | [Observability](#observability) |
+| running this under your own name | [Branding](#branding) |
 | publishing terms or a privacy policy | [Legal documents](#legal-documents) |
 | turning on two-factor authentication | [Two-factor authentication](#two-factor-authentication) |
 | tuning how fast the catalogue is crawled | [Crawl concurrency and the connection pool](#crawl-concurrency-and-the-connection-pool) |
@@ -827,6 +831,71 @@ has no per-object cross-namespace grant — a Prometheus decides what it loads t
 chart can influence; on a kube-prometheus-stack cluster it usually has to carry
 `release: kube-prometheus-stack` or the rules are created and never loaded.
 
+## Branding
+
+Everything a running deployment shows a reader about *itself* — the name, the wordmark, the
+tagline, the copyright line, the licence label and the two project links — is configuration rather
+than a literal in the binary, so a fork rebrands with a values change instead of a rebuild of the
+WASM bundle and the desktop installers.
+
+Every key under `branding` is optional and every empty one is left out of the rendered config, so
+an untouched block reproduces the shipped identity exactly. A normal install sets none of it.
+
+```yaml
+branding:
+  name: MangaBox
+  wordmark:
+    lead: Manga
+    accent: Box
+  tagline: everything you read, in one place
+  copyright:
+    holder: Example Org
+    year: "2024–2026"
+  licence:
+    name: AGPL-3.0-or-later
+    url: https://example.org/licence
+  projectUrl: https://example.org/mangabox
+  releasesUrl: https://example.org/mangabox/releases
+  botUserAgent: MangaBox/1.0 (+https://example.org/bot)
+```
+
+Three services read it, and the chart writes each of them only the half it reads:
+
+| Service | What it gets | What it does with it |
+|---|---|---|
+| `api` | everything but `botUserAgent` | Publishes the reader-facing subset unauthenticated at `GET /v1/branding` — the SPA's rail, footer and document title are built from that response — and stamps the name into transactional email, the WebAuthn prompt and the TOTP issuer. |
+| `frontend` | `name`, `tagline` | Rewrites the served app shell's `<title>` and description, so a tab and a link unfurl are named before the WASM bundle finishes booting. |
+| `worker` | `botUserAgent` | The identifiable crawler user-agent, applied to any provider still carrying the built-in default. Never published to clients. |
+
+`GET /v1/branding` stays open on a deployment with the account gate on: the sign-in screen is the
+whole public face of a private deployment, and it draws the wordmark.
+
+> [!IMPORTANT]
+> **The wordmark does not follow `name`.** Left unset with the shipped name the lockup is
+> `Tankō`+`Vault`; left unset with any other name it is that name drawn as one word. No rule would
+> split an arbitrary name the way this one is split, and a lockup pairing your name with this
+> project's accent half is worse than a plain one — so set both `wordmark.lead` and
+> `wordmark.accent` if you want a two-tone lockup of your own. The chart refuses an accent half
+> with no lead half, which would otherwise be silently ignored.
+
+Two more things behave in ways worth knowing before you set them. `tagline` replaces a
+**translated** string with one literal in every language, so leave it alone unless the shipped
+sentence does not describe your deployment. And `copyright.notice` is printed verbatim and
+outranks `copyright.holder`, `copyright.year` *and* the catalogue's translation of the line — the
+chart refuses the combination rather than letting the fields sit there meaning nothing.
+
+What stays out of reach: the identifiers the desktop build registers with the operating system —
+the keyring service name, the Windows `AppUserModelID`, the autostart registry value, the
+installer's product name — are fixed at build time upstream. They have to agree with what the
+installer wrote, and changing one under a running install would strand saved credentials and
+silence toasts rather than rebrand anything.
+
+Renaming is a rollout, not a reload: `branding` lands in the checksummed config file, the app
+shell is rewritten at boot, and the SPA reads `/v1/branding` from a running API. Existing passkeys
+and authenticator enrolments are unaffected — the relying party is identified by
+`config.auth.webauthn_rp_id`, and a provisioned TOTP secret keeps the issuer it was enrolled with,
+so only newly enrolled credentials carry the new name.
+
 ## Legal documents
 
 TankoVault 1.2.0 lets an operator publish terms, a privacy policy and an imprint, served
@@ -857,6 +926,7 @@ Version-by-version migration notes live in
 [UPGRADING.md](https://github.com/TimSchoenle/helm-charts/blob/main/charts/tankovault/UPGRADING.md).
 Read it before upgrading across 3.0.3 or 3.1.0 — both need a manual step, and neither fails in a
 way that points at it.
+
 
 ## Exposing it through Gateway API
 
@@ -987,6 +1057,22 @@ lookup; the chart fails the render if FQDN destinations are named with the DNS r
 | bootstrap.seedAdmin.password | string | `""` | Initial administrator password. Left empty the chart generates one and remembers it across upgrades; NOTES.txt prints the command that reads it back out of the Secret. It is created with the same `auth.passwordPepper` the API runs with, because a mismatch produces an account that can never log in. |
 | bootstrap.seedAdmin.username | string | `"admin"` | Administrator username. |
 | bootstrap.seedProviders.enabled | bool | `false` | Install the built-in provider presets. Each can be disabled or retargeted from the admin console afterwards. |
+| branding | object | `{"botUserAgent":"","copyright":{"holder":"","notice":"","year":""},"licence":{"name":"","url":""},"name":"","projectUrl":"","releasesUrl":"","tagline":"","wordmark":{"accent":"","lead":""}}` | What this deployment calls itself. The name, the wordmark, the tagline, the copyright line, the licence label and the two project links all come from here rather than from a literal in the binary, so rebranding a fork is a values change instead of a rebuild of the WASM bundle and the desktop installers. Three services read it: `api` publishes the reader-facing subset unauthenticated at `/v1/branding` — the SPA's rail, footer and document title are built from it, and it stays open on a deployment with the account gate on, because the sign-in screen draws the wordmark — and stamps the name into transactional email, the WebAuthn prompt and the TOTP issuer; `frontend` writes it into the served app shell so a tab and a link unfurl are named before the WASM bundle boots; `worker` reads `botUserAgent` alone.  Every key is optional, and every empty one is left out of the rendered configuration, so an untouched block reproduces the shipped identity exactly. This is for a deployment that is not TankoVault; a normal install fills in none of it. |
+| branding.botUserAgent | string | `""` | The identifiable crawler user-agent the `worker` sends, applied to any provider still carrying the built-in default; a provider whose politeness settings name their own keep it. Never published to clients. Set it on a fork so the sites it crawls can attribute the traffic to you and reach you about it — `MyDeployment/1.0 (+https://example.org/bot)` is the shape operators expect. |
+| branding.copyright | object | `{"holder":"","notice":"","year":""}` | The footer's copyright line. |
+| branding.copyright.holder | string | `""` | Who holds it. Empty keeps `Tim Schönle`, which is upstream's — set it on any deployment that publishes its own footer. |
+| branding.copyright.notice | string | `""` | The whole notice, verbatim, for when `© {year} {holder}` does not fit. Wins over `holder` and `year` **and** over the catalogue's translation of the line, so those two become dead configuration next to it and the chart refuses the pair. |
+| branding.copyright.year | string | `""` | A year or a range (`2024–2026`). Empty resolves per response to the current year, so a deployment nobody has touched since December is not still claiming last year. Quote it: a bare `2026` is an integer to YAML and a string to the service. |
+| branding.licence | object | `{"name":"","url":""}` | How the deployment's own code is licensed, as printed in the footer. This is a label the footer prints, not a licence grant: it says nothing about what you may do with the upstream code, which is governed by the licence the source ships under. |
+| branding.licence.name | string | `""` | What the footer prints. Empty keeps `PolyForm Noncommercial 1.0.0`. |
+| branding.licence.url | string | `""` | Absolute `http(s)` URL the label links to. Empty renders it as plain text, which is what a self-hosted deployment with nowhere to point should show rather than a dead link. |
+| branding.name | string | `""` | The product name, in prose. Substituted for `{brand}` in every translated message that names it, and used as the WebAuthn relying-party name and the TOTP issuer unless `config.auth.webauthn_rp_name` / `config.auth.totp_issuer` name one. Empty keeps `TankoVault`.  Renaming this does **not** re-key existing passkeys or authenticators: the relying party is identified by `webauthn_rp_id`, and a TOTP secret already provisioned keeps the issuer it was enrolled with. Only newly enrolled credentials carry the new name. |
+| branding.projectUrl | string | `""` | Absolute `http(s)` URL for the footer's source link and the desktop client's About tab. Empty keeps this project's repository. |
+| branding.releasesUrl | string | `""` | Absolute `http(s)` URL where a reader downloads the native client. Advertised by the web build only. Empty keeps this project's latest release. |
+| branding.tagline | string | `""` | One line under the wordmark. Empty keeps the shipped tagline, which is **translated**; setting it replaces that with this one string in every language. That is the right trade only for a deployment the shipped sentence does not describe. |
+| branding.wordmark | object | `{"accent":"","lead":""}` | The two-tone lockup drawn in the SPA's rail and footer. |
+| branding.wordmark.accent | string | `""` | The half drawn in the accent colour. Empty draws `lead` alone. Meaningless without `lead`, and the chart refuses that combination rather than rendering a lockup nothing reads. |
+| branding.wordmark.lead | string | `""` | The half drawn in the body colour. Setting this is what opts into a two-tone lockup: left empty, a deployment that set `name` draws that name as one word, because the shipped `Tankō`/`Vault` split is a property of the shipped name and not a template to pour another one into. |
 | channels | object | `{"discordWebhookUrl":"","emailTo":[],"webhookUrl":""}` | Notification fan-out targets read by the `notifier` service. |
 | channels.discordWebhookUrl | string | `""` | Discord webhook URL. Empty disables the channel. |
 | channels.emailTo | list | `[]` | Static recipient addresses for new-chapter notifications. Empty disables the channel. |
@@ -1384,6 +1470,7 @@ lookup; the chart fails the render if FQDN destinations are named with the DNS r
 | Name | Email | Url |
 | ---- | ------ | --- |
 | Tim Schönle | <contact@tim-schoenle.de> |  |
+
 
 ----------------------------------------------
 Autogenerated from chart metadata using [helm-docs v1.14.2](https://github.com/norwoodj/helm-docs/releases/v1.14.2)

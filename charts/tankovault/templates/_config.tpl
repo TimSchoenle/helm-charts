@@ -197,12 +197,76 @@ channels:
     {{- toYaml . | nindent 4 }}
 {{- end }}
 {{- end }}
+{{- with include "tankovault.branding.config" (dict "ctx" $ctx "service" $service) }}
+branding:
+  {{- . | nindent 2 }}
+{{- end }}
 {{- if eq $service "api" }}
 {{- with (include "tankovault.legal.config" $ctx) }}
 legal:
   {{- . | nindent 2 }}
 {{- end }}
 {{- end }}
+{{- end -}}
+
+{{/*
+The `[branding]` block for one service, or empty for a service that reads none of it — which is
+also every service on a deployment that kept the shipped identity, since every field of it
+defaults upstream.
+
+Three services read this block and each gets only the half it reads. `api` serves the
+reader-facing subset unauthenticated at `GET /v1/branding` — the SPA's rail, footer and document
+title are built from that response, so the client needs the API and not the values — and stamps
+the name into transactional email, the WebAuthn prompt and the TOTP issuer. `frontend` reads the
+name and the tagline alone, to rewrite the served app shell's `<title>` and description so a tab
+and a link unfurl are named before the WASM bundle boots. `worker` reads the crawler user-agent
+and nothing else. Emitting the whole block on all eight would give five services a key they never
+open and the other two most of one.
+
+An empty value is omitted rather than written through, because the two are not the same thing
+here: an absent key takes the shipped default, an emitted `""` is a wordmark that draws blank.
+That is also why the operator-facing values are empty strings rather than the upstream defaults
+restated — a default restated here is a value this chart would have to keep in step with a
+release it does not ship.
+
+Args: ctx (root), service.
+*/}}
+{{- define "tankovault.branding.config" -}}
+{{- /*
+Read through `default dict` at each level, so a values file that empties one of the sub-blocks
+outright (`wordmark: ~`) renders as "nothing set" rather than as a nil-pointer trace.
+*/ -}}
+{{- $branding := .ctx.Values.branding | default dict -}}
+{{- $wordmarkValues := $branding.wordmark | default dict -}}
+{{- $copyrightValues := $branding.copyright | default dict -}}
+{{- $licenceValues := $branding.licence | default dict -}}
+{{- $out := dict -}}
+{{- if eq .service "worker" -}}
+{{- with $branding.botUserAgent }}{{- $_ := set $out "bot_user_agent" . }}{{- end -}}
+{{- else if or (eq .service "api") (eq .service "frontend") -}}
+{{- with $branding.name }}{{- $_ := set $out "name" . }}{{- end -}}
+{{- with $branding.tagline }}{{- $_ := set $out "tagline" . }}{{- end -}}
+{{- if eq .service "api" -}}
+{{- with $branding.projectUrl }}{{- $_ := set $out "project_url" . }}{{- end -}}
+{{- with $branding.releasesUrl }}{{- $_ := set $out "releases_url" . }}{{- end -}}
+{{- $wordmark := dict -}}
+{{- with $wordmarkValues.lead }}{{- $_ := set $wordmark "lead" . }}{{- end -}}
+{{- with $wordmarkValues.accent }}{{- $_ := set $wordmark "accent" . }}{{- end -}}
+{{- if $wordmark }}{{- $_ := set $out "wordmark" $wordmark }}{{- end -}}
+{{- $copyright := dict -}}
+{{- with $copyrightValues.holder }}{{- $_ := set $copyright "holder" . }}{{- end -}}
+{{- with $copyrightValues.year }}{{- $_ := set $copyright "year" (toString .) }}{{- end -}}
+{{- with $copyrightValues.notice }}{{- $_ := set $copyright "notice" . }}{{- end -}}
+{{- if $copyright }}{{- $_ := set $out "copyright" $copyright }}{{- end -}}
+{{- $licence := dict -}}
+{{- with $licenceValues.name }}{{- $_ := set $licence "name" . }}{{- end -}}
+{{- with $licenceValues.url }}{{- $_ := set $licence "url" . }}{{- end -}}
+{{- if $licence }}{{- $_ := set $out "licence" $licence }}{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- if $out -}}
+{{- toYaml $out -}}
+{{- end -}}
 {{- end -}}
 
 {{/*

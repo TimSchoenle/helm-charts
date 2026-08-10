@@ -34,6 +34,7 @@ the optional headless `render` tier, plus the one-shot `bootstrap` migration and
 | supplying secrets yourself | [Generated credentials](#generated-credentials), [Configuration and secrets](#configuration-and-secrets) |
 | deploying through Argo CD | [Argo CD and `bootstrap.migrate.ordering`](#argo-cd-and-bootstrapmigrateordering) |
 | hooking up Prometheus or Grafana | [Observability](#observability) |
+| running this under your own name | [Branding](#branding) |
 | publishing terms or a privacy policy | [Legal documents](#legal-documents) |
 | turning on two-factor authentication | [Two-factor authentication](#two-factor-authentication) |
 | tuning how fast the catalogue is crawled | [Crawl concurrency and the connection pool](#crawl-concurrency-and-the-connection-pool) |
@@ -828,6 +829,71 @@ has no per-object cross-namespace grant — a Prometheus decides what it loads t
 `ruleNamespaceSelector` and `ruleSelector`. `metrics.prometheusRule.labels` is the half of that a
 chart can influence; on a kube-prometheus-stack cluster it usually has to carry
 `release: kube-prometheus-stack` or the rules are created and never loaded.
+
+## Branding
+
+Everything a running deployment shows a reader about *itself* — the name, the wordmark, the
+tagline, the copyright line, the licence label and the two project links — is configuration rather
+than a literal in the binary, so a fork rebrands with a values change instead of a rebuild of the
+WASM bundle and the desktop installers.
+
+Every key under `branding` is optional and every empty one is left out of the rendered config, so
+an untouched block reproduces the shipped identity exactly. A normal install sets none of it.
+
+```yaml
+branding:
+  name: MangaBox
+  wordmark:
+    lead: Manga
+    accent: Box
+  tagline: everything you read, in one place
+  copyright:
+    holder: Example Org
+    year: "2024–2026"
+  licence:
+    name: AGPL-3.0-or-later
+    url: https://example.org/licence
+  projectUrl: https://example.org/mangabox
+  releasesUrl: https://example.org/mangabox/releases
+  botUserAgent: MangaBox/1.0 (+https://example.org/bot)
+```
+
+Three services read it, and the chart writes each of them only the half it reads:
+
+| Service | What it gets | What it does with it |
+|---|---|---|
+| `api` | everything but `botUserAgent` | Publishes the reader-facing subset unauthenticated at `GET /v1/branding` — the SPA's rail, footer and document title are built from that response — and stamps the name into transactional email, the WebAuthn prompt and the TOTP issuer. |
+| `frontend` | `name`, `tagline` | Rewrites the served app shell's `<title>` and description, so a tab and a link unfurl are named before the WASM bundle finishes booting. |
+| `worker` | `botUserAgent` | The identifiable crawler user-agent, applied to any provider still carrying the built-in default. Never published to clients. |
+
+`GET /v1/branding` stays open on a deployment with the account gate on: the sign-in screen is the
+whole public face of a private deployment, and it draws the wordmark.
+
+> [!IMPORTANT]
+> **The wordmark does not follow `name`.** Left unset with the shipped name the lockup is
+> `Tankō`+`Vault`; left unset with any other name it is that name drawn as one word. No rule would
+> split an arbitrary name the way this one is split, and a lockup pairing your name with this
+> project's accent half is worse than a plain one — so set both `wordmark.lead` and
+> `wordmark.accent` if you want a two-tone lockup of your own. The chart refuses an accent half
+> with no lead half, which would otherwise be silently ignored.
+
+Two more things behave in ways worth knowing before you set them. `tagline` replaces a
+**translated** string with one literal in every language, so leave it alone unless the shipped
+sentence does not describe your deployment. And `copyright.notice` is printed verbatim and
+outranks `copyright.holder`, `copyright.year` *and* the catalogue's translation of the line — the
+chart refuses the combination rather than letting the fields sit there meaning nothing.
+
+What stays out of reach: the identifiers the desktop build registers with the operating system —
+the keyring service name, the Windows `AppUserModelID`, the autostart registry value, the
+installer's product name — are fixed at build time upstream. They have to agree with what the
+installer wrote, and changing one under a running install would strand saved credentials and
+silence toasts rather than rebrand anything.
+
+Renaming is a rollout, not a reload: `branding` lands in the checksummed config file, the app
+shell is rewritten at boot, and the SPA reads `/v1/branding` from a running API. Existing passkeys
+and authenticator enrolments are unaffected — the relying party is identified by
+`config.auth.webauthn_rp_id`, and a provisioned TOTP secret keeps the issuer it was enrolled with,
+so only newly enrolled credentials carry the new name.
 
 ## Legal documents
 

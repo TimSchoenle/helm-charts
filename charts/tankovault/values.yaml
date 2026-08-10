@@ -117,16 +117,254 @@ auth:
 # @schema
 # additionalProperties: true
 # @schema
+# -- How the services identify each other on their privileged internal routes. Authorisation is
+# the same either way — every callee carries a compiled-in table of which callers may reach which
+# routes — so this chooses only how a caller proves who it is, and the two modes are otherwise
+# indistinguishable.
 internal:
+  # @schema
+  # enum: [mtls, token]
+  # @schema
+  # -- Identification mode. `mtls` identifies a caller by the DNS SAN on its verified client
+  # certificate; it is the default, it needs no credential in the release at all, and the
+  # certificates can come either from cert-manager or from Secrets you already have. `token`
+  # gives each caller its own secret, presented in `X-Internal-Token`, and is the mode for
+  # clusters with no PKI to hand.
+  identity: mtls
+
+  # @schema
+  # additionalProperties: true
+  # @schema
+  # -- Certificate material for `identity: mtls`. Ignored entirely under `token`.
+  tls:
+    # @schema
+    # enum: [certManager, existingSecrets]
+    # @schema
+    # -- Where each service's keypair comes from. `certManager` has this chart issue one
+    # `Certificate` per service and is the recommended path by some distance: cert-manager renews
+    # and rotates on its own, so nothing here expires unattended, and the SANs cannot drift from
+    # what the peer configuration expects because the same template writes both.
+    # `existingSecrets` takes Secrets you produced some other way — an external PKI, a Vault
+    # Agent sidecar, SPIRE, or a certificate issued by hand — and creates no `Certificate` at all.
+    # In that mode renewal is yours to arrange, and a certificate that expires stops every
+    # privileged call in the release.
+    source: certManager
+
+    # @schema
+    # additionalProperties: true
+    # @schema
+    # -- Settings for `source: certManager`. Ignored under `existingSecrets`.
+    certManager:
+      # @schema
+      # additionalProperties: true
+      # @schema
+      # -- The cert-manager issuer that signs each service's certificate. It has to be one whose
+      # CA every service can also verify against, so a public ACME issuer is the wrong shape here
+      # — a CA `Issuer` or `ClusterIssuer`, or a Vault/Venafi issuer, is what this expects.
+      issuerRef:
+        # @schema
+        # type: string
+        # @schema
+        # -- Issuer name. Required under `source: certManager`; there is no default to fall back
+        # on.
+        name: ""
+
+        # @schema
+        # enum: [Issuer, ClusterIssuer]
+        # @schema
+        # -- Issuer kind.
+        kind: ClusterIssuer
+
+        # @schema
+        # type: string
+        # @schema
+        # -- API group of the issuer resource.
+        group: cert-manager.io
+
+      # @schema
+      # type: string
+      # @schema
+      # -- Requested certificate lifetime.
+      duration: 2160h
+
+      # @schema
+      # type: string
+      # @schema
+      # -- How far ahead of expiry cert-manager renews. Renewal needs no rollout: the services
+      # re-read the files every 30 seconds and swap the credential without dropping connections,
+      # which is why no `checksum/` annotation names these Secrets.
+      renewBefore: 360h
+
+      # @schema
+      # additionalProperties: true
+      # @schema
+      # -- Private key policy, passed to the Certificate verbatim. `rotationPolicy: Always`
+      # issues a fresh key on every renewal rather than re-signing the old one.
+      privateKey:
+        # @schema
+        # enum: [RSA, ECDSA, Ed25519]
+        # @schema
+        # -- Key algorithm.
+        algorithm: ECDSA
+
+        # @schema
+        # type: integer
+        # @schema
+        # -- Key size, in the units the algorithm uses.
+        size: 256
+
+        # @schema
+        # enum: [Never, Always]
+        # @schema
+        # -- Whether a renewal also rotates the private key.
+        rotationPolicy: Always
+
+    # @schema
+    # type: object
+    # additionalProperties:
+    #   type: string
+    # @schema
+    # -- Secrets holding each service's keypair, for `source: existingSecrets`, keyed by service.
+    # Every enabled service but the `frontend` needs one — including `notifier`, which presents
+    # its certificate to NATS — and the chart refuses to render while any is missing rather than
+    # producing a pod that waits forever on a volume.
+    #
+    # Each must be a `kubernetes.io/tls`-shaped Secret (`tls.crt`, `tls.key`), and **no two
+    # services may share one**: a service is identified by the SANs on the certificate it
+    # presents, so a shared Secret would let either of them speak as the other. Each certificate
+    # has to be valid for the Service name its peers dial it at — `<release>-tankovault-<slug>` —
+    # and, if it also carries the name under `sans`, for that.
+    existingSecrets:
+      api: ""
+      controlPlane: ""
+      worker: ""
+      notifier: ""
+      sync: ""
+      challengeSolver: ""
+      render: ""
+
+    # @schema
+    # type: object
+    # additionalProperties:
+    #   type: string
+    # @schema
+    # -- The DNS name each service is identified by, keyed by service, overriding the derived
+    # `<release>-tankovault-<slug>.<namespace>.svc`. This is the name written into every peer's
+    # configuration and, under `source: certManager`, requested on the certificate too — the two
+    # halves always agree because one value sets both.
+    #
+    # For an external PKI that issues names of its own (`api.tankovault.internal`), name them
+    # here. The verifier checks the configured name against *every* DNS SAN on the presented
+    # certificate rather than only the first, so a certificate carrying both the in-cluster name
+    # and yours satisfies both this and the hostname check on the dialed address.
+    sans: {}
+
+    # @schema
+    # additionalProperties: true
+    # @schema
+    # -- Where the CA every service verifies its peers against comes from.
+    ca:
+      # @schema
+      # enum: [certificateSecret, configMap, secret]
+      # @schema
+      # -- CA source. `certificateSecret` reads it from the `ca.crt` key of the same Secret that
+      # holds the keypair — the default, because it needs no second object, no second volume and
+      # no trust-manager: cert-manager writes that key for a CA issuer, and the
+      # `kubernetes.io/tls` + `ca.crt` layout is what most PKIs produce anyway. `configMap` reads
+      # a ConfigMap, which is what a trust-manager `Bundle` writes and the more robust setup:
+      # one bundle for the cluster, rotatable independently of any single certificate, and the
+      # only option when your issuer does not populate `ca.crt`. `secret` reads a Secret, for a
+      # PKI that ships its root that way.
+      source: certificateSecret
+
+      # @schema
+      # type: string
+      # @schema
+      # -- Name of the ConfigMap or Secret holding the bundle. Required unless `source` is
+      # `certificateSecret`, which reads the keypair Secret the service already mounts. With
+      # `bundle.create` this is also the name of the trust-manager `Bundle`.
+      name: tankovault-ca
+
+      # @schema
+      # type: string
+      # @schema
+      # -- Key holding the PEM bundle, in whichever object `source` selects.
+      key: ca.crt
+
+      # @schema
+      # additionalProperties: true
+      # @schema
+      # -- The trust-manager `Bundle` that produces the ConfigMap, rendered as part of this
+      # release. Only meaningful with `source: configMap`.
+      bundle:
+        # @schema
+        # type: boolean
+        # @schema
+        # -- Render the `Bundle`. Off by default because a Bundle is cluster-scoped: two releases
+        # creating the same name would be two objects overwriting each other. Leave it off and
+        # point `ca.name` at the ConfigMap your existing cluster-wide Bundle already writes here.
+        create: false
+
+        # @schema
+        # type: array
+        # items:
+        #   type: object
+        #   additionalProperties: true
+        # @schema
+        # -- trust-manager `spec.sources`, verbatim. Required when `create` is set, because
+        # nothing in an issuer reference says where the CA certificate lives — a `ClusterIssuer`
+        # names a Secret in cert-manager's namespace, not in this one. For a CA issuer that is
+        # usually `[{secret: {name: internal-ca, key: ca.crt}}]`.
+        sources: []
+
+        # @schema
+        # type: object
+        # additionalProperties: true
+        # @schema
+        # -- Label selector for the namespaces the Bundle writes into. Empty confines it to this
+        # release's namespace; a Bundle with no selector at all would write a ConfigMap into
+        # every namespace in the cluster.
+        namespaceSelector: {}
+
+    # @schema
+    # type: string
+    # @schema
+    # -- Directory the keypair is mounted at, as `tls.crt` and `tls.key`. With
+    # `ca.source: certificateSecret` the bundle is read from this directory too.
+    certDir: /etc/tankovault/tls
+
+    # @schema
+    # type: string
+    # @schema
+    # -- Directory the CA bundle is mounted at, when it comes from an object of its own. Kept
+    # apart from `certDir` because the two are then written by different controllers — a
+    # cert-manager Secret and a trust-manager ConfigMap — and a volume can only carry one.
+    caDir: /etc/tankovault/tls-ca
+
+  # @schema
+  # type: object
+  # additionalProperties:
+  #   type: string
+  # @schema
+  # -- Per-caller tokens for `identity: token`, keyed by caller name. Exactly two services make
+  # privileged calls — `api` and `worker` — so exactly two tokens exist, and each callee receives
+  # only the tokens of the callers it accepts: holding `worker`'s opens the routes `worker` may
+  # call and nothing else. Left empty the chart generates each one and remembers it across
+  # upgrades, which is the recommended setting; set one explicitly (minimum 32 characters, e.g.
+  # `openssl rand -hex 32`) only if it has to be known outside the release. Ignored under `mtls`,
+  # and the chart refuses to render rather than leave a value here meaning nothing.
+  tokens:
+    api: ""
+    worker: ""
+
   # @schema
   # type: string
   # @schema
-  # -- Shared service-to-service token (`internal.token`), identical across api, control-plane,
-  # worker, sync, render and challenge-solver. Without it those services accept privileged calls
-  # from anything that can reach the port, so the `production` profile refuses to boot without
-  # one. Left empty in that profile the chart generates a token and remembers it across upgrades,
-  # which is the recommended setting; set one explicitly (minimum 32 characters, e.g.
-  # `openssl rand -hex 32`) only if it has to be known outside the release.
+  # -- **Removed in chart 4.0.0.** The single shared token that used to open every privileged
+  # route on every service. Upstream refuses it at boot in every profile with no dual-accept
+  # window, so this chart fails the render with the migration path rather than letting a release
+  # carry it into a fleet-wide crash loop. Use `internal.identity` with `internal.tls` or
+  # `internal.tokens`.
   token: ""
 
 # @schema
@@ -247,11 +485,15 @@ channels:
 # -- Name of an existing Secret holding the credentials, instead of having the chart render one
 # from the values above. When set it takes precedence and no credential value is written into
 # the Helm release. Its keys are the configuration paths with `__` for nesting and no dots —
-# `auth__jwt_secret`, `auth__password_pepper`, `auth__mfa_encryption_key`, `internal__token`,
+# `auth__jwt_secret`, `auth__password_pepper`, `auth__mfa_encryption_key`,
 # `anilist__client_id`, `anilist__client_secret`, `anilist__token_encryption_key`,
 # `email__username`, `email__password`, `channels__discord_webhook_url`,
 # `channels__webhook_url`, `database__url`, `redis__url`. Only the keys a given service reads
-# are projected into it.
+# are projected into it. Under `internal.identity=token` add `internal__tokens__api` and
+# `internal__tokens__worker`: those two are keyed by caller rather than by configuration path,
+# because one token is read as `internal.caller.token` by the caller and as
+# `internal.peers.<caller>.token` by each of its callees, and the projection maps the key onto
+# whichever path the reading pod needs. Under `mtls` no internal credential is needed at all.
 existingSecret: ""
 
 # @schema
@@ -605,7 +847,7 @@ services:
       # type: string
       # @schema
       # -- Image tag, pinned by digest.
-      tag: v3.9.0@sha256:5ba4828e4a8ae2ce27f548bc1d9664609509d97d2d3cc09af14c9014a227376b
+      tag: v4.0.0@sha256:abd2ea2123032c4de670c0bf32d824fcb1321f433ff13fcf59a1b1f104ff8ab5
 
     # @schema
     # enum: ["", nano, micro, small, medium, large]
@@ -729,7 +971,7 @@ services:
       # type: string
       # @schema
       # -- Image tag, pinned by digest.
-      tag: v3.9.0@sha256:abfa00cd4d395fcd8fb3ce461f9013d19c8df02d405f27c7b11e70080fc50f10
+      tag: v4.0.0@sha256:c0be58c0ed51a6a2088f24ff0a3912d390694793328e433d1e163dd7e61b11d8
 
     # @schema
     # enum: ["", nano, micro, small, medium, large]
@@ -853,7 +1095,7 @@ services:
       # type: string
       # @schema
       # -- Image tag, pinned by digest.
-      tag: v3.9.0@sha256:78f831ca4fb3609c7c4523e8d636166b8c2e27bcaca86dab75e2d62842dad9d0
+      tag: v4.0.0@sha256:fffe90a1b27a279ee5f4911641412b67b5a3fca67e5e254a8ba66e12b15ef06c
 
     # @schema
     # enum: ["", nano, micro, small, medium, large]
@@ -941,7 +1183,7 @@ services:
       # type: string
       # @schema
       # -- Image tag, pinned by digest.
-      tag: v3.9.0@sha256:d19948768b24e6da513906995d0c729166cc983a2bfdddb53c02190d209e5105
+      tag: v4.0.0@sha256:a0656591a9bdccddc28e51ff33f2bd432e97243df837376e8cc9524820bb6d1f
 
     # @schema
     # enum: ["", nano, micro, small, medium, large]
@@ -1063,7 +1305,7 @@ services:
       # type: string
       # @schema
       # -- Image tag, pinned by digest.
-      tag: v3.9.0@sha256:b87d317c58b9d813ade9ad02d7e019752a7d47bdf45994ed321902ee72b9e31d
+      tag: v4.0.0@sha256:befb47604e7e3e139221a6fa8bc2ffd4c62ff15b070a012900765717b449c5ff
 
     # @schema
     # enum: ["", nano, micro, small, medium, large]
@@ -1150,7 +1392,7 @@ services:
       # type: string
       # @schema
       # -- Image tag, pinned by digest.
-      tag: v3.9.0@sha256:22ad04c979b1dd04e5604e85a466a0b943601cf8beaae3ec4f612d851530ed9e
+      tag: v4.0.0@sha256:519c4346d2af6b2fb1cabb515ab1667f67825b31e092ffe0398ca3312384712b
 
     # @schema
     # enum: ["", nano, micro, small, medium, large]
@@ -1237,7 +1479,7 @@ services:
       # type: string
       # @schema
       # -- Image tag, pinned by digest.
-      tag: v3.9.0@sha256:a5170a70659efaf6a9b0aecef856aeca076c6484451605f961e35e15f0ff5ee5
+      tag: v4.0.0@sha256:2c3ce9cba1efc727bff6683a345475ea7e6876d75675ca5dd2c2ff5d6d89953d
 
     # @schema
     # enum: ["", nano, micro, small, medium, large]
@@ -1361,7 +1603,7 @@ services:
       # type: string
       # @schema
       # -- Image tag, pinned by digest.
-      tag: v3.9.0@sha256:94d586f02feb4e32401df8e9ed065e76405570863245d2d7c7f48338b7594880
+      tag: v4.0.0@sha256:8ae68e264de673e43724820eb24cfc946ffa4616766a170994914d05c631f06b
 
     # @schema
     # $ref: https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.ResourceRequirements
@@ -1522,7 +1764,7 @@ bootstrap:
     # type: string
     # @schema
     # -- Image tag, pinned by digest.
-    tag: v3.9.0@sha256:ef286227e13dda6a48966cba27421fe06249745f9a6da600ac6b55d09a2ab843
+    tag: v4.0.0@sha256:409d4529a1d9d9a05bd403fd66eeaaf99cdd483512fd0a1bd782d398e5a7a27c
 
   # @schema
   # enum: ["", nano, micro, small, medium, large]
@@ -1880,8 +2122,22 @@ externalNats:
   # type: string
   # @schema
   # -- Connection URL, e.g. `nats://host:4222`. Required by control-plane, worker and notifier;
-  # optional on the API, where its absence only degrades the live notification stream.
+  # optional on the API, where its absence only degrades the live notification stream. Under
+  # `internal.identity=mtls` the services present their client certificate to the broker and
+  # require TLS on that connection, so it must be a TLS-enabled NATS.
   url: ""
+
+  # @schema
+  # type: string
+  # @schema
+  # -- Name of an existing Secret holding one NATS URL per service, keyed by service slug (`api`,
+  # `control-plane`, `worker`, `notifier`). Each pod projects its own key as `nats__url`, which
+  # replaces the derived URL entirely. This is how per-service NATS **accounts** are delivered —
+  # the thing that stops `notifier` publishing scan tasks — since the credential belongs in the
+  # URL and so cannot live in the ConfigMap. Note that the accounts themselves are NATS server
+  # configuration: the services present what you give them here, and cannot assert what a broker
+  # does not enforce.
+  perServiceSecret: ""
 
 # @schema
 # additionalProperties: true

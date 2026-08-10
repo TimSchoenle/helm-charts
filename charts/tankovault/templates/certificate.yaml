@@ -1,0 +1,89 @@
+{{- /*
+One cert-manager Certificate per service, under `internal.identity=mtls` with the default
+`internal.tls.source=certManager`.
+
+This is the path the chart is built around. cert-manager renews and rotates on its own, so
+nothing here expires unattended, and the name a service is identified by is requested on the
+certificate and written into its peers' configuration by the same helper — the two cannot drift.
+`source: existingSecrets` renders none of this and hands both jobs to the operator.
+
+The certificate is both halves of the service's identity: it is presented as a *server*
+certificate to the callers that reach its privileged routes, and as a *client* certificate to
+the peers it calls and to the NATS broker. That is why `usages` names both, and why `notifier`
+— which serves no internal route and calls no peer — still gets one.
+
+`frontend` gets none. It reads no `internal` configuration, proxies to the API as an ordinary
+public client, and a certificate it never presents would only be a Secret to rotate.
+
+Nothing here needs a rollout. Each service re-reads the files every 30 seconds and swaps the
+credential without dropping connections, so cert-manager's renewal is invisible to the fleet and
+no `checksum/` annotation names these Secrets.
+*/ -}}
+{{- if and (eq .Values.internal.identity "mtls") (eq .Values.internal.tls.source "certManager") }}
+{{- $root := . }}
+{{- $certManager := .Values.internal.tls.certManager }}
+{{- $specs := include "tankovault.serviceSpecs" . | fromYaml }}
+{{- range $service, $spec := $specs }}
+{{- if and $spec.internalIdentity (index $root.Values.services $service).enabled }}
+{{- $values := include "tankovault.serviceValues" (dict "ctx" $root "service" $service) | fromYaml }}
+{{- $ctx := dict "Values" $values "Chart" $root.Chart "Release" $root.Release "Capabilities" $root.Capabilities "Template" $root.Template "Files" $root.Files }}
+{{- /*
+  Every name the certificate has to answer to, deduplicated so an override that happens to equal
+  a derived name does not produce a duplicate SAN.
+
+  Two different checks read this list. Peers verify the *identity* — `tankovault.internalSan`,
+  which may be an operator-supplied name — against every DNS SAN on the certificate. The TLS
+  handshake separately verifies the *dialed* host, and callers dial the Service by its short
+  name, so that name must be here whatever the identity is. Both `.svc` spellings follow for the
+  callers that resolve the address differently.
+*/}}
+{{- $names := list
+      (include "tankovault.fullname" (dict "ctx" $root "service" $service))
+      (printf "%s.%s.svc" (include "tankovault.fullname" (dict "ctx" $root "service" $service)) (include "common.namespace" $root))
+      (printf "%s.%s.svc.cluster.local" (include "tankovault.fullname" (dict "ctx" $root "service" $service)) (include "common.namespace" $root))
+      (include "tankovault.internalSan" (dict "ctx" $root "service" $service)) | uniq }}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "tankovault.internalCertName" (dict "ctx" $root "service" $service) }}
+  namespace: {{ include "common.namespace" $root }}
+  labels:
+    {{- include "common.labels" $ctx | nindent 4 }}
+  {{- with (include "common.annotations" $ctx) }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
+spec:
+  secretName: {{ include "tankovault.internalCertName" (dict "ctx" $root "service" $service) }}
+  {{- /*
+    No `commonName`. It is limited to 64 characters, which a release name plus a service slug
+    plus a namespace can exceed, and it identifies nothing the SANs do not — the verifier reads
+    DNS SANs. Letting it default keeps a long release name from failing issuance.
+  */}}
+  dnsNames:
+    {{- range $name := $names }}
+    - {{ $name | quote }}
+    {{- end }}
+  usages:
+    - digital signature
+    - key encipherment
+    - server auth
+    - client auth
+  {{- with $certManager.duration }}
+  duration: {{ . | quote }}
+  {{- end }}
+  {{- with $certManager.renewBefore }}
+  renewBefore: {{ . | quote }}
+  {{- end }}
+  {{- with $certManager.privateKey }}
+  privateKey:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  issuerRef:
+    name: {{ $certManager.issuerRef.name }}
+    kind: {{ $certManager.issuerRef.kind }}
+    group: {{ $certManager.issuerRef.group }}
+{{- end }}
+{{- end }}
+{{- end }}

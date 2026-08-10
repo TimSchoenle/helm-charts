@@ -1,0 +1,375 @@
+suite: test inter-service authentication
+templates:
+  - configmap.yaml
+  - deployment.yaml
+  - certificate.yaml
+  - bundle.yaml
+values:
+  - ../ci/internal-mtls.yaml
+capabilities:
+  apiVersions:
+    - cert-manager.io/v1
+    - trust.cert-manager.io/v1alpha1
+tests:
+  # ------------------------------------------------------------------ mtls ---
+  - it: identifies each caller by the SAN on its certificate, never by a token
+    # The failure this whole suite exists to prevent: a peer entry carrying the credential of
+    # the inactive mode is refused at boot, so a service that ends up with both a `san` and a
+    # `token` for the same peer does not start. The chart emits one or the other.
+    template: configmap.yaml
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-control-plane-config
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: 'identity = "mtls"'
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: 'san = "RELEASE-NAME-tankovault-api\.NAMESPACE\.svc"'
+      - notMatchRegex:
+          path: data["config.toml"]
+          pattern: "token"
+
+  - it: gives the caller its name and no credential
+    template: configmap.yaml
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-worker-config
+    asserts:
+      # `worker` is the one service that is both: it presents its own identity to
+      # challenge-solver and render, and accepts `api` on its own routes.
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: 'name = "worker"'
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: 'san = "RELEASE-NAME-tankovault-api\.NAMESPACE\.svc"'
+      - notMatchRegex:
+          path: data["config.toml"]
+          pattern: "token"
+
+  - it: leaves no http:// peer URL behind under mtls
+    # Upstream refuses to boot on a plaintext peer URL in this mode, deliberately: the
+    # connection would succeed, offer no client certificate and encrypt nothing, while the
+    # peer's own configuration still says it requires both.
+    template: configmap.yaml
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-api-config
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: 'control_plane_url = "https://'
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: 'sync_url = "https://'
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: 'worker_url = "https://'
+      - notMatchRegex:
+          path: data["config.toml"]
+          pattern: '_url = "http://'
+
+  - it: sends the worker to the challenge solver over https too
+    template: configmap.yaml
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-worker-config
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: 'challenge_solver_endpoint = "https://'
+
+  - it: keeps the frontend's api upstream on plain http
+    # The one edge that is not an internal call. The frontend reverse-proxies /v1/* as an
+    # ordinary public request and holds no certificate in either mode, so an https upstream
+    # here would fail client-certificate verification rather than secure anything.
+    template: configmap.yaml
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-frontend-config
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: 'api_upstream = "http://'
+      - notMatchRegex:
+          path: data["config.toml"]
+          pattern: "\\[internal\\]"
+
+  - it: configures the notifier's certificate even though it has no peers
+    # It serves no internal route and calls none, but under mtls it presents the same client
+    # certificate to the broker — which is the whole reason it carries the material.
+    template: configmap.yaml
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-notifier-config
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: 'identity = "mtls"'
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: 'cert = "/etc/tankovault/tls/tls\.crt"'
+      - notMatchRegex:
+          path: data["config.toml"]
+          pattern: "\\[internal\\.peers"
+      - notMatchRegex:
+          path: data["config.toml"]
+          pattern: "\\[internal\\.caller\\]"
+
+  - it: issues one certificate per service, valid as both client and server
+    template: certificate.yaml
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-api-internal-tls
+    asserts:
+      - equal:
+          path: spec.secretName
+          value: RELEASE-NAME-tankovault-api-internal-tls
+      - contains:
+          path: spec.dnsNames
+          content: RELEASE-NAME-tankovault-api.NAMESPACE.svc
+      - contains:
+          path: spec.usages
+          content: client auth
+      - contains:
+          path: spec.usages
+          content: server auth
+      - equal:
+          path: spec.issuerRef.name
+          value: internal-ca
+
+  - it: issues one certificate for every service but the frontend
+    # Eight workloads are enabled by this fixture and seven certificates are issued. The
+    # frontend reads no internal configuration at all, so a certificate would only be a Secret
+    # to rotate.
+    template: certificate.yaml
+    asserts:
+      - hasDocuments:
+          count: 7
+
+  - it: mounts the keypair and the CA from the objects that own them
+    # Separate volumes on purpose: the keypair is cert-manager's Secret and the bundle is
+    # trust-manager's ConfigMap, each refreshed by its own controller. Neither is folded into
+    # the projected `secrets` volume, and no checksum annotation names either — the services
+    # re-read the files every 30s and swap the credential without dropping connections.
+    template: deployment.yaml
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-api
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: internal-tls
+            mountPath: /etc/tankovault/tls
+            readOnly: true
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: internal-ca
+            mountPath: /etc/tankovault/tls-ca
+            readOnly: true
+      - equal:
+          path: spec.template.spec.volumes[?(@.name=="internal-tls")].secret.secretName
+          value: RELEASE-NAME-tankovault-api-internal-tls
+      - equal:
+          path: spec.template.spec.volumes[?(@.name=="internal-ca")].configMap.name
+          value: tankovault-ca
+
+  - it: leaves the probes on the plain listener
+    # `/health` and `/ready` are mounted outside the authenticated stack and stay plaintext
+    # under mtls, because a kubelet probe presents no client certificate. Giving these an
+    # `HTTPS` scheme would fail every probe on every pod.
+    template: deployment.yaml
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-api
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe.httpGet.path
+          value: /health
+      - notExists:
+          path: spec.template.spec.containers[0].livenessProbe.httpGet.scheme
+      - notExists:
+          path: spec.template.spec.containers[0].readinessProbe.httpGet.scheme
+      - notExists:
+          path: spec.template.spec.containers[0].startupProbe.httpGet.scheme
+
+  - it: confines the trust bundle to this release's namespace
+    # A Bundle is cluster-scoped and one with no selector writes its ConfigMap into every
+    # namespace in the cluster.
+    template: bundle.yaml
+    asserts:
+      - equal:
+          path: spec.target.namespaceSelector.matchLabels["kubernetes.io/metadata.name"]
+          value: NAMESPACE
+      - equal:
+          path: spec.target.configMap.key
+          value: ca.crt
+
+  # ------------------------------------------------- mtls, supplied certs ---
+  - it: takes operator-supplied keypairs without creating a Certificate
+    # mTLS without a controller. cert-manager stays the default and the recommended source; this
+    # is the path for a cluster whose PKI is somewhere else entirely.
+    template: certificate.yaml
+    values:
+      - ../ci/internal-mtls-existing.yaml
+    capabilities:
+      apiVersions: []
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: mounts each service's own supplied Secret
+    template: deployment.yaml
+    values:
+      - ../ci/internal-mtls-existing.yaml
+    capabilities:
+      apiVersions: []
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-worker
+    asserts:
+      - equal:
+          path: spec.template.spec.volumes[?(@.name=="internal-tls")].secret.secretName
+          value: tankovault-worker-tls
+      # No second volume: with `ca.source: certificateSecret` the bundle is a key of the Secret
+      # already mounted, so mTLS costs exactly one volume and no extra object.
+      - notExists:
+          path: spec.template.spec.volumes[?(@.name=="internal-ca")]
+
+  - it: reads the CA out of the keypair Secret it already mounts
+    template: configmap.yaml
+    values:
+      - ../ci/internal-mtls-existing.yaml
+    capabilities:
+      apiVersions: []
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-api-config
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: 'ca = "/etc/tankovault/tls/ca\.crt"'
+
+  - it: configures peers with the SANs the operator's PKI issues
+    # The override is the identity written into every peer's configuration. Under cert-manager it
+    # is requested on the Certificate by the same helper, so the two halves cannot disagree.
+    template: configmap.yaml
+    values:
+      - ../ci/internal-mtls-existing.yaml
+    capabilities:
+      apiVersions: []
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-render-config
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: 'san = "worker\.tankovault\.internal"'
+
+  - it: requests the overridden SAN alongside the dialed Service name
+    # Two different checks read the certificate: peers verify the configured identity against any
+    # DNS SAN, and the handshake verifies the host actually dialed — which is always the Service
+    # name. Both have to be on the certificate.
+    template: certificate.yaml
+    set:
+      internal.tls.sans.api: api.tankovault.internal
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-api-internal-tls
+    asserts:
+      - contains:
+          path: spec.dnsNames
+          content: api.tankovault.internal
+      - contains:
+          path: spec.dnsNames
+          content: RELEASE-NAME-tankovault-api
+
+  # ----------------------------------------------------------------- token ---
+  - it: gives each caller its own token and each callee only what it accepts
+    # Holding `worker`'s token opens the routes `worker` may call and nothing else. The old
+    # shared token opened every privileged route on every service.
+    template: deployment.yaml
+    values:
+      - ../ci/default.yaml
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-challenge-solver
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes[?(@.name=="secrets")].projected.sources[0].secret.items
+          content:
+            key: internal__tokens__worker
+            path: internal__peers__worker__token
+      - notContains:
+          path: spec.template.spec.volumes[?(@.name=="secrets")].projected.sources[0].secret.items
+          content:
+            key: internal__tokens__api
+            path: internal__peers__api__token
+
+  - it: emits no SAN and no TLS material under token identity
+    template: configmap.yaml
+    values:
+      - ../ci/default.yaml
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-control-plane-config
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: 'identity = "token"'
+      - notMatchRegex:
+          path: data["config.toml"]
+          pattern: "san ="
+      - notMatchRegex:
+          path: data["config.toml"]
+          pattern: "\\[internal\\.tls\\]"
+
+  - it: keeps the peer URLs plaintext under token identity
+    # Nothing terminates TLS on the peer listeners in this mode, so an https upstream would
+    # fail to connect at all.
+    template: configmap.yaml
+    values:
+      - ../ci/default.yaml
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-api-config
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: 'control_plane_url = "http://'
+      - notMatchRegex:
+          path: data["config.toml"]
+          pattern: '_url = "https://'
+
+  - it: renders no certificates under token identity
+    template: certificate.yaml
+    values:
+      - ../ci/default.yaml
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders no trust bundle under token identity
+    template: bundle.yaml
+    values:
+      - ../ci/default.yaml
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: mounts no TLS volume under token identity
+    template: deployment.yaml
+    values:
+      - ../ci/default.yaml
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-api
+    asserts:
+      - notExists:
+          path: spec.template.spec.volumes[?(@.name=="internal-tls")]
+      - notExists:
+          path: spec.template.spec.volumes[?(@.name=="internal-ca")]

@@ -151,6 +151,34 @@ tests:
       - notExists:
           path: spec.egress[?(@.to[0].ipBlock)]
 
+  - it: admits only the callers that actually call
+    # The policies are the call graph, and the call graph is now written down: `api` is the only
+    # service that calls `worker`. The `control-plane` edge this used to admit was never
+    # matched by an egress rule on the control-plane side, so it granted a path nothing used —
+    # and under per-caller credentials it would be a peer with no credential to present.
+    template: networkpolicy.yaml
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-worker
+    asserts:
+      - exists:
+          path: spec.ingress[?(@.from[0].podSelector.matchLabels["app.kubernetes.io/name"] == "tankovault-api")]
+      - notExists:
+          path: spec.ingress[?(@.from[0].podSelector.matchLabels["app.kubernetes.io/name"] == "tankovault-control-plane")]
+
+  - it: lets only the worker reach the tiers that fetch caller-supplied URLs
+    # `render` and `challenge-solver` both open URLs chosen by whatever called them, so the set
+    # of things that may call them is the one worth keeping to exactly one entry.
+    template: networkpolicy.yaml
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-render
+    asserts:
+      - exists:
+          path: spec.ingress[?(@.from[0].podSelector.matchLabels["app.kubernetes.io/name"] == "tankovault-worker")]
+      - notExists:
+          path: spec.ingress[?(@.from[0].podSelector.matchLabels["app.kubernetes.io/name"] == "tankovault-challenge-solver")]
+
   - it: labels the scrape job with the slug the vendored rules match on
     # Without jobLabel the operator sets `job` to the Service name, while every vendored rule
     # matches `up{job=~"api|frontend"}`. The rules would load and never fire.

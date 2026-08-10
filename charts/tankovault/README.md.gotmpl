@@ -18,7 +18,8 @@ the optional headless `render` tier, plus the one-shot `bootstrap` migration and
 > [!IMPORTANT]
 > **Upgrading an existing release?** Read
 > [UPGRADING.md](https://github.com/TimSchoenle/helm-charts/blob/main/charts/tankovault/UPGRADING.md)
-> first. Two versions need a manual step that nothing else will remind you about: 3.1.0 (pgvector,
+> first. Three versions need a manual step that nothing else will remind you about: 4.0.0 (the
+> shared `internal.token` is gone, and the services **refuse to boot** on it), 3.1.0 (pgvector,
 > and a one-off `REINDEX` on the bundled database) and 3.0.3 (a one-off StatefulSet recreate).
 
 ## Where to look
@@ -26,6 +27,7 @@ the optional headless `render` tier, plus the one-shot `bootstrap` migration and
 | If you are | Read |
 |---|---|
 | installing for the first time | [Quick start](#quick-start), then [Exposure](#exposure) |
+| upgrading across 4.0.0 | [Inter-service authentication](#inter-service-authentication) |
 | putting Cloudflare in front of it | [Running behind Cloudflare](#running-behind-cloudflare) |
 | wiring up your own datastores | [The bundled datastores are evaluation-tier](#the-bundled-datastores-are-evaluation-tier) |
 | wondering why a config change did not restart anything | [Configuration reloads instead of restarting](#configuration-reloads-instead-of-restarting) |
@@ -44,7 +46,12 @@ the optional headless `render` tier, plus the one-shot `bootstrap` migration and
 - A PostgreSQL database **with [pgvector](https://github.com/pgvector/pgvector) available** —
   either the bundled one (`postgresql.enabled=true`, which runs `pgvector/pgvector`) or your own
   (`externalDatabase.*`). See [Recommendations need pgvector](#recommendations-need-pgvector).
-- A NATS server with JetStream enabled, if `worker` or `control-plane` are deployed
+- A NATS server with JetStream enabled, if `worker` or `control-plane` are deployed. It must be
+  TLS-enabled under the default `internal.identity=mtls`
+- An internal PKI, under the default `internal.identity=mtls`: either cert-manager and a CA issuer
+  (the recommended path — the chart issues and the controller renews), or one `kubernetes.io/tls`
+  Secret per service that you supply and renew yourself. `internal.identity=token` needs neither.
+  See [Inter-service authentication](#inter-service-authentication)
 - The Prometheus Operator CRDs, if `metrics.serviceMonitor` or `metrics.prometheusRule` are enabled
 - An ingress controller, if `ingress.enabled=true`
 - The Gateway API CRDs and a `Gateway` to attach to, if `gateway.enabled=true`
@@ -60,6 +67,7 @@ helm repo add timschoenle https://timschoenle.github.io/helm-charts
 helm repo update
 
 helm install tankovault timschoenle/tankovault \
+  --set internal.identity=token \
   --set postgresql.enabled=true \
   --set nats.enabled=true \
   --set valkey.enabled=true \
@@ -73,6 +81,13 @@ you care about. `services.sync` additionally needs an
 [AniList OAuth application](https://anilist.co/settings/developer); set
 `services.sync.enabled=false` if you do not want it.
 
+`internal.identity=token` is what makes that line installable on a cluster with nothing else on
+it. The chart's default is `mtls`, which is the mode to run in production and takes its
+certificates either from cert-manager — the recommended source, two values to configure — or from
+Secrets you already have; [Inter-service authentication](#inter-service-authentication) is the
+whole of that decision. The bundled NATS is the other reason `token` appears here: it serves
+plaintext, and `mtls` requires TLS to the broker.
+
 ### Generated credentials
 
 Every credential whose value is meaningful only inside the release is generated when you leave it
@@ -84,7 +99,8 @@ so `helm upgrade` never rotates one out from under a running workload.
 | `auth.jwtSecret` | always | `auth__jwt_secret` |
 | `auth.passwordPepper` | first install only (see below) | `auth__password_pepper` |
 | `auth.mfaEncryptionKey` | `services.api.enabled` | `auth__mfa_encryption_key` |
-| `internal.token` | `profile=production` | `internal__token` |
+| `internal.tokens.api` | `identity=token`, api enabled | `internal__tokens__api` |
+| `internal.tokens.worker` | `identity=token`, worker enabled | `internal__tokens__worker` |
 | `anilist.tokenEncryptionKey` | `services.sync.enabled` | `anilist__token_encryption_key` |
 | `bootstrap.seedAdmin.password` | `bootstrap.seedAdmin.enabled` | `seed_admin_password` |
 | `postgresql.auth.password` | `postgresql.enabled` | `postgresql__password` |
@@ -177,9 +193,191 @@ The chart then generates nothing, so this Secret must carry every key the enable
 ```shell
 kubectl create secret generic tankovault-credentials \
   --from-literal=auth__jwt_secret="$(openssl rand -hex 32)" \
-  --from-literal=internal__token="$(openssl rand -hex 32)" \
-  --from-literal=anilist__token_encryption_key="$(openssl rand -base64 32)"
+  --from-literal=anilist__token_encryption_key="$(openssl rand -base64 32)" \
+  --from-literal=internal__tokens__api="$(openssl rand -hex 32)" \
+  --from-literal=internal__tokens__worker="$(openssl rand -hex 32)"
 ```
+
+The last two are needed only under `internal.identity=token`, and they are the one pair of keys
+whose name is *not* a configuration path: one token is read as `internal.caller.token` by the
+caller that presents it and as `internal.peers.<caller>.token` by each of its callees, so the
+Secret key is storage and the projected file name carries the configuration path.
+
+## Inter-service authentication
+
+Each service exposes privileged routes that only certain other services may call, and each callee
+carries a compiled-in table of which caller may reach which route. `internal.identity` chooses
+only how a caller **proves who it is** — authorisation is identical either way, so the two modes
+differ in nothing else:
+
+| Mode | A caller is | Needs |
+|---|---|---|
+| `mtls` (default) | the DNS SAN on its verified client certificate | an internal PKI — cert-manager (recommended) or one Secret per service — and a TLS-enabled NATS |
+| `token` | a per-caller secret in `X-Internal-Token` | nothing |
+
+Exactly two services make privileged calls, and that is the whole graph:
+
+| Service | Calls | Called by |
+|---|---|---|
+| `api` | control-plane, sync, worker | — (public edge) |
+| `worker` | challenge-solver, render | api |
+| `control-plane`, `sync` | — | api |
+| `challenge-solver`, `render` | — | worker |
+| `notifier`, `frontend` | — | — |
+
+`worker` is the only service that is both a caller and a callee. `notifier` is neither — it
+speaks only to NATS — and still carries the mTLS material, because under `mtls` the broker
+connection presents the same client certificate. `frontend` reads none of this: it proxies
+`/v1/*` to the API as an ordinary public request and holds no caller identity in either mode.
+
+The NetworkPolicies are that same table: `render` and `challenge-solver` admit `worker` and
+nothing else, which matters because both fetch caller-supplied URLs. The one edge in the policies
+that is not in the table is `frontend` to `api` — the public request path, which carries no caller
+identity by design.
+
+### `mtls`
+
+Certificates come from one of two sources. **cert-manager is the default and the recommended
+one** — it renews and rotates on its own, so nothing expires unattended, and the name a service is
+identified by is requested on the certificate and written into its peers' configuration by the
+same helper, so the two halves cannot drift:
+
+```yaml
+internal:
+  identity: mtls
+  tls:
+    source: certManager          # the default
+    certManager:
+      issuerRef:
+        name: internal-ca
+        kind: ClusterIssuer
+```
+
+That is the whole configuration. The chart issues one `Certificate` per service — `notifier`
+included, `frontend` excluded — each usable as both a client and a server certificate, and reads
+the CA out of the `ca.crt` key cert-manager writes into the same Secret. No second object, no
+second volume, no trust-manager.
+
+The other source is Secrets you already have, from an external PKI, a Vault Agent sidecar, SPIRE,
+or issued by hand. Nothing about the mode changes; the chart simply creates no `Certificate` and
+requires no controller:
+
+```yaml
+internal:
+  identity: mtls
+  tls:
+    source: existingSecrets
+    existingSecrets:                             # one per service, never one shared by two
+      api: tankovault-api-tls
+      controlPlane: tankovault-control-plane-tls
+      worker: tankovault-worker-tls
+      notifier: tankovault-notifier-tls
+      sync: tankovault-sync-tls
+      challengeSolver: tankovault-challenge-solver-tls
+      render: tankovault-render-tls
+    sans:                                        # only if your PKI issues names of its own
+      api: api.tankovault.internal
+      worker: worker.tankovault.internal
+```
+
+Each Secret is `kubernetes.io/tls`-shaped (`tls.crt`, `tls.key`, and `ca.crt` unless the CA comes
+from elsewhere). Three rules the chart enforces or you have to keep:
+
+- **One certificate per service.** A service *is* the SANs on the certificate it presents, so a
+  Secret shared by two lets either speak as the other. The chart refuses that combination, and
+  refuses to render at all while any enabled service has no Secret named — a pod that waits
+  forever on a missing volume is not a failure anyone reads as a configuration mistake.
+- **Each certificate must be valid for the Service name its peers dial**,
+  `<release>-tankovault-<slug>`. Two different checks read it: peers verify the *identity* — the
+  name under `sans`, or the derived `<service>.<namespace>.svc` — against every DNS SAN, while the
+  handshake separately verifies the host actually dialed. One certificate carrying both satisfies
+  both.
+- **Renewal is yours.** Nothing in the release renews a supplied certificate, and one that expires
+  stops every privileged call at once. This is the reason cert-manager is the recommended source.
+
+#### Where the CA comes from
+
+`internal.tls.ca.source` picks it, independently of where the keypairs come from:
+
+| `ca.source` | Reads | Use it when |
+|---|---|---|
+| `certificateSecret` (default) | the `ca.crt` key of the keypair Secret already mounted | the common case — cert-manager writes it for a CA issuer, and most PKIs ship the same layout |
+| `configMap` | a ConfigMap, which is what a trust-manager `Bundle` writes | the more robust setup: one bundle for the cluster, rotatable independently of any one certificate, and the only option when your issuer does not populate `ca.crt` |
+| `secret` | a Secret | a PKI that ships its root that way |
+
+`internal.tls.ca.bundle.create` renders the trust-manager `Bundle` itself, for a cluster that has
+no cluster-wide one. It is **off by default** because a Bundle is cluster-scoped, so two releases
+creating the same name would be two objects overwriting each other — the usual case is pointing
+`internal.tls.ca.name` at the ConfigMap an existing Bundle already writes here.
+
+```yaml
+internal:
+  tls:
+    ca:
+      source: configMap
+      name: tankovault-ca
+      bundle:
+        create: true
+        sources:
+          - secret: { name: internal-ca, key: ca.crt }   # your CA, in cert-manager's namespace
+```
+
+#### The rest of the mode
+
+- **Rotation is not a rollout.** Each service re-reads the files every 30 seconds and swaps the
+  credential without dropping connections, so a renewal is invisible to the fleet. No `checksum/`
+  annotation names the TLS Secret, deliberately.
+- **NATS must speak TLS.** Under `mtls` a service presents its client certificate to the broker
+  too. The bundled `nats` serves plaintext only, so `nats.enabled=true` with `identity: mtls` is
+  refused at render time rather than found at runtime.
+
+The peer URLs follow the mode: `control_plane_url`, `sync_url`, `worker_url` and
+`worker.challenge_solver_endpoint` become `https://` under `mtls`, because upstream refuses to
+boot on a plaintext peer URL there — the connection would be accepted, offer no client
+certificate and encrypt nothing, while the peer's own configuration still says it requires both.
+Two things deliberately stay plaintext: the frontend's `api_upstream`, which is a reverse-proxied
+public request rather than an internal call, and the `/health` and `/ready` probes, which are
+mounted outside the authenticated stack and stay on a plain listener because a kubelet probe
+presents no client certificate.
+
+### `token`
+
+```yaml
+internal:
+  identity: token
+```
+
+One secret per caller, generated and remembered across upgrades, and each callee receives only
+the tokens of the callers it accepts. Holding `worker`'s token opens the routes `worker` may call
+and nothing else; a compromised `challenge-solver` — which is only ever a callee — holds no
+caller credential at all. Set `internal.tokens.api` / `internal.tokens.worker` explicitly only if
+a value has to be known outside the release; each is length-checked at 32 characters in every
+profile (`openssl rand -hex 32`).
+
+### Migrating off `internal.token`
+
+The shared token is **refused at boot** by app 4.0.0, in every profile, with no dual-accept
+window. A release that carries it through does not degrade — every service stops. The chart fails
+the render if `internal.token` is set, naming the replacement, so a values file carrying it cannot
+reach a cluster.
+
+The one case the chart cannot see is `existingSecret`: it never reads that Secret's contents, so a
+stale `internal__token` in it surfaces as every pod failing to boot at once. Remove that key, and
+under `identity: token` add `internal__tokens__api` and `internal__tokens__worker` in its place.
+
+### Per-service NATS accounts
+
+The account each service connects to is carried in its NATS URL, so per-service accounts — what
+actually stops `notifier` publishing scan tasks — are delivered as one URL per service:
+
+```yaml
+externalNats:
+  perServiceSecret: tankovault-nats-accounts   # keys: api, control-plane, worker, notifier
+```
+
+Each pod projects its own key as `nats__url`, replacing the derived URL entirely. The accounts
+themselves are NATS server configuration: the services present what you give them here and
+cannot assert what a broker does not enforce.
 
 ### Two-factor authentication
 

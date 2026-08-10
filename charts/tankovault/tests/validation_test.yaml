@@ -18,28 +18,153 @@ tests:
       - failedTemplate:
           errorPattern: "at least 32 characters"
 
-  - it: generates the internal token in the production profile rather than refusing to render
+  - it: generates the per-caller tokens rather than refusing to render without them
     set:
-      profile: production
-      internal.token: ""
+      internal.tokens.api: ""
+      internal.tokens.worker: ""
     asserts:
       - hasDocuments:
           count: 1
 
-  - it: allows the internal token to be absent outside production
+  - it: refuses an explicit caller token shorter than the service accepts
+    # Length is checked in every profile upstream, not only in production, so a short value is
+    # a boot failure on every service that reads it.
     set:
-      profile: development
-      internal.token: ""
-    asserts:
-      - hasDocuments:
-          count: 1
-
-  - it: refuses an explicit internal token shorter than the service accepts
-    set:
-      internal.token: "too-short"
+      internal.tokens.worker: "too-short"
     asserts:
       - failedTemplate:
-          errorPattern: "internal.token must be at least 32 characters"
+          errorPattern: "internal.tokens.worker must be at least 32 characters"
+
+  - it: refuses the removed shared token by name, with the migration path
+    # The break this major exists for. Upstream refuses `internal.token` at boot with no
+    # dual-accept window, so a release carrying it through would not degrade — every service
+    # would fail to start at once. Failing the render turns that into one message.
+    set:
+      internal.token: "a-perfectly-long-shared-token-value"
+    asserts:
+      - failedTemplate:
+          errorPattern: "internal.token no longer exists"
+
+  # The mTLS checks layer a fixture over `ci/default.yaml`, which is a `token` fixture, so each
+  # clears the two tokens it sets — a token left behind under mtls is itself a render failure and
+  # would mask the message under test.
+  - it: refuses cert-manager issuance without an issuer to sign with
+    values:
+      - ../ci/internal-mtls.yaml
+    set:
+      internal.tokens.api: ""
+      internal.tokens.worker: ""
+      internal.tls.certManager.issuerRef.name: ""
+    capabilities:
+      apiVersions:
+        - cert-manager.io/v1
+        - trust.cert-manager.io/v1alpha1
+    asserts:
+      - failedTemplate:
+          errorPattern: "internal.tls.certManager.issuerRef.name"
+
+  - it: refuses cert-manager issuance on a cluster with no cert-manager
+    values:
+      - ../ci/internal-mtls.yaml
+    set:
+      internal.tokens.api: ""
+      internal.tokens.worker: ""
+    asserts:
+      - failedTemplate:
+          errorPattern: "registers no `cert-manager.io/v1` API"
+
+  - it: needs no cert-manager at all for operator-supplied certificates
+    # The point of the second source: mTLS without a controller. No Certificate is rendered, so
+    # no CRD is required, and the CA comes out of the keypair Secret the pod already mounts.
+    values:
+      - ../ci/internal-mtls-existing.yaml
+    set:
+      internal.tokens.api: ""
+      internal.tokens.worker: ""
+    asserts:
+      - hasDocuments:
+          count: 1
+
+  - it: refuses a service with no certificate Secret named
+    # A missing Secret is a pod that waits on the volume forever, which is not a failure anybody
+    # reads as a configuration mistake.
+    values:
+      - ../ci/internal-mtls-existing.yaml
+    set:
+      internal.tokens.api: ""
+      internal.tokens.worker: ""
+      internal.tls.existingSecrets.notifier: ""
+    asserts:
+      - failedTemplate:
+          errorPattern: "internal.tls.existingSecrets.notifier"
+
+  - it: refuses one certificate Secret shared by two services
+    # A service is identified by the SANs on the certificate it presents. Sharing one lets either
+    # speak as the other, which collapses exactly the distinction this mode exists to draw.
+    values:
+      - ../ci/internal-mtls-existing.yaml
+    set:
+      internal.tokens.api: ""
+      internal.tokens.worker: ""
+      internal.tls.existingSecrets.render: tankovault-worker-tls
+    asserts:
+      - failedTemplate:
+          errorPattern: "both name \"tankovault-worker-tls\""
+
+  - it: refuses a SAN override that names no service
+    values:
+      - ../ci/internal-mtls-existing.yaml
+    set:
+      internal.tokens.api: ""
+      internal.tokens.worker: ""
+      internal.tls.sans.control-plane: control-plane.tankovault.internal
+    asserts:
+      - failedTemplate:
+          errorPattern: "internal.tls.sans.control-plane names no service"
+
+  - it: refuses a CA object with no name
+    values:
+      - ../ci/internal-mtls-existing.yaml
+    set:
+      internal.tokens.api: ""
+      internal.tokens.worker: ""
+      internal.tls.ca.source: configMap
+      internal.tls.ca.name: ""
+    asserts:
+      - failedTemplate:
+          errorPattern: "internal.tls.ca.name"
+
+  - it: refuses a trust bundle it is asked to create with nothing in it
+    values:
+      - ../ci/internal-mtls.yaml
+    set:
+      internal.tokens.api: ""
+      internal.tokens.worker: ""
+      internal.tls.ca.bundle.sources: []
+    capabilities:
+      apiVersions:
+        - cert-manager.io/v1
+        - trust.cert-manager.io/v1alpha1
+    asserts:
+      - failedTemplate:
+          errorPattern: "ca.bundle.sources is empty"
+
+  - it: refuses a trust bundle whose ConfigMap nothing would mount
+    # trust-manager writes a ConfigMap. Creating one while the pods read their CA from somewhere
+    # else leaves an object nobody consumes and a bundle nobody rotates.
+    values:
+      - ../ci/internal-mtls.yaml
+    set:
+      internal.tokens.api: ""
+      internal.tokens.worker: ""
+      internal.tls.ca.source: certificateSecret
+    capabilities:
+      apiVersions:
+        - cert-manager.io/v1
+        - trust.cert-manager.io/v1alpha1
+    asserts:
+      - failedTemplate:
+          errorPattern: "bundle.create is set while internal.tls.ca.source"
 
   - it: refuses two database sources at once
     set:

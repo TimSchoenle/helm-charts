@@ -1,0 +1,63 @@
+# mTLS from certificates the operator already has: an external PKI, a Vault Agent sidecar, SPIRE,
+# or a hand-issued set. The chart creates no `Certificate` and no `Bundle`, needs neither
+# cert-manager nor trust-manager, and reads the CA out of each keypair Secret's own `ca.crt` —
+# which is the default and the smallest possible mTLS footprint: one volume, no extra objects.
+#
+# cert-manager remains the recommended source and the chart's default; `ci/internal-mtls.yaml` is
+# that path. This fixture exists because "you must run cert-manager to get mTLS at all" is not a
+# reasonable thing for a chart to insist on.
+#
+# A render fixture, not an install fixture — the Secrets below exist only in the operator's
+# cluster, and these endpoints do not resolve. Hence the name: `ct install` takes every
+# `ci/*-values.yaml`, while the render and policy jobs glob `ci/*.yaml`.
+auth:
+  jwtSecret: ci-jwt-secret-0123456789abcdef0123
+  passwordPepper: ci-password-pepper-0123456789abcd
+internal:
+  identity: mtls
+  tls:
+    source: existingSecrets
+    # One Secret per service, never one shared between two: a service is identified by the SANs
+    # on the certificate it presents, so a shared Secret would let either speak as the other.
+    # The chart refuses that outright.
+    existingSecrets:
+      api: tankovault-api-tls
+      controlPlane: tankovault-control-plane-tls
+      worker: tankovault-worker-tls
+      notifier: tankovault-notifier-tls
+      sync: tankovault-sync-tls
+      challengeSolver: tankovault-challenge-solver-tls
+      render: tankovault-render-tls
+    # The names this PKI issues, rather than the in-cluster ones the chart would derive. Each
+    # certificate still has to carry the Service name its peers dial it at; the verifier checks
+    # the configured identity against every DNS SAN, so both fit on one certificate.
+    sans:
+      api: api.tankovault.internal
+      worker: worker.tankovault.internal
+    ca:
+      # The chart's default, stated outright because it is the whole footprint story: the bundle
+      # is the `ca.crt` key of the keypair Secret each pod already mounts, so mTLS here costs one
+      # volume and no object any controller has to create. Also what makes this fixture render
+      # correctly when a test layers it over `ci/internal-mtls.yaml`, which selects the
+      # trust-manager ConfigMap instead.
+      source: certificateSecret
+      bundle:
+        create: false
+anilist:
+  clientId: "12345"
+  clientSecret: ci-anilist-client-secret
+  tokenEncryptionKey: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
+  redirectUri: https://tankovault.example.com/account/anilist-callback
+externalDatabase:
+  url: postgres://tankovault:ci@postgresql.example.com:5432/tankovault
+externalRedis:
+  url: redis://valkey.example.com:6379
+# TLS-enabled, because under mtls each service presents its client certificate to the broker and
+# requires TLS on that connection.
+externalNats:
+  url: tls://nats.example.com:4222
+externalTrawl:
+  url: http://trawl.example.com:8191
+services:
+  render:
+    enabled: true

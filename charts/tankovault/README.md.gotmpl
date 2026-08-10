@@ -48,9 +48,10 @@ the optional headless `render` tier, plus the one-shot `bootstrap` migration and
   (`externalDatabase.*`). See [Recommendations need pgvector](#recommendations-need-pgvector).
 - A NATS server with JetStream enabled, if `worker` or `control-plane` are deployed. It must be
   TLS-enabled under the default `internal.identity=mtls`
-- cert-manager, a CA issuer, and the CA published into this namespace as a ConfigMap (which is
-  what trust-manager does), unless you set `internal.identity=token`. See
-  [Inter-service authentication](#inter-service-authentication)
+- An internal PKI, under the default `internal.identity=mtls`: either cert-manager and a CA issuer
+  (the recommended path — the chart issues and the controller renews), or one `kubernetes.io/tls`
+  Secret per service that you supply and renew yourself. `internal.identity=token` needs neither.
+  See [Inter-service authentication](#inter-service-authentication)
 - The Prometheus Operator CRDs, if `metrics.serviceMonitor` or `metrics.prometheusRule` are enabled
 - An ingress controller, if `ingress.enabled=true`
 - The Gateway API CRDs and a `Gateway` to attach to, if `gateway.enabled=true`
@@ -81,10 +82,11 @@ you care about. `services.sync` additionally needs an
 `services.sync.enabled=false` if you do not want it.
 
 `internal.identity=token` is what makes that line installable on a cluster with nothing else on
-it. The chart's default is `mtls`, which needs cert-manager and a CA and is the mode to run in
-production — [Inter-service authentication](#inter-service-authentication) is the whole of that
-decision. The bundled NATS is the other reason it appears here: it serves plaintext, and `mtls`
-requires TLS to the broker.
+it. The chart's default is `mtls`, which is the mode to run in production and takes its
+certificates either from cert-manager — the recommended source, two values to configure — or from
+Secrets you already have; [Inter-service authentication](#inter-service-authentication) is the
+whole of that decision. The bundled NATS is the other reason `token` appears here: it serves
+plaintext, and `mtls` requires TLS to the broker.
 
 ### Generated credentials
 
@@ -210,7 +212,7 @@ differ in nothing else:
 
 | Mode | A caller is | Needs |
 |---|---|---|
-| `mtls` (default) | the DNS SAN on its verified client certificate | cert-manager, a CA issuer, the CA as a ConfigMap, a TLS-enabled NATS |
+| `mtls` (default) | the DNS SAN on its verified client certificate | an internal PKI — cert-manager (recommended) or one Secret per service — and a TLS-enabled NATS |
 | `token` | a per-caller secret in `X-Internal-Token` | nothing |
 
 Exactly two services make privileged calls, and that is the whole graph:
@@ -235,32 +237,96 @@ identity by design.
 
 ### `mtls`
 
+Certificates come from one of two sources. **cert-manager is the default and the recommended
+one** — it renews and rotates on its own, so nothing expires unattended, and the name a service is
+identified by is requested on the certificate and written into its peers' configuration by the
+same helper, so the two halves cannot drift:
+
 ```yaml
 internal:
   identity: mtls
   tls:
-    issuerRef:
-      name: internal-ca
-      kind: ClusterIssuer
-    trustBundle:
-      name: tankovault-ca      # the ConfigMap a trust-manager Bundle writes into this namespace
+    source: certManager          # the default
+    certManager:
+      issuerRef:
+        name: internal-ca
+        kind: ClusterIssuer
 ```
 
-The chart issues one `Certificate` per service — `notifier` included, `frontend` excluded — each
-requesting `<release>-tankovault-<service>.<namespace>.svc` and usable as both a client and a
-server certificate. Every callee is configured with the SAN of each caller it accepts, and no
-credential for any of this exists in the release.
+That is the whole configuration. The chart issues one `Certificate` per service — `notifier`
+included, `frontend` excluded — each usable as both a client and a server certificate, and reads
+the CA out of the `ca.crt` key cert-manager writes into the same Secret. No second object, no
+second volume, no trust-manager.
 
-Three things are worth knowing before you turn it on:
+The other source is Secrets you already have, from an external PKI, a Vault Agent sidecar, SPIRE,
+or issued by hand. Nothing about the mode changes; the chart simply creates no `Certificate` and
+requires no controller:
 
-- **The CA has to reach this namespace as a ConfigMap.** That is what trust-manager produces, and
-  `internal.tls.trustBundle.name` is both the `Bundle`'s name and the ConfigMap's.
-  `internal.tls.trustBundle.create` renders the Bundle for a cluster that has no cluster-wide one;
-  it is **off by default** because a Bundle is cluster-scoped, so two releases creating the same
-  name would be two objects overwriting each other.
+```yaml
+internal:
+  identity: mtls
+  tls:
+    source: existingSecrets
+    existingSecrets:                             # one per service, never one shared by two
+      api: tankovault-api-tls
+      controlPlane: tankovault-control-plane-tls
+      worker: tankovault-worker-tls
+      notifier: tankovault-notifier-tls
+      sync: tankovault-sync-tls
+      challengeSolver: tankovault-challenge-solver-tls
+      render: tankovault-render-tls
+    sans:                                        # only if your PKI issues names of its own
+      api: api.tankovault.internal
+      worker: worker.tankovault.internal
+```
+
+Each Secret is `kubernetes.io/tls`-shaped (`tls.crt`, `tls.key`, and `ca.crt` unless the CA comes
+from elsewhere). Three rules the chart enforces or you have to keep:
+
+- **One certificate per service.** A service *is* the SANs on the certificate it presents, so a
+  Secret shared by two lets either speak as the other. The chart refuses that combination, and
+  refuses to render at all while any enabled service has no Secret named — a pod that waits
+  forever on a missing volume is not a failure anyone reads as a configuration mistake.
+- **Each certificate must be valid for the Service name its peers dial**,
+  `<release>-tankovault-<slug>`. Two different checks read it: peers verify the *identity* — the
+  name under `sans`, or the derived `<service>.<namespace>.svc` — against every DNS SAN, while the
+  handshake separately verifies the host actually dialed. One certificate carrying both satisfies
+  both.
+- **Renewal is yours.** Nothing in the release renews a supplied certificate, and one that expires
+  stops every privileged call at once. This is the reason cert-manager is the recommended source.
+
+#### Where the CA comes from
+
+`internal.tls.ca.source` picks it, independently of where the keypairs come from:
+
+| `ca.source` | Reads | Use it when |
+|---|---|---|
+| `certificateSecret` (default) | the `ca.crt` key of the keypair Secret already mounted | the common case — cert-manager writes it for a CA issuer, and most PKIs ship the same layout |
+| `configMap` | a ConfigMap, which is what a trust-manager `Bundle` writes | the more robust setup: one bundle for the cluster, rotatable independently of any one certificate, and the only option when your issuer does not populate `ca.crt` |
+| `secret` | a Secret | a PKI that ships its root that way |
+
+`internal.tls.ca.bundle.create` renders the trust-manager `Bundle` itself, for a cluster that has
+no cluster-wide one. It is **off by default** because a Bundle is cluster-scoped, so two releases
+creating the same name would be two objects overwriting each other — the usual case is pointing
+`internal.tls.ca.name` at the ConfigMap an existing Bundle already writes here.
+
+```yaml
+internal:
+  tls:
+    ca:
+      source: configMap
+      name: tankovault-ca
+      bundle:
+        create: true
+        sources:
+          - secret: { name: internal-ca, key: ca.crt }   # your CA, in cert-manager's namespace
+```
+
+#### The rest of the mode
+
 - **Rotation is not a rollout.** Each service re-reads the files every 30 seconds and swaps the
-  credential without dropping connections, so cert-manager's renewal is invisible to the fleet.
-  No `checksum/` annotation names the TLS Secret, deliberately.
+  credential without dropping connections, so a renewal is invisible to the fleet. No `checksum/`
+  annotation names the TLS Secret, deliberately.
 - **NATS must speak TLS.** Under `mtls` a service presents its client certificate to the broker
   too. The bundled `nats` serves plaintext only, so `nats.enabled=true` with `identity: mtls` is
   refused at render time rather than found at runtime.

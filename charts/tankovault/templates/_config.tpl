@@ -235,10 +235,16 @@ Args: ctx (root), service.
 identity: {{ $internal.identity | quote }}
 {{- if $mtls }}
 {{- $tls := $internal.tls }}
+{{- $certDir := trimSuffix "/" $tls.certDir }}
+{{- /*
+  The bundle sits in the keypair's own directory when it is the keypair Secret's `ca.crt`, and in
+  a directory of its own when it is a separate object — one volume cannot carry two.
+*/}}
+{{- $caDir := ternary $certDir (trimSuffix "/" $tls.caDir) (eq $tls.ca.source "certificateSecret") }}
 tls:
-  cert: {{ printf "%s/tls.crt" (trimSuffix "/" $tls.certDir) | quote }}
-  key: {{ printf "%s/tls.key" (trimSuffix "/" $tls.certDir) | quote }}
-  ca: {{ printf "%s/%s" (trimSuffix "/" $tls.caDir) $tls.trustBundle.key | quote }}
+  cert: {{ printf "%s/tls.crt" $certDir | quote }}
+  key: {{ printf "%s/tls.key" $certDir | quote }}
+  ca: {{ printf "%s/%s" $caDir $tls.ca.key | quote }}
 {{- end }}
 {{- with $spec.internalCaller }}
 caller:
@@ -419,20 +425,33 @@ Args: ctx (root), service.
       {{- $sources | nindent 6 }}
 {{- end }}
 {{- if include "tankovault.hasInternalTls" (dict "ctx" $ctx "service" $service) }}
+{{- $tls := $ctx.Values.internal.tls }}
 {{- /*
-  The keypair is cert-manager's, the bundle is trust-manager's, and neither is folded into the
-  `secrets` projection: both are written by a controller on its own schedule rather than by this
-  chart, and mounting them separately is what lets the kubelet refresh either one in place. No
-  `checksum/` annotation names them for the same reason — the services re-read the files every
-  30s and swap the credential without dropping a connection, so a rotation is not a rollout.
+  Never folded into the `secrets` projection: the keypair and the bundle are written by their own
+  controllers rather than by this chart, and mounting them separately is what lets the kubelet
+  refresh either one in place. No `checksum/` annotation names them for the same reason — the
+  services re-read the files every 30s and swap the credential without dropping a connection, so
+  a rotation is not a rollout.
+
+  The CA gets a volume only when it is an object of its own. Read from the keypair Secret's own
+  `ca.crt` it is already mounted, and a second volume over the same Secret would be a second
+  thing to keep in step for no gain.
 */}}
 - name: internal-tls
   secret:
-    secretName: {{ include "tankovault.internalCertName" (dict "ctx" $ctx "service" $service) }}
+    secretName: {{ include "tankovault.internalTlsSecret" (dict "ctx" $ctx "service" $service) }}
     defaultMode: 0400
+{{- if ne $tls.ca.source "certificateSecret" }}
 - name: internal-ca
+  {{- if eq $tls.ca.source "secret" }}
+  secret:
+    secretName: {{ $tls.ca.name }}
+    defaultMode: 0400
+  {{- else }}
   configMap:
-    name: {{ $ctx.Values.internal.tls.trustBundle.name }}
+    name: {{ $tls.ca.name }}
+  {{- end }}
+{{- end }}
 {{- end }}
 {{- if and (eq $service "api") (include "tankovault.legal.files" $ctx | trim) }}
 - name: legal
@@ -456,9 +475,11 @@ Args: ctx (root), service.
 - name: internal-tls
   mountPath: {{ $ctx.Values.internal.tls.certDir | quote }}
   readOnly: true
+{{- if ne $ctx.Values.internal.tls.ca.source "certificateSecret" }}
 - name: internal-ca
   mountPath: {{ $ctx.Values.internal.tls.caDir | quote }}
   readOnly: true
+{{- end }}
 {{- end }}
 {{- if and (eq $service "api") (include "tankovault.legal.files" $ctx | trim) }}
 - name: legal

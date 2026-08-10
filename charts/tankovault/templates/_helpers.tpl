@@ -226,19 +226,28 @@ Args: ctx (root), service.
 {{- end -}}
 
 {{/*
-The DNS SAN that identifies one service to its peers, e.g.
+The DNS name that identifies one service to its peers, e.g.
 `RELEASE-NAME-tankovault-api.default.svc`.
 
-One name per service, stable across upgrades and independent of pod identity, because it is
-both what the Certificate requests and what every callee is configured to expect. The verifier
-checks the configured name against *every* DNS SAN on the presented certificate rather than only
-the first, so the Certificate may carry more names than this one and their order does not
-matter — but the two sides must agree on this one exactly.
+One name per service, stable across upgrades and independent of pod identity, because it is both
+what the certificate carries and what every callee is configured to expect. The verifier checks
+the configured name against *every* DNS SAN on the presented certificate rather than only the
+first, so a certificate may carry more names than this one and their order does not matter — but
+the two sides must agree on this one exactly, which is why one helper answers for both.
+
+`internal.tls.sans.<service>` overrides it for an external PKI that issues names of its own. Under
+`source: certManager` the override is also requested on the Certificate, so the two halves cannot
+drift; under `existingSecrets` it declares what the operator's certificate already carries.
 
 Args: ctx (root), service.
 */}}
 {{- define "tankovault.internalSan" -}}
+{{- $override := index (.ctx.Values.internal.tls.sans | default dict) .service -}}
+{{- if $override -}}
+{{- $override -}}
+{{- else -}}
 {{- printf "%s.%s.svc" (include "tankovault.fullname" .) (include "common.namespace" .ctx) -}}
+{{- end -}}
 {{- end -}}
 
 {{/*
@@ -249,6 +258,24 @@ Args: ctx (root), service.
 {{- define "tankovault.internalCertName" -}}
 {{- $spec := include "tankovault.spec" .service | fromYaml -}}
 {{- include "common.fullname.suffixed" (dict "ctx" .ctx "suffix" (printf "%s-internal-tls" $spec.slug)) -}}
+{{- end -}}
+
+{{/*
+The Secret one service mounts its keypair from: the Certificate this chart creates, or the one
+the operator supplies.
+
+The single point where the two certificate sources differ, so everything downstream — the volume,
+the config paths, and the CA when it is read from the same Secret — is written once.
+
+Args: ctx (root), service.
+*/}}
+{{- define "tankovault.internalTlsSecret" -}}
+{{- $tls := .ctx.Values.internal.tls -}}
+{{- if eq $tls.source "existingSecrets" -}}
+{{- index ($tls.existingSecrets | default dict) .service -}}
+{{- else -}}
+{{- include "tankovault.internalCertName" . -}}
+{{- end -}}
 {{- end -}}
 
 {{/*

@@ -16,19 +16,26 @@ auth:
 internal:
   identity: mtls
   tls:
-    issuerRef:
-      name: internal-ca
-      kind: ClusterIssuer
-    trustBundle:
+    # The recommended path, and the chart's default: cert-manager issues one certificate per
+    # service, renews them on its own, and requests exactly the names the peer configuration
+    # expects. `ci/internal-mtls-existing.yaml` covers the other source.
+    source: certManager
+    certManager:
+      issuerRef:
+        name: internal-ca
+        kind: ClusterIssuer
+    ca:
+      # The trust-manager path rather than the default `certificateSecret`, so kubeconform and
+      # the policy scan see the Bundle and the second volume too. It is also the more robust
+      # setup on a real cluster — one bundle, rotatable independently of any one certificate.
+      source: configMap
       name: tankovault-ca
-      # Rendered as part of this release rather than assumed to exist, so kubeconform and the
-      # policy scan see the Bundle too. A real cluster usually has one already; see the values
-      # comment on why `create` is off by default.
-      create: true
-      sources:
-        - secret:
-            name: internal-ca
-            key: ca.crt
+      bundle:
+        create: true
+        sources:
+          - secret:
+              name: internal-ca
+              key: ca.crt
 anilist:
   clientId: "12345"
   clientSecret: ci-anilist-client-secret

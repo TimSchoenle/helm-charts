@@ -45,70 +45,126 @@ tests:
       - failedTemplate:
           errorPattern: "internal.token no longer exists"
 
-  - it: refuses mtls without an issuer to sign the certificates
+  # The mTLS checks layer a fixture over `ci/default.yaml`, which is a `token` fixture, so each
+  # clears the two tokens it sets — a token left behind under mtls is itself a render failure and
+  # would mask the message under test.
+  - it: refuses cert-manager issuance without an issuer to sign with
+    values:
+      - ../ci/internal-mtls.yaml
     set:
-      internal.identity: mtls
-      internal.tls.issuerRef.name: ""
-    capabilities:
-      apiVersions:
-        - cert-manager.io/v1
-    asserts:
-      - failedTemplate:
-          errorPattern: "internal.tls.issuerRef.name"
-
-  - it: refuses mtls on a cluster with no cert-manager
-    set:
-      internal.identity: mtls
-      internal.tls.issuerRef.name: internal-ca
-    asserts:
-      - failedTemplate:
-          errorPattern: "registers no `cert-manager.io/v1` API"
-
-  - it: refuses a token left behind under mtls
-    # A peer entry carrying the credential of the inactive mode is refused at boot. The chart
-    # never emits one, which means a value set here would silently mean nothing — so it says so.
-    set:
-      internal.identity: mtls
-      internal.tls.issuerRef.name: internal-ca
-      internal.tokens.api: ci-internal-token-api-0123456789abcdef
+      internal.tokens.api: ""
       internal.tokens.worker: ""
-    capabilities:
-      apiVersions:
-        - cert-manager.io/v1
-    asserts:
-      - failedTemplate:
-          errorPattern: "internal.tokens.api is set while internal.identity=mtls"
-
-  - it: refuses the bundled plaintext NATS under mtls
-    # Under mtls a service presents its client certificate to the broker as well and requires
-    # TLS on that connection. The bundled NATS serves plaintext, so every service that uses it
-    # would fail to connect — a runtime failure the render can see coming.
-    set:
-      internal.identity: mtls
-      internal.tls.issuerRef.name: internal-ca
-      externalDatabase.url: ""
-      externalNats.url: ""
-      postgresql.enabled: true
-      nats.enabled: true
-    capabilities:
-      apiVersions:
-        - cert-manager.io/v1
-    asserts:
-      - failedTemplate:
-          errorPattern: "internal.identity=mtls and nats.enabled=true cannot be combined"
-
-  - it: refuses a trust bundle it is asked to create with nothing in it
-    set:
-      internal.identity: mtls
-      internal.tls.issuerRef.name: internal-ca
-      internal.tls.trustBundle.create: true
+      internal.tls.certManager.issuerRef.name: ""
     capabilities:
       apiVersions:
         - cert-manager.io/v1
         - trust.cert-manager.io/v1alpha1
     asserts:
       - failedTemplate:
-          errorPattern: "trustBundle.sources is empty"
+          errorPattern: "internal.tls.certManager.issuerRef.name"
+
+  - it: refuses cert-manager issuance on a cluster with no cert-manager
+    values:
+      - ../ci/internal-mtls.yaml
+    set:
+      internal.tokens.api: ""
+      internal.tokens.worker: ""
+    asserts:
+      - failedTemplate:
+          errorPattern: "registers no `cert-manager.io/v1` API"
+
+  - it: needs no cert-manager at all for operator-supplied certificates
+    # The point of the second source: mTLS without a controller. No Certificate is rendered, so
+    # no CRD is required, and the CA comes out of the keypair Secret the pod already mounts.
+    values:
+      - ../ci/internal-mtls-existing.yaml
+    set:
+      internal.tokens.api: ""
+      internal.tokens.worker: ""
+    asserts:
+      - hasDocuments:
+          count: 1
+
+  - it: refuses a service with no certificate Secret named
+    # A missing Secret is a pod that waits on the volume forever, which is not a failure anybody
+    # reads as a configuration mistake.
+    values:
+      - ../ci/internal-mtls-existing.yaml
+    set:
+      internal.tokens.api: ""
+      internal.tokens.worker: ""
+      internal.tls.existingSecrets.notifier: ""
+    asserts:
+      - failedTemplate:
+          errorPattern: "internal.tls.existingSecrets.notifier"
+
+  - it: refuses one certificate Secret shared by two services
+    # A service is identified by the SANs on the certificate it presents. Sharing one lets either
+    # speak as the other, which collapses exactly the distinction this mode exists to draw.
+    values:
+      - ../ci/internal-mtls-existing.yaml
+    set:
+      internal.tokens.api: ""
+      internal.tokens.worker: ""
+      internal.tls.existingSecrets.render: tankovault-worker-tls
+    asserts:
+      - failedTemplate:
+          errorPattern: "both name \"tankovault-worker-tls\""
+
+  - it: refuses a SAN override that names no service
+    values:
+      - ../ci/internal-mtls-existing.yaml
+    set:
+      internal.tokens.api: ""
+      internal.tokens.worker: ""
+      internal.tls.sans.control-plane: control-plane.tankovault.internal
+    asserts:
+      - failedTemplate:
+          errorPattern: "internal.tls.sans.control-plane names no service"
+
+  - it: refuses a CA object with no name
+    values:
+      - ../ci/internal-mtls-existing.yaml
+    set:
+      internal.tokens.api: ""
+      internal.tokens.worker: ""
+      internal.tls.ca.source: configMap
+      internal.tls.ca.name: ""
+    asserts:
+      - failedTemplate:
+          errorPattern: "internal.tls.ca.name"
+
+  - it: refuses a trust bundle it is asked to create with nothing in it
+    values:
+      - ../ci/internal-mtls.yaml
+    set:
+      internal.tokens.api: ""
+      internal.tokens.worker: ""
+      internal.tls.ca.bundle.sources: []
+    capabilities:
+      apiVersions:
+        - cert-manager.io/v1
+        - trust.cert-manager.io/v1alpha1
+    asserts:
+      - failedTemplate:
+          errorPattern: "ca.bundle.sources is empty"
+
+  - it: refuses a trust bundle whose ConfigMap nothing would mount
+    # trust-manager writes a ConfigMap. Creating one while the pods read their CA from somewhere
+    # else leaves an object nobody consumes and a bundle nobody rotates.
+    values:
+      - ../ci/internal-mtls.yaml
+    set:
+      internal.tokens.api: ""
+      internal.tokens.worker: ""
+      internal.tls.ca.source: certificateSecret
+    capabilities:
+      apiVersions:
+        - cert-manager.io/v1
+        - trust.cert-manager.io/v1alpha1
+    asserts:
+      - failedTemplate:
+          errorPattern: "bundle.create is set while internal.tls.ca.source"
 
   - it: refuses two database sources at once
     set:

@@ -46,23 +46,75 @@ naming the two values that replace it.
 {{- $internal := $ctx.Values.internal -}}
 {{- if eq $internal.identity "mtls" -}}
 {{- $tls := $internal.tls -}}
-{{- if not $tls.issuerRef.name -}}
-{{- $errors = append $errors "internal.identity=mtls needs internal.tls.issuerRef.name: it names the cert-manager Issuer or ClusterIssuer that signs each service's client certificate, and there is no default to fall back on. Use `internal.identity=token` on a cluster with no CA." -}}
+
+{{- /*
+Where the keypairs come from. cert-manager is the default and the recommended path — it renews on
+its own and requests exactly the names the peer configuration expects — but it is not the only
+one, so each source is checked for what only it can get wrong.
+*/ -}}
+{{- if eq $tls.source "certManager" -}}
+{{- if not $tls.certManager.issuerRef.name -}}
+{{- $errors = append $errors "internal.tls.source=certManager needs internal.tls.certManager.issuerRef.name: it names the Issuer or ClusterIssuer that signs each service's certificate, and there is no default to fall back on. Set `internal.tls.source=existingSecrets` to supply the keypairs yourself, or `internal.identity=token` on a cluster with no PKI at all." -}}
 {{- end -}}
 {{- if not (include "common.capabilities.apiVersions.has" (dict "ctx" $ctx "api" "cert-manager.io/v1")) -}}
-{{- $errors = append $errors "internal.identity=mtls is set, but the cluster registers no `cert-manager.io/v1` API. Install cert-manager first, or pass `--api-versions cert-manager.io/v1` if you are rendering offline with `helm template`. Rendering regardless would produce Certificates the API server rejects, and pods waiting forever on a Secret nothing writes. `internal.identity=token` needs no CA at all." -}}
+{{- $errors = append $errors "internal.tls.source=certManager is set, but the cluster registers no `cert-manager.io/v1` API. Install cert-manager first, or pass `--api-versions cert-manager.io/v1` if you are rendering offline with `helm template`. Rendering regardless would produce Certificates the API server rejects, and pods waiting forever on a Secret nothing writes. `internal.tls.source=existingSecrets` needs no controller." -}}
 {{- end -}}
-{{- if not $tls.trustBundle.name -}}
-{{- $errors = append $errors "internal.identity=mtls needs internal.tls.trustBundle.name. It is both the trust-manager Bundle's name and the name of the ConfigMap it writes, which every pod mounts as its CA — without it a service can present a certificate but verify nobody's." -}}
+{{- else -}}
+{{- /*
+Supplied keypairs. Two things can be wrong and both are silent at render time otherwise: a service
+with no Secret named, which mounts a volume that never appears, and two services sharing one,
+which is an identity collapse — whoever holds that certificate can speak as either of them, and
+the whole point of per-caller identity is that they cannot.
+*/ -}}
+{{- $missing := list -}}
+{{- $byName := dict -}}
+{{- $shared := list -}}
+{{- $specs := include "tankovault.serviceSpecs" $ctx | fromYaml -}}
+{{- range $service, $spec := $specs -}}
+{{- if and $spec.internalIdentity (index $ctx.Values.services $service).enabled -}}
+{{- $secret := index ($tls.existingSecrets | default dict) $service -}}
+{{- if not $secret -}}
+{{- $missing = append $missing (printf "internal.tls.existingSecrets.%s" $service) -}}
+{{- else if hasKey $byName $secret -}}
+{{- $shared = append $shared (printf "%s and %s both name %q" (index $byName $secret) $service $secret) -}}
+{{- else -}}
+{{- $_ := set $byName $secret $service -}}
 {{- end -}}
-{{- if $tls.trustBundle.create -}}
-{{- if not $tls.trustBundle.sources -}}
-{{- $errors = append $errors "internal.tls.trustBundle.create is set but internal.tls.trustBundle.sources is empty, so the Bundle would distribute an empty CA and every peer verification would fail. Name the Secret or ConfigMap holding your CA certificate — for a cert-manager CA ClusterIssuer that is the Secret its `spec.ca.secretName` points at, in cert-manager's namespace." -}}
+{{- end -}}
+{{- end -}}
+{{- if $missing -}}
+{{- $errors = append $errors (printf "internal.tls.source=existingSecrets, but no Secret is named for %s. Every enabled service but the frontend presents a certificate — `notifier` included, which presents one to NATS — and a pod whose Secret does not exist waits on the volume forever. Name one per service, or use `internal.tls.source=certManager` to have cert-manager issue them." (join ", " $missing)) -}}
+{{- end -}}
+{{- if $shared -}}
+{{- $errors = append $errors (printf "internal.tls.existingSecrets gives one Secret to more than one service: %s. A service is identified by the SANs on the certificate it presents, so sharing one lets either service speak as the other and every per-caller distinction collapses. Issue one certificate per service." (join "; " $shared)) -}}
+{{- end -}}
+{{- end -}}
+
+{{- /* Where the CA comes from. `certificateSecret` needs nothing else; the other two name an object. */ -}}
+{{- if ne $tls.ca.source "certificateSecret" -}}
+{{- if not $tls.ca.name -}}
+{{- $errors = append $errors (printf "internal.tls.ca.source=%s needs internal.tls.ca.name. It is the %s every pod mounts as its CA, and without it a service can present a certificate but verify nobody's." $tls.ca.source (ternary "Secret" "ConfigMap" (eq $tls.ca.source "secret"))) -}}
+{{- end -}}
+{{- end -}}
+{{- if $tls.ca.bundle.create -}}
+{{- if ne $tls.ca.source "configMap" -}}
+{{- $errors = append $errors (printf "internal.tls.ca.bundle.create is set while internal.tls.ca.source is %q. A trust-manager Bundle produces a ConfigMap, so the two only make sense together: set `internal.tls.ca.source=configMap` to mount what the Bundle writes, or turn the Bundle off." $tls.ca.source) -}}
+{{- end -}}
+{{- if not $tls.ca.bundle.sources -}}
+{{- $errors = append $errors "internal.tls.ca.bundle.create is set but internal.tls.ca.bundle.sources is empty, so the Bundle would distribute an empty CA and every peer verification would fail. Name the Secret or ConfigMap holding your CA certificate — for a cert-manager CA ClusterIssuer that is the Secret its `spec.ca.secretName` points at, in cert-manager's namespace." -}}
 {{- end -}}
 {{- if not (include "common.capabilities.apiVersions.has" (dict "ctx" $ctx "api" "trust.cert-manager.io/v1alpha1")) -}}
-{{- $errors = append $errors "internal.tls.trustBundle.create is set, but the cluster registers no `trust.cert-manager.io/v1alpha1` API. Install trust-manager, pass `--api-versions trust.cert-manager.io/v1alpha1` when rendering offline, or set `create=false` and point `internal.tls.trustBundle.name` at a ConfigMap that already carries the CA." -}}
+{{- $errors = append $errors "internal.tls.ca.bundle.create is set, but the cluster registers no `trust.cert-manager.io/v1alpha1` API. Install trust-manager, pass `--api-versions trust.cert-manager.io/v1alpha1` when rendering offline, or set `create=false` and point `internal.tls.ca.name` at a ConfigMap that already carries the CA." -}}
 {{- end -}}
 {{- end -}}
+
+{{- /* A SAN override that names no service is a typo that would otherwise do nothing at all. */ -}}
+{{- range $service, $san := ($tls.sans | default dict) -}}
+{{- if not (hasKey (include "tankovault.serviceSpecs" $ctx | fromYaml) $service) -}}
+{{- $errors = append $errors (printf "internal.tls.sans.%s names no service. The keys are service keys as they appear under `services.<name>` (`api`, `controlPlane`, `challengeSolver`, ...), not slugs." $service) -}}
+{{- end -}}
+{{- end -}}
+
 {{- $setTokens := list -}}
 {{- range $caller, $token := ($internal.tokens | default dict) -}}
 {{- if $token -}}{{- $setTokens = append $setTokens (printf "internal.tokens.%s" $caller) -}}{{- end -}}

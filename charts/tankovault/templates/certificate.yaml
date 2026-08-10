@@ -1,5 +1,11 @@
 {{- /*
-One cert-manager Certificate per service, under `internal.identity=mtls`.
+One cert-manager Certificate per service, under `internal.identity=mtls` with the default
+`internal.tls.source=certManager`.
+
+This is the path the chart is built around. cert-manager renews and rotates on its own, so
+nothing here expires unattended, and the name a service is identified by is requested on the
+certificate and written into its peers' configuration by the same helper — the two cannot drift.
+`source: existingSecrets` renders none of this and hands both jobs to the operator.
 
 The certificate is both halves of the service's identity: it is presented as a *server*
 certificate to the callers that reach its privileged routes, and as a *client* certificate to
@@ -11,16 +17,31 @@ public client, and a certificate it never presents would only be a Secret to rot
 
 Nothing here needs a rollout. Each service re-reads the files every 30 seconds and swaps the
 credential without dropping connections, so cert-manager's renewal is invisible to the fleet and
-no `checksum/` annotation names this Secret.
+no `checksum/` annotation names these Secrets.
 */ -}}
-{{- if eq .Values.internal.identity "mtls" }}
+{{- if and (eq .Values.internal.identity "mtls") (eq .Values.internal.tls.source "certManager") }}
 {{- $root := . }}
-{{- $tls := .Values.internal.tls }}
+{{- $certManager := .Values.internal.tls.certManager }}
 {{- $specs := include "tankovault.serviceSpecs" . | fromYaml }}
 {{- range $service, $spec := $specs }}
 {{- if and $spec.internalIdentity (index $root.Values.services $service).enabled }}
 {{- $values := include "tankovault.serviceValues" (dict "ctx" $root "service" $service) | fromYaml }}
 {{- $ctx := dict "Values" $values "Chart" $root.Chart "Release" $root.Release "Capabilities" $root.Capabilities "Template" $root.Template "Files" $root.Files }}
+{{- /*
+  Every name the certificate has to answer to, deduplicated so an override that happens to equal
+  a derived name does not produce a duplicate SAN.
+
+  Two different checks read this list. Peers verify the *identity* — `tankovault.internalSan`,
+  which may be an operator-supplied name — against every DNS SAN on the certificate. The TLS
+  handshake separately verifies the *dialed* host, and callers dial the Service by its short
+  name, so that name must be here whatever the identity is. Both `.svc` spellings follow for the
+  callers that resolve the address differently.
+*/}}
+{{- $names := list
+      (include "tankovault.fullname" (dict "ctx" $root "service" $service))
+      (printf "%s.%s.svc" (include "tankovault.fullname" (dict "ctx" $root "service" $service)) (include "common.namespace" $root))
+      (printf "%s.%s.svc.cluster.local" (include "tankovault.fullname" (dict "ctx" $root "service" $service)) (include "common.namespace" $root))
+      (include "tankovault.internalSan" (dict "ctx" $root "service" $service)) | uniq }}
 ---
 apiVersion: cert-manager.io/v1
 kind: Certificate
@@ -39,35 +60,30 @@ spec:
     No `commonName`. It is limited to 64 characters, which a release name plus a service slug
     plus a namespace can exceed, and it identifies nothing the SANs do not — the verifier reads
     DNS SANs. Letting it default keeps a long release name from failing issuance.
-
-    Every DNS SAN on the certificate is checked against the configured peer name, not only the
-    first, so the extra spellings below are free: a caller configured with the short service
-    name, the `.svc` form or the fully qualified one all verify against the same certificate.
-    `tankovault.internalSan` picks which one this chart writes into the peer config.
   */}}
   dnsNames:
-    - {{ include "tankovault.fullname" (dict "ctx" $root "service" $service) | quote }}
-    - {{ include "tankovault.internalSan" (dict "ctx" $root "service" $service) | quote }}
-    - {{ printf "%s.cluster.local" (include "tankovault.internalSan" (dict "ctx" $root "service" $service)) | quote }}
+    {{- range $name := $names }}
+    - {{ $name | quote }}
+    {{- end }}
   usages:
     - digital signature
     - key encipherment
     - server auth
     - client auth
-  {{- with $tls.duration }}
+  {{- with $certManager.duration }}
   duration: {{ . | quote }}
   {{- end }}
-  {{- with $tls.renewBefore }}
+  {{- with $certManager.renewBefore }}
   renewBefore: {{ . | quote }}
   {{- end }}
-  {{- with $tls.privateKey }}
+  {{- with $certManager.privateKey }}
   privateKey:
     {{- toYaml . | nindent 4 }}
   {{- end }}
   issuerRef:
-    name: {{ $tls.issuerRef.name }}
-    kind: {{ $tls.issuerRef.kind }}
-    group: {{ $tls.issuerRef.group }}
+    name: {{ $certManager.issuerRef.name }}
+    kind: {{ $certManager.issuerRef.kind }}
+    group: {{ $certManager.issuerRef.group }}
 {{- end }}
 {{- end }}
 {{- end }}

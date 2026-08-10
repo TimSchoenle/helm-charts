@@ -48,15 +48,31 @@ The chart fails the render if `internal.token` is set, with the migration path i
 so a values file carrying it cannot reach a cluster. Pick a mode:
 
 ```yaml
-# The default. Needs cert-manager, and a CA issuer whose root every service can verify against.
+# The default. cert-manager issues one certificate per service and renews them; the CA is read
+# from the `ca.crt` key it writes into each Secret, so this is the whole configuration.
 internal:
   identity: mtls
   tls:
-    issuerRef:
-      name: internal-ca
-      kind: ClusterIssuer
-    trustBundle:
-      name: tankovault-ca    # the ConfigMap your trust-manager Bundle writes into this namespace
+    certManager:
+      issuerRef:
+        name: internal-ca
+        kind: ClusterIssuer
+```
+
+```yaml
+# The same mode from certificates you already have. No cert-manager, no controller, no CRDs.
+internal:
+  identity: mtls
+  tls:
+    source: existingSecrets
+    existingSecrets:
+      api: tankovault-api-tls
+      controlPlane: tankovault-control-plane-tls
+      worker: tankovault-worker-tls
+      notifier: tankovault-notifier-tls
+      sync: tankovault-sync-tls
+      challengeSolver: tankovault-challenge-solver-tls
+      render: tankovault-render-tls
 ```
 
 ```yaml
@@ -93,12 +109,18 @@ and stay on a plain listener under `mtls`, because a kubelet probe presents no c
 
 ### Prerequisites `mtls` adds
 
-- **cert-manager**, and an issuer named by `internal.tls.issuerRef`. The chart refuses to render
-  without the `cert-manager.io/v1` API rather than producing Certificates the API server rejects.
-- **A CA in this namespace as a ConfigMap**, which is what trust-manager produces.
-  `internal.tls.trustBundle.create` renders the `Bundle` if your cluster has no cluster-wide one;
-  it is off by default because a Bundle is cluster-scoped and two releases would fight over the
-  name.
+- **An internal PKI**, in one of two shapes. `source: certManager` (the default) needs
+  cert-manager and an issuer named by `internal.tls.certManager.issuerRef`; the chart refuses to
+  render without the `cert-manager.io/v1` API rather than producing Certificates the API server
+  rejects. `source: existingSecrets` needs no controller at all — one `kubernetes.io/tls` Secret
+  per service, never one shared by two, each valid for the Service name its peers dial. Renewal is
+  then yours to arrange, which is why cert-manager is the recommended source.
+- **A CA every service can verify peers against.** By default this is the `ca.crt` key of the
+  keypair Secret each pod already mounts, so there is nothing extra to install.
+  `internal.tls.ca.source=configMap` reads a trust-manager `Bundle` instead — the more robust
+  setup, and the only option when your issuer does not populate `ca.crt`.
+  `internal.tls.ca.bundle.create` renders the Bundle if your cluster has no cluster-wide one; it
+  is off by default because a Bundle is cluster-scoped and two releases would fight over the name.
 - **A TLS-enabled NATS.** Under `mtls` each service presents the same client certificate to the
   broker and requires TLS on that connection. The bundled `nats` serves plaintext only, so
   `nats.enabled=true` with `identity: mtls` is refused at render time. Use `externalNats.url`, or

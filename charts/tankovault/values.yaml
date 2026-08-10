@@ -126,138 +126,220 @@ internal:
   # enum: [mtls, token]
   # @schema
   # -- Identification mode. `mtls` identifies a caller by the DNS SAN on its verified client
-  # certificate, issued per service by cert-manager; it is the default and needs no credential in
-  # the release at all. `token` gives each caller its own secret, presented in `X-Internal-Token`,
-  # and is the mode for clusters with no CA or operators who would rather not run cert-manager.
+  # certificate; it is the default, it needs no credential in the release at all, and the
+  # certificates can come either from cert-manager or from Secrets you already have. `token`
+  # gives each caller its own secret, presented in `X-Internal-Token`, and is the mode for
+  # clusters with no PKI to hand.
   identity: mtls
+
   # @schema
   # additionalProperties: true
   # @schema
   # -- Certificate material for `identity: mtls`. Ignored entirely under `token`.
   tls:
     # @schema
-    # additionalProperties: true
+    # enum: [certManager, existingSecrets]
     # @schema
-    # -- The cert-manager issuer that signs each service's certificate. It has to be one whose CA
-    # every service can also verify against, so a public ACME issuer is the wrong shape here — a
-    # CA `Issuer` or `ClusterIssuer`, or a Vault/Venafi issuer, is what this expects.
-    issuerRef:
-      # @schema
-      # type: string
-      # @schema
-      # -- Issuer name. Required under `mtls`; there is no default to fall back on.
-      name: ""
-
-      # @schema
-      # enum: [Issuer, ClusterIssuer]
-      # @schema
-      # -- Issuer kind.
-      kind: ClusterIssuer
-
-      # @schema
-      # type: string
-      # @schema
-      # -- API group of the issuer resource.
-      group: cert-manager.io
-
-    # @schema
-    # type: string
-    # @schema
-    # -- Requested certificate lifetime.
-    duration: 2160h
-
-    # @schema
-    # type: string
-    # @schema
-    # -- How far ahead of expiry cert-manager renews. Renewal needs no rollout: the services
-    # re-read the files every 30 seconds and swap the credential without dropping connections,
-    # which is why no `checksum/` annotation names this Secret.
-    renewBefore: 360h
+    # -- Where each service's keypair comes from. `certManager` has this chart issue one
+    # `Certificate` per service and is the recommended path by some distance: cert-manager renews
+    # and rotates on its own, so nothing here expires unattended, and the SANs cannot drift from
+    # what the peer configuration expects because the same template writes both.
+    # `existingSecrets` takes Secrets you produced some other way — an external PKI, a Vault
+    # Agent sidecar, SPIRE, or a certificate issued by hand — and creates no `Certificate` at all.
+    # In that mode renewal is yours to arrange, and a certificate that expires stops every
+    # privileged call in the release.
+    source: certManager
 
     # @schema
     # additionalProperties: true
     # @schema
-    # -- Private key policy, passed to the Certificate verbatim. `rotationPolicy: Always` issues a
-    # fresh key on every renewal rather than re-signing the old one.
-    privateKey:
+    # -- Settings for `source: certManager`. Ignored under `existingSecrets`.
+    certManager:
       # @schema
-      # enum: [RSA, ECDSA, Ed25519]
+      # additionalProperties: true
       # @schema
-      # -- Key algorithm.
-      algorithm: ECDSA
+      # -- The cert-manager issuer that signs each service's certificate. It has to be one whose
+      # CA every service can also verify against, so a public ACME issuer is the wrong shape here
+      # — a CA `Issuer` or `ClusterIssuer`, or a Vault/Venafi issuer, is what this expects.
+      issuerRef:
+        # @schema
+        # type: string
+        # @schema
+        # -- Issuer name. Required under `source: certManager`; there is no default to fall back
+        # on.
+        name: ""
+
+        # @schema
+        # enum: [Issuer, ClusterIssuer]
+        # @schema
+        # -- Issuer kind.
+        kind: ClusterIssuer
+
+        # @schema
+        # type: string
+        # @schema
+        # -- API group of the issuer resource.
+        group: cert-manager.io
 
       # @schema
-      # type: integer
+      # type: string
       # @schema
-      # -- Key size, in the units the algorithm uses.
-      size: 256
+      # -- Requested certificate lifetime.
+      duration: 2160h
 
       # @schema
-      # enum: [Never, Always]
+      # type: string
       # @schema
-      # -- Whether a renewal also rotates the private key.
-      rotationPolicy: Always
+      # -- How far ahead of expiry cert-manager renews. Renewal needs no rollout: the services
+      # re-read the files every 30 seconds and swap the credential without dropping connections,
+      # which is why no `checksum/` annotation names these Secrets.
+      renewBefore: 360h
+
+      # @schema
+      # additionalProperties: true
+      # @schema
+      # -- Private key policy, passed to the Certificate verbatim. `rotationPolicy: Always`
+      # issues a fresh key on every renewal rather than re-signing the old one.
+      privateKey:
+        # @schema
+        # enum: [RSA, ECDSA, Ed25519]
+        # @schema
+        # -- Key algorithm.
+        algorithm: ECDSA
+
+        # @schema
+        # type: integer
+        # @schema
+        # -- Key size, in the units the algorithm uses.
+        size: 256
+
+        # @schema
+        # enum: [Never, Always]
+        # @schema
+        # -- Whether a renewal also rotates the private key.
+        rotationPolicy: Always
 
     # @schema
-    # type: string
+    # type: object
+    # additionalProperties:
+    #   type: string
     # @schema
-    # -- Directory the certificate and its key are mounted at, as `tls.crt` and `tls.key`.
-    certDir: /etc/tankovault/tls
+    # -- Secrets holding each service's keypair, for `source: existingSecrets`, keyed by service.
+    # Every enabled service but the `frontend` needs one — including `notifier`, which presents
+    # its certificate to NATS — and the chart refuses to render while any is missing rather than
+    # producing a pod that waits forever on a volume.
+    #
+    # Each must be a `kubernetes.io/tls`-shaped Secret (`tls.crt`, `tls.key`), and **no two
+    # services may share one**: a service is identified by the SANs on the certificate it
+    # presents, so a shared Secret would let either of them speak as the other. Each certificate
+    # has to be valid for the Service name its peers dial it at — `<release>-tankovault-<slug>` —
+    # and, if it also carries the name under `sans`, for that.
+    existingSecrets:
+      api: ""
+      controlPlane: ""
+      worker: ""
+      notifier: ""
+      sync: ""
+      challengeSolver: ""
+      render: ""
 
     # @schema
-    # type: string
+    # type: object
+    # additionalProperties:
+    #   type: string
     # @schema
-    # -- Directory the CA bundle is mounted at. Kept separate from `certDir` because the two come
-    # from different objects written by different controllers — a Secret and a ConfigMap.
-    caDir: /etc/tankovault/tls-ca
+    # -- The DNS name each service is identified by, keyed by service, overriding the derived
+    # `<release>-tankovault-<slug>.<namespace>.svc`. This is the name written into every peer's
+    # configuration and, under `source: certManager`, requested on the certificate too — the two
+    # halves always agree because one value sets both.
+    #
+    # For an external PKI that issues names of its own (`api.tankovault.internal`), name them
+    # here. The verifier checks the configured name against *every* DNS SAN on the presented
+    # certificate rather than only the first, so a certificate carrying both the in-cluster name
+    # and yours satisfies both this and the hostname check on the dialed address.
+    sans: {}
 
     # @schema
     # additionalProperties: true
     # @schema
-    # -- The trust-manager Bundle carrying the CA every service verifies its peers against.
-    trustBundle:
+    # -- Where the CA every service verifies its peers against comes from.
+    ca:
+      # @schema
+      # enum: [certificateSecret, configMap, secret]
+      # @schema
+      # -- CA source. `certificateSecret` reads it from the `ca.crt` key of the same Secret that
+      # holds the keypair — the default, because it needs no second object, no second volume and
+      # no trust-manager: cert-manager writes that key for a CA issuer, and the
+      # `kubernetes.io/tls` + `ca.crt` layout is what most PKIs produce anyway. `configMap` reads
+      # a ConfigMap, which is what a trust-manager `Bundle` writes and the more robust setup:
+      # one bundle for the cluster, rotatable independently of any single certificate, and the
+      # only option when your issuer does not populate `ca.crt`. `secret` reads a Secret, for a
+      # PKI that ships its root that way.
+      source: certificateSecret
+
       # @schema
       # type: string
       # @schema
-      # -- Bundle name, which is also the name of the ConfigMap it writes into this namespace and
-      # the ConfigMap every pod mounts. Required under `mtls`.
+      # -- Name of the ConfigMap or Secret holding the bundle. Required unless `source` is
+      # `certificateSecret`, which reads the keypair Secret the service already mounts. With
+      # `bundle.create` this is also the name of the trust-manager `Bundle`.
       name: tankovault-ca
 
       # @schema
       # type: string
       # @schema
-      # -- Key inside that ConfigMap holding the PEM bundle.
+      # -- Key holding the PEM bundle, in whichever object `source` selects.
       key: ca.crt
 
       # @schema
-      # type: boolean
-      # @schema
-      # -- Render the `Bundle` as part of this release. Off by default because a Bundle is
-      # cluster-scoped: two releases creating the same name would be two objects fighting over
-      # one. Leave it off and point `name` at the ConfigMap your existing cluster-wide Bundle
-      # already writes here.
-      create: false
-
-      # @schema
-      # type: array
-      # items:
-      #   type: object
-      #   additionalProperties: true
-      # @schema
-      # -- trust-manager `spec.sources`, verbatim. Required when `create` is set, because nothing
-      # in `issuerRef` says where the CA certificate lives — a `ClusterIssuer` names a Secret in
-      # cert-manager's namespace, not in this one. For a CA issuer that is usually
-      # `[{secret: {name: internal-ca, key: ca.crt}}]`.
-      sources: []
-
-      # @schema
-      # type: object
       # additionalProperties: true
       # @schema
-      # -- Label selector for the namespaces the Bundle writes into, when `create` is set. Empty
-      # confines it to this release's namespace; a Bundle with no selector at all would write a
-      # ConfigMap into every namespace in the cluster.
-      namespaceSelector: {}
+      # -- The trust-manager `Bundle` that produces the ConfigMap, rendered as part of this
+      # release. Only meaningful with `source: configMap`.
+      bundle:
+        # @schema
+        # type: boolean
+        # @schema
+        # -- Render the `Bundle`. Off by default because a Bundle is cluster-scoped: two releases
+        # creating the same name would be two objects overwriting each other. Leave it off and
+        # point `ca.name` at the ConfigMap your existing cluster-wide Bundle already writes here.
+        create: false
+
+        # @schema
+        # type: array
+        # items:
+        #   type: object
+        #   additionalProperties: true
+        # @schema
+        # -- trust-manager `spec.sources`, verbatim. Required when `create` is set, because
+        # nothing in an issuer reference says where the CA certificate lives — a `ClusterIssuer`
+        # names a Secret in cert-manager's namespace, not in this one. For a CA issuer that is
+        # usually `[{secret: {name: internal-ca, key: ca.crt}}]`.
+        sources: []
+
+        # @schema
+        # type: object
+        # additionalProperties: true
+        # @schema
+        # -- Label selector for the namespaces the Bundle writes into. Empty confines it to this
+        # release's namespace; a Bundle with no selector at all would write a ConfigMap into
+        # every namespace in the cluster.
+        namespaceSelector: {}
+
+    # @schema
+    # type: string
+    # @schema
+    # -- Directory the keypair is mounted at, as `tls.crt` and `tls.key`. With
+    # `ca.source: certificateSecret` the bundle is read from this directory too.
+    certDir: /etc/tankovault/tls
+
+    # @schema
+    # type: string
+    # @schema
+    # -- Directory the CA bundle is mounted at, when it comes from an object of its own. Kept
+    # apart from `certDir` because the two are then written by different controllers — a
+    # cert-manager Secret and a trust-manager ConfigMap — and a volume can only carry one.
+    caDir: /etc/tankovault/tls-ca
 
   # @schema
   # type: object

@@ -9,22 +9,40 @@ than weakening it. `internal.token` now fails the render, but the chart cannot s
 `internal__tokens__worker` instead{{- end }}. See UPGRADING.md#400.
 {{ end }}
 {{- if eq .Values.internal.identity "mtls" }}
-Inter-service authentication is mTLS. Each service presents a cert-manager certificate and is
-identified by its DNS SAN; no credential for it exists in this release. Two things to check
-before the pods settle:
+{{- $tls := .Values.internal.tls }}
+Inter-service authentication is mTLS. Each service presents its own certificate and is identified
+by the DNS SAN on it; no credential for it exists in this release.
+{{ if eq $tls.source "certManager" }}
+cert-manager issues them. Check that it has:
 
   kubectl --namespace {{ include "common.namespace" . }} get certificate \
     -l app.kubernetes.io/part-of={{ include "common.name" . }}
 
-  kubectl --namespace {{ include "common.namespace" . }} get configmap {{ .Values.internal.tls.trustBundle.name }}
+A pod stuck in `ContainerCreating` on `FailedMount` is an unissued Certificate — `kubectl
+describe` it, a wrong `issuerRef` says so there.
+{{- else }}
+The keypairs are yours: `internal.tls.source=existingSecrets`. Nothing in this release renews
+them, and a certificate that expires stops every privileged call at once, so make sure whatever
+issues them also rotates them. A pod stuck in `ContainerCreating` on `FailedMount` is a Secret
+that does not exist under the name given.
 
-A pod stuck in `ContainerCreating` on `FailedMount` is one of those two missing: an unissued
-Certificate (`kubectl describe` it — a wrong `issuerRef` says so there) or a trust-manager Bundle
-that is not writing into this namespace.
-{{- if not .Values.internal.tls.trustBundle.create }}
-The Bundle is not this release's — `internal.tls.trustBundle.create` is false — so nothing here
-creates that ConfigMap. Point `internal.tls.trustBundle.name` at the one your cluster-wide Bundle
-already writes here, or set `create=true` with `sources`.
+  kubectl --namespace {{ include "common.namespace" . }} get secret{{ range $service, $secret := $tls.existingSecrets }}{{ if $secret }} {{ $secret }}{{ end }}{{ end }}
+{{- end }}
+{{- if ne $tls.ca.source "certificateSecret" }}
+
+The CA comes from a {{ ternary "Secret" "ConfigMap" (eq $tls.ca.source "secret") }} of its own, which has to exist in this namespace:
+
+  kubectl --namespace {{ include "common.namespace" . }} get {{ ternary "secret" "configmap" (eq $tls.ca.source "secret") }} {{ $tls.ca.name }}
+{{- if not $tls.ca.bundle.create }}
+
+Nothing here creates it — {{ ternary "`internal.tls.ca.source` is `secret`" "`internal.tls.ca.bundle.create` is false" (eq $tls.ca.source "secret") }}. Point `internal.tls.ca.name` at what
+your cluster already publishes, or have this release render the trust-manager Bundle.
+{{- end }}
+{{- else }}
+
+The CA is read from each keypair Secret's own `{{ $tls.ca.key }}` key, so there is no second object to
+check. If your issuer does not populate it the services fail to boot naming the file: switch
+`internal.tls.ca.source` to `configMap` and let trust-manager publish the bundle instead.
 {{- end }}
 
 Rotation needs no rollout: the files are re-read every 30 seconds and swapped without dropping
@@ -34,8 +52,9 @@ Inter-service authentication is per-caller tokens. Exactly two services make pri
 `api` and `worker` — and each callee receives only the tokens of the callers it accepts, so
 holding one opens the routes that caller may reach and nothing more.
 
-`mtls` is the mode this chart aims at; it needs cert-manager and a CA, and moves the credential
-out of the release entirely. See the README's "Inter-service authentication" section.
+`mtls` is the mode this chart aims at, and it takes certificates either from cert-manager or from
+Secrets you already have — it moves the credential out of the release entirely. See the README's
+"Inter-service authentication" section.
 {{- end }}
 
 Reach the application:

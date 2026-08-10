@@ -1,22 +1,25 @@
 {{- /*
 The trust-manager Bundle that puts the CA into this namespace as a ConfigMap.
 
-Opt-in, unlike the Certificates, and off by default for one reason: a Bundle is cluster-scoped.
-Two releases that both created `tankovault-ca` would be two objects fighting over one name, and
-the loser's CA would be whatever the winner last wrote. Most clusters that run trust-manager
-already publish their internal CA this way, so the common case is `create: false` and
-`internal.tls.trustBundle.name` naming the ConfigMap that Bundle already writes here.
+Opt-in, and off by default for one reason: a Bundle is cluster-scoped. Two releases that both
+created `tankovault-ca` would be two objects fighting over one name, and the loser's CA would be
+whatever the winner last wrote. Most clusters that run trust-manager already publish their
+internal CA this way, so the common case is `create: false` with `internal.tls.ca.name` naming
+the ConfigMap that Bundle already writes here.
 
 `sources` is the operator's, because nothing in an `issuerRef` reveals where the CA certificate
-lives: a `ClusterIssuer` names a Secret in cert-manager's namespace, not in this one, and an ACME
-or Vault issuer has no such Secret at all.
+lives: a `ClusterIssuer` names a Secret in cert-manager's namespace, not in this one, and a Vault
+or Venafi issuer has no such Secret at all.
+
+This whole object is skipped when the CA is read from each service's own keypair Secret, which
+is the default — there is then no ConfigMap for a Bundle to write.
 */ -}}
-{{- if and (eq .Values.internal.identity "mtls") .Values.internal.tls.trustBundle.create }}
-{{- $bundle := .Values.internal.tls.trustBundle }}
+{{- $ca := .Values.internal.tls.ca }}
+{{- if and (eq .Values.internal.identity "mtls") (eq $ca.source "configMap") $ca.bundle.create }}
 apiVersion: trust.cert-manager.io/v1alpha1
 kind: Bundle
 metadata:
-  name: {{ $bundle.name }}
+  name: {{ $ca.name }}
   labels:
     {{- include "common.labels" . | nindent 4 }}
   {{- with (include "common.annotations" .) }}
@@ -25,10 +28,10 @@ metadata:
   {{- end }}
 spec:
   sources:
-    {{- toYaml $bundle.sources | nindent 4 }}
+    {{- toYaml $ca.bundle.sources | nindent 4 }}
   target:
     configMap:
-      key: {{ $bundle.key }}
+      key: {{ $ca.key }}
     {{- /*
       Confined to this release's namespace by default. A Bundle with no selector writes its
       ConfigMap into every namespace in the cluster, which is a larger footprint than a chart
@@ -36,8 +39,8 @@ spec:
     */}}
     namespaceSelector:
       matchLabels:
-        {{- if $bundle.namespaceSelector }}
-        {{- toYaml $bundle.namespaceSelector | nindent 8 }}
+        {{- if $ca.bundle.namespaceSelector }}
+        {{- toYaml $ca.bundle.namespaceSelector | nindent 8 }}
         {{- else }}
         kubernetes.io/metadata.name: {{ include "common.namespace" . }}
         {{- end }}

@@ -2501,7 +2501,7 @@
       "properties": {
         "identity": {
           "default": "mtls",
-          "description": "Identification mode. `mtls` identifies a caller by the DNS SAN on its verified client\ncertificate, issued per service by cert-manager; it is the default and needs no credential in\nthe release at all. `token` gives each caller its own secret, presented in `X-Internal-Token`,\nand is the mode for clusters with no CA or operators who would rather not run cert-manager.",
+          "description": "Identification mode. `mtls` identifies a caller by the DNS SAN on its verified client\ncertificate; it is the default, it needs no credential in the release at all, and the\ncertificates can come either from cert-manager or from Secrets you already have. `token`\ngives each caller its own secret, presented in `X-Internal-Token`, and is the mode for\nclusters with no PKI to hand.",
           "enum": [
             "mtls",
             "token"
@@ -2513,148 +2513,255 @@
           "additionalProperties": true,
           "description": "Certificate material for `identity: mtls`. Ignored entirely under `token`.",
           "properties": {
-            "caDir": {
-              "default": "/etc/tankovault/tls-ca",
-              "description": "Directory the CA bundle is mounted at. Kept separate from `certDir` because the two come\nfrom different objects written by different controllers — a Secret and a ConfigMap.",
-              "required": [],
-              "title": "caDir",
-              "type": "string"
-            },
-            "certDir": {
-              "default": "/etc/tankovault/tls",
-              "description": "Directory the certificate and its key are mounted at, as `tls.crt` and `tls.key`.",
-              "required": [],
-              "title": "certDir",
-              "type": "string"
-            },
-            "duration": {
-              "default": "2160h",
-              "description": "Requested certificate lifetime.",
-              "required": [],
-              "title": "duration",
-              "type": "string"
-            },
-            "issuerRef": {
+            "ca": {
               "additionalProperties": true,
-              "description": "The cert-manager issuer that signs each service's certificate. It has to be one whose CA\nevery service can also verify against, so a public ACME issuer is the wrong shape here — a\nCA `Issuer` or `ClusterIssuer`, or a Vault/Venafi issuer, is what this expects.",
+              "description": "Where the CA every service verifies its peers against comes from.",
               "properties": {
-                "group": {
-                  "default": "cert-manager.io",
-                  "description": "API group of the issuer resource.",
+                "bundle": {
+                  "additionalProperties": true,
+                  "description": "The trust-manager `Bundle` that produces the ConfigMap, rendered as part of this\nrelease. Only meaningful with `source: configMap`.",
+                  "properties": {
+                    "create": {
+                      "default": false,
+                      "description": "Render the `Bundle`. Off by default because a Bundle is cluster-scoped: two releases\ncreating the same name would be two objects overwriting each other. Leave it off and\npoint `ca.name` at the ConfigMap your existing cluster-wide Bundle already writes here.",
+                      "required": [],
+                      "title": "create",
+                      "type": "boolean"
+                    },
+                    "namespaceSelector": {
+                      "additionalProperties": true,
+                      "description": "Label selector for the namespaces the Bundle writes into. Empty confines it to this\nrelease's namespace; a Bundle with no selector at all would write a ConfigMap into\nevery namespace in the cluster.",
+                      "required": [],
+                      "title": "namespaceSelector",
+                      "type": "object"
+                    },
+                    "sources": {
+                      "description": "trust-manager `spec.sources`, verbatim. Required when `create` is set, because\nnothing in an issuer reference says where the CA certificate lives — a `ClusterIssuer`\nnames a Secret in cert-manager's namespace, not in this one. For a CA issuer that is\nusually `[{secret: {name: internal-ca, key: ca.crt}}]`.",
+                      "items": {
+                        "additionalProperties": true,
+                        "required": [],
+                        "type": "object"
+                      },
+                      "required": [],
+                      "title": "sources",
+                      "type": "array"
+                    }
+                  },
                   "required": [],
-                  "title": "group",
-                  "type": "string"
-                },
-                "kind": {
-                  "default": "ClusterIssuer",
-                  "description": "Issuer kind.",
-                  "enum": [
-                    "Issuer",
-                    "ClusterIssuer"
-                  ],
-                  "required": [],
-                  "title": "kind"
-                },
-                "name": {
-                  "default": "",
-                  "description": "Issuer name. Required under `mtls`; there is no default to fall back on.",
-                  "required": [],
-                  "title": "name",
-                  "type": "string"
-                }
-              },
-              "required": [],
-              "title": "issuerRef"
-            },
-            "privateKey": {
-              "additionalProperties": true,
-              "description": "Private key policy, passed to the Certificate verbatim. `rotationPolicy: Always` issues a\nfresh key on every renewal rather than re-signing the old one.",
-              "properties": {
-                "algorithm": {
-                  "default": "ECDSA",
-                  "description": "Key algorithm.",
-                  "enum": [
-                    "RSA",
-                    "ECDSA",
-                    "Ed25519"
-                  ],
-                  "required": [],
-                  "title": "algorithm"
-                },
-                "rotationPolicy": {
-                  "default": "Always",
-                  "description": "Whether a renewal also rotates the private key.",
-                  "enum": [
-                    "Never",
-                    "Always"
-                  ],
-                  "required": [],
-                  "title": "rotationPolicy"
-                },
-                "size": {
-                  "default": 256,
-                  "description": "Key size, in the units the algorithm uses.",
-                  "required": [],
-                  "title": "size",
-                  "type": "integer"
-                }
-              },
-              "required": [],
-              "title": "privateKey"
-            },
-            "renewBefore": {
-              "default": "360h",
-              "description": "How far ahead of expiry cert-manager renews. Renewal needs no rollout: the services\nre-read the files every 30 seconds and swap the credential without dropping connections,\nwhich is why no `checksum/` annotation names this Secret.",
-              "required": [],
-              "title": "renewBefore",
-              "type": "string"
-            },
-            "trustBundle": {
-              "additionalProperties": true,
-              "description": "The trust-manager Bundle carrying the CA every service verifies its peers against.",
-              "properties": {
-                "create": {
-                  "default": false,
-                  "description": "Render the `Bundle` as part of this release. Off by default because a Bundle is\ncluster-scoped: two releases creating the same name would be two objects fighting over\none. Leave it off and point `name` at the ConfigMap your existing cluster-wide Bundle\nalready writes here.",
-                  "required": [],
-                  "title": "create",
-                  "type": "boolean"
+                  "title": "bundle"
                 },
                 "key": {
                   "default": "ca.crt",
-                  "description": "Key inside that ConfigMap holding the PEM bundle.",
+                  "description": "Key holding the PEM bundle, in whichever object `source` selects.",
                   "required": [],
                   "title": "key",
                   "type": "string"
                 },
                 "name": {
                   "default": "tankovault-ca",
-                  "description": "Bundle name, which is also the name of the ConfigMap it writes into this namespace and\nthe ConfigMap every pod mounts. Required under `mtls`.",
+                  "description": "Name of the ConfigMap or Secret holding the bundle. Required unless `source` is\n`certificateSecret`, which reads the keypair Secret the service already mounts. With\n`bundle.create` this is also the name of the trust-manager `Bundle`.",
                   "required": [],
                   "title": "name",
                   "type": "string"
                 },
-                "namespaceSelector": {
-                  "additionalProperties": true,
-                  "description": "Label selector for the namespaces the Bundle writes into, when `create` is set. Empty\nconfines it to this release's namespace; a Bundle with no selector at all would write a\nConfigMap into every namespace in the cluster.",
+                "source": {
+                  "default": "certificateSecret",
+                  "description": "CA source. `certificateSecret` reads it from the `ca.crt` key of the same Secret that\nholds the keypair — the default, because it needs no second object, no second volume and\nno trust-manager: cert-manager writes that key for a CA issuer, and the\n`kubernetes.io/tls` + `ca.crt` layout is what most PKIs produce anyway. `configMap` reads\na ConfigMap, which is what a trust-manager `Bundle` writes and the more robust setup:\none bundle for the cluster, rotatable independently of any single certificate, and the\nonly option when your issuer does not populate `ca.crt`. `secret` reads a Secret, for a\nPKI that ships its root that way.",
+                  "enum": [
+                    "certificateSecret",
+                    "configMap",
+                    "secret"
+                  ],
                   "required": [],
-                  "title": "namespaceSelector",
-                  "type": "object"
-                },
-                "sources": {
-                  "description": "trust-manager `spec.sources`, verbatim. Required when `create` is set, because nothing\nin `issuerRef` says where the CA certificate lives — a `ClusterIssuer` names a Secret in\ncert-manager's namespace, not in this one. For a CA issuer that is usually\n`[{secret: {name: internal-ca, key: ca.crt}}]`.",
-                  "items": {
-                    "additionalProperties": true,
-                    "required": [],
-                    "type": "object"
-                  },
-                  "required": [],
-                  "title": "sources",
-                  "type": "array"
+                  "title": "source"
                 }
               },
               "required": [],
-              "title": "trustBundle"
+              "title": "ca"
+            },
+            "caDir": {
+              "default": "/etc/tankovault/tls-ca",
+              "description": "Directory the CA bundle is mounted at, when it comes from an object of its own. Kept\napart from `certDir` because the two are then written by different controllers — a\ncert-manager Secret and a trust-manager ConfigMap — and a volume can only carry one.",
+              "required": [],
+              "title": "caDir",
+              "type": "string"
+            },
+            "certDir": {
+              "default": "/etc/tankovault/tls",
+              "description": "Directory the keypair is mounted at, as `tls.crt` and `tls.key`. With\n`ca.source: certificateSecret` the bundle is read from this directory too.",
+              "required": [],
+              "title": "certDir",
+              "type": "string"
+            },
+            "certManager": {
+              "additionalProperties": true,
+              "description": "Settings for `source: certManager`. Ignored under `existingSecrets`.",
+              "properties": {
+                "duration": {
+                  "default": "2160h",
+                  "description": "Requested certificate lifetime.",
+                  "required": [],
+                  "title": "duration",
+                  "type": "string"
+                },
+                "issuerRef": {
+                  "additionalProperties": true,
+                  "description": "The cert-manager issuer that signs each service's certificate. It has to be one whose\nCA every service can also verify against, so a public ACME issuer is the wrong shape here\n— a CA `Issuer` or `ClusterIssuer`, or a Vault/Venafi issuer, is what this expects.",
+                  "properties": {
+                    "group": {
+                      "default": "cert-manager.io",
+                      "description": "API group of the issuer resource.",
+                      "required": [],
+                      "title": "group",
+                      "type": "string"
+                    },
+                    "kind": {
+                      "default": "ClusterIssuer",
+                      "description": "Issuer kind.",
+                      "enum": [
+                        "Issuer",
+                        "ClusterIssuer"
+                      ],
+                      "required": [],
+                      "title": "kind"
+                    },
+                    "name": {
+                      "default": "",
+                      "description": "Issuer name. Required under `source: certManager`; there is no default to fall back\non.",
+                      "required": [],
+                      "title": "name",
+                      "type": "string"
+                    }
+                  },
+                  "required": [],
+                  "title": "issuerRef"
+                },
+                "privateKey": {
+                  "additionalProperties": true,
+                  "description": "Private key policy, passed to the Certificate verbatim. `rotationPolicy: Always`\nissues a fresh key on every renewal rather than re-signing the old one.",
+                  "properties": {
+                    "algorithm": {
+                      "default": "ECDSA",
+                      "description": "Key algorithm.",
+                      "enum": [
+                        "RSA",
+                        "ECDSA",
+                        "Ed25519"
+                      ],
+                      "required": [],
+                      "title": "algorithm"
+                    },
+                    "rotationPolicy": {
+                      "default": "Always",
+                      "description": "Whether a renewal also rotates the private key.",
+                      "enum": [
+                        "Never",
+                        "Always"
+                      ],
+                      "required": [],
+                      "title": "rotationPolicy"
+                    },
+                    "size": {
+                      "default": 256,
+                      "description": "Key size, in the units the algorithm uses.",
+                      "required": [],
+                      "title": "size",
+                      "type": "integer"
+                    }
+                  },
+                  "required": [],
+                  "title": "privateKey"
+                },
+                "renewBefore": {
+                  "default": "360h",
+                  "description": "How far ahead of expiry cert-manager renews. Renewal needs no rollout: the services\nre-read the files every 30 seconds and swap the credential without dropping connections,\nwhich is why no `checksum/` annotation names these Secrets.",
+                  "required": [],
+                  "title": "renewBefore",
+                  "type": "string"
+                }
+              },
+              "required": [],
+              "title": "certManager"
+            },
+            "existingSecrets": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "description": "Secrets holding each service's keypair, for `source: existingSecrets`, keyed by service.\nEvery enabled service but the `frontend` needs one — including `notifier`, which presents\nits certificate to NATS — and the chart refuses to render while any is missing rather than\nproducing a pod that waits forever on a volume.\n\nEach must be a `kubernetes.io/tls`-shaped Secret (`tls.crt`, `tls.key`), and **no two\nservices may share one**: a service is identified by the SANs on the certificate it\npresents, so a shared Secret would let either of them speak as the other. Each certificate\nhas to be valid for the Service name its peers dial it at — `\u003crelease\u003e-tankovault-\u003cslug\u003e` —\nand, if it also carries the name under `sans`, for that.",
+              "properties": {
+                "api": {
+                  "default": "",
+                  "required": [],
+                  "title": "api",
+                  "type": "string"
+                },
+                "challengeSolver": {
+                  "default": "",
+                  "required": [],
+                  "title": "challengeSolver",
+                  "type": "string"
+                },
+                "controlPlane": {
+                  "default": "",
+                  "required": [],
+                  "title": "controlPlane",
+                  "type": "string"
+                },
+                "notifier": {
+                  "default": "",
+                  "required": [],
+                  "title": "notifier",
+                  "type": "string"
+                },
+                "render": {
+                  "default": "",
+                  "required": [],
+                  "title": "render",
+                  "type": "string"
+                },
+                "sync": {
+                  "default": "",
+                  "required": [],
+                  "title": "sync",
+                  "type": "string"
+                },
+                "worker": {
+                  "default": "",
+                  "required": [],
+                  "title": "worker",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "api",
+                "controlPlane",
+                "worker",
+                "notifier",
+                "sync",
+                "challengeSolver",
+                "render"
+              ],
+              "title": "existingSecrets",
+              "type": "object"
+            },
+            "sans": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "description": "The DNS name each service is identified by, keyed by service, overriding the derived\n`\u003crelease\u003e-tankovault-\u003cslug\u003e.\u003cnamespace\u003e.svc`. This is the name written into every peer's\nconfiguration and, under `source: certManager`, requested on the certificate too — the two\nhalves always agree because one value sets both.\n\nFor an external PKI that issues names of its own (`api.tankovault.internal`), name them\nhere. The verifier checks the configured name against *every* DNS SAN on the presented\ncertificate rather than only the first, so a certificate carrying both the in-cluster name\nand yours satisfies both this and the hostname check on the dialed address.",
+              "required": [],
+              "title": "sans",
+              "type": "object"
+            },
+            "source": {
+              "default": "certManager",
+              "description": "Where each service's keypair comes from. `certManager` has this chart issue one\n`Certificate` per service and is the recommended path by some distance: cert-manager renews\nand rotates on its own, so nothing here expires unattended, and the SANs cannot drift from\nwhat the peer configuration expects because the same template writes both.\n`existingSecrets` takes Secrets you produced some other way — an external PKI, a Vault\nAgent sidecar, SPIRE, or a certificate issued by hand — and creates no `Certificate` at all.\nIn that mode renewal is yours to arrange, and a certificate that expires stops every\nprivileged call in the release.",
+              "enum": [
+                "certManager",
+                "existingSecrets"
+              ],
+              "required": [],
+              "title": "source"
             }
           },
           "required": [],

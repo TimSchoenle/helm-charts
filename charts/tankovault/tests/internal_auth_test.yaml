@@ -209,6 +209,85 @@ tests:
           path: spec.target.configMap.key
           value: ca.crt
 
+  # ------------------------------------------------- mtls, supplied certs ---
+  - it: takes operator-supplied keypairs without creating a Certificate
+    # mTLS without a controller. cert-manager stays the default and the recommended source; this
+    # is the path for a cluster whose PKI is somewhere else entirely.
+    template: certificate.yaml
+    values:
+      - ../ci/internal-mtls-existing.yaml
+    capabilities:
+      apiVersions: []
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: mounts each service's own supplied Secret
+    template: deployment.yaml
+    values:
+      - ../ci/internal-mtls-existing.yaml
+    capabilities:
+      apiVersions: []
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-worker
+    asserts:
+      - equal:
+          path: spec.template.spec.volumes[?(@.name=="internal-tls")].secret.secretName
+          value: tankovault-worker-tls
+      # No second volume: with `ca.source: certificateSecret` the bundle is a key of the Secret
+      # already mounted, so mTLS costs exactly one volume and no extra object.
+      - notExists:
+          path: spec.template.spec.volumes[?(@.name=="internal-ca")]
+
+  - it: reads the CA out of the keypair Secret it already mounts
+    template: configmap.yaml
+    values:
+      - ../ci/internal-mtls-existing.yaml
+    capabilities:
+      apiVersions: []
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-api-config
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: 'ca = "/etc/tankovault/tls/ca\.crt"'
+
+  - it: configures peers with the SANs the operator's PKI issues
+    # The override is the identity written into every peer's configuration. Under cert-manager it
+    # is requested on the Certificate by the same helper, so the two halves cannot disagree.
+    template: configmap.yaml
+    values:
+      - ../ci/internal-mtls-existing.yaml
+    capabilities:
+      apiVersions: []
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-render-config
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: 'san = "worker\.tankovault\.internal"'
+
+  - it: requests the overridden SAN alongside the dialed Service name
+    # Two different checks read the certificate: peers verify the configured identity against any
+    # DNS SAN, and the handshake verifies the host actually dialed — which is always the Service
+    # name. Both have to be on the certificate.
+    template: certificate.yaml
+    set:
+      internal.tls.sans.api: api.tankovault.internal
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-api-internal-tls
+    asserts:
+      - contains:
+          path: spec.dnsNames
+          content: api.tankovault.internal
+      - contains:
+          path: spec.dnsNames
+          content: RELEASE-NAME-tankovault-api
+
   # ----------------------------------------------------------------- token ---
   - it: gives each caller its own token and each callee only what it accepts
     # Holding `worker`'s token opens the routes `worker` may call and nothing else. The old

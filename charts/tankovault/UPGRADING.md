@@ -16,6 +16,29 @@ Some of them require a manual step that nothing will remind you about:
 The values contract is enforced by `values.schema.json`, so a key a new major removed or
 renamed fails the render with the offending path named, rather than being silently ignored.
 
+## 3.5.0
+
+**"Why is this scan slow" becomes a metric.** Nothing to do, and no values changed: the chart's
+rules and the scan-pipeline dashboard grow a section that reads three metrics app 3.7.0 already
+emits — `scan_stage_duration_seconds`, `scan_task_pace_wait_seconds` and
+`provider_pace_wait_seconds`. A release already on appVersion 3.7.0 starts populating the new
+panels on the next scrape; one on anything older sees them empty, exactly as the backlog row is
+empty without the NATS exporter.
+
+Five recording rules and two alerts come with it. Both alerts are `severity: info`, because
+neither is an outage — they are the two halves of a diagnosis that `scan_task_duration_seconds`
+alone could not make:
+
+| Alert | Says | Remedy |
+|---|---|---|
+| `TankoVaultScanPaceBound` | over 80% of a provider's task time is spent waiting for permission to send | raise `politeness.rps` or lower `crawl_delay_ms` for that provider, or accept the duration — no code change will help |
+| `TankoVaultScanIngestBound` | over half of a provider's stage time is `series_ingest`, and the crawl budget is not the reason | the database, not the provider; a newly added provider's first full scan is the benign case |
+
+If you route `severity: info` to a channel anyone reads, expect `TankoVaultScanPaceBound` to fire
+on any provider you have deliberately configured to be crawled slowly. That is the alert being
+correct rather than noisy, but it is a standing condition, not an event — silence it per provider
+rather than raising the threshold, which would only move the line.
+
 ## 3.4.0
 
 **Gateway API exposure and a Cilium policy engine.** Nothing to do: both are opt-in, both default

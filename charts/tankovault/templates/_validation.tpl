@@ -23,8 +23,55 @@ sees nor generates any of them, and the values here are unused, so it says nothi
 {{- if and $ctx.Values.auth.jwtSecret (lt (len $ctx.Values.auth.jwtSecret) 32) -}}
 {{- $errors = append $errors (printf "auth.jwtSecret must be at least 32 characters (got %d). Shorter values are refused at boot." (len $ctx.Values.auth.jwtSecret)) -}}
 {{- end -}}
-{{- if and $ctx.Values.internal.token (lt (len $ctx.Values.internal.token) 32) -}}
-{{- $errors = append $errors (printf "internal.token must be at least 32 characters (got %d)." (len $ctx.Values.internal.token)) -}}
+{{- range $caller, $token := ($ctx.Values.internal.tokens | default dict) -}}
+{{- if and $token (lt (len $token) 32) -}}
+{{- $errors = append $errors (printf "internal.tokens.%s must be at least 32 characters (got %d). Upstream length-checks it in every profile; `openssl rand -hex 32`." $caller (len $token)) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{- /*
+Inter-service authentication.
+
+`internal.token` is gone rather than deprecated, and this is the message an operator who still
+sets it gets. The shared token is refused *at boot* upstream, with no dual-accept window, so a
+release that carried the value through would not degrade — every service would fail to start at
+once. Failing the render instead moves that from a fleet-wide CrashLoopBackOff to a message
+naming the two values that replace it.
+*/ -}}
+{{- if $ctx.Values.internal.token -}}
+{{- $errors = append $errors "internal.token no longer exists. Inter-service authentication is per caller: each of `api` and `worker` carries its own credential, and every callee names the callers it accepts. Set `internal.identity=mtls` (the default) and point `internal.tls.issuerRef` at a cert-manager issuer, or set `internal.identity=token` and leave `internal.tokens` empty for the chart to generate one per caller. Upstream refuses the shared token at boot in every profile — there is no dual-accept window — so a release still carrying it does not degrade, it stops. See UPGRADING.md#400." -}}
+{{- end -}}
+
+{{- $internal := $ctx.Values.internal -}}
+{{- if eq $internal.identity "mtls" -}}
+{{- $tls := $internal.tls -}}
+{{- if not $tls.issuerRef.name -}}
+{{- $errors = append $errors "internal.identity=mtls needs internal.tls.issuerRef.name: it names the cert-manager Issuer or ClusterIssuer that signs each service's client certificate, and there is no default to fall back on. Use `internal.identity=token` on a cluster with no CA." -}}
+{{- end -}}
+{{- if not (include "common.capabilities.apiVersions.has" (dict "ctx" $ctx "api" "cert-manager.io/v1")) -}}
+{{- $errors = append $errors "internal.identity=mtls is set, but the cluster registers no `cert-manager.io/v1` API. Install cert-manager first, or pass `--api-versions cert-manager.io/v1` if you are rendering offline with `helm template`. Rendering regardless would produce Certificates the API server rejects, and pods waiting forever on a Secret nothing writes. `internal.identity=token` needs no CA at all." -}}
+{{- end -}}
+{{- if not $tls.trustBundle.name -}}
+{{- $errors = append $errors "internal.identity=mtls needs internal.tls.trustBundle.name. It is both the trust-manager Bundle's name and the name of the ConfigMap it writes, which every pod mounts as its CA — without it a service can present a certificate but verify nobody's." -}}
+{{- end -}}
+{{- if $tls.trustBundle.create -}}
+{{- if not $tls.trustBundle.sources -}}
+{{- $errors = append $errors "internal.tls.trustBundle.create is set but internal.tls.trustBundle.sources is empty, so the Bundle would distribute an empty CA and every peer verification would fail. Name the Secret or ConfigMap holding your CA certificate — for a cert-manager CA ClusterIssuer that is the Secret its `spec.ca.secretName` points at, in cert-manager's namespace." -}}
+{{- end -}}
+{{- if not (include "common.capabilities.apiVersions.has" (dict "ctx" $ctx "api" "trust.cert-manager.io/v1alpha1")) -}}
+{{- $errors = append $errors "internal.tls.trustBundle.create is set, but the cluster registers no `trust.cert-manager.io/v1alpha1` API. Install trust-manager, pass `--api-versions trust.cert-manager.io/v1alpha1` when rendering offline, or set `create=false` and point `internal.tls.trustBundle.name` at a ConfigMap that already carries the CA." -}}
+{{- end -}}
+{{- end -}}
+{{- $setTokens := list -}}
+{{- range $caller, $token := ($internal.tokens | default dict) -}}
+{{- if $token -}}{{- $setTokens = append $setTokens (printf "internal.tokens.%s" $caller) -}}{{- end -}}
+{{- end -}}
+{{- if $setTokens -}}
+{{- $errors = append $errors (printf "%s %s set while internal.identity=mtls, where callers are identified by their certificate's DNS SAN and no token is read by anything. The chart neither writes nor projects these values, so they would sit in the release meaning nothing. Clear them, or set internal.identity=token." (join " and " $setTokens) (ternary "are" "is" (gt (len $setTokens) 1))) -}}
+{{- end -}}
+{{- if $ctx.Values.nats.enabled -}}
+{{- $errors = append $errors "internal.identity=mtls and nats.enabled=true cannot be combined. Under mtls a service presents its client certificate to the broker as well and requires TLS on that connection, and the bundled NATS serves plaintext only — every service that uses it would fail to connect. Point `externalNats.url` at a TLS-enabled broker, or use `internal.identity=token` for the bundled evaluation stack." -}}
 {{- end -}}
 {{- end -}}
 
@@ -79,12 +126,17 @@ cannot generate one, so the Secret must already carry `seed_admin_password`.
 {{- end -}}
 {{- end -}}
 
-{{- /* A worker with nothing to talk to will start and then do nothing useful. */ -}}
-{{- if and $ctx.Values.services.worker.enabled (not (include "tankovault.natsUrl" $ctx)) -}}
-{{- $errors = append $errors "services.worker.enabled requires NATS JetStream: set `nats.enabled=true` or point `externalNats.url` at one. The worker consumes its scan tasks from a JetStream work queue." -}}
+{{- /*
+A worker with nothing to talk to will start and then do nothing useful. `perServiceSecret` counts
+as a source: it delivers one URL per service out of a Secret this chart never reads, which is the
+whole point of it, so there is nothing here to check beyond its presence.
+*/ -}}
+{{- $nats := or (include "tankovault.natsUrl" $ctx) $ctx.Values.externalNats.perServiceSecret -}}
+{{- if and $ctx.Values.services.worker.enabled (not $nats) -}}
+{{- $errors = append $errors "services.worker.enabled requires NATS JetStream: set `nats.enabled=true`, point `externalNats.url` at one, or supply per-service URLs through `externalNats.perServiceSecret`. The worker consumes its scan tasks from a JetStream work queue." -}}
 {{- end -}}
-{{- if and $ctx.Values.services.controlPlane.enabled (not (include "tankovault.natsUrl" $ctx)) -}}
-{{- $errors = append $errors "services.controlPlane.enabled requires NATS JetStream: set `nats.enabled=true` or point `externalNats.url` at one." -}}
+{{- if and $ctx.Values.services.controlPlane.enabled (not $nats) -}}
+{{- $errors = append $errors "services.controlPlane.enabled requires NATS JetStream: set `nats.enabled=true`, point `externalNats.url` at one, or supply per-service URLs through `externalNats.perServiceSecret`." -}}
 {{- end -}}
 
 {{- /*

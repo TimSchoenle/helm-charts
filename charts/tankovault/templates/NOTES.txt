@@ -1,4 +1,42 @@
 {{ include "common.name" . }} {{ .Chart.AppVersion }} installed as {{ .Release.Name }} in {{ include "common.namespace" . }}.
+{{ if .Release.IsUpgrade }}
+BREAKING in chart 4.0.0: the single shared internal token is gone. Every service that still
+receives `internal__token` REFUSES TO BOOT and names its replacements — there is no dual-accept
+window and no silent downgrade, so an upgrade that leaves it in place stops the fleet rather
+than weakening it. `internal.token` now fails the render, but the chart cannot see inside an
+`existingSecret`: if yours carries `internal__token`, remove that key
+{{- if eq .Values.internal.identity "token" }} and add `internal__tokens__api` and
+`internal__tokens__worker` instead{{- end }}. See UPGRADING.md#400.
+{{ end }}
+{{- if eq .Values.internal.identity "mtls" }}
+Inter-service authentication is mTLS. Each service presents a cert-manager certificate and is
+identified by its DNS SAN; no credential for it exists in this release. Two things to check
+before the pods settle:
+
+  kubectl --namespace {{ include "common.namespace" . }} get certificate \
+    -l app.kubernetes.io/part-of={{ include "common.name" . }}
+
+  kubectl --namespace {{ include "common.namespace" . }} get configmap {{ .Values.internal.tls.trustBundle.name }}
+
+A pod stuck in `ContainerCreating` on `FailedMount` is one of those two missing: an unissued
+Certificate (`kubectl describe` it — a wrong `issuerRef` says so there) or a trust-manager Bundle
+that is not writing into this namespace.
+{{- if not .Values.internal.tls.trustBundle.create }}
+The Bundle is not this release's — `internal.tls.trustBundle.create` is false — so nothing here
+creates that ConfigMap. Point `internal.tls.trustBundle.name` at the one your cluster-wide Bundle
+already writes here, or set `create=true` with `sources`.
+{{- end }}
+
+Rotation needs no rollout: the files are re-read every 30 seconds and swapped without dropping
+connections, which is why no `checksum/` annotation names them.
+{{- else }}
+Inter-service authentication is per-caller tokens. Exactly two services make privileged calls —
+`api` and `worker` — and each callee receives only the tokens of the callers it accepts, so
+holding one opens the routes that caller may reach and nothing more.
+
+`mtls` is the mode this chart aims at; it needs cert-manager and a CA, and moves the credential
+out of the release entirely. See the README's "Inter-service authentication" section.
+{{- end }}
 
 Reach the application:
 {{- if .Values.ingress.enabled }}

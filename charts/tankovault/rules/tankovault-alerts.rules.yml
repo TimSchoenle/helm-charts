@@ -38,7 +38,7 @@ groups:
             has already failed, so treat this as a boot refusal before a crash:
             `kubectl -n {{ $labels.namespace }} logs -l app.kubernetes.io/component={{ $labels.job }}
             --tail=50` and look for a refused secret. The gates that stop a boot on purpose are
-            the internal-tier token, the JWT secret, the AniList token-encryption key, and any
+            the inter-service credential, the JWT secret, the AniList token-encryption key, and any
             value on the placeholder deny list — each logs the key it wanted. If the pod is in
             `CrashLoopBackOff` with no such line, check
             `kubectl -n {{ $labels.namespace }} describe pod` for `OOMKilled` against the
@@ -764,9 +764,9 @@ groups:
             `refused a render target` and it names the URL and the rule that refused it. A
             provider URL means a bad provider row or a redirect to a private range. Anything else
             means something is calling these endpoints that should not reach them, in which case
-            verify the internal token is set on both the service and its callers, that
-            `networkPolicy.enabled` is true, and that no Service publishes them outside the
-            cluster.
+            verify `internal.identity` is not `off` on this service — only `worker` may call
+            either of them — that `networkPolicy.enabled` is true, and that no Service publishes
+            them outside the cluster.
 
   - name: tankovault-recsys
     rules:

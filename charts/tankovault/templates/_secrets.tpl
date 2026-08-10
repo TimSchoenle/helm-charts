@@ -95,19 +95,39 @@ The bundled PostgreSQL password: whatever the operator set, else generated and r
 {{- end -}}
 
 {{/*
-The shared service-to-service token: whatever the operator set, else generated and remembered.
+One caller's internal token: whatever the operator set, else generated and remembered.
 
-The `production` profile refuses to boot without it, and the value means nothing outside this
-release — nothing but these six services ever presents it — so there is no decision for an
-operator to make, only a step to forget. Outside `production` the token stays optional and stays
-unset, because there the services accept internal calls with or without one.
+Read only when `internal.identity` is `token`. There is one of these per *caller*, not one per
+service and not one for the release: holding `api`'s token opens the routes `api` is allowed to
+call and nothing else, so a compromised `challenge-solver` — which is only ever a callee — yields
+no credential at all.
+
+The value means nothing outside this release and upstream length-checks it at 32 characters in
+every profile, so an unset one is generated rather than demanded. Generated only for callers that
+are actually deployed; a token for a service nobody enabled is a secret nothing reads.
+
+Args: ctx, caller (a caller name, e.g. `api`).
 */}}
 {{- define "tankovault.internalToken" -}}
-{{- if .Values.internal.token -}}
-{{- .Values.internal.token -}}
-{{- else if eq .Values.profile "production" -}}
-{{- include "tankovault.rememberedSecret" (dict "ctx" . "key" "internal__token" "fallback" (randAlphaNum 32)) -}}
+{{- $explicit := index (.ctx.Values.internal.tokens | default dict) .caller -}}
+{{- if $explicit -}}
+{{- $explicit -}}
+{{- else -}}
+{{- include "tankovault.rememberedSecret" (dict "ctx" .ctx "key" (include "tankovault.internalTokenKey" .caller) "fallback" (randAlphaNum 48)) -}}
 {{- end -}}
+{{- end -}}
+
+{{/*
+The Secret key one caller's token is stored under.
+
+Deliberately not a configuration path, which every other key in this Secret is. One token is read
+by two different services under two different names — the caller reads it as
+`internal.caller.token`, each of its callees as `internal.peers.<caller>.token` — and a Secret
+key can only be spelled one way. The *projected path* is what has to be the configuration path,
+and `tankovault.internalSecretItems` maps this key onto whichever one the reading pod needs.
+*/}}
+{{- define "tankovault.internalTokenKey" -}}
+{{- printf "internal__tokens__%s" . -}}
 {{- end -}}
 
 {{/*
@@ -166,7 +186,11 @@ differently.
 {{- with include "tankovault.jwtSecret" $ctx }}{{- $_ := set $data "auth__jwt_secret" . }}{{- end -}}
 {{- with include "tankovault.passwordPepper" $ctx }}{{- $_ := set $data "auth__password_pepper" . }}{{- end -}}
 {{- with include "tankovault.mfaEncryptionKey" $ctx }}{{- $_ := set $data "auth__mfa_encryption_key" . }}{{- end -}}
-{{- with include "tankovault.internalToken" $ctx }}{{- $_ := set $data "internal__token" . }}{{- end -}}
+{{- if eq $ctx.Values.internal.identity "token" -}}
+{{- range $caller, $service := (include "tankovault.internalCallers" $ctx | fromYaml) -}}
+{{- $_ := set $data (include "tankovault.internalTokenKey" $caller) (include "tankovault.internalToken" (dict "ctx" $ctx "caller" $caller)) -}}
+{{- end -}}
+{{- end -}}
 {{- with $ctx.Values.anilist.clientId }}{{- $_ := set $data "anilist__client_id" . }}{{- end -}}
 {{- with $ctx.Values.anilist.clientSecret }}{{- $_ := set $data "anilist__client_secret" . }}{{- end -}}
 {{- with include "tankovault.anilistTokenEncryptionKey" $ctx }}{{- $_ := set $data "anilist__token_encryption_key" . }}{{- end -}}
@@ -205,6 +229,36 @@ The name of the Secret holding the chart-managed credentials.
 {{- end -}}
 
 {{/*
+The internal-token projections for one workload, as `key`/`path` pairs.
+
+Empty under `mtls`, where identification is the client certificate and no token exists at all —
+this is the half of "never both credentials at once" that the peer configuration cannot express
+on its own.
+
+Each pair maps a stored token onto the configuration path the *reading* service knows it by: its
+own token arrives as `internal__caller__token`, and each caller it accepts arrives as
+`internal__peers__<caller>__token`. `worker` gets both, being the one service that is a caller
+and a callee.
+
+Args: ctx (root), service.
+*/}}
+{{- define "tankovault.internalSecretItems" -}}
+{{- $ctx := .ctx -}}
+{{- $spec := include "tankovault.spec" .service | fromYaml -}}
+{{- if eq $ctx.Values.internal.identity "token" -}}
+{{- $peers := include "tankovault.internalPeers" (dict "ctx" $ctx "service" .service) | fromYaml }}
+{{- with $spec.internalCaller }}
+- key: {{ include "tankovault.internalTokenKey" . }}
+  path: internal__caller__token
+{{- end }}
+{{- range $peer, $peerService := $peers }}
+- key: {{ include "tankovault.internalTokenKey" $peer }}
+  path: internal__peers__{{ $peer }}__token
+{{- end }}
+{{- end -}}
+{{- end -}}
+
+{{/*
 The projected-volume sources for one workload's credentials.
 
 Each pod receives only the keys its own service reads: `docs/CONFIGURATION.md` lists which
@@ -212,38 +266,52 @@ services consume which block, and `tankovault.serviceSpecs` encodes it. A `worke
 never has `auth__jwt_secret` on its filesystem, so compromising the tier that parses untrusted
 HTML does not yield the token-signing key.
 
+Every entry is a `key`/`path` pair rather than a bare key, because the two are not always the
+same string: the file name in `TANKOVAULT_SECRETS_DIR` is a configuration path and must be, while
+the Secret key underneath it is only storage. `database__url` out of an `externalDatabase`
+Secret and the internal tokens both rely on that.
+
 `optional: true` covers both a missing Secret and a missing key, which is what makes an
 optional credential — an SMTP password, a Discord webhook — simply absent rather than a mount
 failure. A genuinely missing *required* credential still fails loudly: the service refuses to
 boot and names the key.
 
-Args: ctx, service (a service key), or `keys` for a caller with its own key list.
+Args: ctx, service (a service key), or `keys` for a caller with its own key list. The internal
+and per-service NATS projections are derived from the service and so appear only in the first
+form; the bootstrap steps that pass `keys` are not internal peers and speak to NATS not at all.
 */}}
 {{- define "tankovault.secretSources" -}}
 {{- $ctx := .ctx -}}
+{{- $service := .service -}}
 {{- $keys := .keys -}}
+{{- $spec := dict -}}
 {{- if not $keys -}}
-{{- $spec := include "tankovault.spec" .service | fromYaml -}}
+{{- $spec = include "tankovault.spec" $service | fromYaml -}}
 {{- $keys = $spec.secretKeys | default list -}}
 {{- end -}}
 {{- $dbExternal := and (has "database__url" $keys) $ctx.Values.externalDatabase.existingSecret -}}
 {{- $redisExternal := and (has "redis__url" $keys) $ctx.Values.externalRedis.existingSecret -}}
-{{- $own := list -}}
+{{- $items := list -}}
 {{- range $k := $keys -}}
 {{- if and (eq $k "database__url") $dbExternal -}}
 {{- else if and (eq $k "redis__url") $redisExternal -}}
 {{- else -}}
-{{- $own = append $own $k -}}
+{{- $items = append $items (dict "key" $k "path" $k) -}}
 {{- end -}}
 {{- end -}}
-{{- if and $own (or $ctx.Values.existingSecret (include "tankovault.createSecret" $ctx)) }}
+{{- if $service -}}
+{{- with include "tankovault.internalSecretItems" (dict "ctx" $ctx "service" $service) | fromYamlArray -}}
+{{- $items = concat $items . -}}
+{{- end -}}
+{{- end -}}
+{{- if and $items (or $ctx.Values.existingSecret (include "tankovault.createSecret" $ctx)) }}
 - secret:
     name: {{ include "tankovault.secretName" $ctx }}
     optional: true
     items:
-      {{- range $k := $own }}
-      - key: {{ $k }}
-        path: {{ $k }}
+      {{- range $item := $items }}
+      - key: {{ $item.key }}
+        path: {{ $item.path }}
       {{- end }}
 {{- end }}
 {{- if $dbExternal }}
@@ -259,5 +327,19 @@ Args: ctx, service (a service key), or `keys` for a caller with its own key list
     items:
       - key: {{ $ctx.Values.externalRedis.urlKey }}
         path: redis__url
+{{- end }}
+{{- if and $spec.needsNats $ctx.Values.externalNats.perServiceSecret }}
+{{- /*
+  A per-service NATS account, delivered as this service's own connection URL. It carries the
+  credential, so it is a Secret key rather than a config value and it replaces the derived
+  `nats.url` entirely — supplying both would leave the account a service actually uses depending
+  on which layer won. Not `optional`: a pod that silently starts with no broker URL is the
+  failure this exists to prevent.
+*/}}
+- secret:
+    name: {{ $ctx.Values.externalNats.perServiceSecret }}
+    items:
+      - key: {{ $spec.slug }}
+        path: nats__url
 {{- end }}
 {{- end -}}

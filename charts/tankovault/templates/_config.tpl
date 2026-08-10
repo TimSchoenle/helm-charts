@@ -115,9 +115,13 @@ telemetry:
 metrics:
   enabled: {{ $ctx.Values.metrics.enabled }}
   listen: {{ printf "0.0.0.0:%v" $ctx.Values.metrics.port | quote }}
-{{- if and $spec.needsNats $nats }}
+{{- if and $spec.needsNats $nats (not $ctx.Values.externalNats.perServiceSecret) }}
 nats:
   url: {{ $nats | quote }}
+{{- end }}
+{{- with include "tankovault.internalConfig" (dict "ctx" $ctx "service" $service) }}
+internal:
+  {{- . | nindent 2 }}
 {{- end }}
 {{- if and $spec.needsRedis $redis }}
 redis:
@@ -141,13 +145,13 @@ frontend:
 {{- end }}
 {{- if eq $service "api" }}
 {{- if $ctx.Values.services.controlPlane.enabled }}
-control_plane_url: {{ include "tankovault.url" (dict "ctx" $ctx "service" "controlPlane") | quote }}
+control_plane_url: {{ include "tankovault.internalUrl" (dict "ctx" $ctx "service" "controlPlane") | quote }}
 {{- end }}
 {{- if $ctx.Values.services.sync.enabled }}
-sync_url: {{ include "tankovault.url" (dict "ctx" $ctx "service" "sync") | quote }}
+sync_url: {{ include "tankovault.internalUrl" (dict "ctx" $ctx "service" "sync") | quote }}
 {{- end }}
 {{- if $ctx.Values.services.worker.enabled }}
-worker_url: {{ include "tankovault.url" (dict "ctx" $ctx "service" "worker") | quote }}
+worker_url: {{ include "tankovault.internalUrl" (dict "ctx" $ctx "service" "worker") | quote }}
 {{- end }}
 {{- if $external }}
 auth:
@@ -156,7 +160,7 @@ auth:
 {{- end }}
 {{- if and (eq $service "worker") $ctx.Values.services.challengeSolver.enabled }}
 worker:
-  challenge_solver_endpoint: {{ include "tankovault.url" (dict "ctx" $ctx "service" "challengeSolver") | quote }}
+  challenge_solver_endpoint: {{ include "tankovault.internalUrl" (dict "ctx" $ctx "service" "challengeSolver") | quote }}
 {{- end }}
 {{- if eq $service "challengeSolver" }}
 {{- with include "tankovault.trawlUrl" $ctx }}
@@ -199,6 +203,55 @@ legal:
   {{- . | nindent 2 }}
 {{- end }}
 {{- end }}
+{{- end -}}
+
+{{/*
+The `[internal]` block for one service, or empty for a service that reads none of it.
+
+Every service but the `frontend` gets one, including `notifier`: it serves no privileged route
+and calls no peer, but under `mtls` it presents the same client certificate to the broker, which
+is enough of a reason to configure it.
+
+What lands here is only the half that is not a credential. Under `token` that is the identity
+mode and the service's own caller name — the tokens themselves arrive as files in
+`TANKOVAULT_SECRETS_DIR`, one per peer, and never touch this ConfigMap. Under `mtls` it is the
+mode, the three file paths, the caller name where there is one, and one `san` per accepted
+caller; there is no secret material in `mtls` beyond the private key cert-manager writes.
+
+The two shapes are mutually exclusive on purpose. A peer entry carrying the credential of the
+inactive mode — a token under `mtls`, a SAN under `token` — is refused at boot rather than
+ignored, so the template emits one or the other and never both.
+
+Args: ctx (root), service.
+*/}}
+{{- define "tankovault.internalConfig" -}}
+{{- $ctx := .ctx -}}
+{{- $service := .service -}}
+{{- $spec := include "tankovault.spec" $service | fromYaml -}}
+{{- if $spec.internalIdentity -}}
+{{- $internal := $ctx.Values.internal -}}
+{{- $mtls := eq $internal.identity "mtls" -}}
+{{- $peers := include "tankovault.internalPeers" (dict "ctx" $ctx "service" $service) | fromYaml -}}
+identity: {{ $internal.identity | quote }}
+{{- if $mtls }}
+{{- $tls := $internal.tls }}
+tls:
+  cert: {{ printf "%s/tls.crt" (trimSuffix "/" $tls.certDir) | quote }}
+  key: {{ printf "%s/tls.key" (trimSuffix "/" $tls.certDir) | quote }}
+  ca: {{ printf "%s/%s" (trimSuffix "/" $tls.caDir) $tls.trustBundle.key | quote }}
+{{- end }}
+{{- with $spec.internalCaller }}
+caller:
+  name: {{ . | quote }}
+{{- end }}
+{{- if and $mtls $peers }}
+peers:
+  {{- range $peer, $peerService := $peers }}
+  {{ $peer }}:
+    san: {{ include "tankovault.internalSan" (dict "ctx" $ctx "service" $peerService) | quote }}
+  {{- end }}
+{{- end }}
+{{- end -}}
 {{- end -}}
 
 {{/*
@@ -337,6 +390,20 @@ Args: ctx (root), service.
 {{- include "tankovault.secretSources" (dict "ctx" .ctx "service" .service) | trim -}}
 {{- end -}}
 
+{{/*
+Whether one service's pod carries the internal mTLS material. Emits "true" or "".
+
+The certificate and the trust bundle travel together — a service that presents one but cannot
+verify its peer's is not a working half-configuration — so the volume, both mounts and the three
+`internal.tls.*` paths all read this one predicate.
+
+Args: ctx (root), service.
+*/}}
+{{- define "tankovault.hasInternalTls" -}}
+{{- $spec := include "tankovault.spec" .service | fromYaml -}}
+{{- if and $spec.internalIdentity (eq .ctx.Values.internal.identity "mtls") -}}true{{- end -}}
+{{- end -}}
+
 {{- define "tankovault.volumes" -}}
 {{- $ctx := .ctx -}}
 {{- $service := .service -}}
@@ -350,6 +417,22 @@ Args: ctx (root), service.
     defaultMode: 0400
     sources:
       {{- $sources | nindent 6 }}
+{{- end }}
+{{- if include "tankovault.hasInternalTls" (dict "ctx" $ctx "service" $service) }}
+{{- /*
+  The keypair is cert-manager's, the bundle is trust-manager's, and neither is folded into the
+  `secrets` projection: both are written by a controller on its own schedule rather than by this
+  chart, and mounting them separately is what lets the kubelet refresh either one in place. No
+  `checksum/` annotation names them for the same reason — the services re-read the files every
+  30s and swap the credential without dropping a connection, so a rotation is not a rollout.
+*/}}
+- name: internal-tls
+  secret:
+    secretName: {{ include "tankovault.internalCertName" (dict "ctx" $ctx "service" $service) }}
+    defaultMode: 0400
+- name: internal-ca
+  configMap:
+    name: {{ $ctx.Values.internal.tls.trustBundle.name }}
 {{- end }}
 {{- if and (eq $service "api") (include "tankovault.legal.files" $ctx | trim) }}
 - name: legal
@@ -367,6 +450,14 @@ Args: ctx (root), service.
 {{- if include "tankovault.hasSecrets" (dict "ctx" $ctx "service" $service) }}
 - name: secrets
   mountPath: {{ $ctx.Values.configReload.secretsDir | quote }}
+  readOnly: true
+{{- end }}
+{{- if include "tankovault.hasInternalTls" (dict "ctx" $ctx "service" $service) }}
+- name: internal-tls
+  mountPath: {{ $ctx.Values.internal.tls.certDir | quote }}
+  readOnly: true
+- name: internal-ca
+  mountPath: {{ $ctx.Values.internal.tls.caDir | quote }}
   readOnly: true
 {{- end }}
 {{- if and (eq $service "api") (include "tankovault.legal.files" $ctx | trim) }}

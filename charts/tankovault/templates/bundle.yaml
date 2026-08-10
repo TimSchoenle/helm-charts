@@ -1,0 +1,44 @@
+{{- /*
+The trust-manager Bundle that puts the CA into this namespace as a ConfigMap.
+
+Opt-in, unlike the Certificates, and off by default for one reason: a Bundle is cluster-scoped.
+Two releases that both created `tankovault-ca` would be two objects fighting over one name, and
+the loser's CA would be whatever the winner last wrote. Most clusters that run trust-manager
+already publish their internal CA this way, so the common case is `create: false` and
+`internal.tls.trustBundle.name` naming the ConfigMap that Bundle already writes here.
+
+`sources` is the operator's, because nothing in an `issuerRef` reveals where the CA certificate
+lives: a `ClusterIssuer` names a Secret in cert-manager's namespace, not in this one, and an ACME
+or Vault issuer has no such Secret at all.
+*/ -}}
+{{- if and (eq .Values.internal.identity "mtls") .Values.internal.tls.trustBundle.create }}
+{{- $bundle := .Values.internal.tls.trustBundle }}
+apiVersion: trust.cert-manager.io/v1alpha1
+kind: Bundle
+metadata:
+  name: {{ $bundle.name }}
+  labels:
+    {{- include "common.labels" . | nindent 4 }}
+  {{- with (include "common.annotations" .) }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
+spec:
+  sources:
+    {{- toYaml $bundle.sources | nindent 4 }}
+  target:
+    configMap:
+      key: {{ $bundle.key }}
+    {{- /*
+      Confined to this release's namespace by default. A Bundle with no selector writes its
+      ConfigMap into every namespace in the cluster, which is a larger footprint than a chart
+      should take without being asked.
+    */}}
+    namespaceSelector:
+      matchLabels:
+        {{- if $bundle.namespaceSelector }}
+        {{- toYaml $bundle.namespaceSelector | nindent 8 }}
+        {{- else }}
+        kubernetes.io/metadata.name: {{ include "common.namespace" . }}
+        {{- end }}
+{{- end }}

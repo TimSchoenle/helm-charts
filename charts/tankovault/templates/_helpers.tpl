@@ -13,8 +13,20 @@ this is why nothing in this chart "returns a dict" directly.
               Note `worker` is 8085, not 8084 — 8084 is `render`.
   secretKeys  the credential keys this service actually reads. Each pod projects only these,
               so a `worker` compromise never yields `auth__jwt_secret`.
+  internal*   how the service takes part in inter-service authentication:
+              `internalIdentity` whether it reads the `internal` config block at all — the
+              `frontend` is a Node process that proxies to the API and does not;
+              `internalCaller` its own caller name, set only on the services that make
+              privileged calls, and `internalPeers` the caller names it accepts on its own
+              privileged routes. The two halves are the whole call graph, and the callee's
+              compiled-in route table is keyed by exactly these names.
   needs*      dependency wiring, used to derive config and NetworkPolicy egress.
   scalable    whether replicas > 1 is known-safe (`deploy/README.md` + docs/OPERATIONS.md).
+
+`ingressFrom` is the same graph as `internalPeers` plus the one edge that is not an internal
+call: the `frontend` reverse-proxies `/v1/*` to the `api` as an ordinary public request, with
+no caller identity of any kind. Everything else that may open a connection may also
+authenticate on it.
 */}}
 {{- define "tankovault.serviceSpecs" -}}
 api:
@@ -27,11 +39,13 @@ api:
   needsDatabase: true
   needsRedis: true
   needsNats: true
+  internalIdentity: true
+  internalCaller: api
+  internalPeers: []
   secretKeys:
     - auth__jwt_secret
     - auth__password_pepper
     - auth__mfa_encryption_key
-    - internal__token
     - database__url
     - redis__url
     - email__username
@@ -46,6 +60,9 @@ frontend:
   needsDatabase: false
   needsRedis: false
   needsNats: false
+  internalIdentity: false
+  internalCaller: ""
+  internalPeers: []
   secretKeys: []
 controlPlane:
   slug: control-plane
@@ -57,22 +74,26 @@ controlPlane:
   needsDatabase: true
   needsRedis: true
   needsNats: true
+  internalIdentity: true
+  internalCaller: ""
+  internalPeers: [api]
   secretKeys:
-    - internal__token
     - database__url
     - redis__url
 worker:
   slug: worker
   port: 8085
   scalable: true
-  ingressFrom: [api, controlPlane]
+  ingressFrom: [api]
   egressServices: [challengeSolver, render]
   egressInternet: true
   needsDatabase: true
   needsRedis: false
   needsNats: true
+  internalIdentity: true
+  internalCaller: worker
+  internalPeers: [api]
   secretKeys:
-    - internal__token
     - database__url
 notifier:
   slug: notifier
@@ -84,6 +105,9 @@ notifier:
   needsDatabase: true
   needsRedis: false
   needsNats: true
+  internalIdentity: true
+  internalCaller: ""
+  internalPeers: []
   secretKeys:
     - database__url
     - email__username
@@ -100,8 +124,10 @@ sync:
   needsDatabase: true
   needsRedis: false
   needsNats: false
+  internalIdentity: true
+  internalCaller: ""
+  internalPeers: [api]
   secretKeys:
-    - internal__token
     - database__url
     - anilist__client_id
     - anilist__client_secret
@@ -116,20 +142,24 @@ challengeSolver:
   needsDatabase: false
   needsRedis: false
   needsNats: false
-  secretKeys:
-    - internal__token
+  internalIdentity: true
+  internalCaller: ""
+  internalPeers: [worker]
+  secretKeys: []
 render:
   slug: render
   port: 8084
   scalable: true
-  ingressFrom: [worker, challengeSolver]
+  ingressFrom: [worker]
   egressServices: []
   egressInternet: true
   needsDatabase: false
   needsRedis: false
   needsNats: false
-  secretKeys:
-    - internal__token
+  internalIdentity: true
+  internalCaller: ""
+  internalPeers: [worker]
+  secretKeys: []
 {{- end -}}
 
 {{/*
@@ -167,10 +197,105 @@ The resource name of one service, e.g. `RELEASE-NAME-tankovault-control-plane`.
 
 {{/*
 The in-cluster base URL of one service, e.g. `http://RELEASE-NAME-tankovault-api:8080`.
+
+Always plaintext, and used for exactly one edge: the frontend's `api_upstream`. That hop is an
+ordinary public request being reverse-proxied, not an internal call — the frontend holds no
+caller identity in either mode — so it is the one peer URL that does not follow
+`internal.identity`. Everything that does goes through `tankovault.internalUrl`.
 */}}
 {{- define "tankovault.url" -}}
 {{- $spec := include "tankovault.spec" .service | fromYaml -}}
 {{- printf "http://%s:%v" (include "tankovault.fullname" .) $spec.port -}}
+{{- end -}}
+
+{{/*
+The in-cluster base URL of one service as a *peer* — the scheme follows `internal.identity`.
+
+Under `mtls` the callee requires a verified client certificate, and a plaintext upstream is the
+one failure mode that looks like success from the client's side: the connection is accepted, the
+request is sent, no certificate is offered and nothing is encrypted, while the peer's own config
+still says it requires both. Upstream refuses to boot on an `http://` peer URL in that mode for
+that reason, so the scheme is derived here rather than left to the operator to restate.
+
+Args: ctx (root), service.
+*/}}
+{{- define "tankovault.internalUrl" -}}
+{{- $spec := include "tankovault.spec" .service | fromYaml -}}
+{{- $scheme := ternary "https" "http" (eq .ctx.Values.internal.identity "mtls") -}}
+{{- printf "%s://%s:%v" $scheme (include "tankovault.fullname" .) $spec.port -}}
+{{- end -}}
+
+{{/*
+The DNS SAN that identifies one service to its peers, e.g.
+`RELEASE-NAME-tankovault-api.default.svc`.
+
+One name per service, stable across upgrades and independent of pod identity, because it is
+both what the Certificate requests and what every callee is configured to expect. The verifier
+checks the configured name against *every* DNS SAN on the presented certificate rather than only
+the first, so the Certificate may carry more names than this one and their order does not
+matter — but the two sides must agree on this one exactly.
+
+Args: ctx (root), service.
+*/}}
+{{- define "tankovault.internalSan" -}}
+{{- printf "%s.%s.svc" (include "tankovault.fullname" .) (include "common.namespace" .ctx) -}}
+{{- end -}}
+
+{{/*
+The name of the cert-manager Certificate for one service, and of the Secret it writes.
+
+Args: ctx (root), service.
+*/}}
+{{- define "tankovault.internalCertName" -}}
+{{- $spec := include "tankovault.spec" .service | fromYaml -}}
+{{- include "common.fullname.suffixed" (dict "ctx" .ctx "suffix" (printf "%s-internal-tls" $spec.slug)) -}}
+{{- end -}}
+
+{{/*
+The enabled callers, as a YAML map of caller name to service key.
+
+A caller name is the identity a service presents (`internal.caller.name`) and the key a callee's
+peer entry is written under (`internal.peers.<caller>`), so the two can never be spelled
+differently. Only enabled services appear: a peer entry for a service that was never deployed
+would be a credential nothing can present and, under `token`, a generated secret nothing reads.
+
+Today this is `api` and `worker`, and both happen to equal their service key. The indirection is
+kept because the peer name is upstream's contract — a compiled-in route table is keyed by it —
+while the service key is this chart's, and nothing guarantees they stay identical.
+
+Usage: {{- $callers := include "tankovault.internalCallers" $ | fromYaml }}
+*/}}
+{{- define "tankovault.internalCallers" -}}
+{{- $ctx := . -}}
+{{- $specs := include "tankovault.serviceSpecs" $ctx | fromYaml -}}
+{{- $callers := dict -}}
+{{- range $service, $spec := $specs -}}
+{{- if and $spec.internalCaller (index $ctx.Values.services $service).enabled -}}
+{{- $_ := set $callers $spec.internalCaller $service -}}
+{{- end -}}
+{{- end -}}
+{{- toYaml $callers -}}
+{{- end -}}
+
+{{/*
+The peers one service accepts, narrowed to the callers that are actually deployed.
+
+Returned as a YAML map of caller name to service key, in the same shape as
+`tankovault.internalCallers`, so a consumer can resolve each peer's SAN without a second lookup.
+
+Args: ctx (root), service.
+*/}}
+{{- define "tankovault.internalPeers" -}}
+{{- $ctx := .ctx -}}
+{{- $spec := include "tankovault.spec" .service | fromYaml -}}
+{{- $callers := include "tankovault.internalCallers" $ctx | fromYaml -}}
+{{- $peers := dict -}}
+{{- range $peer := $spec.internalPeers | default list -}}
+{{- if hasKey $callers $peer -}}
+{{- $_ := set $peers $peer (index $callers $peer) -}}
+{{- end -}}
+{{- end -}}
+{{- toYaml $peers -}}
 {{- end -}}
 
 {{/*

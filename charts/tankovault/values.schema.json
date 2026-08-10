@@ -1992,7 +1992,7 @@
     },
     "existingSecret": {
       "default": "",
-      "description": "Name of an existing Secret holding the credentials, instead of having the chart render one\nfrom the values above. When set it takes precedence and no credential value is written into\nthe Helm release. Its keys are the configuration paths with `__` for nesting and no dots —\n`auth__jwt_secret`, `auth__password_pepper`, `auth__mfa_encryption_key`, `internal__token`,\n`anilist__client_id`, `anilist__client_secret`, `anilist__token_encryption_key`,\n`email__username`, `email__password`, `channels__discord_webhook_url`,\n`channels__webhook_url`, `database__url`, `redis__url`. Only the keys a given service reads\nare projected into it.",
+      "description": "Name of an existing Secret holding the credentials, instead of having the chart render one\nfrom the values above. When set it takes precedence and no credential value is written into\nthe Helm release. Its keys are the configuration paths with `__` for nesting and no dots —\n`auth__jwt_secret`, `auth__password_pepper`, `auth__mfa_encryption_key`,\n`anilist__client_id`, `anilist__client_secret`, `anilist__token_encryption_key`,\n`email__username`, `email__password`, `channels__discord_webhook_url`,\n`channels__webhook_url`, `database__url`, `redis__url`. Only the keys a given service reads\nare projected into it. Under `internal.identity=token` add `internal__tokens__api` and\n`internal__tokens__worker`: those two are keyed by caller rather than by configuration path,\nbecause one token is read as `internal.caller.token` by the caller and as\n`internal.peers.\u003ccaller\u003e.token` by each of its callees, and the projection maps the key onto\nwhichever path the reading pod needs. Under `mtls` no internal credential is needed at all.",
       "required": [],
       "title": "existingSecret",
       "type": "string"
@@ -2030,9 +2030,16 @@
       "additionalProperties": true,
       "description": "Point TankoVault at a NATS you already run. Used whenever `nats.enabled` is false.",
       "properties": {
+        "perServiceSecret": {
+          "default": "",
+          "description": "Name of an existing Secret holding one NATS URL per service, keyed by service slug (`api`,\n`control-plane`, `worker`, `notifier`). Each pod projects its own key as `nats__url`, which\nreplaces the derived URL entirely. This is how per-service NATS **accounts** are delivered —\nthe thing that stops `notifier` publishing scan tasks — since the credential belongs in the\nURL and so cannot live in the ConfigMap. Note that the accounts themselves are NATS server\nconfiguration: the services present what you give them here, and cannot assert what a broker\ndoes not enforce.",
+          "required": [],
+          "title": "perServiceSecret",
+          "type": "string"
+        },
         "url": {
           "default": "",
-          "description": "Connection URL, e.g. `nats://host:4222`. Required by control-plane, worker and notifier;\noptional on the API, where its absence only degrades the live notification stream.",
+          "description": "Connection URL, e.g. `nats://host:4222`. Required by control-plane, worker and notifier;\noptional on the API, where its absence only degrades the live notification stream. Under\n`internal.identity=mtls` the services present their client certificate to the broker and\nrequire TLS on that connection, so it must be a TLS-enabled NATS.",
           "required": [],
           "title": "url",
           "type": "string"
@@ -2490,13 +2497,201 @@
     },
     "internal": {
       "additionalProperties": true,
+      "description": "How the services identify each other on their privileged internal routes. Authorisation is\nthe same either way — every callee carries a compiled-in table of which callers may reach which\nroutes — so this chooses only how a caller proves who it is, and the two modes are otherwise\nindistinguishable.",
       "properties": {
+        "identity": {
+          "default": "mtls",
+          "description": "Identification mode. `mtls` identifies a caller by the DNS SAN on its verified client\ncertificate, issued per service by cert-manager; it is the default and needs no credential in\nthe release at all. `token` gives each caller its own secret, presented in `X-Internal-Token`,\nand is the mode for clusters with no CA or operators who would rather not run cert-manager.",
+          "enum": [
+            "mtls",
+            "token"
+          ],
+          "required": [],
+          "title": "identity"
+        },
+        "tls": {
+          "additionalProperties": true,
+          "description": "Certificate material for `identity: mtls`. Ignored entirely under `token`.",
+          "properties": {
+            "caDir": {
+              "default": "/etc/tankovault/tls-ca",
+              "description": "Directory the CA bundle is mounted at. Kept separate from `certDir` because the two come\nfrom different objects written by different controllers — a Secret and a ConfigMap.",
+              "required": [],
+              "title": "caDir",
+              "type": "string"
+            },
+            "certDir": {
+              "default": "/etc/tankovault/tls",
+              "description": "Directory the certificate and its key are mounted at, as `tls.crt` and `tls.key`.",
+              "required": [],
+              "title": "certDir",
+              "type": "string"
+            },
+            "duration": {
+              "default": "2160h",
+              "description": "Requested certificate lifetime.",
+              "required": [],
+              "title": "duration",
+              "type": "string"
+            },
+            "issuerRef": {
+              "additionalProperties": true,
+              "description": "The cert-manager issuer that signs each service's certificate. It has to be one whose CA\nevery service can also verify against, so a public ACME issuer is the wrong shape here — a\nCA `Issuer` or `ClusterIssuer`, or a Vault/Venafi issuer, is what this expects.",
+              "properties": {
+                "group": {
+                  "default": "cert-manager.io",
+                  "description": "API group of the issuer resource.",
+                  "required": [],
+                  "title": "group",
+                  "type": "string"
+                },
+                "kind": {
+                  "default": "ClusterIssuer",
+                  "description": "Issuer kind.",
+                  "enum": [
+                    "Issuer",
+                    "ClusterIssuer"
+                  ],
+                  "required": [],
+                  "title": "kind"
+                },
+                "name": {
+                  "default": "",
+                  "description": "Issuer name. Required under `mtls`; there is no default to fall back on.",
+                  "required": [],
+                  "title": "name",
+                  "type": "string"
+                }
+              },
+              "required": [],
+              "title": "issuerRef"
+            },
+            "privateKey": {
+              "additionalProperties": true,
+              "description": "Private key policy, passed to the Certificate verbatim. `rotationPolicy: Always` issues a\nfresh key on every renewal rather than re-signing the old one.",
+              "properties": {
+                "algorithm": {
+                  "default": "ECDSA",
+                  "description": "Key algorithm.",
+                  "enum": [
+                    "RSA",
+                    "ECDSA",
+                    "Ed25519"
+                  ],
+                  "required": [],
+                  "title": "algorithm"
+                },
+                "rotationPolicy": {
+                  "default": "Always",
+                  "description": "Whether a renewal also rotates the private key.",
+                  "enum": [
+                    "Never",
+                    "Always"
+                  ],
+                  "required": [],
+                  "title": "rotationPolicy"
+                },
+                "size": {
+                  "default": 256,
+                  "description": "Key size, in the units the algorithm uses.",
+                  "required": [],
+                  "title": "size",
+                  "type": "integer"
+                }
+              },
+              "required": [],
+              "title": "privateKey"
+            },
+            "renewBefore": {
+              "default": "360h",
+              "description": "How far ahead of expiry cert-manager renews. Renewal needs no rollout: the services\nre-read the files every 30 seconds and swap the credential without dropping connections,\nwhich is why no `checksum/` annotation names this Secret.",
+              "required": [],
+              "title": "renewBefore",
+              "type": "string"
+            },
+            "trustBundle": {
+              "additionalProperties": true,
+              "description": "The trust-manager Bundle carrying the CA every service verifies its peers against.",
+              "properties": {
+                "create": {
+                  "default": false,
+                  "description": "Render the `Bundle` as part of this release. Off by default because a Bundle is\ncluster-scoped: two releases creating the same name would be two objects fighting over\none. Leave it off and point `name` at the ConfigMap your existing cluster-wide Bundle\nalready writes here.",
+                  "required": [],
+                  "title": "create",
+                  "type": "boolean"
+                },
+                "key": {
+                  "default": "ca.crt",
+                  "description": "Key inside that ConfigMap holding the PEM bundle.",
+                  "required": [],
+                  "title": "key",
+                  "type": "string"
+                },
+                "name": {
+                  "default": "tankovault-ca",
+                  "description": "Bundle name, which is also the name of the ConfigMap it writes into this namespace and\nthe ConfigMap every pod mounts. Required under `mtls`.",
+                  "required": [],
+                  "title": "name",
+                  "type": "string"
+                },
+                "namespaceSelector": {
+                  "additionalProperties": true,
+                  "description": "Label selector for the namespaces the Bundle writes into, when `create` is set. Empty\nconfines it to this release's namespace; a Bundle with no selector at all would write a\nConfigMap into every namespace in the cluster.",
+                  "required": [],
+                  "title": "namespaceSelector",
+                  "type": "object"
+                },
+                "sources": {
+                  "description": "trust-manager `spec.sources`, verbatim. Required when `create` is set, because nothing\nin `issuerRef` says where the CA certificate lives — a `ClusterIssuer` names a Secret in\ncert-manager's namespace, not in this one. For a CA issuer that is usually\n`[{secret: {name: internal-ca, key: ca.crt}}]`.",
+                  "items": {
+                    "additionalProperties": true,
+                    "required": [],
+                    "type": "object"
+                  },
+                  "required": [],
+                  "title": "sources",
+                  "type": "array"
+                }
+              },
+              "required": [],
+              "title": "trustBundle"
+            }
+          },
+          "required": [],
+          "title": "tls"
+        },
         "token": {
           "default": "",
-          "description": "Shared service-to-service token (`internal.token`), identical across api, control-plane,\nworker, sync, render and challenge-solver. Without it those services accept privileged calls\nfrom anything that can reach the port, so the `production` profile refuses to boot without\none. Left empty in that profile the chart generates a token and remembers it across upgrades,\nwhich is the recommended setting; set one explicitly (minimum 32 characters, e.g.\n`openssl rand -hex 32`) only if it has to be known outside the release.",
+          "description": "**Removed in chart 4.0.0.** The single shared token that used to open every privileged\nroute on every service. Upstream refuses it at boot in every profile with no dual-accept\nwindow, so this chart fails the render with the migration path rather than letting a release\ncarry it into a fleet-wide crash loop. Use `internal.identity` with `internal.tls` or\n`internal.tokens`.",
           "required": [],
           "title": "token",
           "type": "string"
+        },
+        "tokens": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Per-caller tokens for `identity: token`, keyed by caller name. Exactly two services make\nprivileged calls — `api` and `worker` — so exactly two tokens exist, and each callee receives\nonly the tokens of the callers it accepts: holding `worker`'s opens the routes `worker` may\ncall and nothing else. Left empty the chart generates each one and remembers it across\nupgrades, which is the recommended setting; set one explicitly (minimum 32 characters, e.g.\n`openssl rand -hex 32`) only if it has to be known outside the release. Ignored under `mtls`,\nand the chart refuses to render rather than leave a value here meaning nothing.",
+          "properties": {
+            "api": {
+              "default": "",
+              "required": [],
+              "title": "api",
+              "type": "string"
+            },
+            "worker": {
+              "default": "",
+              "required": [],
+              "title": "worker",
+              "type": "string"
+            }
+          },
+          "required": [
+            "api",
+            "worker"
+          ],
+          "title": "tokens",
+          "type": "object"
         }
       },
       "required": [],

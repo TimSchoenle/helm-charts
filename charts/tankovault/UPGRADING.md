@@ -7,6 +7,8 @@ Some of them require a manual step that nothing will remind you about:
 
 | Version | Applies to | Step |
 |---|---|---|
+| [4.0.0](#400) | **every release** | replace `internal.token`; the services refuse to boot on it |
+| [4.0.0](#400) | releases using `existingSecret` | remove `internal__token`, add the per-caller keys |
 | [3.2.0](#320) | releases that set `metadata.priority` under `services.sync.config` | move it to the top-level `config` |
 | [3.2.0](#320) | releases using `existingSecret` | add `auth__mfa_encryption_key` to it |
 | [3.1.0](#310) | existing releases with `postgresql.enabled=true` | `REINDEX DATABASE` once, after the upgrade |
@@ -15,6 +17,109 @@ Some of them require a manual step that nothing will remind you about:
 
 The values contract is enforced by `values.schema.json`, so a key a new major removed or
 renamed fails the render with the offending path named, rather than being silently ignored.
+
+## 4.0.0
+
+**The shared internal token is gone, and it does not fail gracefully.**
+
+`TANKOVAULT_INTERNAL__TOKEN` — one value, byte-identical on every service — is **refused at boot**
+by app 4.0.0, in every profile, with an error naming its replacements. There is no dual-accept
+window. A release upgraded to this app version while still carrying the shared token does not
+weaken, degrade or fall back: every service that receives it stops.
+
+That single value used to open every privileged route on every service, so any one compromised
+pod yielded the credential for all of them. Each caller now has its own, and each callee carries a
+compiled-in table of which callers may reach which routes. Exactly two services make privileged
+calls:
+
+| Service | Calls | Called by |
+|---|---|---|
+| `api` | control-plane, sync, worker | — (public edge) |
+| `worker` | challenge-solver, render | api |
+| `control-plane`, `sync` | — | api |
+| `challenge-solver`, `render` | — | worker |
+| `notifier`, `frontend` | — | — |
+
+`worker` is the only service that is both.
+
+### What to change
+
+The chart fails the render if `internal.token` is set, with the migration path in the message —
+so a values file carrying it cannot reach a cluster. Pick a mode:
+
+```yaml
+# The default. Needs cert-manager, and a CA issuer whose root every service can verify against.
+internal:
+  identity: mtls
+  tls:
+    issuerRef:
+      name: internal-ca
+      kind: ClusterIssuer
+    trustBundle:
+      name: tankovault-ca    # the ConfigMap your trust-manager Bundle writes into this namespace
+```
+
+```yaml
+# No CA required. The chart generates one token per caller and remembers both across upgrades.
+internal:
+  identity: token
+```
+
+Nothing else moves. Both modes authorise identically — only identification differs — so no route,
+no permission and no `config` key changes with the mode.
+
+> [!WARNING]
+> **`existingSecret` releases get no render-time warning.** The chart never reads that Secret's
+> contents, so it cannot see a stale `internal__token` in it and the break surfaces as every pod
+> failing to boot at once. Remove that key. Under `identity: token` add `internal__tokens__api`
+> and `internal__tokens__worker` in its place — those two are keyed by caller rather than by
+> configuration path, because one token is read as `internal.caller.token` by the caller and as
+> `internal.peers.<caller>.token` by each of its callees, and the projection maps each key onto
+> the path the reading pod expects. Under `mtls` no internal credential is needed at all.
+
+### Under `mtls`, the upstream URLs become `https://`
+
+The chart derives them, so there is nothing to set — but it is worth knowing why the render
+changes. `control_plane_url`, `sync_url`, `worker_url` and `worker.challenge_solver_endpoint`
+follow `internal.identity`, because upstream refuses to boot on a plaintext peer URL in that mode:
+the connection would be accepted, offer no client certificate and encrypt nothing, while the
+peer's own configuration still says it requires both.
+
+The frontend's `api_upstream` stays `http://`. That hop is a reverse-proxied public request rather
+than an internal call, and the frontend holds no certificate in either mode.
+
+The probes stay plaintext too. `/health` and `/ready` are mounted outside the authenticated stack
+and stay on a plain listener under `mtls`, because a kubelet probe presents no client certificate.
+
+### Prerequisites `mtls` adds
+
+- **cert-manager**, and an issuer named by `internal.tls.issuerRef`. The chart refuses to render
+  without the `cert-manager.io/v1` API rather than producing Certificates the API server rejects.
+- **A CA in this namespace as a ConfigMap**, which is what trust-manager produces.
+  `internal.tls.trustBundle.create` renders the `Bundle` if your cluster has no cluster-wide one;
+  it is off by default because a Bundle is cluster-scoped and two releases would fight over the
+  name.
+- **A TLS-enabled NATS.** Under `mtls` each service presents the same client certificate to the
+  broker and requires TLS on that connection. The bundled `nats` serves plaintext only, so
+  `nats.enabled=true` with `identity: mtls` is refused at render time. Use `externalNats.url`, or
+  stay on `identity: token` for the bundled evaluation stack.
+
+`identity: token` needs none of these, which is why it exists.
+
+### NetworkPolicies are tightened to the same graph
+
+Two ingress edges are removed, because nothing ever used them: `worker` no longer admits
+`control-plane`, and `render` no longer admits `challenge-solver`. Neither had a matching egress
+rule on the other side, so no traffic is affected — and `render` and `challenge-solver` both fetch
+caller-supplied URLs, which makes "exactly one caller" worth being exact about. The
+frontend-to-`api` edge stays: it is the public request path, not an internal call.
+
+### Per-service NATS accounts
+
+`externalNats.perServiceSecret` names a Secret holding one NATS URL per service slug, projected
+into each pod as `nats__url` in place of the derived one. This is how a broker is told that
+`notifier` may not publish scan tasks — the accounts themselves are NATS server configuration, and
+the services can only present what you give them here.
 
 ## 3.5.0
 

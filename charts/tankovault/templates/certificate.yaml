@@ -1,0 +1,73 @@
+{{- /*
+One cert-manager Certificate per service, under `internal.identity=mtls`.
+
+The certificate is both halves of the service's identity: it is presented as a *server*
+certificate to the callers that reach its privileged routes, and as a *client* certificate to
+the peers it calls and to the NATS broker. That is why `usages` names both, and why `notifier`
+— which serves no internal route and calls no peer — still gets one.
+
+`frontend` gets none. It reads no `internal` configuration, proxies to the API as an ordinary
+public client, and a certificate it never presents would only be a Secret to rotate.
+
+Nothing here needs a rollout. Each service re-reads the files every 30 seconds and swaps the
+credential without dropping connections, so cert-manager's renewal is invisible to the fleet and
+no `checksum/` annotation names this Secret.
+*/ -}}
+{{- if eq .Values.internal.identity "mtls" }}
+{{- $root := . }}
+{{- $tls := .Values.internal.tls }}
+{{- $specs := include "tankovault.serviceSpecs" . | fromYaml }}
+{{- range $service, $spec := $specs }}
+{{- if and $spec.internalIdentity (index $root.Values.services $service).enabled }}
+{{- $values := include "tankovault.serviceValues" (dict "ctx" $root "service" $service) | fromYaml }}
+{{- $ctx := dict "Values" $values "Chart" $root.Chart "Release" $root.Release "Capabilities" $root.Capabilities "Template" $root.Template "Files" $root.Files }}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "tankovault.internalCertName" (dict "ctx" $root "service" $service) }}
+  namespace: {{ include "common.namespace" $root }}
+  labels:
+    {{- include "common.labels" $ctx | nindent 4 }}
+  {{- with (include "common.annotations" $ctx) }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
+spec:
+  secretName: {{ include "tankovault.internalCertName" (dict "ctx" $root "service" $service) }}
+  {{- /*
+    No `commonName`. It is limited to 64 characters, which a release name plus a service slug
+    plus a namespace can exceed, and it identifies nothing the SANs do not — the verifier reads
+    DNS SANs. Letting it default keeps a long release name from failing issuance.
+
+    Every DNS SAN on the certificate is checked against the configured peer name, not only the
+    first, so the extra spellings below are free: a caller configured with the short service
+    name, the `.svc` form or the fully qualified one all verify against the same certificate.
+    `tankovault.internalSan` picks which one this chart writes into the peer config.
+  */}}
+  dnsNames:
+    - {{ include "tankovault.fullname" (dict "ctx" $root "service" $service) | quote }}
+    - {{ include "tankovault.internalSan" (dict "ctx" $root "service" $service) | quote }}
+    - {{ printf "%s.cluster.local" (include "tankovault.internalSan" (dict "ctx" $root "service" $service)) | quote }}
+  usages:
+    - digital signature
+    - key encipherment
+    - server auth
+    - client auth
+  {{- with $tls.duration }}
+  duration: {{ . | quote }}
+  {{- end }}
+  {{- with $tls.renewBefore }}
+  renewBefore: {{ . | quote }}
+  {{- end }}
+  {{- with $tls.privateKey }}
+  privateKey:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  issuerRef:
+    name: {{ $tls.issuerRef.name }}
+    kind: {{ $tls.issuerRef.kind }}
+    group: {{ $tls.issuerRef.group }}
+{{- end }}
+{{- end }}
+{{- end }}

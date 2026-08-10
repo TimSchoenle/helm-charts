@@ -18,28 +18,97 @@ tests:
       - failedTemplate:
           errorPattern: "at least 32 characters"
 
-  - it: generates the internal token in the production profile rather than refusing to render
+  - it: generates the per-caller tokens rather than refusing to render without them
     set:
-      profile: production
-      internal.token: ""
+      internal.tokens.api: ""
+      internal.tokens.worker: ""
     asserts:
       - hasDocuments:
           count: 1
 
-  - it: allows the internal token to be absent outside production
+  - it: refuses an explicit caller token shorter than the service accepts
+    # Length is checked in every profile upstream, not only in production, so a short value is
+    # a boot failure on every service that reads it.
     set:
-      profile: development
-      internal.token: ""
-    asserts:
-      - hasDocuments:
-          count: 1
-
-  - it: refuses an explicit internal token shorter than the service accepts
-    set:
-      internal.token: "too-short"
+      internal.tokens.worker: "too-short"
     asserts:
       - failedTemplate:
-          errorPattern: "internal.token must be at least 32 characters"
+          errorPattern: "internal.tokens.worker must be at least 32 characters"
+
+  - it: refuses the removed shared token by name, with the migration path
+    # The break this major exists for. Upstream refuses `internal.token` at boot with no
+    # dual-accept window, so a release carrying it through would not degrade — every service
+    # would fail to start at once. Failing the render turns that into one message.
+    set:
+      internal.token: "a-perfectly-long-shared-token-value"
+    asserts:
+      - failedTemplate:
+          errorPattern: "internal.token no longer exists"
+
+  - it: refuses mtls without an issuer to sign the certificates
+    set:
+      internal.identity: mtls
+      internal.tls.issuerRef.name: ""
+    capabilities:
+      apiVersions:
+        - cert-manager.io/v1
+    asserts:
+      - failedTemplate:
+          errorPattern: "internal.tls.issuerRef.name"
+
+  - it: refuses mtls on a cluster with no cert-manager
+    set:
+      internal.identity: mtls
+      internal.tls.issuerRef.name: internal-ca
+    asserts:
+      - failedTemplate:
+          errorPattern: "registers no `cert-manager.io/v1` API"
+
+  - it: refuses a token left behind under mtls
+    # A peer entry carrying the credential of the inactive mode is refused at boot. The chart
+    # never emits one, which means a value set here would silently mean nothing — so it says so.
+    set:
+      internal.identity: mtls
+      internal.tls.issuerRef.name: internal-ca
+      internal.tokens.api: ci-internal-token-api-0123456789abcdef
+      internal.tokens.worker: ""
+    capabilities:
+      apiVersions:
+        - cert-manager.io/v1
+    asserts:
+      - failedTemplate:
+          errorPattern: "internal.tokens.api is set while internal.identity=mtls"
+
+  - it: refuses the bundled plaintext NATS under mtls
+    # Under mtls a service presents its client certificate to the broker as well and requires
+    # TLS on that connection. The bundled NATS serves plaintext, so every service that uses it
+    # would fail to connect — a runtime failure the render can see coming.
+    set:
+      internal.identity: mtls
+      internal.tls.issuerRef.name: internal-ca
+      externalDatabase.url: ""
+      externalNats.url: ""
+      postgresql.enabled: true
+      nats.enabled: true
+    capabilities:
+      apiVersions:
+        - cert-manager.io/v1
+    asserts:
+      - failedTemplate:
+          errorPattern: "internal.identity=mtls and nats.enabled=true cannot be combined"
+
+  - it: refuses a trust bundle it is asked to create with nothing in it
+    set:
+      internal.identity: mtls
+      internal.tls.issuerRef.name: internal-ca
+      internal.tls.trustBundle.create: true
+    capabilities:
+      apiVersions:
+        - cert-manager.io/v1
+        - trust.cert-manager.io/v1alpha1
+    asserts:
+      - failedTemplate:
+          errorPattern: "trustBundle.sources is empty"
 
   - it: refuses two database sources at once
     set:

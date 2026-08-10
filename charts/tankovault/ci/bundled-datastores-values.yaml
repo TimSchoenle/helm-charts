@@ -33,7 +33,14 @@ auth:
   jwtSecret: ci-jwt-secret-0123456789abcdef0123
   passwordPepper: ci-password-pepper-0123456789abcd
 internal:
-  token: ci-internal-token-0123456789abcdef01
+  # The `token` path. The chart defaults to `mtls`, which needs cert-manager and a CA;
+  # `ci/internal-mtls.yaml` is the fixture that renders that one. Both tokens are set explicitly
+  # for the same reason `auth.jwtSecret` is — `helm template` has no cluster to read a generated
+  # value back out of, so an empty one would render differently on every invocation.
+  identity: token
+  tokens:
+    api: ci-internal-token-api-0123456789abcdef
+    worker: ci-internal-token-worker-0123456789ab
 anilist:
   clientId: "12345"
   clientSecret: ci-anilist-client-secret

@@ -1,6 +1,6 @@
 # tankovault
 
-![Version: 3.4.2](https://img.shields.io/badge/Version-3.4.2-informational?style=flat-square) ![AppVersion: 3.7.0](https://img.shields.io/badge/AppVersion-3.7.0-informational?style=flat-square)
+![Version: 3.5.0](https://img.shields.io/badge/Version-3.5.0-informational?style=flat-square) ![AppVersion: 3.7.0](https://img.shields.io/badge/AppVersion-3.7.0-informational?style=flat-square)
 
 This chart deploys the full TankoVault manga aggregator stack — frontend, api, control-plane, worker, notifier, sync, challenge-solver and render — hardened to the restricted Pod Security Standard, with file-backed configuration that reloads in place instead of restarting pods, optional bundled PostgreSQL, Valkey, NATS JetStream and TRAWL, and optional Prometheus metrics, alerting rules and Grafana dashboards.
 
@@ -545,6 +545,17 @@ modes are invisible everywhere else. A model that has stopped being built keeps 
 then empty, without a single error or a millisecond of added latency
 (`TankoVaultRecsysBuildFailing`); and an empty shelf is a `200` returned faster than a full one
 (`TankoVaultRecsysShelvesEmpty`). Neither moves the request-path metrics at all.
+
+The scan pipeline gets a section of its own for a different reason: `scan_task_duration_seconds`
+says a task took nine minutes and nothing about what for, which is the question an operator
+actually has. **Why a scan is slow** splits that wall clock two ways — the share spent waiting for
+*permission to send* (the concurrency gate, the token rate, the crawl delay and whatever adaptive
+penalty a 429 has earned), and, for the remainder, which stage of the task it went into. The two
+readings have opposite remedies, so each gets an alert. `TankoVaultScanPaceBound` means the
+crawler is being exactly as polite as it was configured to be, and only `politeness.rps` or
+`crawl_delay_ms` will change that; `TankoVaultScanIngestBound` means the time is in our own
+catalogue write, and the database is where to look. Both are `severity: info` — neither is an
+outage, and the value is the diagnosis rather than the page.
 
 Two alerts that a chart should not reinvent are deliberately absent, because the Prometheus
 Operator this chart already requires ships both: `KubeDeploymentReplicasMismatch` for replica

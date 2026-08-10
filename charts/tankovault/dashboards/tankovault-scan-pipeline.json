@@ -1,7 +1,7 @@
 {
   "uid": "tankovault-scan-pipeline",
   "title": "TankoVault Scan Pipeline",
-  "description": "Everything between a scheduled scan and a user being told about a new chapter: scheduling, per-provider task throughput and backlog, outbound fetches and the throttling they earn, notification fan-out, AniList synchronisation, and the recommendation model built from the catalogue the rest of it fills. The backlog row needs `metrics.natsExporter.enabled` \u2014 NATS publishes no Prometheus exposition of its own, so those panels are empty rather than wrong without it.",
+  "description": "Everything between a scheduled scan and a user being told about a new chapter: scheduling, per-provider task throughput and backlog, where a slow run's wall clock actually went, outbound fetches and the throttling they earn, notification fan-out, AniList synchronisation, and the recommendation model built from the catalogue the rest of it fills. The backlog row needs `metrics.natsExporter.enabled` \u2014 NATS publishes no Prometheus exposition of its own, so those panels are empty rather than wrong without it.",
   "tags": [
     "tankovault"
   ],
@@ -643,6 +643,257 @@
       }
     },
     {
+      "id": 44,
+      "type": "row",
+      "title": "Why a scan is slow",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 30
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Share of task time by stage",
+      "description": "Where a scan task's wall clock goes, as each stage's share of all stage time for that provider. Time in a `*_fetch` stage is the provider's; `series_ingest` is our own write into the catalogue, and a rising ingest share is a database problem wearing a scan's clothes. Read this only once the pace-wait share to the right is low \u2014 on a politeness-bound provider these shares describe what little time was left over.",
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "namespace_provider_stage:scan_stage_duration_seconds:ratio_rate15m{namespace=\"$namespace\", provider=~\"$provider\"}",
+          "legendFormat": "{{provider}} \u2014 {{stage}}"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "last",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 30,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          },
+          "min": 0,
+          "max": 1
+        },
+        "overrides": []
+      },
+      "id": 45,
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 0,
+        "y": 31
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Stage duration (p95)",
+      "description": "The same split in absolute terms: how long one task spends in one stage. The share panel says which stage dominates, this one says whether the stage itself got slower or simply ran more often.",
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "namespace_provider_stage:scan_stage_duration_seconds:p95_15m{namespace=\"$namespace\", provider=~\"$provider\"}",
+          "legendFormat": "{{provider}} \u2014 {{stage}}"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "last",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 0,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "id": 46,
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 6,
+        "y": 31
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Pace-wait share of task time",
+      "description": "The first number to read on a slow scan: the share of a task spent waiting for *permission to send* \u2014 the concurrency gate, the token rate, the crawl delay and any adaptive 429 penalty. Near 1 the scan is polite, not broken, and nothing in the code will speed it up: raise `politeness.rps` or lower `crawl_delay_ms` for that provider, or accept the duration. Near 0 with a long task duration means the time is in the requests or in the ingest, and the stage panels say which.",
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "namespace_provider:scan_task_pace_wait:ratio_rate15m{namespace=\"$namespace\", provider=~\"$provider\"}",
+          "legendFormat": "{{provider}}"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "last",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 0,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "id": 47,
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 12,
+        "y": 31
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Waiting for permission to send (p95)",
+      "description": "The same wait unscaled, at both layers that show it. `per task` is what one scan task accumulated across every request it made; `per request` is one request's wait, which climbs on its own when a provider starts answering 429/503 because the adaptive penalty widens that provider's spacing \u2014 a rise there with no configuration change is the throttle working rather than a fault.",
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "namespace_provider:scan_task_pace_wait_seconds:p95_15m{namespace=\"$namespace\", provider=~\"$provider\"}",
+          "legendFormat": "{{provider}} \u2014 per task"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "namespace_provider:provider_pace_wait_seconds:p95_15m{namespace=\"$namespace\", provider=~\"$provider\"}",
+          "legendFormat": "{{provider}} \u2014 per request"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "last",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 0,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "id": 48,
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 18,
+        "y": 31
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      }
+    },
+    {
       "id": 13,
       "type": "row",
       "title": "Backlog (requires metrics.natsExporter)",
@@ -650,7 +901,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 30
+        "y": 39
       },
       "collapsed": false,
       "panels": []
@@ -704,7 +955,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 31
+        "y": 40
       },
       "datasource": {
         "type": "prometheus",
@@ -760,7 +1011,7 @@
         "h": 8,
         "w": 6,
         "x": 12,
-        "y": 31
+        "y": 40
       },
       "datasource": {
         "type": "prometheus",
@@ -825,7 +1076,7 @@
         "h": 8,
         "w": 6,
         "x": 18,
-        "y": 31
+        "y": 40
       },
       "datasource": {
         "type": "prometheus",
@@ -840,7 +1091,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 39
+        "y": 48
       },
       "collapsed": false,
       "panels": []
@@ -894,7 +1145,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 40
+        "y": 49
       },
       "datasource": {
         "type": "prometheus",
@@ -951,7 +1202,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 40
+        "y": 49
       },
       "datasource": {
         "type": "prometheus",
@@ -966,7 +1217,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 48
+        "y": 57
       },
       "collapsed": false,
       "panels": []
@@ -1020,7 +1271,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 49
+        "y": 58
       },
       "datasource": {
         "type": "prometheus",
@@ -1077,7 +1328,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 49
+        "y": 58
       },
       "datasource": {
         "type": "prometheus",
@@ -1133,7 +1384,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 49
+        "y": 58
       },
       "datasource": {
         "type": "prometheus",
@@ -1189,7 +1440,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 57
+        "y": 66
       },
       "datasource": {
         "type": "prometheus",
@@ -1245,7 +1496,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 57
+        "y": 66
       },
       "datasource": {
         "type": "prometheus",
@@ -1260,7 +1511,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 65
+        "y": 74
       },
       "collapsed": false,
       "panels": []
@@ -1313,7 +1564,7 @@
         "h": 7,
         "w": 8,
         "x": 0,
-        "y": 66
+        "y": 75
       },
       "datasource": {
         "type": "prometheus",
@@ -1370,7 +1621,7 @@
         "h": 7,
         "w": 8,
         "x": 8,
-        "y": 66
+        "y": 75
       },
       "datasource": {
         "type": "prometheus",
@@ -1426,7 +1677,7 @@
         "h": 7,
         "w": 8,
         "x": 16,
-        "y": 66
+        "y": 75
       },
       "datasource": {
         "type": "prometheus",
@@ -1441,7 +1692,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 73
+        "y": 82
       },
       "collapsed": false,
       "panels": []
@@ -1496,7 +1747,7 @@
         "h": 7,
         "w": 8,
         "x": 0,
-        "y": 74
+        "y": 83
       },
       "datasource": {
         "type": "prometheus",
@@ -1552,7 +1803,7 @@
         "h": 7,
         "w": 8,
         "x": 8,
-        "y": 74
+        "y": 83
       },
       "datasource": {
         "type": "prometheus",
@@ -1617,7 +1868,7 @@
         "h": 7,
         "w": 8,
         "x": 16,
-        "y": 74
+        "y": 83
       },
       "datasource": {
         "type": "prometheus",
@@ -1632,7 +1883,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 81
+        "y": 90
       },
       "collapsed": false,
       "panels": []
@@ -1686,7 +1937,7 @@
         "h": 7,
         "w": 8,
         "x": 0,
-        "y": 82
+        "y": 91
       },
       "datasource": {
         "type": "prometheus",
@@ -1743,7 +1994,7 @@
         "h": 7,
         "w": 8,
         "x": 8,
-        "y": 82
+        "y": 91
       },
       "datasource": {
         "type": "prometheus",
@@ -1799,7 +2050,7 @@
         "h": 7,
         "w": 8,
         "x": 16,
-        "y": 82
+        "y": 91
       },
       "datasource": {
         "type": "prometheus",
@@ -1814,7 +2065,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 89
+        "y": 98
       },
       "collapsed": false,
       "panels": []
@@ -1874,7 +2125,7 @@
         "h": 6,
         "w": 6,
         "x": 0,
-        "y": 90
+        "y": 99
       },
       "datasource": {
         "type": "prometheus",
@@ -1930,7 +2181,7 @@
         "h": 6,
         "w": 9,
         "x": 6,
-        "y": 90
+        "y": 99
       },
       "datasource": {
         "type": "prometheus",
@@ -1986,7 +2237,7 @@
         "h": 6,
         "w": 9,
         "x": 15,
-        "y": 90
+        "y": 99
       },
       "datasource": {
         "type": "prometheus",
@@ -2051,7 +2302,7 @@
         "h": 7,
         "w": 12,
         "x": 0,
-        "y": 96
+        "y": 105
       },
       "datasource": {
         "type": "prometheus",
@@ -2107,7 +2358,7 @@
         "h": 7,
         "w": 12,
         "x": 12,
-        "y": 96
+        "y": 105
       },
       "datasource": {
         "type": "prometheus",

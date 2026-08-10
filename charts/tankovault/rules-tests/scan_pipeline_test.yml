@@ -282,6 +282,142 @@ tests:
           - labels: 'ALERTS{alertname="TankoVaultChaptersAllRejected", alertstate="firing", namespace="tv", provider="redesigned", severity="info"}'
             value: 1
 
+  # Why a scan is slow, half one: a provider whose tasks are almost entirely spent waiting for
+  # permission to send. 54 seconds of pace-wait accrued per 60 seconds of task time is 0.9 — the
+  # crawler is being exactly as polite as it was configured to be, a state nothing else in this
+  # rule set can tell apart from a worker that has wedged. `brisk` is the control: same volume,
+  # same shape, a tenth of the wait, and it must stay silent.
+  - interval: 1m
+    input_series:
+      - series: 'scan_task_pace_wait_seconds_sum{namespace="tv", job="worker", pod="w-1", provider="polite"}'
+        values: '0+54x200'
+      - series: 'scan_task_duration_seconds_sum{namespace="tv", job="worker", pod="w-1", provider="polite", scan="full", kind="series"}'
+        values: '0+60x200'
+      - series: 'scan_tasks_served_total{namespace="tv", job="worker", pod="w-1", provider="polite", scan="full"}'
+        values: '0+1x200'
+      - series: 'scan_task_pace_wait_seconds_sum{namespace="tv", job="worker", pod="w-1", provider="brisk"}'
+        values: '0+6x200'
+      - series: 'scan_task_duration_seconds_sum{namespace="tv", job="worker", pod="w-1", provider="brisk", scan="full", kind="series"}'
+        values: '0+60x200'
+      - series: 'scan_tasks_served_total{namespace="tv", job="worker", pod="w-1", provider="brisk", scan="full"}'
+        values: '0+1x200'
+    promql_expr_test:
+      - expr: namespace_provider:scan_task_pace_wait:ratio_rate15m
+        eval_time: 60m
+        exp_samples:
+          - labels: 'namespace_provider:scan_task_pace_wait:ratio_rate15m{namespace="tv", provider="brisk"}'
+            value: 0.1
+          - labels: 'namespace_provider:scan_task_pace_wait:ratio_rate15m{namespace="tv", provider="polite"}'
+            value: 0.9
+      - expr: ALERTS{alertname="TankoVaultScanPaceBound", alertstate="firing"}
+        eval_time: 130m
+        exp_samples:
+          - labels: 'ALERTS{alertname="TankoVaultScanPaceBound", alertstate="firing", namespace="tv", provider="polite", severity="info"}'
+            value: 1
+
+  # Why a scan is slow, half two: the wait is not the crawl budget and the fetches are not the
+  # cost — 70% of the stage time is `series_ingest`, which is our own write into the catalogue and
+  # therefore a database problem wearing a scan's clothes.
+  - interval: 1m
+    input_series:
+      - series: 'scan_stage_duration_seconds_sum{namespace="tv", job="worker", pod="w-1", provider="slowdb", kind="series", stage="series_ingest"}'
+        values: '0+42x200'
+      - series: 'scan_stage_duration_seconds_sum{namespace="tv", job="worker", pod="w-1", provider="slowdb", kind="series", stage="series_chapters"}'
+        values: '0+18x200'
+      - series: 'scan_task_pace_wait_seconds_sum{namespace="tv", job="worker", pod="w-1", provider="slowdb"}'
+        values: '0+6x200'
+      - series: 'scan_task_duration_seconds_sum{namespace="tv", job="worker", pod="w-1", provider="slowdb", scan="full", kind="series"}'
+        values: '0+60x200'
+      - series: 'scan_tasks_served_total{namespace="tv", job="worker", pod="w-1", provider="slowdb", scan="full"}'
+        values: '0+1x200'
+    promql_expr_test:
+      # `kind` is dropped by the rule, so the two stages of one task kind arrive as two series and
+      # not as four. The shares sum to 1 by construction, which is what makes the threshold on the
+      # ingest share readable without knowing the fleet size.
+      - expr: namespace_provider_stage:scan_stage_duration_seconds:ratio_rate15m
+        eval_time: 60m
+        exp_samples:
+          - labels: 'namespace_provider_stage:scan_stage_duration_seconds:ratio_rate15m{namespace="tv", provider="slowdb", stage="series_chapters"}'
+            value: 0.3
+          - labels: 'namespace_provider_stage:scan_stage_duration_seconds:ratio_rate15m{namespace="tv", provider="slowdb", stage="series_ingest"}'
+            value: 0.7
+      - expr: ALERTS{alertname="TankoVaultScanIngestBound", alertstate="firing"}
+        eval_time: 130m
+        exp_samples:
+          - labels: 'ALERTS{alertname="TankoVaultScanIngestBound", alertstate="firing", namespace="tv", provider="slowdb", stage="series_ingest", severity="info"}'
+            value: 1
+      - expr: ALERTS{alertname="TankoVaultScanPaceBound"}
+        eval_time: 130m
+        exp_samples: []
+
+  # The gate between the two, and the reason the ingest alert carries a pace-wait conjunct at all.
+  # This provider's ingest share is the same 0.7 that fired above, but 90% of its task time went
+  # on waiting for permission to send — so the stage shares describe only what little was left
+  # over. The correct diagnosis is politeness, and the two remedies are opposites: raise this
+  # provider's request rate, do not go looking at the database.
+  - interval: 1m
+    input_series:
+      - series: 'scan_stage_duration_seconds_sum{namespace="tv", job="worker", pod="w-1", provider="polite", kind="series", stage="series_ingest"}'
+        values: '0+42x200'
+      - series: 'scan_stage_duration_seconds_sum{namespace="tv", job="worker", pod="w-1", provider="polite", kind="series", stage="series_chapters"}'
+        values: '0+18x200'
+      - series: 'scan_task_pace_wait_seconds_sum{namespace="tv", job="worker", pod="w-1", provider="polite"}'
+        values: '0+54x200'
+      - series: 'scan_task_duration_seconds_sum{namespace="tv", job="worker", pod="w-1", provider="polite", scan="full", kind="series"}'
+        values: '0+60x200'
+      - series: 'scan_tasks_served_total{namespace="tv", job="worker", pod="w-1", provider="polite", scan="full"}'
+        values: '0+1x200'
+    promql_expr_test:
+      - expr: ALERTS{alertname="TankoVaultScanIngestBound"}
+        eval_time: 130m
+        exp_samples: []
+      - expr: ALERTS{alertname="TankoVaultScanPaceBound", alertstate="firing"}
+        eval_time: 130m
+        exp_samples:
+          - labels: 'ALERTS{alertname="TankoVaultScanPaceBound", alertstate="firing", namespace="tv", provider="polite", severity="info"}'
+            value: 1
+
+  # The three bucket-based rules behind the "why a scan is slow" panels. Nothing alerts on them,
+  # which is exactly why they need a test: a quantile rule that names a bucket series wrongly
+  # records nothing, and the only symptom is an empty Grafana panel. Every observation sits in one
+  # bucket per histogram so the interpolated quantile is deterministic.
+  - interval: 1m
+    input_series:
+      - series: 'provider_pace_wait_seconds_bucket{namespace="tv", job="worker", pod="w-1", provider="p", le="0.5"}'
+        values: '0x60'
+      - series: 'provider_pace_wait_seconds_bucket{namespace="tv", job="worker", pod="w-1", provider="p", le="1"}'
+        values: '0+6x60'
+      - series: 'provider_pace_wait_seconds_bucket{namespace="tv", job="worker", pod="w-1", provider="p", le="+Inf"}'
+        values: '0+6x60'
+      - series: 'scan_task_pace_wait_seconds_bucket{namespace="tv", job="worker", pod="w-1", provider="p", le="5"}'
+        values: '0x60'
+      - series: 'scan_task_pace_wait_seconds_bucket{namespace="tv", job="worker", pod="w-1", provider="p", le="15"}'
+        values: '0+2x60'
+      - series: 'scan_task_pace_wait_seconds_bucket{namespace="tv", job="worker", pod="w-1", provider="p", le="+Inf"}'
+        values: '0+2x60'
+      - series: 'scan_stage_duration_seconds_bucket{namespace="tv", job="worker", pod="w-1", provider="p", kind="series", stage="series_ingest", le="1"}'
+        values: '0x60'
+      - series: 'scan_stage_duration_seconds_bucket{namespace="tv", job="worker", pod="w-1", provider="p", kind="series", stage="series_ingest", le="5"}'
+        values: '0+2x60'
+      - series: 'scan_stage_duration_seconds_bucket{namespace="tv", job="worker", pod="w-1", provider="p", kind="series", stage="series_ingest", le="+Inf"}'
+        values: '0+2x60'
+    promql_expr_test:
+      - expr: namespace_provider:provider_pace_wait_seconds:p95_15m
+        eval_time: 30m
+        exp_samples:
+          - labels: 'namespace_provider:provider_pace_wait_seconds:p95_15m{namespace="tv", provider="p"}'
+            value: 0.975
+      - expr: namespace_provider:scan_task_pace_wait_seconds:p95_15m
+        eval_time: 30m
+        exp_samples:
+          - labels: 'namespace_provider:scan_task_pace_wait_seconds:p95_15m{namespace="tv", provider="p"}'
+            value: 14.499999999999998
+      - expr: namespace_provider_stage:scan_stage_duration_seconds:p95_15m
+        eval_time: 30m
+        exp_samples:
+          - labels: 'namespace_provider_stage:scan_stage_duration_seconds:p95_15m{namespace="tv", provider="p", stage="series_ingest"}'
+            value: 4.799999999999999
+
   # Worker task concurrency, averaged across replicas rather than summed. Two workers pinned at
   # the default cap of 4 must record 4, not 8: the cap is per replica, so a sum would grow with
   # the fleet and could never be read against it. A third replica sitting idle pulls the average

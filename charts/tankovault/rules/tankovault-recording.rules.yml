@@ -184,9 +184,9 @@ groups:
             db_pool_connections{tankovault_scope=~".*", state="in_use"})
             / sum by (namespace, job) (db_pool_max_connections{tankovault_scope=~".*"})
 
-  # The crawler's view of the sites it fetches from. All of this is emitted by `worker`; the
-  # `provider` label is the adapter slug, so these sit alongside the scan-pipeline series below
-  # and can be read on the same axis.
+  # The crawler's view of the sites it fetches from. All of this is emitted by `worker` except
+  # `provider_pace_wait_seconds`, which `sync` emits too; the `provider` label is the adapter slug,
+  # so these sit alongside the scan-pipeline series below and can be read on the same axis.
   - name: tankovault-provider-recording
     interval: 30s
     rules:
@@ -227,6 +227,25 @@ groups:
         expr: >-
           sum by (namespace, provider) (
             rate(provider_backoff_wait_seconds_sum{tankovault_scope=~".*"}[15m]))
+
+      # How long one request waited for *permission to send* — the concurrency gate, the token
+      # rate, the crawl delay, and whichever adaptive penalty this provider's recent 429s have
+      # earned — before the fetch itself began. Distinct from the backoff series above, which
+      # counts only the penalty: this is the whole budget, so a provider that is never throttled
+      # still records a wait here whenever its configured rate is the binding constraint.
+      #
+      # It climbs on its own when a provider starts answering 429/503, because the adaptive
+      # penalty widens that provider's spacing — a rise here with no configuration change is the
+      # throttle working rather than a fault.
+      #
+      # `job` is dropped, as everywhere else in this group. `sync` emits this metric too, for its
+      # own AniList traffic, and that lands in its own `provider` series rather than summing into
+      # a crawler's.
+      - record: namespace_provider:provider_pace_wait_seconds:p95_15m
+        expr: >-
+          histogram_quantile(0.95,
+            sum by (namespace, provider, le) (
+              rate(provider_pace_wait_seconds_bucket{tankovault_scope=~".*"}[15m])))
 
   # scan_tasks_served_total{provider,scan} counts tasks handed out, so a redelivered task counts
   # again — see the retry caveat in upstream's docs/OBSERVABILITY.md. `scan_tasks_settled_total`
@@ -269,6 +288,59 @@ groups:
           histogram_quantile(0.95,
             sum by (namespace, scan, le) (
               rate(scan_task_duration_seconds_bucket{tankovault_scope=~".*"}[15m])))
+
+      # Why a scan is slow, rather than that it is. The duration above says a task took nine
+      # minutes and nothing about what for, which is the question an operator actually has; the
+      # four rules that follow split that wall clock the two ways it can be acted on (upstream
+      # docs/OBSERVABILITY.md, "Why a scan is slow").
+      #
+      # This is the one to read first: the share of a task spent waiting for *permission to send*
+      # — the concurrency gate, the token rate, the crawl delay and any adaptive 429 penalty.
+      # Near 1 the scan is polite, not broken, and nothing in the code will make it faster; near 0
+      # with a long duration the time is in the requests themselves or in the ingest, and the
+      # stage split below says which.
+      #
+      # Both sides are `_sum` rates over the same window rather than quantiles, because a ratio of
+      # two p95s is not the p95 of the ratio. Seconds of wait accrued per second of task time is a
+      # real quantity, and it is the figure upstream's runbook names.
+      - record: namespace_provider:scan_task_pace_wait:ratio_rate15m
+        expr: >-
+          sum by (namespace, provider) (
+            rate(scan_task_pace_wait_seconds_sum{tankovault_scope=~".*"}[15m]))
+            / sum by (namespace, provider) (
+                rate(scan_task_duration_seconds_sum{tankovault_scope=~".*"}[15m]))
+
+      - record: namespace_provider:scan_task_pace_wait_seconds:p95_15m
+        expr: >-
+          histogram_quantile(0.95,
+            sum by (namespace, provider, le) (
+              rate(scan_task_pace_wait_seconds_bucket{tankovault_scope=~".*"}[15m])))
+
+      # Where the rest of the time goes, as each stage's share of all stage time for that
+      # provider. A share rather than the raw duty cycle because the number has to be readable
+      # without knowing how many tasks ran concurrently: `series_ingest` at 0.6 is three fifths of
+      # the work spent on our own catalogue write whatever the fleet size, while 0.6 seconds of
+      # ingest per second means nothing until you know how many worker slots were open.
+      #
+      # `on (namespace, provider) group_left ()` is the many-to-one join the division needs. The
+      # numerator carries `stage` and the denominator cannot; without it Prometheus matches on
+      # identical label sets, finds none, and the rule records nothing at all.
+      - record: namespace_provider_stage:scan_stage_duration_seconds:ratio_rate15m
+        expr: >-
+          sum by (namespace, provider, stage) (
+            rate(scan_stage_duration_seconds_sum{tankovault_scope=~".*"}[15m]))
+            / on (namespace, provider) group_left ()
+              sum by (namespace, provider) (
+                rate(scan_stage_duration_seconds_sum{tankovault_scope=~".*"}[15m]))
+
+      # The absolute companion: how long one task spent in one stage. Time in a `*_fetch` stage is
+      # the provider's, time in `series_ingest` is ours, and which of the two is growing is the
+      # difference between a source that has stopped answering and a database that has.
+      - record: namespace_provider_stage:scan_stage_duration_seconds:p95_15m
+        expr: >-
+          histogram_quantile(0.95,
+            sum by (namespace, provider, stage, le) (
+              rate(scan_stage_duration_seconds_bucket{tankovault_scope=~".*"}[15m])))
 
       - record: namespace_provider:chapters_discovered:increase1h
         expr: >-

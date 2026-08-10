@@ -457,6 +457,71 @@ groups:
             adapter, some tasks failing points at particular series — often ones whose pages have
             been removed.
 
+      # Neither an outage nor a defect: the scan is being crawled exactly as fast as this
+      # provider's configured budget allows. It earns an alert anyway, because it is the one cause
+      # of a slow scan that no code change fixes, and because its only other visible symptom —
+      # runs that take hours — is indistinguishable from a worker that has wedged.
+      #
+      # grounding: baseline-needed — upstream frames the ratio as "near 1 means polite, not
+      # broken" without naming a number, and 0.8 is simply where a task is more waiting than work
+      # on any reading. The `increase1h > 20` floor keeps a provider that ran three tasks in an
+      # hour from tripping this on one unlucky one.
+      - alert: TankoVaultScanPaceBound
+        expr: >-
+          namespace_provider:scan_task_pace_wait:ratio_rate15m{tankovault_scope=~".*"} > 0.8
+            and namespace_provider:scan_tasks_served:increase1h{tankovault_scope=~".*"} > 20
+        for: 1h
+        labels:
+          severity: info
+        annotations:
+          summary: "{{ $labels.provider }} scans spend {{ $value | humanizePercentage }} of their time waiting for permission to send"
+          description: >-
+            Scans for this provider are polite, not broken. Most of each task's wall clock is the
+            concurrency gate, the token rate, the crawl delay and any adaptive 429 penalty — not
+            the provider answering slowly, and not our own ingest. The tasks complete, so nothing
+            else here fires; they simply take proportionally longer, and a full run can start
+            overlapping its own schedule. Either raise `politeness.rps` or lower `crawl_delay_ms`
+            for {{ $labels.provider }} in the console, accepting the extra load on the source, or
+            accept the duration. Check `TankoVaultProviderThrottlingHeavily` for the same provider
+            first: if it is firing, the wait is an earned 429 penalty rather than the configured
+            budget, and the fix is then to ask for *less* rather than more.
+
+      # The opposite diagnosis, and the one that is a genuine problem: the time is neither the
+      # provider's nor the crawl budget's, it is our own catalogue write. Gated on the pace-wait
+      # share being low, because on a politeness-bound provider the stage shares describe what
+      # little time was left over and mean nothing.
+      #
+      # grounding: baseline-needed — 0.5 and 0.25 are judgement about where ingest stops being a
+      # share of the work and starts being the work. A provider's *first* full scan legitimately
+      # looks like this, since every series is new and every chapter an insert, which is what the
+      # 1h fuse and the runbook's discovery check are for.
+      - alert: TankoVaultScanIngestBound
+        expr: >-
+          namespace_provider_stage:scan_stage_duration_seconds:ratio_rate15m{tankovault_scope=~".*",
+                                                                             stage="series_ingest"}
+            > 0.5
+            and on (namespace, provider)
+              namespace_provider:scan_task_pace_wait:ratio_rate15m{tankovault_scope=~".*"} < 0.25
+            and on (namespace, provider)
+              namespace_provider:scan_tasks_served:increase1h{tankovault_scope=~".*"} > 20
+        for: 1h
+        labels:
+          severity: info
+        annotations:
+          summary: "{{ $labels.provider }} scans spend {{ $value | humanizePercentage }} of their stage time writing to the catalogue"
+          description: >-
+            A scan that is slow because of us rather than because of the provider: over half of
+            this provider's stage time is `series_ingest` — writing one series' metadata and
+            chapters into the catalogue — and the pace-wait share is low enough to rule out the
+            crawl budget. Check `TankoVaultDatabasePoolSaturated` for the worker first, since an
+            ingest queueing for a connection reads exactly like this, then `pg_stat_activity` for
+            a slow upsert, which after a migration usually means an index that was not rebuilt.
+            One benign cause to exclude before digging: a provider's first full scan inserts every
+            series and every chapter it finds rather than diffing against what is already stored,
+            so a newly added provider is legitimately ingest-bound until its catalogue exists —
+            `namespace_provider:chapters_discovered:increase1h` still climbing steeply means a
+            backfill, flat means the writes are slow rather than merely numerous.
+
       # Exactly one control-plane replica should hold the lease.
       - alert: TankoVaultNoSchedulerLeader
         expr: namespace:scheduler_leader:sum{tankovault_scope=~".*"} == 0

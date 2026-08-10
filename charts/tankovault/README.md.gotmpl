@@ -548,6 +548,17 @@ then empty, without a single error or a millisecond of added latency
 (`TankoVaultRecsysBuildFailing`); and an empty shelf is a `200` returned faster than a full one
 (`TankoVaultRecsysShelvesEmpty`). Neither moves the request-path metrics at all.
 
+The scan pipeline gets a section of its own for a different reason: `scan_task_duration_seconds`
+says a task took nine minutes and nothing about what for, which is the question an operator
+actually has. **Why a scan is slow** splits that wall clock two ways — the share spent waiting for
+*permission to send* (the concurrency gate, the token rate, the crawl delay and whatever adaptive
+penalty a 429 has earned), and, for the remainder, which stage of the task it went into. The two
+readings have opposite remedies, so each gets an alert. `TankoVaultScanPaceBound` means the
+crawler is being exactly as polite as it was configured to be, and only `politeness.rps` or
+`crawl_delay_ms` will change that; `TankoVaultScanIngestBound` means the time is in our own
+catalogue write, and the database is where to look. Both are `severity: info` — neither is an
+outage, and the value is the diagnosis rather than the page.
+
 Two alerts that a chart should not reinvent are deliberately absent, because the Prometheus
 Operator this chart already requires ships both: `KubeDeploymentReplicasMismatch` for replica
 shortfalls (it reads kube-state-metrics, which knows the desired count; nothing this chart emits

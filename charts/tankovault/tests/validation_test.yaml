@@ -85,6 +85,40 @@ tests:
       - hasDocuments:
           count: 1
 
+  - it: refuses a probe port that collides with the scrape
+    # Three listeners in one pod. A collision is not a render error anywhere else — it is a
+    # container that binds one, fails on the second with `Address already in use`, and restarts
+    # forever.
+    values:
+      - ../ci/internal-mtls-existing.yaml
+    set:
+      internal.tokens.api: ""
+      internal.tokens.worker: ""
+      internal.tls.probePort: 9090
+    asserts:
+      - failedTemplate:
+          errorPattern: "internal.tls.probePort and metrics.port are both 9090"
+
+  - it: refuses a probe port that collides with a request port
+    values:
+      - ../ci/internal-mtls-existing.yaml
+    set:
+      internal.tokens.api: ""
+      internal.tokens.worker: ""
+      internal.tls.probePort: 8083
+    asserts:
+      - failedTemplate:
+          errorPattern: "internal.tls.probePort is 8083, which is also the port sync serves"
+
+  - it: says nothing about the probe port under token identity
+    # Nothing binds it in that mode, so a value that would collide under mtls is inert here and
+    # refusing it would be refusing a setting that does nothing.
+    set:
+      internal.tls.probePort: 8083
+    asserts:
+      - hasDocuments:
+          count: 1
+
   - it: refuses a service with no certificate Secret named
     # A missing Secret is a pod that waits on the volume forever, which is not a failure anybody
     # reads as a configuration mistake.

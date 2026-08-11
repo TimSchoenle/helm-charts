@@ -1,0 +1,45 @@
+# A deployment that is not TankoVault: every branding key set at once, which is the shape a fork
+# renders and the one place the per-service split — the api's full block, the frontend's two keys,
+# the worker's one — is exercised end to end.
+#
+# A render fixture, not an install fixture — it runs on external datastores whose endpoints do not
+# resolve. Hence the name: `ct install` takes every `ci/*-values.yaml`, while the render and
+# policy jobs glob `ci/*.yaml`.
+auth:
+  jwtSecret: ci-jwt-secret-0123456789abcdef0123
+internal:
+  # The `token` path, for the reason `ci/default.yaml` gives: `helm template` has no cluster to
+  # read a generated value back out of, so an empty one would render differently every time.
+  identity: token
+  tokens:
+    api: ci-internal-token-api-0123456789abcdef
+    worker: ci-internal-token-worker-0123456789ab
+anilist:
+  clientId: "12345"
+  clientSecret: ci-anilist-client-secret
+  tokenEncryptionKey: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
+  redirectUri: https://mangabox.example.org/account/anilist-callback
+externalDatabase:
+  url: postgres://tankovault:ci@postgresql.example.com:5432/tankovault
+externalNats:
+  url: nats://nats.example.com:4222
+externalTrawl:
+  url: http://trawl.example.com:8191
+
+branding:
+  name: MangaBox
+  wordmark:
+    lead: Manga
+    accent: Box
+  tagline: everything you read, in one place
+  copyright:
+    holder: Example Org
+    # Quoted: a bare 2024–2026 is not a YAML scalar anybody wants, and even a bare 2026 would be
+    # an integer here and a string to the service.
+    year: "2024–2026"
+  licence:
+    name: AGPL-3.0-or-later
+    url: https://example.org/licence
+  projectUrl: https://example.org/mangabox
+  releasesUrl: https://example.org/mangabox/releases
+  botUserAgent: MangaBox/1.0 (+https://example.org/bot)

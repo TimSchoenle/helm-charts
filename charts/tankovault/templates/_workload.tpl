@@ -40,6 +40,13 @@ Args: ctx (root), offset (added to `argoSyncWaveBase`; 0 for the Job, 1 for the 
 Container ports for one service: the request-facing listener, plus the Prometheus scrape on
 its own isolated port. The scrape is a separate listener in the application, not a path on the
 main one, so it has to be a separate container port too.
+
+Under `internal.identity=mtls` a service that serves the mutually-authenticated listener gets a
+third: `/health` and `/ready` in plaintext, because a kubelet probe presents no client certificate
+and would otherwise be answered with a TLS alert. It carries the two probes and nothing else — the
+scrape stays on `metrics`, so a deployment that merged the scrape onto the authenticated port
+keeps it there. Deliberately not published on the Service: the kubelet reaches the pod directly,
+and a credential-free listener needs no second door.
 */}}
 {{- define "tankovault.containerPorts" -}}
 {{- $spec := include "tankovault.spec" .service | fromYaml -}}
@@ -49,6 +56,11 @@ main one, so it has to be a separate container port too.
 {{- if .ctx.Values.metrics.enabled }}
 - name: metrics
   containerPort: {{ .ctx.Values.metrics.port }}
+  protocol: TCP
+{{- end }}
+{{- if include "tankovault.servesInternalTls" (dict "ctx" .ctx "service" .service) }}
+- name: probes
+  containerPort: {{ .ctx.Values.internal.tls.probePort }}
   protocol: TCP
 {{- end }}
 {{- end -}}

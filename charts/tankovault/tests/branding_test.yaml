@@ -1,0 +1,238 @@
+# What the deployment calls itself. Every field defaults upstream, so the chart's job is to write
+# through exactly what the operator set — to the services that read it and no others — and to
+# refuse the settings that would render something nobody sees.
+suite: test branding
+templates:
+  - configmap.yaml
+  - serviceaccount.yaml
+values:
+  - ../ci/default.yaml
+tests:
+  - it: writes no branding block by default
+    # An untouched block must reproduce the shipped identity exactly, and the only way to do that
+    # from here is to write nothing: an emitted `name = ""` is a blank wordmark, not a default.
+    template: configmap.yaml
+    asserts:
+      - notMatchRegex:
+          path: data["config.toml"]
+          pattern: '\[branding\]'
+
+  - it: gives the api the reader-facing identity
+    set:
+      branding:
+        name: MangaBox
+        tagline: everything you read, in one place
+        wordmark:
+          lead: Manga
+          accent: Box
+        copyright:
+          holder: Example Org
+          year: "2024–2026"
+        licence:
+          name: AGPL-3.0-or-later
+          url: https://example.org/licence
+        projectUrl: https://example.org/mangabox
+        releasesUrl: https://example.org/mangabox/releases
+    template: configmap.yaml
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-api-config
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\[branding\]\nname = "MangaBox"'
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: 'project_url = "https://example\.org/mangabox"'
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: 'releases_url = "https://example\.org/mangabox/releases"'
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\[branding\.wordmark\]\naccent = "Box"\nlead = "Manga"'
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\[branding\.copyright\]\nholder = "Example Org"\nyear = "2024–2026"'
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\[branding\.licence\]\nname = "AGPL-3\.0-or-later"\nurl = "https://example\.org/licence"'
+
+  - it: gives the frontend only what the app shell is rewritten from
+    # The frontend rewrites the served shell's title and description and nothing else; the rail,
+    # the footer and the lockup are drawn by the SPA from `GET /v1/branding`, which is the api's.
+    set:
+      branding:
+        name: MangaBox
+        tagline: everything you read, in one place
+        wordmark:
+          lead: Manga
+        copyright:
+          holder: Example Org
+        projectUrl: https://example.org/mangabox
+    template: configmap.yaml
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-frontend-config
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\[branding\]\nname = "MangaBox"\ntagline = "everything you read, in one place"'
+      - notMatchRegex:
+          path: data["config.toml"]
+          pattern: 'wordmark|copyright|project_url'
+
+  - it: gives the worker the crawler user-agent and nothing else
+    set:
+      branding:
+        name: MangaBox
+        botUserAgent: MangaBox/1.0 (+https://example.org/bot)
+    template: configmap.yaml
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-worker-config
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\[branding\]\nbot_user_agent = "MangaBox/1\.0 \(\+https://example\.org/bot\)"'
+      - notMatchRegex:
+          path: data["config.toml"]
+          pattern: 'name = "MangaBox"'
+
+  - it: leaves the five services that read none of it alone
+    set:
+      branding:
+        name: MangaBox
+        botUserAgent: MangaBox/1.0 (+https://example.org/bot)
+      services.render.enabled: true
+    template: configmap.yaml
+    asserts:
+      - notMatchRegex:
+          path: data["config.toml"]
+          pattern: '\[branding\]'
+        documentSelector:
+          path: metadata.name
+          value: RELEASE-NAME-tankovault-control-plane-config
+      - notMatchRegex:
+          path: data["config.toml"]
+          pattern: '\[branding\]'
+        documentSelector:
+          path: metadata.name
+          value: RELEASE-NAME-tankovault-notifier-config
+      - notMatchRegex:
+          path: data["config.toml"]
+          pattern: '\[branding\]'
+        documentSelector:
+          path: metadata.name
+          value: RELEASE-NAME-tankovault-sync-config
+      - notMatchRegex:
+          path: data["config.toml"]
+          pattern: '\[branding\]'
+        documentSelector:
+          path: metadata.name
+          value: RELEASE-NAME-tankovault-challenge-solver-config
+      - notMatchRegex:
+          path: data["config.toml"]
+          pattern: '\[branding\]'
+        documentSelector:
+          path: metadata.name
+          value: RELEASE-NAME-tankovault-render-config
+
+  - it: writes only the keys the operator set
+    # Half a block is the normal case — a fork that renames itself and leaves the lockup, the
+    # licence and the links alone — and every key the chart invents there is one it would have to
+    # keep in step with a release it does not ship.
+    set:
+      branding.name: MangaBox
+    template: configmap.yaml
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-api-config
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\[branding\]\nname = "MangaBox"'
+      - notMatchRegex:
+          path: data["config.toml"]
+          pattern: 'tagline|wordmark|copyright|licence|project_url|releases_url'
+
+  - it: is overridable per service like any other derived value
+    set:
+      branding.name: MangaBox
+      services.frontend.config.branding.name: MangaBox Beta
+    template: configmap.yaml
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-frontend-config
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: 'name = "MangaBox Beta"'
+
+  - it: reads an emptied sub-block as nothing set
+    # `wordmark: ~` is a strange thing to write and a legal one. It has to mean the same as an
+    # untouched block, not a nil-pointer trace out of the validator whose job is to keep operators
+    # away from those.
+    set:
+      branding:
+        name: MangaBox
+        wordmark: null
+        copyright: null
+        licence: null
+    template: configmap.yaml
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-api-config
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\[branding\]\nname = "MangaBox"'
+      - notMatchRegex:
+          path: data["config.toml"]
+          pattern: 'wordmark|copyright|licence'
+
+  - it: refuses an accent half with no lead half
+    set:
+      branding.wordmark.accent: Box
+    template: serviceaccount.yaml
+    asserts:
+      - failedTemplate:
+          errorPattern: "branding.wordmark.accent is set without branding.wordmark.lead"
+
+  - it: refuses a verbatim notice alongside the fields it outranks
+    set:
+      branding.copyright.notice: Copyright Example Org, all rights reserved
+      branding.copyright.holder: Example Org
+    template: serviceaccount.yaml
+    asserts:
+      - failedTemplate:
+          errorPattern: "branding.copyright.notice is set alongside branding.copyright.holder"
+
+  - it: accepts a verbatim notice on its own
+    set:
+      branding.copyright.notice: Copyright Example Org, all rights reserved
+    template: configmap.yaml
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-api-config
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\[branding\.copyright\]\nnotice = "Copyright Example Org, all rights reserved"'
+
+  - it: refuses a link that is not an absolute http(s) URL
+    set:
+      branding.projectUrl: example.org/mangabox
+    template: serviceaccount.yaml
+    asserts:
+      - failedTemplate:
+          errorPattern: "branding.projectUrl is \"example.org/mangabox\""
+
+  - it: refuses a crawler user-agent nothing would send
+    set:
+      branding.botUserAgent: MangaBox/1.0 (+https://example.org/bot)
+      services.worker.enabled: false
+    template: serviceaccount.yaml
+    asserts:
+      - failedTemplate:
+          errorPattern: "branding.botUserAgent is set but services.worker.enabled=false"
+

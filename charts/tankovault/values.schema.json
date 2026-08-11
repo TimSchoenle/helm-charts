@@ -87,7 +87,7 @@
               "type": "string"
             },
             "tag": {
-              "default": "v4.0.1@sha256:ee4adcb4bf0644ac2431ef4639d811ec016239cdb4e44bf1e69bb01db464342c",
+              "default": "v5.0.0@sha256:f44e194ea51f1f0f3219c00ad0f9fd189adb91694d8aa65005cd08e06d88a12e",
               "description": "Image tag, pinned by digest.",
               "required": [],
               "title": "tag",
@@ -207,6 +207,122 @@
       },
       "required": [],
       "title": "bootstrap"
+    },
+    "branding": {
+      "additionalProperties": true,
+      "description": "What this deployment calls itself. The name, the wordmark, the tagline, the copyright line,\nthe licence label and the two project links all come from here rather than from a literal in the\nbinary, so rebranding a fork is a values change instead of a rebuild of the WASM bundle and the\ndesktop installers. Three services read it: `api` publishes the reader-facing subset\nunauthenticated at `/v1/branding` — the SPA's rail, footer and document title are built from it,\nand it stays open on a deployment with the account gate on, because the sign-in screen draws the\nwordmark — and stamps the name into transactional email, the WebAuthn prompt and the TOTP issuer;\n`frontend` writes it into the served app shell so a tab and a link unfurl are named before the\nWASM bundle boots; `worker` reads `botUserAgent` alone.\n\nEvery key is optional, and every empty one is left out of the rendered configuration, so an\nuntouched block reproduces the shipped identity exactly. This is for a deployment that is not\nTankoVault; a normal install fills in none of it.",
+      "properties": {
+        "botUserAgent": {
+          "default": "",
+          "description": "The identifiable crawler user-agent the `worker` sends, applied to any provider still\ncarrying the built-in default; a provider whose politeness settings name their own keep it.\nNever published to clients. Set it on a fork so the sites it crawls can attribute the traffic\nto you and reach you about it — `MyDeployment/1.0 (+https://example.org/bot)` is the shape\noperators expect.",
+          "required": [],
+          "title": "botUserAgent",
+          "type": "string"
+        },
+        "copyright": {
+          "additionalProperties": true,
+          "description": "The footer's copyright line.",
+          "properties": {
+            "holder": {
+              "default": "",
+              "description": "Who holds it. Empty keeps `Tim Schönle`, which is upstream's — set it on any deployment\nthat publishes its own footer.",
+              "required": [],
+              "title": "holder",
+              "type": "string"
+            },
+            "notice": {
+              "default": "",
+              "description": "The whole notice, verbatim, for when `© {year} {holder}` does not fit. Wins over `holder`\nand `year` **and** over the catalogue's translation of the line, so those two become dead\nconfiguration next to it and the chart refuses the pair.",
+              "required": [],
+              "title": "notice",
+              "type": "string"
+            },
+            "year": {
+              "default": "",
+              "description": "A year or a range (`2024–2026`). Empty resolves per response to the current year, so a\ndeployment nobody has touched since December is not still claiming last year. Quote it:\na bare `2026` is an integer to YAML and a string to the service.",
+              "required": [],
+              "title": "year",
+              "type": "string"
+            }
+          },
+          "required": [],
+          "title": "copyright"
+        },
+        "licence": {
+          "additionalProperties": true,
+          "description": "How the deployment's own code is licensed, as printed in the footer. This is a label the\nfooter prints, not a licence grant: it says nothing about what you may do with the upstream\ncode, which is governed by the licence the source ships under.",
+          "properties": {
+            "name": {
+              "default": "",
+              "description": "What the footer prints. Empty keeps `PolyForm Noncommercial 1.0.0`.",
+              "required": [],
+              "title": "name",
+              "type": "string"
+            },
+            "url": {
+              "default": "",
+              "description": "Absolute `http(s)` URL the label links to. Empty renders it as plain text, which is what\na self-hosted deployment with nowhere to point should show rather than a dead link.",
+              "required": [],
+              "title": "url",
+              "type": "string"
+            }
+          },
+          "required": [],
+          "title": "licence"
+        },
+        "name": {
+          "default": "",
+          "description": "The product name, in prose. Substituted for `{brand}` in every translated message that names\nit, and used as the WebAuthn relying-party name and the TOTP issuer unless\n`config.auth.webauthn_rp_name` / `config.auth.totp_issuer` name one. Empty keeps `TankoVault`.\n\nRenaming this does **not** re-key existing passkeys or authenticators: the relying party is\nidentified by `webauthn_rp_id`, and a TOTP secret already provisioned keeps the issuer it was\nenrolled with. Only newly enrolled credentials carry the new name.",
+          "required": [],
+          "title": "name",
+          "type": "string"
+        },
+        "projectUrl": {
+          "default": "",
+          "description": "Absolute `http(s)` URL for the footer's source link and the desktop client's About tab.\nEmpty keeps this project's repository.",
+          "required": [],
+          "title": "projectUrl",
+          "type": "string"
+        },
+        "releasesUrl": {
+          "default": "",
+          "description": "Absolute `http(s)` URL where a reader downloads the native client. Advertised by the web\nbuild only. Empty keeps this project's latest release.",
+          "required": [],
+          "title": "releasesUrl",
+          "type": "string"
+        },
+        "tagline": {
+          "default": "",
+          "description": "One line under the wordmark. Empty keeps the shipped tagline, which is **translated**;\nsetting it replaces that with this one string in every language. That is the right trade only\nfor a deployment the shipped sentence does not describe.",
+          "required": [],
+          "title": "tagline",
+          "type": "string"
+        },
+        "wordmark": {
+          "additionalProperties": true,
+          "description": "The two-tone lockup drawn in the SPA's rail and footer.",
+          "properties": {
+            "accent": {
+              "default": "",
+              "description": "The half drawn in the accent colour. Empty draws `lead` alone. Meaningless without\n`lead`, and the chart refuses that combination rather than rendering a lockup nothing reads.",
+              "required": [],
+              "title": "accent",
+              "type": "string"
+            },
+            "lead": {
+              "default": "",
+              "description": "The half drawn in the body colour. Setting this is what opts into a two-tone lockup:\nleft empty, a deployment that set `name` draws that name as one word, because the shipped\n`Tankō`/`Vault` split is a property of the shipped name and not a template to pour another\none into.",
+              "required": [],
+              "title": "lead",
+              "type": "string"
+            }
+          },
+          "required": [],
+          "title": "wordmark"
+        }
+      },
+      "required": [],
+      "title": "branding"
     },
     "channels": {
       "additionalProperties": true,
@@ -2744,6 +2860,15 @@
               "title": "existingSecrets",
               "type": "object"
             },
+            "probePort": {
+              "default": 9091,
+              "description": "Container port carrying `/health` and `/ready` in **plaintext**, beside the mutually\nauthenticated listener. A kubelet probe presents no client certificate, so on the mTLS port\nits plain `GET /health` is answered with a TLS alert and every replica is killed by its own\nstartup probe — the chart therefore opens this port and points the three probes at it on\nevery service that serves the mTLS listener (`control-plane`, `worker`, `sync`,\n`challenge-solver`, `render`). `api` and `notifier` hold a certificate but serve no mTLS\nlistener, and their probes are untouched.\n\nIt carries the two probes and nothing else: the scrape stays on `metrics.port`, so a\ndeployment that deliberately merged the scrape onto an authenticated port keeps it there.\nThe port is opened on the container only and not published on the Service — the kubelet\nreaches the pod directly.\n\nThere is no off switch: upstream drops the listener only for a literal `null`, which this\nchart's TOML renderer cannot express, and turning it off would break the probes the chart\nwrites. Ignored entirely under `identity: token`, where the probes answer on the request\nport like everywhere else.",
+              "maximum": 65535,
+              "minimum": 1,
+              "required": [],
+              "title": "probePort",
+              "type": "integer"
+            },
             "sans": {
               "additionalProperties": {
                 "type": "string"
@@ -3642,7 +3767,7 @@
                   "type": "string"
                 },
                 "tag": {
-                  "default": "v4.0.1@sha256:1ee5049b646ce69bc831a8fc060413873e0f12f5e043f4bc074ccb5b8d1cc3d5",
+                  "default": "v5.0.0@sha256:59e549834be834d73bfbaed50e53ba31003106406f7b4a183da1ef3b73539d2d",
                   "description": "Image tag, pinned by digest.",
                   "required": [],
                   "title": "tag",
@@ -3818,7 +3943,7 @@
                   "type": "string"
                 },
                 "tag": {
-                  "default": "v4.0.1@sha256:7b19aed60b8238d6aae46a2ef3f101907763e27c3e1a42b40f4a338fc6dfef44",
+                  "default": "v5.0.0@sha256:c42f98fb2da7704fef90a9fdc258ef22ed6a49f6ef25a4e54b10a42628505bd8",
                   "description": "Image tag, pinned by digest.",
                   "required": [],
                   "title": "tag",
@@ -3944,7 +4069,7 @@
                   "type": "string"
                 },
                 "tag": {
-                  "default": "v4.0.1@sha256:af096be0bbda30852078d883cc569c1d3a062a030155720b351e46645233b2e2",
+                  "default": "v5.0.0@sha256:1b7b2eb4381b8c6b69a291a4659e3bd4aef0b306024308a5552073f50b596a73",
                   "description": "Image tag, pinned by digest.",
                   "required": [],
                   "title": "tag",
@@ -4120,7 +4245,7 @@
                   "type": "string"
                 },
                 "tag": {
-                  "default": "v4.0.1@sha256:cdf2a1b6145a0e2426e6eb6ea0140c712ec9a2375f31434b62ac92a15d708fb5",
+                  "default": "v5.0.0@sha256:8057e698898326d5e563560ea9f336454928bede4f6e5628ebd5db3a8ab0cf14",
                   "description": "Image tag, pinned by digest.",
                   "required": [],
                   "title": "tag",
@@ -4246,7 +4371,7 @@
                   "type": "string"
                 },
                 "tag": {
-                  "default": "v4.0.1@sha256:687d271339bf586aa984a8cb732b6ef457db21f68fb429e2a9a58cd6ffe79858",
+                  "default": "v5.0.0@sha256:22c6a79ddcf590ee3819b41634d11d52c188e5713ab044fe1cb899b7257ef707",
                   "description": "Image tag, pinned by digest.",
                   "required": [],
                   "title": "tag",
@@ -4429,7 +4554,7 @@
                   "type": "string"
                 },
                 "tag": {
-                  "default": "v4.0.1@sha256:5ac33bf061dc44b422ce27ca25e4f74f709c4ef7f21725599380ef8d1d09d26c",
+                  "default": "v5.0.0@sha256:d37d44f2d630d976b0da168d86067a33598f2bec7b7ff8d563979fb0f6ebab18",
                   "description": "Image tag, pinned by digest.",
                   "required": [],
                   "title": "tag",
@@ -4552,7 +4677,7 @@
                   "type": "string"
                 },
                 "tag": {
-                  "default": "v4.0.1@sha256:ff24aaba8070ba2188c5b352debbaabe3a60ec00690941cac9624f23cad172c8",
+                  "default": "v5.0.0@sha256:909521a0af36bdb1a1a9efb62652a3f927d07d473272459854d9ee4aa0df38d8",
                   "description": "Image tag, pinned by digest.",
                   "required": [],
                   "title": "tag",
@@ -4728,7 +4853,7 @@
                   "type": "string"
                 },
                 "tag": {
-                  "default": "v4.0.1@sha256:9cce757be27b30ebe3ac09debcb2f7379e8c154aea586dc3af3b1d7c3e695739",
+                  "default": "v5.0.0@sha256:a9d8ed7c2793572fd8ad01cc72e24af7c0933cd0bbe50ad9d28e2fac5e0b339f",
                   "description": "Image tag, pinned by digest.",
                   "required": [],
                   "title": "tag",

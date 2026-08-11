@@ -115,6 +115,21 @@ the whole point of per-caller identity is that they cannot.
 {{- end -}}
 {{- end -}}
 
+{{- /*
+The plaintext probe port. It is a third listener inside a pod that already binds two, and a
+collision is not a render-time error anywhere else — it is a container that binds one of them,
+fails on the second with `Address already in use`, and restarts forever.
+*/ -}}
+{{- $probePort := $tls.probePort -}}
+{{- if eq ($probePort | toString) ($ctx.Values.metrics.port | toString) -}}
+{{- $errors = append $errors (printf "internal.tls.probePort and metrics.port are both %v. They are two listeners in the same pod, so the second to bind fails with `Address already in use` and the container restarts forever. Move one of them." $probePort) -}}
+{{- end -}}
+{{- range $service, $spec := (include "tankovault.serviceSpecs" $ctx | fromYaml) -}}
+{{- if and (include "tankovault.servesInternalTls" (dict "ctx" $ctx "service" $service)) (index $ctx.Values.services $service).enabled (eq ($probePort | toString) ($spec.port | toString)) -}}
+{{- $errors = append $errors (printf "internal.tls.probePort is %v, which is also the port %s serves its requests on. The probe listener is a second socket in the same pod and cannot share it." $probePort $spec.slug) -}}
+{{- end -}}
+{{- end -}}
+
 {{- $setTokens := list -}}
 {{- range $caller, $token := ($internal.tokens | default dict) -}}
 {{- if $token -}}{{- $setTokens = append $setTokens (printf "internal.tokens.%s" $caller) -}}{{- end -}}
@@ -214,6 +229,38 @@ would otherwise look like a working configuration.
 {{- end -}}
 {{- if and $ctx.Values.legal.documents (not $ctx.Values.services.api.enabled) -}}
 {{- $errors = append $errors "legal.documents are configured but services.api.enabled=false. The API is the only service that reads them and the only one that serves them, so nothing would publish these documents. Enable the api, or remove the documents." -}}
+{{- end -}}
+
+{{- /*
+Branding. Nothing here is required — every field defaults upstream and the shipped identity is a
+complete one — so what is checked is only the settings that would render something no reader ever
+sees, which is the failure mode a rebranded deployment discovers from a screenshot weeks later.
+
+Read through `default dict` at each level: a values file that empties one of these sub-blocks
+outright (`wordmark: ~`) is a strange thing to write but a legal one, and it must produce the same
+"nothing set" as an untouched block rather than a nil-pointer trace from the validator whose whole
+job is to keep operators away from those.
+*/ -}}
+{{- $branding := $ctx.Values.branding | default dict -}}
+{{- $wordmark := $branding.wordmark | default dict -}}
+{{- $copyright := $branding.copyright | default dict -}}
+{{- $licence := $branding.licence | default dict -}}
+{{- if and $wordmark.accent (not $wordmark.lead) -}}
+{{- $errors = append $errors "branding.wordmark.accent is set without branding.wordmark.lead. The accent half is only ever drawn beside a lead half; on its own it is ignored and the lockup falls back to `branding.name` drawn as one word, so this renders none of what you asked for. Set both halves, or neither." -}}
+{{- end -}}
+{{- $dead := list -}}
+{{- if $copyright.holder -}}{{- $dead = append $dead "branding.copyright.holder" -}}{{- end -}}
+{{- if $copyright.year -}}{{- $dead = append $dead "branding.copyright.year" -}}{{- end -}}
+{{- if and $copyright.notice $dead -}}
+{{- $errors = append $errors (printf "branding.copyright.notice is set alongside %s. The notice is printed verbatim and outranks both fields as well as the catalogue's translation of the line, so %s would sit in the release meaning nothing. Keep the notice for a line that `© {year} {holder}` cannot express, or clear it and let the two fields build one." (join " and " $dead) (ternary "they" "it" (gt (len $dead) 1))) -}}
+{{- end -}}
+{{- range $key, $url := (dict "branding.licence.url" $licence.url "branding.projectUrl" $branding.projectUrl "branding.releasesUrl" $branding.releasesUrl) -}}
+{{- if and $url (not (regexMatch "^https?://" $url)) -}}
+{{- $errors = append $errors (printf "%s is %q. Only absolute http(s) URLs are accepted — a scheme-less or relative value is resolved by the browser against this deployment's own origin, so the footer link lands back on the app rather than where you meant." $key $url) -}}
+{{- end -}}
+{{- end -}}
+{{- if and $branding.botUserAgent (not $ctx.Values.services.worker.enabled) -}}
+{{- $errors = append $errors "branding.botUserAgent is set but services.worker.enabled=false. The worker is the only service that makes provider requests, so nothing in this release would send that user-agent. Enable the worker, or clear the value." -}}
 {{- end -}}
 
 {{- /*

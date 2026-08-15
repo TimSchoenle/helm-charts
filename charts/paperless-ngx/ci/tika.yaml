@@ -1,0 +1,33 @@
+# Office and e-mail document support: Tika, Gotenberg, and the three environment variables that
+# point the application at them.
+#
+# Named without the `-values` suffix, so `ct install` skips it while the render, kubeconform and
+# policy jobs still cover it. The two converter images are roughly 2.5 GiB together — Gotenberg
+# carries a LibreOffice and a Chromium — and pulling them onto a CI node buys no coverage that
+# rendering does not already give: what this fixture exercises is the wiring, and the images
+# themselves are pinned by digest.
+paperless:
+  secretKey: ci-secret-key-not-a-real-one
+
+tika:
+  enabled: true
+  server:
+    enabled: true
+    resourcesPreset: medium
+  gotenberg:
+    enabled: true
+    resourcesPreset: medium
+    disableJavaScript: true
+    allowList: "file:///tmp/.*"
+
+networkPolicy:
+  enabled: true
+  engine: kubernetes
+
+persistence:
+  media:
+    size: 1Gi
+  data:
+    size: 1Gi
+  consume:
+    size: 1Gi

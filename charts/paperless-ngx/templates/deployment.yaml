@@ -1,0 +1,61 @@
+{{- include "paperless-ngx.validateValues" . }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "common.fullname" . }}
+  namespace: {{ include "common.namespace" . }}
+  labels:
+    {{- include "common.labels" . | nindent 4 }}
+  {{- with (include "common.annotations" .) }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- /*
+    paperless-ngx is a singleton. This one pod runs the webserver, the task workers, the
+    directory watcher and the scheduler under one supervision tree, so a second replica does not
+    share the load — it double-schedules every periodic task and races the first one for files
+    appearing in the consumption directory.
+  */}}
+  replicas: {{ .Values.replicaCount }}
+  revisionHistoryLimit: {{ .Values.revisionHistoryLimit }}
+  {{- /*
+    A ReadWriteOnce claim cannot be attached to the replacement pod while the outgoing pod still
+    holds it, so a rolling update deadlocks. Any one of the four directories being RWO is
+    enough, because they are all mounted into the same pod.
+  */}}
+  {{- $rwo := false }}
+  {{- range $volume := list "media" "data" "consume" "export" }}
+  {{- $persistence := index $.Values.persistence $volume }}
+  {{- if and $persistence.enabled (eq $persistence.accessMode "ReadWriteOnce") }}
+  {{- $rwo = true }}
+  {{- end }}
+  {{- end }}
+  {{- with (include "common.updateStrategy" (dict "ctx" . "rwo" $rwo)) }}
+  strategy:
+    {{- . | nindent 4 }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "paperless-ngx.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with (include "common.podAnnotations" (dict "ctx" $ "templates" (list "configmap.yaml" "secret.yaml"))) }}
+      annotations:
+        {{- . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "common.podLabels" . | nindent 8 }}
+        app.kubernetes.io/component: server
+    spec:
+      {{- include "common.podSpec.common" . | nindent 6 }}
+      containers:
+        {{- include "common.container" (dict
+              "ctx" $
+              "ports" (include "paperless-ngx.containerPorts" . | fromYamlArray)
+              "env" (include "paperless-ngx.env" . | fromYamlArray)
+              "envFrom" (list (dict "configMapRef" (dict "name" (include "common.configMapName" .))))
+              "volumeMounts" (include "paperless-ngx.volumeMounts" . | fromYamlArray)
+            ) | nindent 8 }}
+      volumes:
+        {{- include "common.volumes" (dict "ctx" $ "volumes" (include "paperless-ngx.volumes" . | fromYamlArray)) | nindent 8 }}

@@ -1,0 +1,274 @@
+suite: network policies
+templates:
+  - networkpolicy.yaml
+  - ciliumnetworkpolicy.yaml
+set:
+  paperless.secretKey: ci-secret-key
+  networkPolicy.enabled: true
+tests:
+  - it: creates nothing while policies are off
+    set:
+      networkPolicy.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  # One policy per workload, each naming both policy types, so anything the plan does not list is
+  # denied.
+  - it: covers every workload in the release
+    set:
+      tika.enabled: true
+      database.engine: postgresql
+      database.password: db-pw
+      postgresql.enabled: true
+    template: networkpolicy.yaml
+    asserts:
+      - hasDocuments:
+          count: 5
+      - equal:
+          path: spec.policyTypes
+          value: [Ingress, Egress]
+        documentIndex: 0
+      - equal:
+          path: spec.policyTypes
+          value: [Ingress, Egress]
+        documentIndex: 4
+
+  # With nothing publishing the application, its ingress list is empty — which is the
+  # default-deny this exists for, not an oversight.
+  - it: admits nobody to an unpublished application
+    template: networkpolicy.yaml
+    documentIndex: 0
+    asserts:
+      - equal:
+          path: spec.podSelector.matchLabels["app.kubernetes.io/component"]
+          value: server
+      - isNullOrEmpty:
+          path: spec.ingress
+
+  - it: admits the Ingress controller once an Ingress exists
+    set:
+      ingress.enabled: true
+      ingress.host: paperless.example.com
+    template: networkpolicy.yaml
+    documentIndex: 0
+    asserts:
+      - equal:
+          path: spec.ingress[0].from[0].namespaceSelector.matchLabels["kubernetes.io/metadata.name"]
+          value: ingress-nginx
+      - equal:
+          path: spec.ingress[0].ports[0].port
+          value: 8000
+
+  # The Gateway a policy must admit is the one this chart's own route attaches to, so it is
+  # derived rather than restated — a policy naming the wrong Gateway looks correct and blocks
+  # everything.
+  - it: derives the Gateway peer from the route's parent
+    set:
+      gateway.enabled: true
+      gateway.hostnames:
+        - paperless.example.com
+      gateway.parentRefs:
+        - name: shared
+          namespace: gateways
+    capabilities:
+      apiVersions:
+        - gateway.networking.k8s.io/v1
+    template: networkpolicy.yaml
+    documentIndex: 0
+    asserts:
+      - equal:
+          path: spec.ingress[0].from[0].namespaceSelector.matchLabels["kubernetes.io/metadata.name"]
+          value: gateways
+      - equal:
+          path: spec.ingress[0].from[0].podSelector.matchLabels["gateway.networking.k8s.io/gateway-name"]
+          value: shared
+
+  - it: lets the application reach DNS and the bundled broker, and nothing else
+    template: networkpolicy.yaml
+    documentIndex: 0
+    asserts:
+      - lengthEqual:
+          path: spec.egress
+          count: 2
+      - equal:
+          path: spec.egress[0].ports[0].port
+          value: 53
+      - equal:
+          path: spec.egress[1].to[0].podSelector.matchLabels["app.kubernetes.io/component"]
+          value: valkey
+      - equal:
+          path: spec.egress[1].ports[0].port
+          value: 6379
+
+  - it: scopes an external datastore rule to a peer rather than to every destination
+    set:
+      valkey.enabled: false
+      redis.host: valkey.data.svc
+      database.engine: postgresql
+      database.host: postgres.data.svc
+      database.password: db-pw
+      networkPolicy.egress.external.namespaceSelector:
+        kubernetes.io/metadata.name: data
+    template: networkpolicy.yaml
+    documentIndex: 0
+    asserts:
+      - equal:
+          path: spec.egress[1].to[0].namespaceSelector.matchLabels["kubernetes.io/metadata.name"]
+          value: data
+      - equal:
+          path: spec.egress[1].ports[0].port
+          value: 6379
+      - equal:
+          path: spec.egress[1].ports[1].port
+          value: 5432
+
+  # A rule with only `ports:` is not a restriction: the API reads a missing `to` as "every
+  # destination", including the cloud metadata endpoint.
+  - it: carves the metadata endpoint out of internet egress
+    set:
+      networkPolicy.egress.https: true
+      networkPolicy.egress.smtp: true
+    template: networkpolicy.yaml
+    documentIndex: 0
+    asserts:
+      - equal:
+          path: spec.egress[2].to[0].ipBlock.cidr
+          value: 0.0.0.0/0
+      - contains:
+          path: spec.egress[2].to[0].ipBlock.except
+          content: 169.254.0.0/16
+      - equal:
+          path: spec.egress[2].ports[0].port
+          value: 443
+      - equal:
+          path: spec.egress[2].ports[1].port
+          value: 587
+
+  - it: lets a bundled component be reached by the application alone
+    template: networkpolicy.yaml
+    documentIndex: 1
+    asserts:
+      - equal:
+          path: spec.podSelector.matchLabels["app.kubernetes.io/component"]
+          value: valkey
+      - equal:
+          path: spec.ingress[0].from[0].podSelector.matchLabels["app.kubernetes.io/component"]
+          value: server
+      - equal:
+          path: spec.ingress[0].ports[0].port
+          value: 6379
+      # DNS only. A broker has no business reaching anything else.
+      - lengthEqual:
+          path: spec.egress
+          count: 1
+
+  - it: appends operator rules to the application's policy
+    set:
+      networkPolicy.ingress.extraRules:
+        - from:
+            - podSelector:
+                matchLabels:
+                  app: backup
+          ports:
+            - port: 8000
+              protocol: TCP
+    template: networkpolicy.yaml
+    documentIndex: 0
+    asserts:
+      - equal:
+          path: spec.ingress[0].from[0].podSelector.matchLabels.app
+          value: backup
+
+  - it: renders no Cilium objects under the portable engine
+    template: ciliumnetworkpolicy.yaml
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: states default-deny per direction under Cilium
+    set:
+      networkPolicy.engine: cilium
+    capabilities:
+      apiVersions:
+        - cilium.io/v2
+    template: ciliumnetworkpolicy.yaml
+    asserts:
+      - hasDocuments:
+          count: 4
+      - isKind:
+          of: CiliumNetworkPolicy
+        documentIndex: 0
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-paperless-ngx-ingress
+        documentIndex: 0
+      - equal:
+          path: spec.enableDefaultDeny.ingress
+          value: true
+        documentIndex: 0
+      - equal:
+          path: spec.enableDefaultDeny.egress
+          value: false
+        documentIndex: 0
+      - equal:
+          path: spec.enableDefaultDeny.egress
+          value: true
+        documentIndex: 1
+
+  # The rule the portable API cannot state. It replaces the CIDR form rather than adding to it:
+  # emitting both would leave the broad rule in place and make the narrow one decorative.
+  - it: names egress destinations instead of permitting the internet
+    set:
+      networkPolicy.engine: cilium
+      networkPolicy.egress.smtp: true
+      networkPolicy.cilium.toFQDNs:
+        - matchName: smtp.example.com
+      networkPolicy.cilium.dnsMatchPatterns:
+        - matchPattern: "*.example.com"
+    capabilities:
+      apiVersions:
+        - cilium.io/v2
+    template: ciliumnetworkpolicy.yaml
+    documentIndex: 1
+    asserts:
+      - equal:
+          path: spec.egress[2].toFQDNs[0].matchName
+          value: smtp.example.com
+      - equal:
+          path: spec.egress[0].toPorts[0].rules.dns[0].matchPattern
+          value: "*.example.com"
+      # Ports are strings in this API, and an integer is rejected by the CRD schema.
+      - equal:
+          path: spec.egress[2].toPorts[0].ports[0].port
+          value: "587"
+
+  # An FQDN rule is matched against what Cilium's DNS proxy saw returned, so with no DNS rule
+  # observing the lookup every destination it names is silently denied.
+  - it: refuses named destinations the DNS proxy would never observe
+    set:
+      networkPolicy.engine: cilium
+      networkPolicy.cilium.toFQDNs:
+        - matchName: smtp.example.com
+      networkPolicy.cilium.dnsMatchPatterns: []
+    capabilities:
+      apiVersions:
+        - cilium.io/v2
+    asserts:
+      - template: ciliumnetworkpolicy.yaml
+        failedTemplate:
+          errorPattern: dnsMatchPatterns is empty
+
+  - it: emits both dialects during a CNI migration
+    set:
+      networkPolicy.engine: both
+    capabilities:
+      apiVersions:
+        - cilium.io/v2
+    asserts:
+      - hasDocuments:
+          count: 2
+        template: networkpolicy.yaml
+      - hasDocuments:
+          count: 4
+        template: ciliumnetworkpolicy.yaml

@@ -1,0 +1,164 @@
+{{- /*
+Non-secret application configuration.
+
+paperless-ngx is configured entirely through `PAPERLESS_*` environment variables, so this
+ConfigMap *is* its configuration file — it is mounted with `envFrom`, and the container's own
+defaults apply to everything absent from it. Two kinds of setting are deliberately not here:
+
+  - Credentials, which come from the Secret by reference. See `paperless-ngx.env`.
+  - `PAPERLESS_REDIS`, which interpolates the broker password from another variable. The
+    kubelet expands `$(VAR)` in `env` values only, never in `envFrom` sources.
+
+A key is written only when it has something to say. An empty string is a *configured* empty
+value to the application, not an absent one, and for several of these settings the two mean
+different things.
+*/ -}}
+{{- if include "common.createConfigMap" . }}
+{{- $paperless := .Values.paperless }}
+{{- $url := include "paperless-ngx.url" . }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "common.fullname" . }}
+  namespace: {{ include "common.namespace" . }}
+  labels:
+    {{- include "common.labels" . | nindent 4 }}
+  {{- with (include "common.annotations" .) }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
+data:
+  PAPERLESS_TIME_ZONE: {{ $paperless.timeZone | quote }}
+  {{- with $url }}
+  PAPERLESS_URL: {{ . | quote }}
+  {{- end }}
+  {{- with $paperless.allowedHosts }}
+  PAPERLESS_ALLOWED_HOSTS: {{ include "common.tplvalues.render" (dict "value" . "context" $) | fromYamlArray | join "," | quote }}
+  {{- end }}
+  {{- with $paperless.csrfTrustedOrigins }}
+  PAPERLESS_CSRF_TRUSTED_ORIGINS: {{ include "common.tplvalues.render" (dict "value" . "context" $) | fromYamlArray | join "," | quote }}
+  {{- end }}
+  {{- with $paperless.corsAllowedHosts }}
+  PAPERLESS_CORS_ALLOWED_HOSTS: {{ include "common.tplvalues.render" (dict "value" . "context" $) | fromYamlArray | join "," | quote }}
+  {{- end }}
+
+  {{- /*
+    Serving under a sub-path takes two settings, not one: Django prefixes the URLs it generates
+    with the script name, but the static files it links to are addressed by `STATIC_URL`, which
+    it does not touch. Left alone, the application loads at the sub-path with every stylesheet
+    and script 404ing from the root.
+  */}}
+  {{- with $paperless.rootPath }}
+  PAPERLESS_FORCE_SCRIPT_NAME: {{ . | quote }}
+  PAPERLESS_STATIC_URL: {{ printf "%s/static/" (trimSuffix "/" .) | quote }}
+  {{- end }}
+
+  PAPERLESS_USE_X_FORWARD_HOST: {{ $paperless.proxy.useXForwardedHost | quote }}
+  PAPERLESS_USE_X_FORWARD_PORT: {{ $paperless.proxy.useXForwardedPort | quote }}
+  {{- if $paperless.proxy.trustForwardedProto }}
+  {{- /* Django wants the WSGI spelling of the header and the value that means "was HTTPS". */}}
+  PAPERLESS_PROXY_SSL_HEADER: {{ toJson (list "HTTP_X_FORWARDED_PROTO" "https") | quote }}
+  {{- end }}
+  {{- with $paperless.proxy.trustedProxies }}
+  PAPERLESS_TRUSTED_PROXIES: {{ join "," . | quote }}
+  {{- end }}
+
+  {{- if or $paperless.remoteUser.enabled $paperless.remoteUser.api }}
+  PAPERLESS_ENABLE_HTTP_REMOTE_USER: {{ $paperless.remoteUser.enabled | quote }}
+  PAPERLESS_ENABLE_HTTP_REMOTE_USER_API: {{ $paperless.remoteUser.api | quote }}
+  PAPERLESS_HTTP_REMOTE_USER_HEADER_NAME: {{ $paperless.remoteUser.headerName | quote }}
+  {{- end }}
+
+  {{- with $paperless.admin.user }}
+  PAPERLESS_ADMIN_USER: {{ . | quote }}
+  {{- end }}
+  {{- with $paperless.admin.email }}
+  PAPERLESS_ADMIN_MAIL: {{ . | quote }}
+  {{- end }}
+
+  PAPERLESS_OCR_LANGUAGE: {{ $paperless.ocr.language | quote }}
+  PAPERLESS_OCR_MODE: {{ $paperless.ocr.mode | quote }}
+  PAPERLESS_OCR_OUTPUT_TYPE: {{ $paperless.ocr.outputType | quote }}
+  PAPERLESS_OCR_CLEAN: {{ $paperless.ocr.clean | quote }}
+  PAPERLESS_OCR_DESKEW: {{ $paperless.ocr.deskew | quote }}
+  PAPERLESS_OCR_ROTATE_PAGES: {{ $paperless.ocr.rotatePages | quote }}
+  {{- if $paperless.ocr.pages }}
+  PAPERLESS_OCR_PAGES: {{ $paperless.ocr.pages | quote }}
+  {{- end }}
+  {{- if $paperless.ocr.imageDpi }}
+  PAPERLESS_OCR_IMAGE_DPI: {{ $paperless.ocr.imageDpi | quote }}
+  {{- end }}
+  {{- with $paperless.ocr.userArgs }}
+  PAPERLESS_OCR_USER_ARGS: {{ toJson . | quote }}
+  {{- end }}
+  PAPERLESS_ARCHIVE_FILE_GENERATION: {{ $paperless.archiveFileGeneration | quote }}
+
+  PAPERLESS_CONSUMER_POLLING_INTERVAL: {{ $paperless.consumer.pollingInterval | quote }}
+  PAPERLESS_CONSUMER_STABILITY_DELAY: {{ $paperless.consumer.stabilityDelay | quote }}
+  PAPERLESS_CONSUMER_RECURSIVE: {{ $paperless.consumer.recursive | quote }}
+  PAPERLESS_CONSUMER_SUBDIRS_AS_TAGS: {{ $paperless.consumer.subdirsAsTags | quote }}
+  PAPERLESS_CONSUMER_DELETE_DUPLICATES: {{ $paperless.consumer.deleteDuplicates | quote }}
+  PAPERLESS_CONSUMER_ENABLE_BARCODES: {{ $paperless.consumer.barcodes.enabled | quote }}
+  PAPERLESS_CONSUMER_ENABLE_ASN_BARCODE: {{ $paperless.consumer.barcodes.asn | quote }}
+  PAPERLESS_CONSUMER_ASN_BARCODE_PREFIX: {{ $paperless.consumer.barcodes.asnPrefix | quote }}
+
+  PAPERLESS_TASK_WORKERS: {{ $paperless.tasks.workers | quote }}
+  {{- if $paperless.tasks.threadsPerWorker }}
+  PAPERLESS_THREADS_PER_WORKER: {{ $paperless.tasks.threadsPerWorker | quote }}
+  {{- end }}
+  PAPERLESS_WORKER_TIMEOUT: {{ $paperless.tasks.timeout | quote }}
+  PAPERLESS_WEBSERVER_WORKERS: {{ $paperless.tasks.webserverWorkers | quote }}
+
+  {{- with $paperless.filenameFormat }}
+  PAPERLESS_FILENAME_FORMAT: {{ . | quote }}
+  {{- end }}
+  PAPERLESS_FILENAME_FORMAT_REMOVE_NONE: {{ $paperless.filenameFormatRemoveNone | quote }}
+  PAPERLESS_ENABLE_UPDATE_CHECK: {{ $paperless.updateCheck | quote }}
+  PAPERLESS_AUDIT_LOG_ENABLED: {{ $paperless.auditLog | quote }}
+
+  {{- with $paperless.email.host }}
+  PAPERLESS_EMAIL_HOST: {{ . | quote }}
+  PAPERLESS_EMAIL_PORT: {{ $paperless.email.port | quote }}
+  PAPERLESS_EMAIL_USE_TLS: {{ $paperless.email.useTls | quote }}
+  PAPERLESS_EMAIL_USE_SSL: {{ $paperless.email.useSsl | quote }}
+  {{- with $paperless.email.user }}
+  PAPERLESS_EMAIL_HOST_USER: {{ . | quote }}
+  {{- end }}
+  {{- with $paperless.email.from }}
+  PAPERLESS_EMAIL_FROM: {{ . | quote }}
+  {{- end }}
+  {{- end }}
+
+  {{- /*
+    `sqlite` is stated rather than left to the default. Without it the application infers the
+    engine from the presence of `PAPERLESS_DBHOST`, so a leftover host from an aborted migration
+    silently switches a working SQLite instance to PostgreSQL and shows an empty archive.
+  */}}
+  PAPERLESS_DBENGINE: {{ .Values.database.engine | quote }}
+  {{- if ne .Values.database.engine "sqlite" }}
+  PAPERLESS_DBHOST: {{ include "paperless-ngx.databaseHost" . | quote }}
+  PAPERLESS_DBPORT: {{ include "paperless-ngx.databasePort" . | quote }}
+  PAPERLESS_DBNAME: {{ .Values.database.name | quote }}
+  PAPERLESS_DBUSER: {{ .Values.database.user | quote }}
+  {{- with .Values.database.sslMode }}
+  PAPERLESS_DBSSLMODE: {{ . | quote }}
+  {{- end }}
+  {{- if .Values.database.poolSize }}
+  PAPERLESS_DB_POOLSIZE: {{ .Values.database.poolSize | quote }}
+  {{- end }}
+  {{- end }}
+
+  {{- with .Values.redis.prefix }}
+  PAPERLESS_REDIS_PREFIX: {{ . | quote }}
+  {{- end }}
+
+  {{- if .Values.tika.enabled }}
+  PAPERLESS_TIKA_ENABLED: "true"
+  PAPERLESS_TIKA_ENDPOINT: {{ include "paperless-ngx.tikaEndpoint" . | quote }}
+  PAPERLESS_TIKA_GOTENBERG_ENDPOINT: {{ include "paperless-ngx.gotenbergEndpoint" . | quote }}
+  {{- end }}
+
+  {{- range $key, $value := $paperless.extraConfig }}
+  {{ $key }}: {{ include "common.tplvalues.render" (dict "value" $value "context" $) | quote }}
+  {{- end }}
+{{- end }}

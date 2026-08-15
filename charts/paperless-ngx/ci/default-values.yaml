@@ -1,0 +1,27 @@
+# The default stack: SQLite in the data volume, the bundled Valkey as the broker, no publishing.
+# This is what `helm install` with no values produces, plus the one credential the chart refuses
+# to render without.
+paperless:
+  secretKey: ci-secret-key-not-a-real-one
+  timeZone: Europe/Berlin
+  admin:
+    user: admin
+    email: admin@example.com
+    password: ci-admin-password
+
+# CI nodes are small and the images are large; a request the kind node cannot satisfy is a pod
+# that never schedules and an install that fails on a timeout rather than on a defect.
+resources:
+  limits:
+    memory: 1Gi
+  requests:
+    cpu: 100m
+    memory: 256Mi
+
+persistence:
+  media:
+    size: 1Gi
+  data:
+    size: 1Gi
+  consume:
+    size: 1Gi

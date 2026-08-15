@@ -1,0 +1,228 @@
+suite: pod security baseline
+templates:
+  - deployment.yaml
+  - configmap.yaml
+  - secret.yaml
+  - valkey.yaml
+  - postgresql.yaml
+  - gotenberg.yaml
+  - tika.yaml
+# helm-unittest only parses the templates listed above, and the Deployment annotates a checksum
+# of both the ConfigMap and the Secret, so those have to be rendered alongside it. Every test
+# then selects the document it is about explicitly.
+set:
+  paperless.secretKey: ci-secret-key
+tests:
+  - it: satisfies the restricted Pod Security Standard
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.template.spec.securityContext.runAsNonRoot
+          value: true
+      - equal:
+          path: spec.template.spec.securityContext.seccompProfile.type
+          value: RuntimeDefault
+      - equal:
+          path: spec.template.spec.securityContext.fsGroupChangePolicy
+          value: OnRootMismatch
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.allowPrivilegeEscalation
+          value: false
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.privileged
+          value: false
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem
+          value: true
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.runAsNonRoot
+          value: true
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.capabilities.drop
+          value: [ALL]
+
+  # The image creates `paperless` as 1000:1000 and its non-root start path skips the recursive
+  # chown it would otherwise do, so fsGroup is what actually makes the volumes writable.
+  - it: runs as the unprivileged account the image provides
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.template.spec.securityContext.runAsUser
+          value: 1000
+      - equal:
+          path: spec.template.spec.securityContext.runAsGroup
+          value: 1000
+      - equal:
+          path: spec.template.spec.securityContext.fsGroup
+          value: 1000
+
+  - it: keeps the ServiceAccount token out of the pod
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.template.spec.automountServiceAccountToken
+          value: false
+
+  # s6-overlay supervises the four processes in this image from /run and executes from it, and
+  # OCR writes every intermediate file to /tmp. Without both mounts the container dies before
+  # the application is ever started.
+  - it: provides the writable directories a read-only root filesystem needs
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: run
+            mountPath: /run
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: tmp
+            mountPath: /tmp
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: run
+            emptyDir:
+              sizeLimit: 32Mi
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: tmp
+            emptyDir:
+              sizeLimit: 2Gi
+
+  - it: tells s6-overlay that the root filesystem is read-only
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: S6_READ_ONLY_ROOT
+            value: "1"
+
+  # Turning the preset off is an operator's decision, and the two halves have to move together:
+  # without a read-only root filesystem the writable mounts are noise, and the flag telling
+  # s6-overlay about one would be a lie.
+  - it: drops the read-only scaffolding when the root filesystem is writable
+    set:
+      securityContextPreset: none
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: run
+            mountPath: /run
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: S6_READ_ONLY_ROOT
+            value: "1"
+
+  - it: holds the bundled datastores to the same baseline
+    set:
+      database.engine: postgresql
+      database.password: p
+      postgresql.enabled: true
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem
+          value: true
+        template: postgresql.yaml
+        documentIndex: 1
+      - equal:
+          path: spec.template.spec.securityContext.runAsUser
+          value: 999
+        template: postgresql.yaml
+        documentIndex: 1
+      - equal:
+          path: spec.template.spec.securityContext.fsGroup
+          value: 999
+        template: postgresql.yaml
+        documentIndex: 1
+
+  # Each of these UIDs is the one its image was built around. Running Gotenberg as anything else
+  # leaves LibreOffice unable to write its profile; Tika's image already declares a numeric user,
+  # which is what lets `runAsNonRoot` be verified at all.
+  - it: runs each bundled converter as the account its image expects
+    set:
+      tika.enabled: true
+    asserts:
+      - equal:
+          path: spec.template.spec.securityContext.runAsUser
+          value: 1001
+        template: gotenberg.yaml
+        documentIndex: 1
+      - equal:
+          path: spec.template.spec.securityContext.runAsUser
+          value: 35002
+        template: tika.yaml
+        documentIndex: 1
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem
+          value: true
+        template: tika.yaml
+        documentIndex: 1
+
+  - it: runs the bundled broker as a non-root account with no writable root filesystem
+    asserts:
+      - equal:
+          path: spec.template.spec.securityContext.runAsUser
+          value: 1000
+        template: valkey.yaml
+        documentIndex: 1
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem
+          value: true
+        template: valkey.yaml
+        documentIndex: 1
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.capabilities.drop
+          value: [ALL]
+        template: valkey.yaml
+        documentIndex: 1
+
+  # Credentials reach the process by reference. A plaintext password in the pod spec is readable
+  # by anything that can `get pod`, which is a much wider set than what can `get secret`.
+  - it: never puts a credential in the pod spec or the ConfigMap
+    set:
+      paperless.admin.user: admin
+      paperless.admin.password: hunter2
+      redis.password: broker-pw
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: PAPERLESS_ADMIN_PASSWORD
+            value: hunter2
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: PAPERLESS_ADMIN_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: RELEASE-NAME-paperless-ngx
+                key: admin-password
+      # The broker password is interpolated by the kubelet from the variable above it, so the
+      # URL in the pod spec carries a reference rather than the secret itself.
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: PAPERLESS_REDIS
+            value: redis://:$(REDIS_PASSWORD)@RELEASE-NAME-paperless-ngx-valkey:6379/0

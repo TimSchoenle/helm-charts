@@ -1,0 +1,39 @@
+{{- /*
+One claim per directory.
+
+They are separate objects rather than one shared volume because their lifetimes genuinely
+differ: `media` holds the archive and should outlive the release, `data` is an index that can be
+rebuilt from it, and `consume` is a mailbox whose contents are gone within seconds of arriving.
+Splitting them also lets the consumption directory be the one `ReadWriteMany` share a scanner
+writes into, without putting the whole archive on network storage.
+
+Each is named after its directory, so `kubectl get pvc` reads as an inventory rather than a
+puzzle.
+*/ -}}
+{{- range $volume := list "media" "data" "consume" "export" }}
+{{- $persistence := index $.Values.persistence $volume }}
+{{- if and $persistence.enabled (not $persistence.existingClaim) }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "paperless-ngx.componentName" (dict "ctx" $ "component" $volume) }}
+  namespace: {{ include "common.namespace" $ }}
+  labels:
+    {{- include "common.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $volume }}
+  {{- with (include "common.tplvalues.merge" (dict "values" (list $persistence.annotations $.Values.commonAnnotations) "context" $)) }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
+spec:
+  accessModes:
+    - {{ $persistence.accessMode }}
+  {{- with $persistence.storageClassName }}
+  storageClassName: {{ if (eq "-" .) }}""{{ else }}{{ . | quote }}{{ end }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ $persistence.size }}
+{{- end }}
+{{- end }}

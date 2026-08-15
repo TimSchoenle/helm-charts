@@ -1,0 +1,250 @@
+suite: values validation
+# Constraints that relate values to each other, which no JSON schema can express. Every one of
+# these would otherwise surface as a crash-looping pod, or — worse — as an install that comes up
+# and quietly does the wrong thing.
+templates:
+  - deployment.yaml
+  - configmap.yaml
+  - secret.yaml
+tests:
+  - it: refuses to render without a Django secret key
+    asserts:
+      - template: deployment.yaml
+        failedTemplate:
+          errorPattern: paperless.secretKey is required
+
+  - it: accepts an operator-supplied Secret as that key
+    set:
+      existingSecret: paperless-credentials
+    asserts:
+      - template: deployment.yaml
+        notFailedTemplate: {}
+
+  - it: requires a host for an external database
+    set:
+      paperless.secretKey: k
+      database.engine: postgresql
+      database.password: p
+    asserts:
+      - template: deployment.yaml
+        failedTemplate:
+          errorPattern: database.host is required for the postgresql engine
+
+  - it: requires a password for an external database
+    set:
+      paperless.secretKey: k
+      database.engine: mariadb
+      database.host: mariadb.data.svc
+    asserts:
+      - template: deployment.yaml
+        failedTemplate:
+          errorPattern: database.password \(or existingSecret\) is required
+
+  # The bundled server would be created, and nothing would ever connect to it.
+  - it: refuses to run a bundled PostgreSQL the application would not use
+    set:
+      paperless.secretKey: k
+      postgresql.enabled: true
+    asserts:
+      - template: deployment.yaml
+        failedTemplate:
+          errorPattern: postgresql.enabled runs a PostgreSQL server, but database.engine is "sqlite"
+
+  # Two sources of truth for the same address, one of which silently wins.
+  - it: refuses a bundled PostgreSQL alongside an external host
+    set:
+      paperless.secretKey: k
+      database.engine: postgresql
+      database.password: p
+      database.host: elsewhere.svc
+      postgresql.enabled: true
+    asserts:
+      - template: deployment.yaml
+        failedTemplate:
+          errorPattern: postgresql.enabled and database.host are both set
+
+  - it: refuses to keep a SQLite database on an emptyDir
+    set:
+      paperless.secretKey: k
+      persistence.data.enabled: false
+    asserts:
+      - template: deployment.yaml
+        failedTemplate:
+          errorPattern: database.engine=sqlite keeps the database in the data volume
+
+  # Without a broker the application starts, serves the UI and consumes nothing — a failure with
+  # no error message anywhere.
+  - it: refuses to render without a message broker
+    set:
+      paperless.secretKey: k
+      valkey.enabled: false
+    asserts:
+      - template: deployment.yaml
+        failedTemplate:
+          errorPattern: no message broker is configured
+
+  - it: refuses a bundled broker alongside an external one
+    set:
+      paperless.secretKey: k
+      redis.host: valkey.data.svc
+    asserts:
+      - template: deployment.yaml
+        failedTemplate:
+          errorPattern: valkey.enabled runs a broker in this release while redis.host
+
+  - it: requires a password for the superuser it is asked to create
+    set:
+      paperless.secretKey: k
+      paperless.admin.user: admin
+    asserts:
+      - template: deployment.yaml
+        failedTemplate:
+          errorPattern: paperless.admin.user is set but no password is available
+
+  - it: refuses a superuser password with no superuser
+    set:
+      paperless.secretKey: k
+      paperless.admin.password: hunter2
+    asserts:
+      - template: deployment.yaml
+        failedTemplate:
+          errorPattern: paperless.admin.password is set but paperless.admin.user is empty
+
+  - it: requires both converters for office document support
+    set:
+      paperless.secretKey: k
+      tika.enabled: true
+      tika.gotenberg.enabled: false
+    asserts:
+      - template: deployment.yaml
+        failedTemplate:
+          errorPattern: tika.enabled needs a Gotenberg server
+
+  - it: accepts external converters instead of bundled ones
+    set:
+      paperless.secretKey: k
+      tika.enabled: true
+      tika.server.enabled: false
+      tika.server.endpoint: http://tika.docs.svc:9998
+      tika.gotenberg.enabled: false
+      tika.gotenberg.endpoint: http://gotenberg.docs.svc:3000
+    asserts:
+      - template: deployment.yaml
+        notFailedTemplate: {}
+
+  - it: requires a hostname for an Ingress
+    set:
+      paperless.secretKey: k
+      ingress.enabled: true
+    asserts:
+      - template: deployment.yaml
+        failedTemplate:
+          errorPattern: ingress.host is required
+
+  # A route attached to somebody else's Gateway with no hostnames takes over their traffic.
+  - it: refuses a hostname-less route on a Gateway it does not own
+    set:
+      paperless.secretKey: k
+      gateway.enabled: true
+      gateway.parentRefs:
+        - name: shared
+    capabilities:
+      apiVersions:
+        - gateway.networking.k8s.io/v1
+    asserts:
+      - template: deployment.yaml
+        failedTemplate:
+          errorPattern: gateway.hostnames is empty
+
+  - it: refuses a sub-path that is not one
+    set:
+      paperless.secretKey: k
+      paperless.rootPath: paperless
+    asserts:
+      - template: deployment.yaml
+        failedTemplate:
+          errorPattern: paperless.rootPath must start with a slash
+
+  - it: refuses two mutually exclusive mail encryption modes
+    set:
+      paperless.secretKey: k
+      paperless.email.host: smtp.example.com
+      paperless.email.useTls: true
+      paperless.email.useSsl: true
+    asserts:
+      - template: deployment.yaml
+        failedTemplate:
+          errorPattern: mutually exclusive
+
+  # Silently ignoring the claim would leave the operator believing their documents are persisted.
+  - it: refuses to silently ignore an existing claim
+    set:
+      paperless.secretKey: k
+      persistence.media.enabled: false
+      persistence.media.existingClaim: paperless-media
+    asserts:
+      - template: deployment.yaml
+        failedTemplate:
+          errorPattern: persistence.media.existingClaim is set but
+
+  # The rules find this release's objects by name *or* by a kube-state-metrics label, so an
+  # override that drops the chart name still renders — NOTES.txt warns that the label half is
+  # then the only one left, and it is opt-in on the metrics side.
+  - it: renders alerting rules under a renamed release
+    set:
+      paperless.secretKey: k
+      fullnameOverride: documents
+      metrics.prometheusRule.enabled: true
+    capabilities:
+      apiVersions:
+        - monitoring.coreos.com/v1
+    asserts:
+      - template: deployment.yaml
+        notFailedTemplate: {}
+
+  # `helm template` reports the built-in API surface but no CRDs, so a capability guard that
+  # dropped the objects would render clean in CI and leave a real install with no alerts and no
+  # dashboards at all — the failure this refuses to produce.
+  - it: refuses observability objects a cluster could not accept
+    set:
+      paperless.secretKey: k
+      metrics.prometheusRule.enabled: true
+    asserts:
+      - template: deployment.yaml
+        failedTemplate:
+          errorPattern: cluster registers no `monitoring.coreos.com/v1` API
+
+  - it: refuses the Grafana Operator path without the ConfigMap it reads from
+    set:
+      paperless.secretKey: k
+      metrics.dashboard.enabled: false
+      metrics.dashboard.grafanaOperator.enabled: true
+    capabilities:
+      apiVersions:
+        - grafana.integreatly.org/v1beta1
+    asserts:
+      - template: deployment.yaml
+        failedTemplate:
+          errorPattern: the Grafana Operator dashboards need the dashboard ConfigMap
+
+  - it: reports every mistake in one go
+    set:
+      database.engine: postgresql
+      valkey.enabled: false
+    asserts:
+      - template: deployment.yaml
+        failedTemplate:
+          errorPattern: "(?s)paperless.secretKey is required.*database.host is required.*no message broker is configured"
+
+  - it: renders once the configuration is coherent
+    set:
+      paperless.secretKey: k
+      paperless.admin.user: admin
+      paperless.admin.password: hunter2
+      database.engine: postgresql
+      database.password: p
+      postgresql.enabled: true
+      tika.enabled: true
+    asserts:
+      - template: deployment.yaml
+        notFailedTemplate: {}

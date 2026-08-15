@@ -1,0 +1,3716 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "properties": {
+    "affinity": {
+      "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.Affinity",
+      "required": []
+    },
+    "automountServiceAccountToken": {
+      "default": false,
+      "description": "Mount the ServiceAccount API token into the pod. Set on the pod itself, which is what\nactually keeps the token out of the container: the ServiceAccount-level setting is ignored as\nsoon as a pod names a different account.",
+      "required": [],
+      "title": "automountServiceAccountToken",
+      "type": "boolean"
+    },
+    "common": {
+      "description": "Shared template partials for the TimSchoenle Helm charts",
+      "properties": {
+        "affinity": {
+          "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.Affinity",
+          "required": []
+        },
+        "automountServiceAccountToken": {
+          "default": false,
+          "description": "Mount the ServiceAccount API token into the pod.\nSet on the pod itself, which is what actually keeps the token out of the container: the\nServiceAccount-level setting is ignored as soon as a pod names a different account.",
+          "required": [],
+          "title": "automountServiceAccountToken",
+          "type": "boolean"
+        },
+        "commonAnnotations": {
+          "additionalProperties": true,
+          "description": "Annotations added to every object the chart creates. Values may contain Go templates.",
+          "required": [],
+          "title": "commonAnnotations",
+          "type": "object"
+        },
+        "commonLabels": {
+          "additionalProperties": true,
+          "description": "Labels added to every object the chart creates. Values may contain Go templates.",
+          "required": [],
+          "title": "commonLabels",
+          "type": "object"
+        },
+        "component": {
+          "default": "",
+          "description": "Value for the `app.kubernetes.io/component` label.",
+          "required": [],
+          "title": "component",
+          "type": "string"
+        },
+        "config": {
+          "additionalProperties": true,
+          "description": "Application configuration, expressed as the TOML tree the service documents. Rendered by\n`common.toml` into the ConfigMap the pod mounts, never passed as environment variables: the\nloader every application shares refuses a key supplied by both the environment and a file,\nand a value that lives in a file is one the kubelet can rotate under a running process.",
+          "required": [],
+          "title": "config",
+          "type": "object"
+        },
+        "configExtraToml": {
+          "default": "",
+          "description": "Verbatim TOML appended after the rendered `config` tree. The escape hatch for anything\n`common.toml` cannot express, notably arrays of tables.",
+          "required": [],
+          "title": "configExtraToml",
+          "type": "string"
+        },
+        "configMount": {
+          "additionalProperties": true,
+          "description": "Where the rendered configuration and the credential files land in the container. Consumed\nby `common.fileConfig.*`, which also passes both directories to the application as\n`\u003cPREFIX\u003e_CONFIG` and `\u003cPREFIX\u003e_SECRETS_DIR`.",
+          "properties": {
+            "configDir": {
+              "default": "",
+              "description": "Directory the rendered `config.toml` is mounted at.",
+              "required": [],
+              "title": "configDir",
+              "type": "string"
+            },
+            "secretsDir": {
+              "default": "",
+              "description": "Directory the credential files are mounted at, one file per configuration key.",
+              "required": [],
+              "title": "secretsDir",
+              "type": "string"
+            }
+          },
+          "required": [],
+          "title": "configMount"
+        },
+        "dnsConfig": {
+          "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.PodDNSConfig",
+          "required": []
+        },
+        "dnsPolicy": {
+          "default": "",
+          "description": "Pod DNS policy.",
+          "required": [],
+          "title": "dnsPolicy",
+          "type": "string"
+        },
+        "existingConfigMap": {
+          "default": "",
+          "description": "Name of an existing ConfigMap holding `config.toml`, replacing the one this chart renders.",
+          "required": [],
+          "title": "existingConfigMap",
+          "type": "string"
+        },
+        "existingSecret": {
+          "default": "",
+          "description": "Name of an existing Secret holding the credential files, replacing the one this chart\nrenders. Its keys must be the configuration paths the service reads, with `__` for nesting\nand no dots — that is the file name the loader parses.",
+          "required": [],
+          "title": "existingSecret",
+          "type": "string"
+        },
+        "extraEnv": {
+          "description": "Additional environment variables appended to the application container.",
+          "items": {
+            "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.EnvVar",
+            "required": []
+          },
+          "required": [],
+          "title": "extraEnv",
+          "type": "array"
+        },
+        "extraVolumeMounts": {
+          "description": "Additional volume mounts added to the application container.",
+          "items": {
+            "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.VolumeMount",
+            "required": []
+          },
+          "required": [],
+          "title": "extraVolumeMounts",
+          "type": "array"
+        },
+        "extraVolumes": {
+          "description": "Additional volumes added to the pod.",
+          "items": {
+            "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.Volume",
+            "required": []
+          },
+          "required": [],
+          "title": "extraVolumes",
+          "type": "array"
+        },
+        "fullnameOverride": {
+          "default": "",
+          "description": "Override the full generated resource name.",
+          "required": [],
+          "title": "fullnameOverride",
+          "type": "string"
+        },
+        "gateway": {
+          "additionalProperties": true,
+          "description": "Gateway API configuration, consumed by `common.gateway.*`. The successor to `ingress`, and\nan independent switch from it: a cluster migrating between an Ingress controller and a Gateway\nimplementation runs both for a while.\n\nThe division of labour is the API's, not this chart's. A `Gateway` — the listeners, the\naddress, the certificates — belongs to the cluster operator; an application owns only the\n`HTTPRoute` that attaches to it. So the default here is route-only, and `create` is for\ninstalls that have no cluster-wide Gateway to attach to.",
+          "properties": {
+            "addresses": {
+              "description": "Addresses requested for the created Gateway, e.g. a fixed `IPAddress`.",
+              "items": {
+                "required": []
+              },
+              "required": [],
+              "title": "addresses",
+              "type": "array"
+            },
+            "allowedRoutes": {
+              "additionalProperties": true,
+              "description": "Which routes may attach to the created Gateway's listeners. Defaults to `Same`: a Gateway\nthis chart owns should not be attachable from another namespace unless that is asked for.",
+              "required": [],
+              "title": "allowedRoutes",
+              "type": "object"
+            },
+            "annotations": {
+              "additionalProperties": true,
+              "description": "Annotations for the HTTPRoute and the created Gateway. Values may contain Go templates.",
+              "required": [],
+              "title": "annotations",
+              "type": "object"
+            },
+            "backendRefs": {
+              "description": "Backends for rules that name none. Defaults to this chart's own Service. Weights are\nhonoured, so a traffic split needs no custom rule.",
+              "items": {
+                "required": []
+              },
+              "required": [],
+              "title": "backendRefs",
+              "type": "array"
+            },
+            "create": {
+              "default": false,
+              "description": "Also create the Gateway itself. Leave off when the cluster already runs one — that is the\nnormal case, and one Gateway per application usually means one load balancer per\napplication. When on, a route that names no parent attaches to it automatically.",
+              "required": [],
+              "title": "create",
+              "type": "boolean"
+            },
+            "enabled": {
+              "default": false,
+              "description": "Create the HTTPRoute. Requires the `gateway.networking.k8s.io` CRDs;\n`common.gateway.validate` fails the render loudly rather than silently dropping the route\nwhen they are absent.",
+              "required": [],
+              "title": "enabled",
+              "type": "boolean"
+            },
+            "filters": {
+              "description": "Filters applied to the default rule: `RequestHeaderModifier`, `ResponseHeaderModifier`,\n`RequestRedirect`, `URLRewrite`, `RequestMirror`, `ExtensionRef`. This is where an\nIngress controller's annotations end up, as typed fields. Ignored when `rules` is set.",
+              "items": {
+                "required": []
+              },
+              "required": [],
+              "title": "filters",
+              "type": "array"
+            },
+            "gatewayClassName": {
+              "default": "",
+              "description": "GatewayClass that programs the created Gateway, e.g. `cilium`, `istio`, `envoy-gateway`,\n`nginx`. Required by `create`; a Gateway without one is never reconciled. Ignored otherwise.",
+              "required": [],
+              "title": "gatewayClassName",
+              "type": "string"
+            },
+            "hostnames": {
+              "description": "Hostnames the route serves. Values may contain Go templates.\n\nRequired unless `create` is set. A route with no hostnames matches every name its listener\naccepts: on a Gateway this chart owns that is harmless, and sometimes the point — an install\nreached by address has no DNS name to state. On a shared Gateway it means taking over traffic\nmeant for other applications, so the render refuses it.",
+              "items": {
+                "required": []
+              },
+              "required": [],
+              "title": "hostnames",
+              "type": "array"
+            },
+            "httpPort": {
+              "default": 80,
+              "description": "Port for the derived HTTP listener.",
+              "required": [],
+              "title": "httpPort",
+              "type": "integer"
+            },
+            "httpsPort": {
+              "default": 443,
+              "description": "Port for the derived HTTPS listener.",
+              "required": [],
+              "title": "httpsPort",
+              "type": "integer"
+            },
+            "httpsRedirect": {
+              "additionalProperties": true,
+              "description": "A second route that redirects plaintext traffic to HTTPS. Under Ingress this was a\ncontroller-specific annotation; Gateway API expresses it as a typed `RequestRedirect`\nfilter, which means it has to be a real object.",
+              "properties": {
+                "enabled": {
+                  "default": false,
+                  "description": "Create the redirect route.",
+                  "required": [],
+                  "title": "enabled",
+                  "type": "boolean"
+                },
+                "port": {
+                  "default": "null",
+                  "description": "Port to redirect to. Left unset, the scheme implies it.",
+                  "required": [],
+                  "title": "port",
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "sectionName": {
+                  "default": "",
+                  "description": "Listener to bind the redirect to. Must be the plaintext one: attached to every listener,\nthe redirect would also apply to the HTTPS listener and loop forever. Defaults to `http`,\nthe name of the listener `create` renders.",
+                  "required": [],
+                  "title": "sectionName",
+                  "type": "string"
+                },
+                "statusCode": {
+                  "default": 301,
+                  "description": "Redirect status code. `301` or `302`.",
+                  "required": [],
+                  "title": "statusCode",
+                  "type": "integer"
+                }
+              },
+              "required": [],
+              "title": "httpsRedirect"
+            },
+            "infrastructure": {
+              "additionalProperties": true,
+              "description": "`infrastructure.labels` / `infrastructure.annotations` for the created Gateway, passed\nthrough to the load balancer the implementation provisions. Where Cilium's LB-IPAM\nannotations go.",
+              "required": [],
+              "title": "infrastructure",
+              "type": "object"
+            },
+            "listeners": {
+              "description": "Listeners for the created Gateway, replacing the derived ones entirely. Reach for this\nwhen a listener needs its own hostname or certificate.",
+              "items": {
+                "required": []
+              },
+              "required": [],
+              "title": "listeners",
+              "type": "array"
+            },
+            "parentRefs": {
+              "description": "Gateways the route attaches to. Each entry takes `name` and optionally `namespace`,\n`sectionName` (a single listener), `port`, `group` and `kind`; the API's defaults are filled\nin. Values may contain Go templates.\n\nA route that names no parent is accepted by the API server and then does nothing — no\nlistener ever programs it — so this is required unless `create` is set.\nExample:\n```yaml\nparentRefs:\n  - name: shared-gateway\n    namespace: gateway-system\n    sectionName: https\n```",
+              "items": {
+                "required": []
+              },
+              "required": [],
+              "title": "parentRefs",
+              "type": "array"
+            },
+            "path": {
+              "default": "/",
+              "description": "Path prefix for the default rule. Ignored when `rules` is set.",
+              "required": [],
+              "title": "path",
+              "type": "string"
+            },
+            "rules": {
+              "description": "Routing rules, in full `HTTPRouteRule` form (`matches`, `filters`, `backendRefs`,\n`timeouts`). An entry that omits `backendRefs` inherits this chart's Service, so a rule that\nonly narrows the path does not have to restate where the traffic goes.\n\nLeft empty, the route gets one rule matching `path` as a prefix — the Gateway API equivalent\nof a single-path Ingress, and a complete configuration together with `hostnames`.",
+              "items": {
+                "required": []
+              },
+              "required": [],
+              "title": "rules",
+              "type": "array"
+            },
+            "timeouts": {
+              "additionalProperties": true,
+              "description": "Timeouts for the default rule: `request` and `backendRequest`, as Go durations. Ignored\nwhen `rules` is set.",
+              "required": [],
+              "title": "timeouts",
+              "type": "object"
+            },
+            "tls": {
+              "additionalProperties": true,
+              "description": "TLS for the created Gateway's HTTPS listener. Ignored without `create`, and irrelevant\nwhen attaching to somebody else's Gateway — the certificate is theirs.",
+              "properties": {
+                "certificateRefs": {
+                  "description": "Secrets holding the certificate. Required by `Terminate`: unlike an Ingress there is no\nconvention by which one is looked up from the hostname. A ref naming another namespace\nadditionally needs a `ReferenceGrant` there, which this chart deliberately does not create\n— a grant is the target namespace owner's to give.",
+                  "items": {
+                    "required": []
+                  },
+                  "required": [],
+                  "title": "certificateRefs",
+                  "type": "array"
+                },
+                "enabled": {
+                  "default": false,
+                  "description": "Add an HTTPS listener.",
+                  "required": [],
+                  "title": "enabled",
+                  "type": "boolean"
+                },
+                "mode": {
+                  "default": "Terminate",
+                  "description": "TLS mode.",
+                  "enum": [
+                    "Terminate",
+                    "Passthrough"
+                  ],
+                  "required": [],
+                  "title": "mode"
+                },
+                "options": {
+                  "additionalProperties": true,
+                  "description": "Implementation-specific TLS options.",
+                  "required": [],
+                  "title": "options",
+                  "type": "object"
+                }
+              },
+              "required": [],
+              "title": "tls"
+            }
+          },
+          "required": [],
+          "title": "gateway"
+        },
+        "global": {
+          "description": "Global values are values that can be accessed from any chart or subchart by exactly the same name.",
+          "required": [],
+          "title": "global",
+          "type": "object"
+        },
+        "grafanaDashboard": {
+          "additionalProperties": true,
+          "description": "Grafana dashboard delivery, consumed by `common.grafana.dashboard.*`. A consuming chart\nexposes this shape wherever it likes — `metrics.dashboard` is the convention — and passes it in\nas the `values` argument. Grafana has no Kubernetes-native dashboard type, so the partials\nrender both mechanisms: a labelled ConfigMap for the sidecar, and, optionally, one\n`GrafanaDashboard` per file for grafana-operator v5.",
+          "properties": {
+            "enabled": {
+              "default": false,
+              "description": "Create the ConfigMap holding the dashboard JSON. Required by the operator path too, which\nreferences it rather than duplicating the JSON into the custom resources.",
+              "required": [],
+              "title": "enabled",
+              "type": "boolean"
+            },
+            "grafanaOperator": {
+              "additionalProperties": true,
+              "properties": {
+                "allowCrossNamespaceImport": {
+                  "default": true,
+                  "description": "Let the resources bind to Grafana instances outside the release namespace. With `false`\nthe operator only considers Grafana custom resources in the same namespace.",
+                  "required": [],
+                  "title": "allowCrossNamespaceImport",
+                  "type": "boolean"
+                },
+                "enabled": {
+                  "default": false,
+                  "description": "Also create one `GrafanaDashboard` per dashboard file. This is the only delivery path a\nchart can make cross-namespace on its own terms. Requires the `grafana.integreatly.org/v1beta1`\nCRDs; `common.grafana.dashboard.errors` fails the render loudly rather than silently\ndropping the objects when they are absent.",
+                  "required": [],
+                  "title": "enabled",
+                  "type": "boolean"
+                },
+                "folder": {
+                  "default": "",
+                  "description": "Folder to file the dashboards under. Empty leaves them at the Grafana root.",
+                  "required": [],
+                  "title": "folder",
+                  "type": "string"
+                },
+                "instanceSelector": {
+                  "additionalProperties": true,
+                  "description": "Label selector for the Grafana instances to import into. Must select something: unlike a\nKubernetes label selector, an empty `instanceSelector` matches no instance at all.",
+                  "properties": {
+                    "matchLabels": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "dashboards": {
+                          "default": "grafana",
+                          "required": [],
+                          "title": "dashboards",
+                          "type": "string"
+                        }
+                      },
+                      "required": [],
+                      "title": "matchLabels",
+                      "type": "object"
+                    }
+                  },
+                  "required": [],
+                  "title": "instanceSelector",
+                  "type": "object"
+                },
+                "resyncPeriod": {
+                  "default": "5m",
+                  "description": "How often the operator re-reconciles the dashboard, undoing edits made in the Grafana UI.\nA Go duration.",
+                  "required": [],
+                  "title": "resyncPeriod",
+                  "type": "string"
+                }
+              },
+              "required": [],
+              "title": "grafanaOperator"
+            },
+            "label": {
+              "default": "grafana_dashboard",
+              "description": "Label a Grafana sidecar watches for dashboard ConfigMaps. Discovery is a property of the\n*Grafana* release: the sidecar only sees this ConfigMap if `sidecar.dashboards.searchNamespace`\ncovers the namespace it lands in, which a chart cannot influence from its own side.",
+              "required": [],
+              "title": "label",
+              "type": "string"
+            },
+            "labelValue": {
+              "default": "1",
+              "description": "Value for that label.",
+              "required": [],
+              "title": "labelValue",
+              "type": "string"
+            }
+          },
+          "required": [],
+          "title": "grafanaDashboard"
+        },
+        "hostAliases": {
+          "description": "Host aliases injected into the pod's /etc/hosts.",
+          "items": {
+            "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.HostAlias",
+            "required": []
+          },
+          "required": [],
+          "title": "hostAliases",
+          "type": "array"
+        },
+        "image": {
+          "additionalProperties": true,
+          "properties": {
+            "pullPolicy": {
+              "default": "",
+              "description": "Image pull policy. Left empty, resolves to `Always` for the `latest` tag and\n`IfNotPresent` for anything pinned.",
+              "enum": [
+                "",
+                "Always",
+                "IfNotPresent",
+                "Never"
+              ],
+              "required": [],
+              "title": "pullPolicy"
+            },
+            "registry": {
+              "default": "",
+              "description": "Registry host. Left empty, the repository is used as-is (Docker Hub).",
+              "required": [],
+              "title": "registry",
+              "type": "string"
+            },
+            "repository": {
+              "default": "",
+              "description": "Image repository. Required.",
+              "required": [],
+              "title": "repository",
+              "type": "string"
+            },
+            "tag": {
+              "default": "",
+              "description": "Image tag. Defaults to the chart's `appVersion`. May pin a digest inline\n(`v1.2.3\nversion marker.",
+              "required": [],
+              "title": "tag",
+              "type": "string"
+            }
+          },
+          "required": [],
+          "title": "image"
+        },
+        "imagePullSecrets": {
+          "description": "Pull secrets for private registries. Accepts `- name: regcred` or the shorthand `- regcred`.",
+          "items": {
+            "required": []
+          },
+          "required": [],
+          "title": "imagePullSecrets",
+          "type": "array"
+        },
+        "kubeVersionOverride": {
+          "default": "",
+          "description": "Kubernetes version to target when branching on API availability.\nLets `helm template` render for a specific cluster version without a live connection.\nLeave empty to detect from the cluster.",
+          "required": [],
+          "title": "kubeVersionOverride",
+          "type": "string"
+        },
+        "livenessProbe": {
+          "additionalProperties": true,
+          "description": "Liveness probe. See `startupProbe` for the accepted shape.",
+          "properties": {
+            "enabled": {
+              "default": false,
+              "description": "Enable the liveness probe.",
+              "required": [],
+              "title": "enabled",
+              "type": "boolean"
+            }
+          },
+          "required": [],
+          "title": "livenessProbe"
+        },
+        "nameOverride": {
+          "default": "",
+          "description": "Override the chart name used in resource names and labels.",
+          "required": [],
+          "title": "nameOverride",
+          "type": "string"
+        },
+        "namespaceOverride": {
+          "default": "",
+          "description": "Deploy into a namespace other than the release namespace.",
+          "required": [],
+          "title": "namespaceOverride",
+          "type": "string"
+        },
+        "networkPolicy": {
+          "additionalProperties": true,
+          "description": "Network policy configuration.\n\nEvery generated egress rule is scoped by a `to:` selector. An egress rule that lists only\nports is not a restriction — the NetworkPolicy API reads a missing `to` as \"any\ndestination\", so such a policy permits traffic to every in-cluster service and to the\ncloud metadata endpoint.",
+          "properties": {
+            "cilium": {
+              "additionalProperties": true,
+              "description": "Cilium-only additions, used when `engine` is `cilium` or `both`. Everything above is\ntranslated into the CiliumNetworkPolicy automatically; these are the rules the portable API\nhas no way to express.\n\nNote that `extraIngress`, `extraEgress` and the per-section `customRules` above are *not*\ncarried over: those are verbatim `networking.k8s.io/v1` rule objects and are not valid CNP.\nThe fields below are their counterparts.",
+              "properties": {
+                "description": {
+                  "default": "",
+                  "description": "`spec.description`, which Cilium surfaces in `cilium policy get` and in Hubble flow\nverdicts. The one place to record *why* a rule exists where an operator debugging a drop\nwill actually see it.",
+                  "required": [],
+                  "title": "description",
+                  "type": "string"
+                },
+                "egress": {
+                  "additionalProperties": true,
+                  "description": "Cilium-only egress rules.",
+                  "properties": {
+                    "customRules": {
+                      "description": "Additional egress rules in CiliumNetworkPolicy form, appended verbatim.",
+                      "items": {
+                        "required": []
+                      },
+                      "required": [],
+                      "title": "customRules",
+                      "type": "array"
+                    },
+                    "dnsMatchPatterns": {
+                      "description": "What the DNS proxy may resolve, e.g. `- matchPattern: \"*.example.com\"`. Defaults to\neverything, which only permits the lookup — an answer is still only reachable if some\nrule allows the address.",
+                      "items": {
+                        "required": []
+                      },
+                      "required": [],
+                      "title": "dnsMatchPatterns",
+                      "type": "array"
+                    },
+                    "entityPorts": {
+                      "description": "Restrict the `toEntities` rule to specific ports. Empty means all ports.",
+                      "items": {
+                        "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyPort",
+                        "required": []
+                      },
+                      "required": [],
+                      "title": "entityPorts",
+                      "type": "array"
+                    },
+                    "fqdnPorts": {
+                      "description": "Ports the `toFQDNs` rule allows. Defaults to TCP/443.",
+                      "items": {
+                        "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyPort",
+                        "required": []
+                      },
+                      "required": [],
+                      "title": "fqdnPorts",
+                      "type": "array"
+                    },
+                    "httpRules": {
+                      "description": "L7 HTTP rules layered onto the `toFQDNs` rule, e.g.\n`- method: GET` / `path: \"/v1/.*\"`. Turns \"may reach this host\" into \"may make these\nrequests to this host\". Costs a proxy hop per connection.",
+                      "items": {
+                        "required": []
+                      },
+                      "required": [],
+                      "title": "httpRules",
+                      "type": "array"
+                    },
+                    "toEntities": {
+                      "description": "Named destination sets, e.g. `world` for everything outside the cluster, or\n`kube-apiserver`. Not a synonym for the `egress.cidr`/`except` translation: `world` does\nnot carve out the cloud metadata endpoint the way those defaults do.",
+                      "items": {
+                        "required": [],
+                        "type": "string"
+                      },
+                      "required": [],
+                      "title": "toEntities",
+                      "type": "array"
+                    },
+                    "toFQDNs": {
+                      "description": "Destinations by name rather than by address, e.g. `- matchName: api.example.com` or\n`- matchPattern: \"*.example.com\"`. This is the rule the CIDR-based `egress.https` was\nalways a poor approximation of: \"may reach the internet on 443\" permits every public host\nthat exists, where this permits the ones the application actually talks to.\n\nEnforced against the addresses Cilium's DNS proxy saw returned for the name, so\n`egress.dns.enabled` must stay on — the render fails if it is not.",
+                      "items": {
+                        "required": []
+                      },
+                      "required": [],
+                      "title": "toFQDNs",
+                      "type": "array"
+                    }
+                  },
+                  "required": [],
+                  "title": "egress"
+                },
+                "enableDefaultDeny": {
+                  "default": true,
+                  "description": "State default-deny explicitly rather than relying on it being implied by the presence of\nrules. This is what makes the intentional default-deny case — a policy with an empty rule\nlist — actually deny, instead of being treated as no policy at all. Requires Cilium 1.16+.",
+                  "required": [],
+                  "title": "enableDefaultDeny",
+                  "type": "boolean"
+                },
+                "extraEgress": {
+                  "description": "Extra egress rules in CiliumNetworkPolicy form, appended regardless of `egress.enabled`.",
+                  "items": {
+                    "required": []
+                  },
+                  "required": [],
+                  "title": "extraEgress",
+                  "type": "array"
+                },
+                "extraIngress": {
+                  "description": "Extra ingress rules in CiliumNetworkPolicy form, appended regardless of\n`ingress.enabled`.",
+                  "items": {
+                    "required": []
+                  },
+                  "required": [],
+                  "title": "extraIngress",
+                  "type": "array"
+                },
+                "ingress": {
+                  "additionalProperties": true,
+                  "description": "Cilium-only ingress rules.",
+                  "properties": {
+                    "customRules": {
+                      "description": "Additional ingress rules in CiliumNetworkPolicy form, appended verbatim.",
+                      "items": {
+                        "required": []
+                      },
+                      "required": [],
+                      "title": "customRules",
+                      "type": "array"
+                    },
+                    "fromEntities": {
+                      "description": "Named source sets, e.g. `cluster`, `host`, `remote-node`, `world`, `kube-apiserver`.\nA named entity stays correct when the cluster is renumbered; a CIDR list does not.",
+                      "items": {
+                        "required": [],
+                        "type": "string"
+                      },
+                      "required": [],
+                      "title": "fromEntities",
+                      "type": "array"
+                    }
+                  },
+                  "required": [],
+                  "title": "ingress"
+                }
+              },
+              "required": [],
+              "title": "cilium"
+            },
+            "egress": {
+              "additionalProperties": true,
+              "description": "Egress rules.",
+              "properties": {
+                "cidr": {
+                  "default": "0.0.0.0/0",
+                  "description": "Destination CIDR for the HTTP/HTTPS rules.",
+                  "required": [],
+                  "title": "cidr",
+                  "type": "string"
+                },
+                "customRules": {
+                  "description": "Additional egress rules, appended verbatim. Each must carry its own `to:` selector.",
+                  "items": {
+                    "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyEgressRule",
+                    "required": []
+                  },
+                  "required": [],
+                  "title": "customRules",
+                  "type": "array"
+                },
+                "dns": {
+                  "additionalProperties": true,
+                  "description": "Allow DNS resolution.",
+                  "properties": {
+                    "enabled": {
+                      "default": true,
+                      "description": "Allow egress to the cluster DNS service.",
+                      "required": [],
+                      "title": "enabled",
+                      "type": "boolean"
+                    },
+                    "namespaceSelector": {
+                      "additionalProperties": true,
+                      "description": "Namespace selector for the DNS service.",
+                      "properties": {
+                        "kubernetes.io/metadata.name": {
+                          "default": "kube-system",
+                          "required": [],
+                          "title": "kubernetes.io/metadata.name",
+                          "type": "string"
+                        }
+                      },
+                      "required": [],
+                      "title": "namespaceSelector",
+                      "type": "object"
+                    },
+                    "podSelector": {
+                      "additionalProperties": true,
+                      "description": "Pod selector for the DNS service.",
+                      "properties": {
+                        "k8s-app": {
+                          "default": "kube-dns",
+                          "required": [],
+                          "title": "k8s-app",
+                          "type": "string"
+                        }
+                      },
+                      "required": [],
+                      "title": "podSelector",
+                      "type": "object"
+                    }
+                  },
+                  "required": [],
+                  "title": "dns"
+                },
+                "enabled": {
+                  "default": true,
+                  "description": "Add egress rules. Disabled means default-deny for outbound traffic.",
+                  "required": [],
+                  "title": "enabled",
+                  "type": "boolean"
+                },
+                "except": {
+                  "description": "CIDRs carved out of `cidr`. Defaults exclude RFC1918 private space and link-local\n169.254.0.0/16, which covers the cloud instance metadata endpoint.",
+                  "items": {
+                    "anyOf": [
+                      {
+                        "required": [],
+                        "type": "string"
+                      },
+                      {
+                        "required": [],
+                        "type": "string"
+                      },
+                      {
+                        "required": [],
+                        "type": "string"
+                      },
+                      {
+                        "required": [],
+                        "type": "string"
+                      }
+                    ],
+                    "required": []
+                  },
+                  "required": [],
+                  "title": "except",
+                  "type": "array"
+                },
+                "http": {
+                  "additionalProperties": true,
+                  "description": "Allow outbound HTTP.",
+                  "properties": {
+                    "enabled": {
+                      "default": false,
+                      "description": "Allow egress to TCP/80 on the destinations described by `cidr`/`except`.",
+                      "required": [],
+                      "title": "enabled",
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [],
+                  "title": "http"
+                },
+                "https": {
+                  "additionalProperties": true,
+                  "description": "Allow outbound HTTPS.",
+                  "properties": {
+                    "enabled": {
+                      "default": true,
+                      "description": "Allow egress to TCP/443 on the destinations described by `cidr`/`except`.",
+                      "required": [],
+                      "title": "enabled",
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [],
+                  "title": "https"
+                }
+              },
+              "required": [],
+              "title": "egress"
+            },
+            "enabled": {
+              "default": false,
+              "description": "Create the NetworkPolicies. When enabled with no rules configured, the result is a\ndefault-deny policy, which is intentional.",
+              "required": [],
+              "title": "enabled",
+              "type": "boolean"
+            },
+            "engine": {
+              "default": "kubernetes",
+              "description": "Which policy dialect to render. `kubernetes` emits the portable\n`networking.k8s.io/v1` pair; `cilium` emits `CiliumNetworkPolicy`, which can express FQDN\ndestinations, named entities and L7 rules that the portable API cannot; `both` emits both,\nfor the window in which a cluster is migrating between CNIs.\n\nThe engine picks the dialect, not the rules — every value below is translated either way, so\nswitching is a one-line change. `both` is additive rather than stricter: policies selecting\none pod union their allowances, so it is a migration setting and not a hardening one.",
+              "enum": [
+                "kubernetes",
+                "cilium",
+                "both"
+              ],
+              "required": [],
+              "title": "engine"
+            },
+            "extraEgress": {
+              "description": "Extra egress rules appended regardless of `egress.enabled`.",
+              "items": {
+                "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyEgressRule",
+                "required": []
+              },
+              "required": [],
+              "title": "extraEgress",
+              "type": "array"
+            },
+            "extraIngress": {
+              "description": "Extra ingress rules appended regardless of `ingress.enabled`.",
+              "items": {
+                "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyIngressRule",
+                "required": []
+              },
+              "required": [],
+              "title": "extraIngress",
+              "type": "array"
+            },
+            "ingress": {
+              "additionalProperties": true,
+              "description": "Ingress rules.",
+              "properties": {
+                "controller": {
+                  "additionalProperties": true,
+                  "description": "Allow traffic from the ingress controller.",
+                  "properties": {
+                    "enabled": {
+                      "default": true,
+                      "description": "Allow ingress from the ingress controller.",
+                      "required": [],
+                      "title": "enabled",
+                      "type": "boolean"
+                    },
+                    "namespace": {
+                      "default": "traefik",
+                      "description": "Namespace the ingress controller runs in.",
+                      "required": [],
+                      "title": "namespace",
+                      "type": "string"
+                    },
+                    "ports": {
+                      "description": "Restrict the rule to specific ports. Empty means all ports.",
+                      "items": {
+                        "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyPort",
+                        "required": []
+                      },
+                      "required": [],
+                      "title": "ports",
+                      "type": "array"
+                    },
+                    "selector": {
+                      "additionalProperties": true,
+                      "description": "Pod selector matching the ingress controller.",
+                      "properties": {
+                        "app.kubernetes.io/name": {
+                          "default": "traefik",
+                          "required": [],
+                          "title": "app.kubernetes.io/name",
+                          "type": "string"
+                        }
+                      },
+                      "required": [],
+                      "title": "selector",
+                      "type": "object"
+                    }
+                  },
+                  "required": [],
+                  "title": "controller"
+                },
+                "customRules": {
+                  "description": "Additional ingress rules, appended verbatim.",
+                  "items": {
+                    "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyIngressRule",
+                    "required": []
+                  },
+                  "required": [],
+                  "title": "customRules",
+                  "type": "array"
+                },
+                "enabled": {
+                  "default": true,
+                  "description": "Add ingress rules. Disabled means default-deny for inbound traffic.",
+                  "required": [],
+                  "title": "enabled",
+                  "type": "boolean"
+                },
+                "gateway": {
+                  "additionalProperties": true,
+                  "description": "Allow traffic from the Gateway API data plane. Only rendered when `gateway.enabled` is\nalso set, so it costs nothing on a chart exposed through an Ingress.\n\nNeeds no configuration in the common case: the Gateway that must be admitted is by\ndefinition the one `gateway.parentRefs` names, so both fields below are derived from it.\nRestating the Gateway's identity here would be a second place to edit on a rename, and a\npolicy that names the wrong Gateway looks correct and blocks all inbound traffic.",
+                  "properties": {
+                    "enabled": {
+                      "default": true,
+                      "description": "Allow ingress from the Gateway's data plane.",
+                      "required": [],
+                      "title": "enabled",
+                      "type": "boolean"
+                    },
+                    "namespace": {
+                      "default": "",
+                      "description": "Namespace the data plane runs in. Empty derives it from `gateway.parentRefs`.",
+                      "required": [],
+                      "title": "namespace",
+                      "type": "string"
+                    },
+                    "ports": {
+                      "description": "Restrict the rule to specific ports. Empty means all ports.",
+                      "items": {
+                        "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyPort",
+                        "required": []
+                      },
+                      "required": [],
+                      "title": "ports",
+                      "type": "array"
+                    },
+                    "selector": {
+                      "additionalProperties": true,
+                      "description": "Pod selector matching the data plane. Empty derives\n`gateway.networking.k8s.io/gateway-name: \u003cparentRef\u003e`, the label Cilium, Envoy Gateway,\nIstio and NGINX Gateway Fabric all put on the pods they provision for a Gateway.",
+                      "required": [],
+                      "title": "selector",
+                      "type": "object"
+                    }
+                  },
+                  "required": [],
+                  "title": "gateway"
+                },
+                "monitoring": {
+                  "additionalProperties": true,
+                  "description": "Allow scraping from a monitoring namespace.",
+                  "properties": {
+                    "enabled": {
+                      "default": true,
+                      "description": "Allow ingress from the monitoring namespace.",
+                      "required": [],
+                      "title": "enabled",
+                      "type": "boolean"
+                    },
+                    "namespace": {
+                      "default": "monitoring",
+                      "description": "Monitoring namespace, matched on `kubernetes.io/metadata.name`.",
+                      "required": [],
+                      "title": "namespace",
+                      "type": "string"
+                    },
+                    "namespaceSelector": {
+                      "additionalProperties": true,
+                      "description": "Override the namespace selector entirely.",
+                      "required": [],
+                      "title": "namespaceSelector",
+                      "type": "object"
+                    },
+                    "ports": {
+                      "description": "Restrict the rule to specific ports. Empty means all ports.",
+                      "items": {
+                        "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyPort",
+                        "required": []
+                      },
+                      "required": [],
+                      "title": "ports",
+                      "type": "array"
+                    }
+                  },
+                  "required": [],
+                  "title": "monitoring"
+                }
+              },
+              "required": [],
+              "title": "ingress"
+            }
+          },
+          "required": [],
+          "title": "networkPolicy"
+        },
+        "nodeSelector": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Node selector for pod assignment.",
+          "required": [],
+          "title": "nodeSelector",
+          "type": "object"
+        },
+        "partOf": {
+          "default": "",
+          "description": "Value for the `app.kubernetes.io/part-of` label.",
+          "required": [],
+          "title": "partOf",
+          "type": "string"
+        },
+        "podAnnotations": {
+          "additionalProperties": true,
+          "description": "Annotations added to the pod template.",
+          "required": [],
+          "title": "podAnnotations",
+          "type": "object"
+        },
+        "podAntiAffinity": {
+          "default": "",
+          "description": "Shorthand for spreading replicas across nodes. `soft` prefers, `hard` requires.",
+          "enum": [
+            "",
+            "soft",
+            "hard"
+          ],
+          "required": [],
+          "title": "podAntiAffinity"
+        },
+        "podLabels": {
+          "additionalProperties": true,
+          "description": "Labels added to the pod template.",
+          "required": [],
+          "title": "podLabels",
+          "type": "object"
+        },
+        "podSecurityContext": {
+          "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.PodSecurityContext",
+          "required": []
+        },
+        "podSecurityContextPreset": {
+          "default": "restricted",
+          "description": "Baseline for the pod security context. `restricted` applies the Pod Security Standards\nrestricted profile (`runAsNonRoot`, `seccompProfile: RuntimeDefault`,\n`fsGroupChangePolicy: OnRootMismatch`); `none` applies nothing. Identity fields\n(`runAsUser`, `runAsGroup`, `fsGroup`) are always left to the chart, since they must match\nthe UID baked into the image.",
+          "enum": [
+            "restricted",
+            "none"
+          ],
+          "required": [],
+          "title": "podSecurityContextPreset"
+        },
+        "priorityClassName": {
+          "default": "",
+          "description": "PriorityClass for the pod.",
+          "required": [],
+          "title": "priorityClassName",
+          "type": "string"
+        },
+        "prometheusRule": {
+          "additionalProperties": true,
+          "description": "Prometheus recording and alerting rules, consumed by `common.prometheus.rules.*`. Unlike the\ndashboards there is only one carrier — `PrometheusRule` is already the operator's own CRD — and\nno per-object cross-namespace grant: which namespaces a Prometheus loads rules from is decided\nby `ruleNamespaceSelector` and `ruleSelector` on the Prometheus custom resource.",
+          "properties": {
+            "enabled": {
+              "default": false,
+              "description": "Create a PrometheusRule from the chart's rule files. Requires the `monitoring.coreos.com/v1`\nCRDs; `common.prometheus.rules.errors` fails the render loudly rather than silently dropping\nthe object when they are absent.",
+              "required": [],
+              "title": "enabled",
+              "type": "boolean"
+            },
+            "labels": {
+              "additionalProperties": true,
+              "description": "Extra labels, templated. This is the only half of rule discovery a chart controls: a\ncluster whose Prometheus selects `release: kube-prometheus-stack` needs that label here, or\nthe rules are created and never loaded.",
+              "required": [],
+              "title": "labels",
+              "type": "object"
+            },
+            "scope": {
+              "additionalProperties": true,
+              "description": "Confine the rules to a subset of the cluster's series. A `PrometheusRule` is not scoped to\nthe namespace it lives in, so `up{job=\"api\"} == 0` matches somebody else's `api` job in\nanother namespace and two installs of one chart alert on each other. Rather than parse PromQL\nin a Go template, the rule files mark every selector with an always-true placeholder matcher\nand the library swaps it for a real one — see the note in `_prometheus.tpl`. Consuming charts\nnormally derive `matcher` rather than exposing it raw.",
+              "properties": {
+                "matcher": {
+                  "default": "",
+                  "description": "What to swap it for, e.g. `namespace=\"prod\"`. Empty disables the substitution; the\nplaceholder is left in place, which is correct, because it is already a no-op matcher.",
+                  "required": [],
+                  "title": "matcher",
+                  "type": "string"
+                },
+                "placeholder": {
+                  "default": "",
+                  "description": "The literal placeholder written into the rule files, e.g. `myapp_scope=~\".*\"`. Empty\ndisables the substitution and the files install exactly as vendored.",
+                  "required": [],
+                  "title": "placeholder",
+                  "type": "string"
+                }
+              },
+              "required": [],
+              "title": "scope"
+            }
+          },
+          "required": [],
+          "title": "prometheusRule"
+        },
+        "readinessProbe": {
+          "additionalProperties": true,
+          "description": "Readiness probe. See `startupProbe` for the accepted shape.",
+          "properties": {
+            "enabled": {
+              "default": false,
+              "description": "Enable the readiness probe.",
+              "required": [],
+              "title": "enabled",
+              "type": "boolean"
+            }
+          },
+          "required": [],
+          "title": "readinessProbe"
+        },
+        "resources": {
+          "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.ResourceRequirements",
+          "required": []
+        },
+        "resourcesPreset": {
+          "default": "",
+          "description": "Named resource sizing. Ignored when `resources` is set.\nPresets set a memory limit and CPU/memory requests but no CPU limit: a CPU limit does not\nprotect the node the way a memory limit does, it only throttles this workload.",
+          "enum": [
+            "",
+            "nano",
+            "micro",
+            "small",
+            "medium",
+            "large"
+          ],
+          "required": [],
+          "title": "resourcesPreset"
+        },
+        "revisionHistoryLimit": {
+          "default": 3,
+          "description": "Number of old ReplicaSets to retain for rollback.",
+          "required": [],
+          "title": "revisionHistoryLimit",
+          "type": "integer"
+        },
+        "securityContext": {
+          "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.SecurityContext",
+          "required": []
+        },
+        "securityContextPreset": {
+          "default": "restricted",
+          "description": "Baseline for the container security context. `restricted` drops all capabilities and\nforbids privilege escalation, a writable root filesystem and running as root.",
+          "enum": [
+            "restricted",
+            "none"
+          ],
+          "required": [],
+          "title": "securityContextPreset"
+        },
+        "serviceAccount": {
+          "additionalProperties": true,
+          "properties": {
+            "annotations": {
+              "additionalProperties": true,
+              "description": "Annotations for the ServiceAccount.",
+              "required": [],
+              "title": "annotations",
+              "type": "object"
+            },
+            "automountToken": {
+              "default": false,
+              "description": "Mount the API token into pods that default to this ServiceAccount.",
+              "required": [],
+              "title": "automountToken",
+              "type": "boolean"
+            },
+            "create": {
+              "default": true,
+              "description": "Create a dedicated ServiceAccount.",
+              "required": [],
+              "title": "create",
+              "type": "boolean"
+            },
+            "name": {
+              "default": "",
+              "description": "Name of the ServiceAccount. Generated when empty.",
+              "required": [],
+              "title": "name",
+              "type": "string"
+            }
+          },
+          "required": [],
+          "title": "serviceAccount"
+        },
+        "startupProbe": {
+          "additionalProperties": true,
+          "description": "Startup probe. Set `enabled` and exactly one handler (`httpGet`, `tcpSocket`, `exec`\nor `grpc`); unset timing fields fall back to the Kubernetes defaults.",
+          "properties": {
+            "enabled": {
+              "default": false,
+              "description": "Enable the startup probe.",
+              "required": [],
+              "title": "enabled",
+              "type": "boolean"
+            }
+          },
+          "required": [],
+          "title": "startupProbe"
+        },
+        "strategy": {
+          "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.apps.v1.DeploymentStrategy",
+          "required": []
+        },
+        "terminationGracePeriodSeconds": {
+          "default": 30,
+          "description": "Grace period for pod shutdown.",
+          "required": [],
+          "title": "terminationGracePeriodSeconds",
+          "type": "integer"
+        },
+        "tolerations": {
+          "description": "Tolerations for pod assignment.",
+          "items": {
+            "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.Toleration",
+            "required": []
+          },
+          "required": [],
+          "title": "tolerations",
+          "type": "array"
+        },
+        "topologySpreadConstraints": {
+          "description": "Topology spread constraints.",
+          "items": {
+            "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.TopologySpreadConstraint",
+            "required": []
+          },
+          "required": [],
+          "title": "topologySpreadConstraints",
+          "type": "array"
+        }
+      },
+      "required": [],
+      "title": "common",
+      "type": "object"
+    },
+    "commonAnnotations": {
+      "additionalProperties": true,
+      "description": "Annotations added to every object this chart creates.",
+      "required": [],
+      "title": "commonAnnotations",
+      "type": "object"
+    },
+    "commonLabels": {
+      "additionalProperties": true,
+      "description": "Labels added to every object this chart creates.",
+      "required": [],
+      "title": "commonLabels",
+      "type": "object"
+    },
+    "database": {
+      "additionalProperties": true,
+      "description": "Which database paperless-ngx stores its metadata in. The documents themselves always live\non the media volume; this holds the index, the tags, the correspondents and the audit log.",
+      "properties": {
+        "engine": {
+          "default": "sqlite",
+          "description": "Database engine. `sqlite` keeps everything in the data volume and needs no second\nworkload — the right answer for a single-user instance. PostgreSQL is upstream's\nrecommendation for anything larger and is the only engine this chart can bundle.",
+          "enum": [
+            "sqlite",
+            "postgresql",
+            "mariadb"
+          ],
+          "required": [],
+          "title": "engine"
+        },
+        "existingSecretKey": {
+          "default": "database-password",
+          "description": "Key inside `existingSecret` that holds the database password.",
+          "required": [],
+          "title": "existingSecretKey",
+          "type": "string"
+        },
+        "host": {
+          "default": "",
+          "description": "Database host. Empty resolves to the bundled PostgreSQL when `postgresql.enabled` is set;\notherwise it is required for every engine except SQLite.",
+          "required": [],
+          "title": "host",
+          "type": "string"
+        },
+        "name": {
+          "default": "paperless",
+          "description": "Database name. Also the database the bundled PostgreSQL creates on first start.",
+          "required": [],
+          "title": "name",
+          "type": "string"
+        },
+        "password": {
+          "default": "",
+          "description": "Database password. Ignored when `existingSecret` is set. Required for every engine except\nSQLite — including the bundled PostgreSQL, whose superuser it becomes.",
+          "required": [],
+          "title": "password",
+          "type": "string"
+        },
+        "poolSize": {
+          "default": 0,
+          "description": "Maximum size of the connection pool. `0` leaves pooling off, which is correct for a\nsingle-replica deployment talking to a database on the same network.",
+          "minimum": 0,
+          "required": [],
+          "title": "poolSize",
+          "type": "integer"
+        },
+        "port": {
+          "default": 0,
+          "description": "Database port. `0` uses the engine's default (5432 for PostgreSQL, 3306 for MariaDB).",
+          "maximum": 65535,
+          "minimum": 0,
+          "required": [],
+          "title": "port",
+          "type": "integer"
+        },
+        "sslMode": {
+          "default": "",
+          "description": "TLS mode for the connection. Empty uses the engine default, which is `prefer` for\nPostgreSQL and `PREFERRED` for MariaDB — both of which fall back to plaintext without\ntelling anyone. Set `require` (PostgreSQL) or `REQUIRED` (MariaDB) for a database outside\nthe cluster.",
+          "required": [],
+          "title": "sslMode",
+          "type": "string"
+        },
+        "user": {
+          "default": "paperless",
+          "description": "Database user. Also the role the bundled PostgreSQL creates on first start.",
+          "required": [],
+          "title": "user",
+          "type": "string"
+        }
+      },
+      "required": [],
+      "title": "database"
+    },
+    "existingConfigMap": {
+      "default": "",
+      "description": "Name of an existing ConfigMap holding the `PAPERLESS_*` settings. When set, the chart\ncreates none of its own and every value under `paperless` below is ignored — the ConfigMap is\nmounted with `envFrom` exactly as the generated one would be. For a deployment that manages the\napplication's configuration outside this chart; the credentials still come from `existingSecret`.",
+      "required": [],
+      "title": "existingConfigMap",
+      "type": "string"
+    },
+    "existingSecret": {
+      "default": "",
+      "description": "Name of an existing Secret holding every credential this chart consumes: the Django secret\nkey, the admin password, and the database, broker and SMTP passwords. When set, the chart\ncreates no Secret of its own and the plaintext fields below are ignored — which keeps them out\nof `values.yaml` and out of the Helm release object. The key names it looks for are the\n`existingSecretKey` fields beside each credential.",
+      "required": [],
+      "title": "existingSecret",
+      "type": "string"
+    },
+    "extraEnv": {
+      "description": "Additional environment variables for the paperless-ngx container. The place for a setting\nwhose value must come from a Secret: the image also resolves any `PAPERLESS_\u003cNAME\u003e_FILE`\nvariable by reading the file it points at, which pairs with a mounted Secret from\n`extraVolumes`.",
+      "items": {
+        "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.EnvVar",
+        "required": []
+      },
+      "required": [],
+      "title": "extraEnv",
+      "type": "array"
+    },
+    "extraVolumeMounts": {
+      "description": "Additional volume mounts added to the paperless-ngx container.",
+      "items": {
+        "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.VolumeMount",
+        "required": []
+      },
+      "required": [],
+      "title": "extraVolumeMounts",
+      "type": "array"
+    },
+    "extraVolumes": {
+      "description": "Additional volumes added to the pod.",
+      "items": {
+        "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.Volume",
+        "required": []
+      },
+      "required": [],
+      "title": "extraVolumes",
+      "type": "array"
+    },
+    "fullnameOverride": {
+      "default": "",
+      "description": "Override the full generated resource name.",
+      "required": [],
+      "title": "fullnameOverride",
+      "type": "string"
+    },
+    "gateway": {
+      "additionalProperties": true,
+      "description": "Publishing through the Gateway API. The cluster operator owns the `Gateway`; this chart\nowns the `HTTPRoute` that attaches to it.",
+      "properties": {
+        "annotations": {
+          "additionalProperties": true,
+          "description": "Annotations for the HTTPRoute and, when created, the Gateway.",
+          "required": [],
+          "title": "annotations",
+          "type": "object"
+        },
+        "create": {
+          "default": false,
+          "description": "Also create a Gateway, for an install with no cluster-wide one to attach to.",
+          "required": [],
+          "title": "create",
+          "type": "boolean"
+        },
+        "enabled": {
+          "default": false,
+          "description": "Create an HTTPRoute. Requires the Gateway API CRDs; the chart refuses to render without\nthem rather than dropping the route silently.",
+          "required": [],
+          "title": "enabled",
+          "type": "boolean"
+        },
+        "filters": {
+          "description": "HTTPRoute filters — header manipulation, request mirroring, URL rewriting. These are the\ntyped replacement for what Ingress expressed as controller-specific annotations.",
+          "items": {
+            "required": []
+          },
+          "required": [],
+          "title": "filters",
+          "type": "array"
+        },
+        "gatewayClassName": {
+          "default": "",
+          "description": "GatewayClass for the created Gateway. Required when `gateway.create` is set — a Gateway\nwithout one is never reconciled by anything.",
+          "required": [],
+          "title": "gatewayClassName",
+          "type": "string"
+        },
+        "hostnames": {
+          "description": "Hostnames the route serves. Used as the default for `paperless.url`. Required unless\n`gateway.create` is set, because a route with no hostnames matches every hostname its\nlistener accepts — on a shared Gateway that quietly steals other applications' traffic.",
+          "items": {
+            "required": [],
+            "type": "string"
+          },
+          "required": [],
+          "title": "hostnames",
+          "type": "array"
+        },
+        "httpsRedirect": {
+          "additionalProperties": true,
+          "description": "A second route that redirects plaintext requests to HTTPS.",
+          "properties": {
+            "enabled": {
+              "default": false,
+              "description": "Create the redirect route.",
+              "required": [],
+              "title": "enabled",
+              "type": "boolean"
+            },
+            "sectionName": {
+              "default": "http",
+              "description": "Listener the redirect route binds to. It must be the plaintext one: bound to every\nlistener, an HTTPS listener would redirect to itself forever.",
+              "required": [],
+              "title": "sectionName",
+              "type": "string"
+            },
+            "statusCode": {
+              "default": 301,
+              "description": "HTTP status code for the redirect.",
+              "required": [],
+              "title": "statusCode",
+              "type": "integer"
+            }
+          },
+          "required": [],
+          "title": "httpsRedirect"
+        },
+        "parentRefs": {
+          "description": "Gateways to attach to, as `{name, namespace, sectionName}` entries. Empty attaches to the\nGateway this chart creates, when `gateway.create` is set.",
+          "items": {
+            "additionalProperties": true,
+            "required": [],
+            "type": "object"
+          },
+          "required": [],
+          "title": "parentRefs",
+          "type": "array"
+        },
+        "path": {
+          "default": "/",
+          "description": "Path prefix the route matches.",
+          "required": [],
+          "title": "path",
+          "type": "string"
+        },
+        "timeouts": {
+          "additionalProperties": true,
+          "description": "Route timeouts, e.g. `{request: 300s}`. Worth raising: uploading a large scan through the\ngateway can outlast a default request timeout.",
+          "required": [],
+          "title": "timeouts",
+          "type": "object"
+        },
+        "tls": {
+          "additionalProperties": true,
+          "description": "TLS for the created Gateway's HTTPS listener.",
+          "properties": {
+            "certificateRefs": {
+              "description": "Certificates the listener terminates with, as `{name}` or `{name, namespace}` entries.\nRequired for a `Terminate` listener: unlike an Ingress, nothing looks a certificate up\nfrom the hostname.",
+              "items": {
+                "required": []
+              },
+              "required": [],
+              "title": "certificateRefs",
+              "type": "array"
+            },
+            "enabled": {
+              "default": false,
+              "description": "Add an HTTPS listener.",
+              "required": [],
+              "title": "enabled",
+              "type": "boolean"
+            },
+            "mode": {
+              "default": "Terminate",
+              "description": "TLS mode for the listener.",
+              "enum": [
+                "",
+                "Terminate",
+                "Passthrough"
+              ],
+              "required": [],
+              "title": "mode"
+            }
+          },
+          "required": [],
+          "title": "tls"
+        }
+      },
+      "required": [],
+      "title": "gateway"
+    },
+    "global": {
+      "description": "Global values are values that can be accessed from any chart or subchart by exactly the same name.",
+      "required": [],
+      "title": "global",
+      "type": "object"
+    },
+    "image": {
+      "additionalProperties": true,
+      "properties": {
+        "pullPolicy": {
+          "default": "",
+          "description": "The image pull policy. Empty resolves automatically from the tag/digest.",
+          "enum": [
+            "",
+            "Always",
+            "IfNotPresent",
+            "Never"
+          ],
+          "required": [],
+          "title": "pullPolicy"
+        },
+        "registry": {
+          "default": "",
+          "description": "Registry host. Empty means Docker Hub, which does not host paperless-ngx — the default\nbelow names GitHub's registry explicitly instead.",
+          "required": [],
+          "title": "registry",
+          "type": "string"
+        },
+        "repository": {
+          "default": "ghcr.io/paperless-ngx/paperless-ngx",
+          "description": "The container image repository. The official image, published by the paperless-ngx\nproject, running its whole stack (webserver, consumer, task worker and scheduler) under\none s6-overlay supervision tree.",
+          "required": [],
+          "title": "repository",
+          "type": "string"
+        },
+        "tag": {
+          "default": "3.0.5@sha256:65a4cabf0169ea7fbd90ab7bb28ba3f8b5909613635acda1a03ad606f34b456b",
+          "description": "The container image tag. Defaults to the chart's `appVersion` when empty.",
+          "required": [],
+          "title": "tag",
+          "type": "string"
+        }
+      },
+      "required": [],
+      "title": "image"
+    },
+    "imagePullSecrets": {
+      "description": "Optional image pull secrets for private registries.",
+      "items": {
+        "required": []
+      },
+      "required": [],
+      "title": "imagePullSecrets",
+      "type": "array"
+    },
+    "ingress": {
+      "additionalProperties": true,
+      "description": "Publishing through an Ingress controller. Mutually exclusive with `gateway` only in the\nsense that running both is usually a mistake; the chart lets you, for the window in which a\ncluster migrates from one to the other.",
+      "properties": {
+        "annotations": {
+          "additionalProperties": true,
+          "description": "Annotations for the Ingress. This is where controller-specific configuration goes —\ncertificate issuance, and above all the request body size limit: uploading a document\nthrough the web UI fails at the controller's default (1 MiB on ingress-nginx) long before\npaperless sees it. For ingress-nginx that is\n`nginx.ingress.kubernetes.io/proxy-body-size: 100m`.",
+          "required": [],
+          "title": "annotations",
+          "type": "object"
+        },
+        "className": {
+          "default": "",
+          "description": "IngressClass to use. Empty uses the cluster's default class.",
+          "required": [],
+          "title": "className",
+          "type": "string"
+        },
+        "enabled": {
+          "default": false,
+          "description": "Create an Ingress.",
+          "required": [],
+          "title": "enabled",
+          "type": "boolean"
+        },
+        "host": {
+          "default": "",
+          "description": "Hostname to publish. Required when the Ingress is enabled, and used as the default for\n`paperless.url`.",
+          "required": [],
+          "title": "host",
+          "type": "string"
+        },
+        "path": {
+          "default": "/",
+          "description": "Path to publish under. Leave at `/` unless `paperless.rootPath` moves the application.",
+          "required": [],
+          "title": "path",
+          "type": "string"
+        },
+        "pathType": {
+          "default": "Prefix",
+          "description": "Path matching mode.",
+          "enum": [
+            "Prefix",
+            "Exact",
+            "ImplementationSpecific"
+          ],
+          "required": [],
+          "title": "pathType"
+        },
+        "tls": {
+          "additionalProperties": true,
+          "description": "TLS configuration.",
+          "properties": {
+            "enabled": {
+              "default": false,
+              "description": "Serve the host over TLS.",
+              "required": [],
+              "title": "enabled",
+              "type": "boolean"
+            },
+            "secretName": {
+              "default": "",
+              "description": "Secret holding the certificate. Empty uses `\u003cfullname\u003e-tls`, which is the name\ncert-manager creates from an `ingress.annotations` issuer annotation.",
+              "required": [],
+              "title": "secretName",
+              "type": "string"
+            }
+          },
+          "required": [],
+          "title": "tls"
+        }
+      },
+      "required": [],
+      "title": "ingress"
+    },
+    "kubeVersionOverride": {
+      "default": "",
+      "description": "Kubernetes version to target when branching on API availability. Lets `helm template`\nrender for a specific cluster version without a live connection.",
+      "required": [],
+      "title": "kubeVersionOverride",
+      "type": "string"
+    },
+    "livenessProbe": {
+      "additionalProperties": true,
+      "description": "Liveness probe. Restarts the container when the webserver stops answering.",
+      "properties": {
+        "enabled": {
+          "default": true,
+          "description": "Enable the liveness probe.",
+          "required": [],
+          "title": "enabled",
+          "type": "boolean"
+        },
+        "failureThreshold": {
+          "default": 5,
+          "description": "Consecutive failures before the container is restarted. Deliberately tolerant: a restart\ninterrupts every document being processed, and the webserver shares a pod with workers that\ncan saturate it.",
+          "required": [],
+          "title": "failureThreshold",
+          "type": "integer"
+        },
+        "httpGet": {
+          "additionalProperties": true,
+          "description": "HTTP handler for the probe.",
+          "properties": {
+            "path": {
+              "default": "{{ .Values.paperless.rootPath }}/",
+              "description": "Path to request.",
+              "required": [],
+              "title": "path",
+              "type": "string"
+            },
+            "port": {
+              "default": "http",
+              "description": "Named container port to probe.",
+              "required": [],
+              "title": "port",
+              "type": "string"
+            }
+          },
+          "required": [],
+          "title": "httpGet"
+        },
+        "periodSeconds": {
+          "default": 30,
+          "description": "Probe interval.",
+          "required": [],
+          "title": "periodSeconds",
+          "type": "integer"
+        },
+        "timeoutSeconds": {
+          "default": 10,
+          "description": "Probe timeout.",
+          "required": [],
+          "title": "timeoutSeconds",
+          "type": "integer"
+        }
+      },
+      "required": [],
+      "title": "livenessProbe"
+    },
+    "metrics": {
+      "additionalProperties": true,
+      "description": "Monitoring. paperless-ngx exposes no Prometheus endpoint of its own, so everything here is\nbuilt on series a cluster already has: kube-state-metrics for workload health and the kubelet\nfor volume usage. That is a real limit, and it is stated rather than papered over — there are\nno alerts on queue depth or consumption failures, because nothing publishes them.",
+      "properties": {
+        "dashboard": {
+          "additionalProperties": true,
+          "description": "Grafana dashboards, shipped as a labelled ConfigMap and optionally as\n`GrafanaDashboard` custom resources.",
+          "properties": {
+            "enabled": {
+              "default": false,
+              "description": "Create the dashboard ConfigMap for the Grafana sidecar to discover.",
+              "required": [],
+              "title": "enabled",
+              "type": "boolean"
+            },
+            "grafanaOperator": {
+              "additionalProperties": true,
+              "description": "grafana-operator v5 delivery, which — unlike the sidecar — can be granted\ncross-namespace import from this side.",
+              "properties": {
+                "allowCrossNamespaceImport": {
+                  "default": true,
+                  "description": "Allow a Grafana in another namespace to import these dashboards.",
+                  "required": [],
+                  "title": "allowCrossNamespaceImport",
+                  "type": "boolean"
+                },
+                "enabled": {
+                  "default": false,
+                  "description": "Also create one `GrafanaDashboard` per dashboard file. Requires\n`metrics.dashboard.enabled`, because the custom resources reference the ConfigMap rather\nthan inlining the JSON.",
+                  "required": [],
+                  "title": "enabled",
+                  "type": "boolean"
+                },
+                "folder": {
+                  "default": "",
+                  "description": "Grafana folder to file the dashboards under. Empty uses the operator's default.",
+                  "required": [],
+                  "title": "folder",
+                  "type": "string"
+                },
+                "instanceSelector": {
+                  "additionalProperties": true,
+                  "description": "Which Grafana instances import them. An empty selector matches none, so the\ndashboards would be created and then ignored.",
+                  "properties": {
+                    "matchLabels": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "dashboards": {
+                          "default": "grafana",
+                          "required": [],
+                          "title": "dashboards",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "dashboards"
+                      ],
+                      "title": "matchLabels",
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "matchLabels"
+                  ],
+                  "title": "instanceSelector",
+                  "type": "object"
+                },
+                "resyncPeriod": {
+                  "default": "5m",
+                  "description": "How often the operator re-applies them.",
+                  "required": [],
+                  "title": "resyncPeriod",
+                  "type": "string"
+                }
+              },
+              "required": [],
+              "title": "grafanaOperator"
+            },
+            "label": {
+              "default": "grafana_dashboard",
+              "description": "Label the Grafana sidecar selects dashboards on.",
+              "required": [],
+              "title": "label",
+              "type": "string"
+            },
+            "labelValue": {
+              "default": "1",
+              "description": "Value for that label.",
+              "required": [],
+              "title": "labelValue",
+              "type": "string"
+            }
+          },
+          "required": [],
+          "title": "dashboard"
+        },
+        "prometheusRule": {
+          "additionalProperties": true,
+          "description": "The PrometheusRule carrying this chart's alerting rules.",
+          "properties": {
+            "enabled": {
+              "default": false,
+              "description": "Create the PrometheusRule. Requires the Prometheus Operator CRDs.",
+              "required": [],
+              "title": "enabled",
+              "type": "boolean"
+            },
+            "labels": {
+              "additionalProperties": true,
+              "description": "Extra labels for the PrometheusRule, e.g. the `release` label a Prometheus Operator\ninstance selects rules on. Without the one your instance selects, the object is created\nand never loaded.",
+              "required": [],
+              "title": "labels",
+              "type": "object"
+            },
+            "scope": {
+              "default": "namespace",
+              "description": "How far the rules are scoped. A PrometheusRule is not confined to its own namespace, so\n`none` makes this release alert on every other paperless-ngx in the cluster as well.\n`namespace` rewrites every selector to match only this release's namespace.",
+              "enum": [
+                "namespace",
+                "none"
+              ],
+              "required": [],
+              "title": "scope"
+            }
+          },
+          "required": [],
+          "title": "prometheusRule"
+        }
+      },
+      "required": [],
+      "title": "metrics"
+    },
+    "nameOverride": {
+      "default": "",
+      "description": "Override the chart name used in resource names and labels.",
+      "required": [],
+      "title": "nameOverride",
+      "type": "string"
+    },
+    "namespaceOverride": {
+      "default": "",
+      "description": "Deploy into a namespace other than the release namespace.",
+      "required": [],
+      "title": "namespaceOverride",
+      "type": "string"
+    },
+    "networkPolicy": {
+      "additionalProperties": true,
+      "description": "Network policies. Every workload in the release gets a default-deny pair, with exactly the\nrules the enabled components need — the application reaches the broker, the database and the\ndocument converters, and nothing reaches back.",
+      "properties": {
+        "cilium": {
+          "additionalProperties": true,
+          "description": "Cilium-only additions, used when `engine` is `cilium` or `both`. Every rule above is\ntranslated automatically; these are the ones the portable API cannot express.",
+          "properties": {
+            "description": {
+              "default": "",
+              "description": "`spec.description`, which Cilium surfaces in `cilium policy get` and in Hubble flow\nverdicts — the one place a rule's reason is visible to whoever is debugging a dropped\npacket.",
+              "required": [],
+              "title": "description",
+              "type": "string"
+            },
+            "dnsMatchPatterns": {
+              "description": "What the DNS proxy may resolve, e.g. `- matchPattern: \"*.example.com\"`. Defaults to\neverything. An FQDN rule is enforced against the addresses Cilium's DNS proxy saw\nreturned, so without a DNS rule observing the lookup every `toFQDNs` entry matches\nnothing.",
+              "items": {
+                "required": []
+              },
+              "required": [],
+              "title": "dnsMatchPatterns",
+              "type": "array"
+            },
+            "enableDefaultDeny": {
+              "default": true,
+              "description": "State default-deny explicitly rather than relying on it being implied by the presence\nof rules. Requires Cilium 1.16+.",
+              "required": [],
+              "title": "enableDefaultDeny",
+              "type": "boolean"
+            },
+            "toFQDNs": {
+              "description": "Egress destinations by DNS name, replacing the internet-wide CIDR rules for\n`egress.https` and `egress.smtp` — e.g. `- matchName: smtp.example.com`. Ships empty, so\nan unconfigured install keeps the portable CIDR form.",
+              "items": {
+                "required": []
+              },
+              "required": [],
+              "title": "toFQDNs",
+              "type": "array"
+            }
+          },
+          "required": [],
+          "title": "cilium"
+        },
+        "egress": {
+          "additionalProperties": true,
+          "description": "Where the application may connect. Cluster DNS and the enabled in-release components are\nalways permitted; these are the destinations outside the release.",
+          "properties": {
+            "cidr": {
+              "default": "0.0.0.0/0",
+              "description": "Destination CIDR for the internet-facing egress rules.",
+              "required": [],
+              "title": "cidr",
+              "type": "string"
+            },
+            "except": {
+              "description": "CIDRs carved out of `cidr`. The defaults exclude private space and link-local\n169.254.0.0/16, which is where the cloud instance metadata endpoint lives.",
+              "items": {
+                "required": [],
+                "type": "string"
+              },
+              "required": [],
+              "title": "except",
+              "type": "array"
+            },
+            "external": {
+              "additionalProperties": true,
+              "description": "A database or broker outside this release, when `postgresql.enabled` or\n`valkey.enabled` is false.",
+              "properties": {
+                "enabled": {
+                  "default": true,
+                  "description": "Allow egress to the external database and broker addresses.",
+                  "required": [],
+                  "title": "enabled",
+                  "type": "boolean"
+                },
+                "namespaceSelector": {
+                  "additionalProperties": true,
+                  "description": "Namespace selector for them. Empty means this release's namespace.",
+                  "required": [],
+                  "title": "namespaceSelector",
+                  "type": "object"
+                },
+                "podSelector": {
+                  "additionalProperties": true,
+                  "description": "Pod selector for them. Empty selects every pod in the selected namespaces, which is\nas narrow as the portable API can be about a datastore it cannot name.",
+                  "required": [],
+                  "title": "podSelector",
+                  "type": "object"
+                }
+              },
+              "required": [],
+              "title": "external"
+            },
+            "extraRules": {
+              "description": "Egress rules appended verbatim to the application's policy.",
+              "items": {
+                "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyEgressRule",
+                "required": []
+              },
+              "required": [],
+              "title": "extraRules",
+              "type": "array"
+            },
+            "https": {
+              "default": false,
+              "description": "Allow outbound HTTPS to the public internet, minus RFC1918 space and the cloud metadata\nendpoint. Needed only for features that leave the cluster: outgoing mail over an external\nrelay, webhooks, mail fetching, or a remote OCR endpoint.",
+              "required": [],
+              "title": "https",
+              "type": "boolean"
+            },
+            "smtp": {
+              "default": false,
+              "description": "Allow outbound SMTP submission (TCP 587 and 465) to the same destinations.",
+              "required": [],
+              "title": "smtp",
+              "type": "boolean"
+            }
+          },
+          "required": [],
+          "title": "egress"
+        },
+        "enabled": {
+          "default": false,
+          "description": "Create the policies.",
+          "required": [],
+          "title": "enabled",
+          "type": "boolean"
+        },
+        "engine": {
+          "default": "kubernetes",
+          "description": "Which policy dialect to render. `kubernetes` emits the portable\n`networking.k8s.io/v1` objects; `cilium` emits `CiliumNetworkPolicy`, which states\ndefault-deny explicitly and can name egress destinations by DNS name; `both` emits both, for\nthe window in which a cluster is migrating between CNIs.",
+          "enum": [
+            "kubernetes",
+            "cilium",
+            "both"
+          ],
+          "required": [],
+          "title": "engine"
+        },
+        "ingress": {
+          "additionalProperties": true,
+          "description": "Who may reach the application's HTTP port.",
+          "properties": {
+            "controller": {
+              "additionalProperties": true,
+              "description": "The Ingress controller.",
+              "properties": {
+                "enabled": {
+                  "default": true,
+                  "description": "Allow ingress from the controller's pods. Enabled automatically alongside\n`ingress.enabled`; without it an enabled Ingress resolves and then times out.",
+                  "required": [],
+                  "title": "enabled",
+                  "type": "boolean"
+                },
+                "namespace": {
+                  "default": "ingress-nginx",
+                  "description": "Namespace the Ingress controller runs in.",
+                  "required": [],
+                  "title": "namespace",
+                  "type": "string"
+                },
+                "podSelector": {
+                  "additionalProperties": true,
+                  "description": "Pod selector for the Ingress controller.",
+                  "properties": {
+                    "app.kubernetes.io/name": {
+                      "default": "ingress-nginx",
+                      "required": [],
+                      "title": "app.kubernetes.io/name",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "app.kubernetes.io/name"
+                  ],
+                  "title": "podSelector",
+                  "type": "object"
+                }
+              },
+              "required": [],
+              "title": "controller"
+            },
+            "extraRules": {
+              "description": "Ingress rules appended verbatim to the application's policy, for peers this chart does\nnot model — a backup job reaching the API, or a second namespace's scanner sidecar.",
+              "items": {
+                "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyIngressRule",
+                "required": []
+              },
+              "required": [],
+              "title": "extraRules",
+              "type": "array"
+            },
+            "gateway": {
+              "additionalProperties": true,
+              "description": "The Gateway API data plane. Its namespace and selector are derived from\n`gateway.parentRefs`, because the Gateway a policy must admit is by definition the one\nthis chart's route attaches to.",
+              "properties": {
+                "enabled": {
+                  "default": true,
+                  "description": "Allow ingress from the Gateway's pods. Only has an effect while `gateway.enabled` is\nset.",
+                  "required": [],
+                  "title": "enabled",
+                  "type": "boolean"
+                },
+                "namespaceSelector": {
+                  "additionalProperties": true,
+                  "description": "Override the namespace selector for the Gateway's data plane.",
+                  "required": [],
+                  "title": "namespaceSelector",
+                  "type": "object"
+                },
+                "podSelector": {
+                  "additionalProperties": true,
+                  "description": "Override the pod selector for the Gateway's data plane. The default matches the\n`gateway.networking.k8s.io/gateway-name` label every implementation sets.",
+                  "required": [],
+                  "title": "podSelector",
+                  "type": "object"
+                }
+              },
+              "required": [],
+              "title": "gateway"
+            }
+          },
+          "required": [],
+          "title": "ingress"
+        }
+      },
+      "required": [],
+      "title": "networkPolicy"
+    },
+    "nodeSelector": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "description": "Node selector for pod assignment.",
+      "required": [],
+      "title": "nodeSelector",
+      "type": "object"
+    },
+    "paperless": {
+      "additionalProperties": true,
+      "properties": {
+        "admin": {
+          "additionalProperties": true,
+          "description": "The superuser created on first start. Without it the instance comes up with no account at\nall and the only way in is `kubectl exec ... createsuperuser`.",
+          "properties": {
+            "email": {
+              "default": "",
+              "description": "E-mail address of the superuser.",
+              "required": [],
+              "title": "email",
+              "type": "string"
+            },
+            "existingSecretKey": {
+              "default": "admin-password",
+              "description": "Key inside `existingSecret` that holds the admin password.",
+              "required": [],
+              "title": "existingSecretKey",
+              "type": "string"
+            },
+            "password": {
+              "default": "",
+              "description": "Password of the superuser. Ignored when `existingSecret` is set. Required whenever\n`admin.user` is.",
+              "required": [],
+              "title": "password",
+              "type": "string"
+            },
+            "user": {
+              "default": "",
+              "description": "Username of the superuser to create. Empty creates none. The account is created once;\nchanging the password here afterwards does update it, and changing the username creates a\nsecond account rather than renaming the first.",
+              "required": [],
+              "title": "user",
+              "type": "string"
+            }
+          },
+          "required": [],
+          "title": "admin"
+        },
+        "allowedHosts": {
+          "description": "Hostnames Django accepts a request for, beyond the one derived from `paperless.url`.\nEmpty keeps the upstream default of `*`, which is safe here only because the Service and the\nNetworkPolicy already decide who may connect at all.",
+          "items": {
+            "required": [],
+            "type": "string"
+          },
+          "required": [],
+          "title": "allowedHosts",
+          "type": "array"
+        },
+        "archiveFileGeneration": {
+          "default": "auto",
+          "description": "When to produce an archived PDF/A alongside the original. `never` halves the storage a\ndocument costs and gives up full-text search of scans.",
+          "enum": [
+            "auto",
+            "always",
+            "never"
+          ],
+          "required": [],
+          "title": "archiveFileGeneration"
+        },
+        "auditLog": {
+          "default": true,
+          "description": "Record who changed what in the audit log.",
+          "required": [],
+          "title": "auditLog",
+          "type": "boolean"
+        },
+        "consumer": {
+          "additionalProperties": true,
+          "description": "The consumption directory watcher: what happens to files dropped into\n`/usr/src/paperless/consume`.",
+          "properties": {
+            "barcodes": {
+              "additionalProperties": true,
+              "description": "Barcode handling. Every option here costs an extra rendering pass per page.",
+              "properties": {
+                "asn": {
+                  "default": false,
+                  "description": "Read the archive serial number from a barcode.",
+                  "required": [],
+                  "title": "asn",
+                  "type": "boolean"
+                },
+                "asnPrefix": {
+                  "default": "ASN",
+                  "description": "Prefix identifying an ASN barcode.",
+                  "required": [],
+                  "title": "asnPrefix",
+                  "type": "string"
+                },
+                "enabled": {
+                  "default": false,
+                  "description": "Split one incoming file into several documents at pages carrying a separator barcode.",
+                  "required": [],
+                  "title": "enabled",
+                  "type": "boolean"
+                }
+              },
+              "required": [],
+              "title": "barcodes"
+            },
+            "deleteDuplicates": {
+              "default": false,
+              "description": "Delete an incoming file that is byte-identical to a document already stored, instead of\nreporting it as a failed consumption.",
+              "required": [],
+              "title": "deleteDuplicates",
+              "type": "boolean"
+            },
+            "pollingInterval": {
+              "default": 0,
+              "description": "Seconds between directory scans. `0` uses filesystem events instead, which is instant\nand correct on a local volume. **Network storage (NFS, SMB, most ReadWriteMany classes)\ndelivers no events**, so a share that everybody drops scans into needs polling — 10 to 30\nseconds is the usual choice.",
+              "minimum": 0,
+              "required": [],
+              "title": "pollingInterval",
+              "type": "number"
+            },
+            "recursive": {
+              "default": false,
+              "description": "Also watch subdirectories of the consumption directory.",
+              "required": [],
+              "title": "recursive",
+              "type": "boolean"
+            },
+            "stabilityDelay": {
+              "default": 5,
+              "description": "Seconds a file must stop changing before it is consumed, so a document that is still\nbeing copied is not ingested half-written.",
+              "minimum": 0,
+              "required": [],
+              "title": "stabilityDelay",
+              "type": "number"
+            },
+            "subdirsAsTags": {
+              "default": false,
+              "description": "Turn each subdirectory name into a tag. Requires `consumer.recursive`.",
+              "required": [],
+              "title": "subdirsAsTags",
+              "type": "boolean"
+            }
+          },
+          "required": [],
+          "title": "consumer"
+        },
+        "corsAllowedHosts": {
+          "description": "Additional origins allowed to make cross-origin browser requests, scheme included. Needed\nonly by a separate frontend or a browser extension; the web UI is same-origin.",
+          "items": {
+            "required": [],
+            "type": "string"
+          },
+          "required": [],
+          "title": "corsAllowedHosts",
+          "type": "array"
+        },
+        "csrfTrustedOrigins": {
+          "description": "Additional origins trusted for unsafe requests (POST, PUT, DELETE), scheme included.\n`paperless.url` is trusted automatically; this is for the second hostname a migration or a\nsplit-horizon DNS setup adds.",
+          "items": {
+            "required": [],
+            "type": "string"
+          },
+          "required": [],
+          "title": "csrfTrustedOrigins",
+          "type": "array"
+        },
+        "email": {
+          "additionalProperties": true,
+          "description": "Outgoing mail, used for password resets and for sharing documents by link. Incoming mail\naccounts are configured in the web UI instead, not here.",
+          "properties": {
+            "existingSecretKey": {
+              "default": "email-password",
+              "description": "Key inside `existingSecret` that holds the SMTP password.",
+              "required": [],
+              "title": "existingSecretKey",
+              "type": "string"
+            },
+            "from": {
+              "default": "",
+              "description": "Envelope sender address. Empty uses the application default, which many relays reject.",
+              "required": [],
+              "title": "from",
+              "type": "string"
+            },
+            "host": {
+              "default": "",
+              "description": "SMTP host. Empty disables outgoing mail, and password resets stop working with it.",
+              "required": [],
+              "title": "host",
+              "type": "string"
+            },
+            "password": {
+              "default": "",
+              "description": "SMTP password. Ignored when `existingSecret` is set.",
+              "required": [],
+              "title": "password",
+              "type": "string"
+            },
+            "port": {
+              "default": 587,
+              "description": "SMTP port.",
+              "maximum": 65535,
+              "minimum": 1,
+              "required": [],
+              "title": "port",
+              "type": "integer"
+            },
+            "useSsl": {
+              "default": false,
+              "description": "Use implicit TLS (SMTPS, usually port 465). Mutually exclusive with `email.useTls`.",
+              "required": [],
+              "title": "useSsl",
+              "type": "boolean"
+            },
+            "useTls": {
+              "default": true,
+              "description": "Use STARTTLS. Mutually exclusive with `email.useSsl`.",
+              "required": [],
+              "title": "useTls",
+              "type": "boolean"
+            },
+            "user": {
+              "default": "",
+              "description": "SMTP username.",
+              "required": [],
+              "title": "user",
+              "type": "string"
+            }
+          },
+          "required": [],
+          "title": "email"
+        },
+        "existingSecretKey": {
+          "default": "secret-key",
+          "description": "Key inside `existingSecret` that holds the Django secret key.",
+          "required": [],
+          "title": "existingSecretKey",
+          "type": "string"
+        },
+        "extraConfig": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Additional `PAPERLESS_*` settings written to the ConfigMap verbatim, for anything this\nchart does not model (see the upstream configuration reference for the full list). Values are\nrendered through the template engine, so `{{ .Release.Name }}` works.\n\nNever put credentials here — the ConfigMap is not a Secret. Use `extraEnv` with a\n`secretKeyRef`, or the `PAPERLESS_\u003cNAME\u003e_FILE` indirection the image supports.",
+          "required": [],
+          "title": "extraConfig",
+          "type": "object"
+        },
+        "filenameFormat": {
+          "default": "",
+          "description": "Storage layout of the original files inside the media volume, e.g.\n`{{ created_year }}/{{ correspondent }}/{{ title }}`. Empty stores everything flat under\n`documents/originals`. Changing it later renames files on disk on the next run of the\n`document_renamer` command; it does not reorganise them by itself.",
+          "required": [],
+          "title": "filenameFormat",
+          "type": "string"
+        },
+        "filenameFormatRemoveNone": {
+          "default": false,
+          "description": "Drop the placeholder from `filenameFormat` when the field is empty, rather than writing\nthe literal word `none` into the path.",
+          "required": [],
+          "title": "filenameFormatRemoveNone",
+          "type": "boolean"
+        },
+        "ocr": {
+          "additionalProperties": true,
+          "description": "Optical character recognition, performed by OCRmyPDF and Tesseract.",
+          "properties": {
+            "clean": {
+              "default": "clean",
+              "description": "Run unpaper to clean scans before recognition. `clean-final` also keeps the cleaned\nimage in the archive file, which loses fidelity to the original scan.",
+              "enum": [
+                "clean",
+                "clean-final",
+                "none"
+              ],
+              "required": [],
+              "title": "clean"
+            },
+            "deskew": {
+              "default": true,
+              "description": "Straighten crooked scans before recognition.",
+              "required": [],
+              "title": "deskew",
+              "type": "boolean"
+            },
+            "imageDpi": {
+              "default": 0,
+              "description": "Assume this DPI for images that do not declare one. `0` leaves it to OCRmyPDF, which\nrefuses images with no resolution information rather than guessing.",
+              "minimum": 0,
+              "required": [],
+              "title": "imageDpi",
+              "type": "integer"
+            },
+            "language": {
+              "default": "eng",
+              "description": "Tesseract language, as a three-letter ISO 639-2 code; several are combined with `+`\n(`deu+eng`). **Only languages already installed in the image work.** Upstream installs\nadditional packs at container start when `PAPERLESS_OCR_LANGUAGES` is set, which needs a\nwritable root filesystem, root privileges and internet access from the pod — none of which\nthis chart's security baseline provides. Build a derived image instead.",
+              "required": [],
+              "title": "language",
+              "type": "string"
+            },
+            "mode": {
+              "default": "auto",
+              "description": "When to run OCR. `auto` skips pages that already carry text, `redo` replaces existing\ntext layers, `force` rasterises and re-recognises everything, `off` disables OCR entirely.",
+              "enum": [
+                "auto",
+                "force",
+                "redo",
+                "off"
+              ],
+              "required": [],
+              "title": "mode"
+            },
+            "outputType": {
+              "default": "pdfa",
+              "description": "Format of the generated archive file. The PDF/A variants are the archival ones and the\nreason to run this software at all.",
+              "enum": [
+                "pdfa",
+                "pdf",
+                "pdfa-1",
+                "pdfa-2",
+                "pdfa-3"
+              ],
+              "required": [],
+              "title": "outputType"
+            },
+            "pages": {
+              "default": 0,
+              "description": "Only OCR the first N pages of a document. `0` means all of them.",
+              "minimum": 0,
+              "required": [],
+              "title": "pages",
+              "type": "integer"
+            },
+            "rotatePages": {
+              "default": true,
+              "description": "Detect and correct page rotation.",
+              "required": [],
+              "title": "rotatePages",
+              "type": "boolean"
+            },
+            "userArgs": {
+              "additionalProperties": true,
+              "description": "Extra arguments handed to OCRmyPDF verbatim, as a mapping. Rendered to the JSON object\nthe application expects, e.g. `{\"invalidate_digital_signatures\": true}`.",
+              "required": [],
+              "title": "userArgs",
+              "type": "object"
+            }
+          },
+          "required": [],
+          "title": "ocr"
+        },
+        "proxy": {
+          "additionalProperties": true,
+          "description": "How to interpret the headers a reverse proxy, Ingress controller or Gateway adds.",
+          "properties": {
+            "trustForwardedProto": {
+              "default": true,
+              "description": "Treat `X-Forwarded-Proto: https` as proof the client request was HTTPS. Required for\nsecure cookies and correct `https://` links whenever TLS is terminated at the proxy, which\nis the normal arrangement for both `ingress` and `gateway` below.\n\nOnly ever set this where a proxy actually strips and re-sets the header. A pod reachable\ndirectly would let any client claim its plaintext request was encrypted.",
+              "required": [],
+              "title": "trustForwardedProto",
+              "type": "boolean"
+            },
+            "trustedProxies": {
+              "description": "Proxy addresses whose forwarding headers are trusted, as IPs or CIDRs. Empty trusts the\nheaders unconditionally, which is what the settings above already do; naming the Ingress\ncontroller's pod CIDR here narrows that.",
+              "items": {
+                "required": [],
+                "type": "string"
+              },
+              "required": [],
+              "title": "trustedProxies",
+              "type": "array"
+            },
+            "useXForwardedHost": {
+              "default": true,
+              "description": "Trust `X-Forwarded-Host`. On by default: behind an Ingress the `Host` header is the\ninternal Service name, and without this the absolute URLs paperless generates — share\nlinks, password reset mails, the OAuth callback — point at a name nobody can resolve.",
+              "required": [],
+              "title": "useXForwardedHost",
+              "type": "boolean"
+            },
+            "useXForwardedPort": {
+              "default": true,
+              "description": "Trust `X-Forwarded-Port`, so generated URLs carry the port the client actually used\nrather than the container port.",
+              "required": [],
+              "title": "useXForwardedPort",
+              "type": "boolean"
+            }
+          },
+          "required": [],
+          "title": "proxy"
+        },
+        "remoteUser": {
+          "additionalProperties": true,
+          "description": "Authentication delegated to a proxy in front of paperless — an OAuth2 proxy, an\nauthentication middleware, a service mesh — which authenticates the user and passes the\nresulting name in a header.",
+          "properties": {
+            "api": {
+              "default": false,
+              "description": "Trust the header for the REST API as well. Separate from the UI switch because API\nclients usually authenticate with a token instead, and accepting both widens the surface.",
+              "required": [],
+              "title": "api",
+              "type": "boolean"
+            },
+            "enabled": {
+              "default": false,
+              "description": "Trust the header for the web UI. **Only enable this when the proxy strips the header\nfrom incoming requests.** Anything that can reach the pod directly can otherwise set it\nand be whoever it likes, which is why the NetworkPolicy below matters as much as this flag.",
+              "required": [],
+              "title": "enabled",
+              "type": "boolean"
+            },
+            "headerName": {
+              "default": "HTTP_REMOTE_USER",
+              "description": "WSGI name of the header carrying the username. Django's own spelling: `Remote-User`\nover the wire arrives as `HTTP_REMOTE_USER`.",
+              "required": [],
+              "title": "headerName",
+              "type": "string"
+            }
+          },
+          "required": [],
+          "title": "remoteUser"
+        },
+        "rootPath": {
+          "default": "",
+          "description": "Serve paperless-ngx under a sub-path of the hostname (`/paperless`), for a reverse proxy\nthat hosts several applications on one origin. Leave empty to serve at the root. The default\nprobe paths follow this value, so they keep pointing at the application when it moves.",
+          "required": [],
+          "title": "rootPath",
+          "type": "string"
+        },
+        "secretKey": {
+          "default": "",
+          "description": "Django secret key. It signs session cookies, password reset links and share links. There\nis no safe default, so the chart refuses to render without one here or in `existingSecret`:\nthe upstream fallback is a published constant, and a deployment running on it hands anybody\nthe ability to forge a session. Generate one with `openssl rand -base64 48`.\n\nChanging it later invalidates every session and every outstanding share link; it does not\ntouch stored documents.",
+          "required": [],
+          "title": "secretKey",
+          "type": "string"
+        },
+        "tasks": {
+          "additionalProperties": true,
+          "description": "Task execution. These are the knobs that decide how much CPU and memory the pod actually\nuses, so they belong next to `resources` in your head.",
+          "properties": {
+            "threadsPerWorker": {
+              "default": 0,
+              "description": "Threads each worker gives to OCR. `0` lets the application derive it from the worker\ncount and the CPUs it can see — which, in a container, is the *node's* CPU count and not\nthe limit, so a busy node is a good reason to pin this.",
+              "minimum": 0,
+              "required": [],
+              "title": "threadsPerWorker",
+              "type": "integer"
+            },
+            "timeout": {
+              "default": 1800,
+              "description": "Seconds after which a single task is abandoned. The default is generous because a large\nscanned document legitimately takes minutes.",
+              "minimum": 1,
+              "required": [],
+              "title": "timeout",
+              "type": "integer"
+            },
+            "webserverWorkers": {
+              "default": 1,
+              "description": "Granian worker processes serving HTTP. One is enough for a household; raise it for an\ninstance several people browse at once.",
+              "minimum": 1,
+              "required": [],
+              "title": "webserverWorkers",
+              "type": "integer"
+            },
+            "workers": {
+              "default": 1,
+              "description": "Celery workers consuming documents in parallel. Each one processes a whole document,\nso this multiplies peak memory.",
+              "minimum": 1,
+              "required": [],
+              "title": "workers",
+              "type": "integer"
+            }
+          },
+          "required": [],
+          "title": "tasks"
+        },
+        "timeZone": {
+          "default": "UTC",
+          "description": "IANA time zone used for dates in the UI, in filenames and in scheduled tasks.",
+          "required": [],
+          "title": "timeZone",
+          "type": "string"
+        },
+        "updateCheck": {
+          "default": false,
+          "description": "Let the web UI check GitHub for newer releases. Off by default: the version this pod runs\nis decided by `image.tag`, so the check can only ever report that the chart is behind, and\nit is an outbound call the NetworkPolicy would otherwise have to permit.",
+          "required": [],
+          "title": "updateCheck",
+          "type": "boolean"
+        },
+        "url": {
+          "default": "",
+          "description": "The external URL paperless-ngx is reached on, scheme included\n(`https://paperless.example.com`). Django validates the `Host` header and the origin of every\nunsafe request against it, so a wrong or missing value shows up as a working login page that\nrejects the login with a CSRF error. Empty derives it from `ingress.host`, or from the first\n`gateway.hostnames` entry, which is correct for the common single-hostname install.",
+          "required": [],
+          "title": "url",
+          "type": "string"
+        }
+      },
+      "required": [],
+      "title": "paperless"
+    },
+    "persistence": {
+      "additionalProperties": true,
+      "description": "The four directories paperless-ngx keeps state in. They are separate claims rather than one,\nbecause they have genuinely different lifetimes and sizes: `media` grows forever and is the\nthing you back up, `data` is rebuildable from it, `consume` is a mailbox, and `export` is\nscratch space for a command you run by hand.",
+      "properties": {
+        "consume": {
+          "additionalProperties": true,
+          "description": "`/usr/src/paperless/consume` — the drop box. Files placed here are ingested and then\nremoved, so this volume is a mailbox and not storage; it only needs to be large enough for\nthe biggest batch anyone drops at once.",
+          "properties": {
+            "accessMode": {
+              "default": "ReadWriteOnce",
+              "description": "The access mode for the volume.",
+              "enum": [
+                "ReadWriteOnce",
+                "ReadOnlyMany",
+                "ReadWriteMany"
+              ],
+              "required": [],
+              "title": "accessMode"
+            },
+            "annotations": {
+              "additionalProperties": true,
+              "description": "Annotations for the PersistentVolumeClaim.",
+              "required": [],
+              "title": "annotations",
+              "type": "object"
+            },
+            "enabled": {
+              "default": true,
+              "description": "Create a PersistentVolumeClaim. An emptyDir works for an instance fed only through the\nweb UI, and loses whatever was queued on a restart.",
+              "required": [],
+              "title": "enabled",
+              "type": "boolean"
+            },
+            "existingClaim": {
+              "default": "",
+              "description": "Use an existing PersistentVolumeClaim instead of creating one. This is where a\n`ReadWriteMany` share belongs, so a scanner or another pod can write into it — set\n`paperless.consumer.pollingInterval` as well, because network storage delivers no\nfilesystem events.",
+              "required": [],
+              "title": "existingClaim",
+              "type": "string"
+            },
+            "size": {
+              "default": "5Gi",
+              "description": "The storage size requested for the volume.",
+              "required": [],
+              "title": "size",
+              "type": "string"
+            },
+            "storageClassName": {
+              "default": "",
+              "description": "StorageClass for the claim. Empty uses the cluster default; `\"-\"` disables dynamic\nprovisioning.",
+              "required": [],
+              "title": "storageClassName",
+              "type": "string"
+            }
+          },
+          "required": [],
+          "title": "consume"
+        },
+        "data": {
+          "additionalProperties": true,
+          "description": "`/usr/src/paperless/data` — the search index, the trained classification model, the\nscheduler's state and, with `database.engine: sqlite`, the database file itself.",
+          "properties": {
+            "accessMode": {
+              "default": "ReadWriteOnce",
+              "description": "The access mode for the volume.",
+              "enum": [
+                "ReadWriteOnce",
+                "ReadOnlyMany",
+                "ReadWriteMany"
+              ],
+              "required": [],
+              "title": "accessMode"
+            },
+            "annotations": {
+              "additionalProperties": true,
+              "description": "Annotations for the PersistentVolumeClaim.",
+              "required": [],
+              "title": "annotations",
+              "type": "object"
+            },
+            "enabled": {
+              "default": true,
+              "description": "Create a PersistentVolumeClaim. Everything here except the SQLite database can be\nrebuilt from the media volume, but rebuilding is a manual `document_index reindex`.",
+              "required": [],
+              "title": "enabled",
+              "type": "boolean"
+            },
+            "existingClaim": {
+              "default": "",
+              "description": "Use an existing PersistentVolumeClaim instead of creating one.",
+              "required": [],
+              "title": "existingClaim",
+              "type": "string"
+            },
+            "size": {
+              "default": "5Gi",
+              "description": "The storage size requested for the volume.",
+              "required": [],
+              "title": "size",
+              "type": "string"
+            },
+            "storageClassName": {
+              "default": "",
+              "description": "StorageClass for the claim. Empty uses the cluster default; `\"-\"` disables dynamic\nprovisioning.",
+              "required": [],
+              "title": "storageClassName",
+              "type": "string"
+            }
+          },
+          "required": [],
+          "title": "data"
+        },
+        "export": {
+          "additionalProperties": true,
+          "description": "`/usr/src/paperless/export` — where `document_exporter` writes. Backed by an emptyDir\nunless enabled, which is enough to run an export and copy it out with `kubectl cp`, and\nkeeps the directory writable under a read-only root filesystem either way.",
+          "properties": {
+            "accessMode": {
+              "default": "ReadWriteOnce",
+              "description": "The access mode for the volume.",
+              "enum": [
+                "ReadWriteOnce",
+                "ReadOnlyMany",
+                "ReadWriteMany"
+              ],
+              "required": [],
+              "title": "accessMode"
+            },
+            "annotations": {
+              "additionalProperties": true,
+              "description": "Annotations for the PersistentVolumeClaim.",
+              "required": [],
+              "title": "annotations",
+              "type": "object"
+            },
+            "enabled": {
+              "default": false,
+              "description": "Create a PersistentVolumeClaim, for exports that should outlive the pod.",
+              "required": [],
+              "title": "enabled",
+              "type": "boolean"
+            },
+            "existingClaim": {
+              "default": "",
+              "description": "Use an existing PersistentVolumeClaim instead of creating one.",
+              "required": [],
+              "title": "existingClaim",
+              "type": "string"
+            },
+            "size": {
+              "default": "10Gi",
+              "description": "The storage size requested for the volume.",
+              "required": [],
+              "title": "size",
+              "type": "string"
+            },
+            "storageClassName": {
+              "default": "",
+              "description": "StorageClass for the claim. Empty uses the cluster default; `\"-\"` disables dynamic\nprovisioning.",
+              "required": [],
+              "title": "storageClassName",
+              "type": "string"
+            }
+          },
+          "required": [],
+          "title": "export"
+        },
+        "media": {
+          "additionalProperties": true,
+          "description": "`/usr/src/paperless/media` — the documents themselves: originals, archived PDF/As and\nthumbnails. Losing this loses the archive.",
+          "properties": {
+            "accessMode": {
+              "default": "ReadWriteOnce",
+              "description": "The access mode for the volume. `ReadWriteOnce` forces the Deployment to the `Recreate`\nupdate strategy, because a rolling update cannot hand a mounted volume over.",
+              "enum": [
+                "ReadWriteOnce",
+                "ReadOnlyMany",
+                "ReadWriteMany"
+              ],
+              "required": [],
+              "title": "accessMode"
+            },
+            "annotations": {
+              "additionalProperties": true,
+              "description": "Annotations for the PersistentVolumeClaim. `helm.sh/resource-policy: keep` belongs here\nmore than anywhere else in this chart — without it `helm uninstall` deletes the archive.",
+              "required": [],
+              "title": "annotations",
+              "type": "object"
+            },
+            "enabled": {
+              "default": true,
+              "description": "Create a PersistentVolumeClaim. When disabled an emptyDir is used, and every restart\ndestroys every stored document.",
+              "required": [],
+              "title": "enabled",
+              "type": "boolean"
+            },
+            "existingClaim": {
+              "default": "",
+              "description": "Use an existing PersistentVolumeClaim instead of creating one.",
+              "required": [],
+              "title": "existingClaim",
+              "type": "string"
+            },
+            "size": {
+              "default": "20Gi",
+              "description": "The storage size requested for the volume.",
+              "required": [],
+              "title": "size",
+              "type": "string"
+            },
+            "storageClassName": {
+              "default": "",
+              "description": "StorageClass for the claim. Empty uses the cluster default; `\"-\"` disables dynamic\nprovisioning.",
+              "required": [],
+              "title": "storageClassName",
+              "type": "string"
+            }
+          },
+          "required": [],
+          "title": "media"
+        },
+        "scratchSizeLimit": {
+          "default": "2Gi",
+          "description": "Size limit of the `emptyDir` backing `/tmp`, which holds every intermediate file OCR\nproduces — rasterised pages, unpaper output, the PDF being assembled. It is charged against\nthe node's ephemeral storage, and a pod that exceeds it is evicted, so this is the value to\nraise when large scans fail with no useful error. Empty removes the limit.",
+          "required": [],
+          "title": "scratchSizeLimit",
+          "type": "string"
+        }
+      },
+      "required": [],
+      "title": "persistence"
+    },
+    "podAnnotations": {
+      "additionalProperties": true,
+      "description": "Additional annotations to add to the pod.",
+      "required": [],
+      "title": "podAnnotations",
+      "type": "object"
+    },
+    "podAntiAffinity": {
+      "default": "",
+      "description": "Shorthand for spreading replicas across nodes. Of no use to a singleton; it exists because\nthe library supports it. Ignored when `affinity` is set.",
+      "enum": [
+        "",
+        "soft",
+        "hard"
+      ],
+      "required": [],
+      "title": "podAntiAffinity"
+    },
+    "podLabels": {
+      "additionalProperties": true,
+      "description": "Additional labels to add to the pod.",
+      "required": [],
+      "title": "podLabels",
+      "type": "object"
+    },
+    "podSecurityContext": {
+      "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.PodSecurityContext",
+      "required": []
+    },
+    "podSecurityContextPreset": {
+      "default": "restricted",
+      "description": "Pod security context baseline. `restricted` applies the Pod Security Standards restricted\nprofile (`runAsNonRoot`, `seccompProfile: RuntimeDefault`, `fsGroupChangePolicy:\nOnRootMismatch`) on top of the identity fields below.",
+      "enum": [
+        "restricted",
+        "none"
+      ],
+      "required": [],
+      "title": "podSecurityContextPreset"
+    },
+    "postgresql": {
+      "additionalProperties": true,
+      "description": "A single-instance PostgreSQL bundled with the release, so `helm install` produces a working\nstack on a bare cluster. Evaluation tier by design: one replica, no failover, no backups, no\nconnection pooler. A production deployment points `database.host` at a managed instance or an\noperator-run cluster instead.",
+      "properties": {
+        "enabled": {
+          "default": false,
+          "description": "Run PostgreSQL as part of this release. Requires `database.engine: postgresql`.",
+          "required": [],
+          "title": "enabled",
+          "type": "boolean"
+        },
+        "image": {
+          "additionalProperties": true,
+          "properties": {
+            "pullPolicy": {
+              "default": "",
+              "description": "The image pull policy. Empty resolves automatically from the tag/digest.",
+              "enum": [
+                "",
+                "Always",
+                "IfNotPresent",
+                "Never"
+              ],
+              "required": [],
+              "title": "pullPolicy"
+            },
+            "registry": {
+              "default": "",
+              "description": "Registry host. Empty means Docker Hub.",
+              "required": [],
+              "title": "registry",
+              "type": "string"
+            },
+            "repository": {
+              "default": "postgres",
+              "description": "Image repository. The official PostgreSQL image, matching the major version upstream's\nown compose stack ships.",
+              "required": [],
+              "title": "repository",
+              "type": "string"
+            },
+            "tag": {
+              "default": "18.6@sha256:ae6c78831cbc35fa3a4aaf4d763ddacf6183d6004774cc2dc28b3920410d1d1a",
+              "description": "Image tag, pinned by digest. Changing the *major* version in place does not work:\nPostgreSQL refuses to start on a data directory written by a different major, and this\nchart runs no `pg_upgrade`.",
+              "required": [],
+              "title": "tag",
+              "type": "string"
+            }
+          },
+          "required": [],
+          "title": "image"
+        },
+        "persistence": {
+          "additionalProperties": true,
+          "description": "Storage for the database. This is the one volume in the release whose loss cannot be\nrecovered from the documents themselves.",
+          "properties": {
+            "enabled": {
+              "default": true,
+              "description": "Create a PersistentVolumeClaim. Disabled means an emptyDir, and every restart is an\nempty paperless with the documents still on the media volume and nothing indexing them.",
+              "required": [],
+              "title": "enabled",
+              "type": "boolean"
+            },
+            "existingClaim": {
+              "default": "",
+              "description": "Use an existing PersistentVolumeClaim instead of the StatefulSet's own.",
+              "required": [],
+              "title": "existingClaim",
+              "type": "string"
+            },
+            "size": {
+              "default": "8Gi",
+              "description": "The storage size requested for the volume.",
+              "required": [],
+              "title": "size",
+              "type": "string"
+            },
+            "storageClassName": {
+              "default": "",
+              "description": "StorageClass for the claim. Empty uses the cluster default.",
+              "required": [],
+              "title": "storageClassName",
+              "type": "string"
+            }
+          },
+          "required": [],
+          "title": "persistence"
+        },
+        "resources": {
+          "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.ResourceRequirements",
+          "required": []
+        },
+        "resourcesPreset": {
+          "default": "medium",
+          "description": "Named resource sizing for the database container. Ignored when\n`postgresql.resources` is set.",
+          "enum": [
+            "",
+            "nano",
+            "micro",
+            "small",
+            "medium",
+            "large"
+          ],
+          "required": [],
+          "title": "resourcesPreset"
+        }
+      },
+      "required": [],
+      "title": "postgresql"
+    },
+    "priorityClassName": {
+      "default": "",
+      "description": "Optional Kubernetes PriorityClass name.",
+      "required": [],
+      "title": "priorityClassName",
+      "type": "string"
+    },
+    "readinessProbe": {
+      "additionalProperties": true,
+      "description": "Readiness probe. Takes the pod out of the Service while it cannot serve requests.",
+      "properties": {
+        "enabled": {
+          "default": true,
+          "description": "Enable the readiness probe.",
+          "required": [],
+          "title": "enabled",
+          "type": "boolean"
+        },
+        "failureThreshold": {
+          "default": 3,
+          "description": "Consecutive failures before the pod is taken out of the Service.",
+          "required": [],
+          "title": "failureThreshold",
+          "type": "integer"
+        },
+        "httpGet": {
+          "additionalProperties": true,
+          "description": "HTTP handler for the probe.",
+          "properties": {
+            "path": {
+              "default": "{{ .Values.paperless.rootPath }}/",
+              "description": "Path to request.",
+              "required": [],
+              "title": "path",
+              "type": "string"
+            },
+            "port": {
+              "default": "http",
+              "description": "Named container port to probe.",
+              "required": [],
+              "title": "port",
+              "type": "string"
+            }
+          },
+          "required": [],
+          "title": "httpGet"
+        },
+        "periodSeconds": {
+          "default": 15,
+          "description": "Probe interval.",
+          "required": [],
+          "title": "periodSeconds",
+          "type": "integer"
+        },
+        "timeoutSeconds": {
+          "default": 5,
+          "description": "Probe timeout.",
+          "required": [],
+          "title": "timeoutSeconds",
+          "type": "integer"
+        }
+      },
+      "required": [],
+      "title": "readinessProbe"
+    },
+    "redis": {
+      "additionalProperties": true,
+      "description": "The Redis-protocol broker paperless-ngx uses to hand work from the webserver and the\ndirectory watcher to the task workers. It is not optional: without it the application starts\nand then consumes nothing.",
+      "properties": {
+        "database": {
+          "default": 0,
+          "description": "Redis database index.",
+          "minimum": 0,
+          "required": [],
+          "title": "database",
+          "type": "integer"
+        },
+        "existingSecretKey": {
+          "default": "redis-password",
+          "description": "Key inside `existingSecret` that holds the broker password.",
+          "required": [],
+          "title": "existingSecretKey",
+          "type": "string"
+        },
+        "host": {
+          "default": "",
+          "description": "Broker host. Empty resolves to the bundled Valkey when `valkey.enabled` is set.",
+          "required": [],
+          "title": "host",
+          "type": "string"
+        },
+        "password": {
+          "default": "",
+          "description": "Broker password. Ignored when `existingSecret` is set. It is injected into the URL at\ncontainer start rather than written into the ConfigMap, so it never appears in\n`kubectl describe`. Passwords containing `@`, `/` or `:` must be percent-encoded, because\nthe value becomes part of a URL.",
+          "required": [],
+          "title": "password",
+          "type": "string"
+        },
+        "port": {
+          "default": 6379,
+          "description": "Broker port.",
+          "maximum": 65535,
+          "minimum": 1,
+          "required": [],
+          "title": "port",
+          "type": "integer"
+        },
+        "prefix": {
+          "default": "",
+          "description": "Prefix for every key and channel, so several installs can share one broker without\nconsuming each other's tasks.",
+          "required": [],
+          "title": "prefix",
+          "type": "string"
+        },
+        "tls": {
+          "default": false,
+          "description": "Connect with TLS (`rediss://`).",
+          "required": [],
+          "title": "tls",
+          "type": "boolean"
+        },
+        "url": {
+          "default": "",
+          "description": "Full broker URL (`redis://host:6379/0`, `rediss://…` for TLS), overriding every field\nbelow. Use it for a managed service whose URL carries options this chart does not model.\nA password embedded here ends up in the ConfigMap — put it in `redis.password` instead,\nwhich keeps it in the Secret.",
+          "required": [],
+          "title": "url",
+          "type": "string"
+        },
+        "username": {
+          "default": "",
+          "description": "Broker username, for a server with ACLs configured.",
+          "required": [],
+          "title": "username",
+          "type": "string"
+        }
+      },
+      "required": [],
+      "title": "redis"
+    },
+    "replicaCount": {
+      "default": 1,
+      "description": "Number of replicas. paperless-ngx is a singleton: the pod also runs the scheduler and the\ndirectory watcher, so a second replica double-schedules every periodic task and races the\nfirst one for files in the consumption directory. Only `0` (stopped) and `1` are meaningful.",
+      "maximum": 1,
+      "minimum": 0,
+      "required": [],
+      "title": "replicaCount",
+      "type": "integer"
+    },
+    "resources": {
+      "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.ResourceRequirements",
+      "required": []
+    },
+    "resourcesPreset": {
+      "default": "",
+      "description": "Named resource sizing for the paperless-ngx container. Ignored when `resources` is set,\nwhich it is by default — no preset is large enough for OCR.",
+      "enum": [
+        "",
+        "nano",
+        "micro",
+        "small",
+        "medium",
+        "large"
+      ],
+      "required": [],
+      "title": "resourcesPreset"
+    },
+    "revisionHistoryLimit": {
+      "default": 3,
+      "description": "Number of old ReplicaSets retained for rollback.",
+      "required": [],
+      "title": "revisionHistoryLimit",
+      "type": "integer"
+    },
+    "securityContext": {
+      "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.SecurityContext",
+      "required": []
+    },
+    "securityContextPreset": {
+      "default": "restricted",
+      "description": "Container security context baseline. `restricted` drops all Linux capabilities and forbids\nprivilege escalation, running as root and a writable root filesystem.",
+      "enum": [
+        "restricted",
+        "none"
+      ],
+      "required": [],
+      "title": "securityContextPreset"
+    },
+    "service": {
+      "additionalProperties": true,
+      "properties": {
+        "annotations": {
+          "additionalProperties": true,
+          "description": "Annotations for the Service, e.g. cloud load balancer configuration.",
+          "required": [],
+          "title": "annotations",
+          "type": "object"
+        },
+        "ipFamilyPolicy": {
+          "default": "",
+          "description": "IP family policy for the Service.",
+          "enum": [
+            "",
+            "SingleStack",
+            "PreferDualStack",
+            "RequireDualStack"
+          ],
+          "required": [],
+          "title": "ipFamilyPolicy"
+        },
+        "loadBalancerIP": {
+          "default": "",
+          "description": "Static IP to request for a LoadBalancer service.",
+          "required": [],
+          "title": "loadBalancerIP",
+          "type": "string"
+        },
+        "loadBalancerSourceRanges": {
+          "description": "CIDRs allowed to reach the LoadBalancer. Empty means everywhere.",
+          "items": {
+            "required": [],
+            "type": "string"
+          },
+          "required": [],
+          "title": "loadBalancerSourceRanges",
+          "type": "array"
+        },
+        "nodePort": {
+          "default": 0,
+          "description": "Node port to pin under `NodePort` or `LoadBalancer`. `0` lets Kubernetes allocate one.",
+          "maximum": 65535,
+          "minimum": 0,
+          "required": [],
+          "title": "nodePort",
+          "type": "integer"
+        },
+        "port": {
+          "default": 8000,
+          "description": "Port the Service listens on.",
+          "maximum": 65535,
+          "minimum": 1,
+          "required": [],
+          "title": "port",
+          "type": "integer"
+        },
+        "sessionAffinity": {
+          "default": "",
+          "description": "Session affinity. Irrelevant while `replicaCount` is 1, which it has to be.",
+          "enum": [
+            "",
+            "None",
+            "ClientIP"
+          ],
+          "required": [],
+          "title": "sessionAffinity"
+        },
+        "type": {
+          "default": "ClusterIP",
+          "description": "Service type. `ClusterIP` is right for the normal arrangement, where an Ingress or a\nGateway publishes the application and is the only thing that terminates TLS.",
+          "enum": [
+            "ClusterIP",
+            "NodePort",
+            "LoadBalancer"
+          ],
+          "required": [],
+          "title": "type"
+        }
+      },
+      "required": [],
+      "title": "service"
+    },
+    "serviceAccount": {
+      "additionalProperties": true,
+      "properties": {
+        "annotations": {
+          "additionalProperties": true,
+          "description": "Additional annotations for the service account.",
+          "required": [],
+          "title": "annotations",
+          "type": "object"
+        },
+        "automountToken": {
+          "default": false,
+          "description": "Whether to automount the service account token.",
+          "required": [],
+          "title": "automountToken",
+          "type": "boolean"
+        },
+        "create": {
+          "default": true,
+          "description": "Whether to create a dedicated service account.",
+          "required": [],
+          "title": "create",
+          "type": "boolean"
+        },
+        "name": {
+          "default": "",
+          "description": "Custom service account name (auto-generated if empty).",
+          "required": [],
+          "title": "name",
+          "type": "string"
+        }
+      },
+      "required": [],
+      "title": "serviceAccount"
+    },
+    "startupProbe": {
+      "additionalProperties": true,
+      "description": "Startup probe. Generous on purpose: the first start runs database migrations, builds the\nsearch index and creates the superuser before the webserver accepts anything.",
+      "properties": {
+        "enabled": {
+          "default": true,
+          "description": "Enable the startup probe.",
+          "required": [],
+          "title": "enabled",
+          "type": "boolean"
+        },
+        "failureThreshold": {
+          "default": 60,
+          "description": "Consecutive failures before the container is considered failed. 60 x 10s covers a\nten-minute first start, which a large migration on slow storage genuinely takes.",
+          "required": [],
+          "title": "failureThreshold",
+          "type": "integer"
+        },
+        "httpGet": {
+          "additionalProperties": true,
+          "description": "HTTP handler for the probe. The path follows `paperless.rootPath`; an unauthenticated\nrequest there is redirected to the login page, and a redirect counts as success.",
+          "properties": {
+            "path": {
+              "default": "{{ .Values.paperless.rootPath }}/",
+              "description": "Path to request.",
+              "required": [],
+              "title": "path",
+              "type": "string"
+            },
+            "port": {
+              "default": "http",
+              "description": "Named container port to probe.",
+              "required": [],
+              "title": "port",
+              "type": "string"
+            }
+          },
+          "required": [],
+          "title": "httpGet"
+        },
+        "initialDelaySeconds": {
+          "default": 15,
+          "description": "Delay before the first probe.",
+          "required": [],
+          "title": "initialDelaySeconds",
+          "type": "integer"
+        },
+        "periodSeconds": {
+          "default": 10,
+          "description": "Probe interval.",
+          "required": [],
+          "title": "periodSeconds",
+          "type": "integer"
+        },
+        "timeoutSeconds": {
+          "default": 5,
+          "description": "Probe timeout.",
+          "required": [],
+          "title": "timeoutSeconds",
+          "type": "integer"
+        }
+      },
+      "required": [],
+      "title": "startupProbe"
+    },
+    "strategy": {
+      "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.apps.v1.DeploymentStrategy",
+      "required": []
+    },
+    "terminationGracePeriodSeconds": {
+      "default": 120,
+      "description": "Grace period for pod shutdown. Long enough for a task in flight to finish writing rather\nthan leaving a half-processed document behind.",
+      "required": [],
+      "title": "terminationGracePeriodSeconds",
+      "type": "integer"
+    },
+    "tika": {
+      "additionalProperties": true,
+      "description": "Office and e-mail document support, provided by Apache Tika (text extraction) and Gotenberg\n(rendering to PDF). Without it, `.docx`, `.odt`, `.xlsx` and `.eml` files are rejected at\nconsumption; PDFs and images never need it.",
+      "properties": {
+        "enabled": {
+          "default": false,
+          "description": "Enable the Tika parser in paperless-ngx. Both endpoints below have to resolve, whether\nthey are bundled or external — the parser registers itself for those file types and then\nfails every one of them if the services are not there.",
+          "required": [],
+          "title": "enabled",
+          "type": "boolean"
+        },
+        "gotenberg": {
+          "additionalProperties": true,
+          "description": "The Gotenberg server, which renders office documents and e-mail to PDF using LibreOffice\nand Chromium.",
+          "properties": {
+            "allowList": {
+              "default": "file:///tmp/.*",
+              "description": "Regular expression limiting what Chromium may load. The default confines it to the\ntemporary directory the conversion request itself wrote, so tracking pixels, remote images\nand in-cluster URLs are all unreachable.",
+              "required": [],
+              "title": "allowList",
+              "type": "string"
+            },
+            "disableJavaScript": {
+              "default": true,
+              "description": "Disable JavaScript in the Chromium used to render `.eml` files. Leave it on: an e-mail\nis untrusted input, and a headless browser executing whatever it contains is a\nserver-side request forgery primitive with a document library attached.",
+              "required": [],
+              "title": "disableJavaScript",
+              "type": "boolean"
+            },
+            "enabled": {
+              "default": true,
+              "description": "Run Gotenberg as part of this release. Ignored when `tika.gotenberg.endpoint` names an\nexternal one.",
+              "required": [],
+              "title": "enabled",
+              "type": "boolean"
+            },
+            "endpoint": {
+              "default": "",
+              "description": "URL of an external Gotenberg server (`http://gotenberg.example.svc:3000`).",
+              "required": [],
+              "title": "endpoint",
+              "type": "string"
+            },
+            "image": {
+              "additionalProperties": true,
+              "properties": {
+                "pullPolicy": {
+                  "default": "",
+                  "description": "The image pull policy. Empty resolves automatically from the tag/digest.",
+                  "enum": [
+                    "",
+                    "Always",
+                    "IfNotPresent",
+                    "Never"
+                  ],
+                  "required": [],
+                  "title": "pullPolicy"
+                },
+                "registry": {
+                  "default": "",
+                  "description": "Registry host. Empty means Docker Hub.",
+                  "required": [],
+                  "title": "registry",
+                  "type": "string"
+                },
+                "repository": {
+                  "default": "gotenberg/gotenberg",
+                  "description": "Image repository. The default edition, which carries both LibreOffice and Chromium —\nthe trimmed `-chromium` and `-libreoffice` editions each break half of what paperless\nasks Gotenberg to do.",
+                  "required": [],
+                  "title": "repository",
+                  "type": "string"
+                },
+                "tag": {
+                  "default": "8.36.0@sha256:87c16b9f364279d321bc9772d31fa58aa6abe036423c270698bd636c3a8e9466",
+                  "description": "Image tag, pinned by digest.",
+                  "required": [],
+                  "title": "tag",
+                  "type": "string"
+                }
+              },
+              "required": [],
+              "title": "image"
+            },
+            "resources": {
+              "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.ResourceRequirements",
+              "required": []
+            },
+            "resourcesPreset": {
+              "default": "large",
+              "description": "Named resource sizing. Ignored when `tika.gotenberg.resources` is set. LibreOffice and\nChromium are both memory-hungry; below `medium` conversions start failing rather than\nslowing down.",
+              "enum": [
+                "",
+                "nano",
+                "micro",
+                "small",
+                "medium",
+                "large"
+              ],
+              "required": [],
+              "title": "resourcesPreset"
+            }
+          },
+          "required": [],
+          "title": "gotenberg"
+        },
+        "server": {
+          "additionalProperties": true,
+          "description": "The Apache Tika server, which extracts text and metadata from office documents.",
+          "properties": {
+            "enabled": {
+              "default": true,
+              "description": "Run Tika as part of this release. Ignored when `tika.server.endpoint` names an external\none.",
+              "required": [],
+              "title": "enabled",
+              "type": "boolean"
+            },
+            "endpoint": {
+              "default": "",
+              "description": "URL of an external Tika server (`http://tika.example.svc:9998`). Set this to use one\nyou already run, and the bundled server is not created.",
+              "required": [],
+              "title": "endpoint",
+              "type": "string"
+            },
+            "image": {
+              "additionalProperties": true,
+              "properties": {
+                "pullPolicy": {
+                  "default": "",
+                  "description": "The image pull policy. Empty resolves automatically from the tag/digest.",
+                  "enum": [
+                    "",
+                    "Always",
+                    "IfNotPresent",
+                    "Never"
+                  ],
+                  "required": [],
+                  "title": "pullPolicy"
+                },
+                "registry": {
+                  "default": "",
+                  "description": "Registry host. Empty means Docker Hub.",
+                  "required": [],
+                  "title": "registry",
+                  "type": "string"
+                },
+                "repository": {
+                  "default": "apache/tika",
+                  "description": "Image repository. The plain image, not `-full`: paperless needs text extraction from\noffice formats, and the extra parsers in the full image cost roughly a gigabyte.",
+                  "required": [],
+                  "title": "repository",
+                  "type": "string"
+                },
+                "tag": {
+                  "default": "3.3.1.0@sha256:90b7fa1dc018434075fce9e1d9b88b1e3d0ea6979d0cf86e116c79a8073ae973",
+                  "description": "Image tag, pinned by digest.",
+                  "required": [],
+                  "title": "tag",
+                  "type": "string"
+                }
+              },
+              "required": [],
+              "title": "image"
+            },
+            "resources": {
+              "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.ResourceRequirements",
+              "required": []
+            },
+            "resourcesPreset": {
+              "default": "large",
+              "description": "Named resource sizing. Ignored when `tika.server.resources` is set. The JVM sizes its\nheap from the memory limit, so shrinking this shrinks the largest document Tika can parse.",
+              "enum": [
+                "",
+                "nano",
+                "micro",
+                "small",
+                "medium",
+                "large"
+              ],
+              "required": [],
+              "title": "resourcesPreset"
+            }
+          },
+          "required": [],
+          "title": "server"
+        }
+      },
+      "required": [],
+      "title": "tika"
+    },
+    "tolerations": {
+      "description": "Tolerations for pod assignment.",
+      "items": {
+        "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.Toleration",
+        "required": []
+      },
+      "required": [],
+      "title": "tolerations",
+      "type": "array"
+    },
+    "topologySpreadConstraints": {
+      "description": "Pod topology spread constraints for availability.",
+      "items": {
+        "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.TopologySpreadConstraint",
+        "required": []
+      },
+      "required": [],
+      "title": "topologySpreadConstraints",
+      "type": "array"
+    },
+    "valkey": {
+      "additionalProperties": true,
+      "description": "A single-instance Valkey bundled with the release. Valkey is the Redis fork upstream's own\ncompose stack moved to. Evaluation tier, like the bundled PostgreSQL: one replica, no failover.",
+      "properties": {
+        "enabled": {
+          "default": true,
+          "description": "Run Valkey as part of this release. On by default, because paperless-ngx cannot process a\nsingle document without a broker and an install that silently does nothing is a worse\ndefault than one extra pod.",
+          "required": [],
+          "title": "enabled",
+          "type": "boolean"
+        },
+        "image": {
+          "additionalProperties": true,
+          "properties": {
+            "pullPolicy": {
+              "default": "",
+              "description": "The image pull policy. Empty resolves automatically from the tag/digest.",
+              "enum": [
+                "",
+                "Always",
+                "IfNotPresent",
+                "Never"
+              ],
+              "required": [],
+              "title": "pullPolicy"
+            },
+            "registry": {
+              "default": "",
+              "description": "Registry host. Empty means Docker Hub.",
+              "required": [],
+              "title": "registry",
+              "type": "string"
+            },
+            "repository": {
+              "default": "valkey/valkey",
+              "description": "Image repository.",
+              "required": [],
+              "title": "repository",
+              "type": "string"
+            },
+            "tag": {
+              "default": "9.1.1-alpine@sha256:ee91f7a174ac4d6a6b0685b3a60e321f0a9dbbb691f9b0e285be2ba1d1be8328",
+              "description": "Image tag, pinned by digest.",
+              "required": [],
+              "title": "tag",
+              "type": "string"
+            }
+          },
+          "required": [],
+          "title": "image"
+        },
+        "persistence": {
+          "additionalProperties": true,
+          "description": "Storage for the broker.",
+          "properties": {
+            "enabled": {
+              "default": false,
+              "description": "Persist the queue across restarts. Off by default: what lives here is a work queue, and\nthe cost of losing it is that documents already sitting in the consumption directory are\nre-consumed on the next scan — while persisting it means a poison task survives every\nrestart. Turn it on when the consumption directory is a hand-fed drop box rather than a\nwatched share.",
+              "required": [],
+              "title": "enabled",
+              "type": "boolean"
+            },
+            "existingClaim": {
+              "default": "",
+              "description": "Use an existing PersistentVolumeClaim instead of the StatefulSet's own.",
+              "required": [],
+              "title": "existingClaim",
+              "type": "string"
+            },
+            "size": {
+              "default": "1Gi",
+              "description": "The storage size requested for the volume.",
+              "required": [],
+              "title": "size",
+              "type": "string"
+            },
+            "storageClassName": {
+              "default": "",
+              "description": "StorageClass for the claim. Empty uses the cluster default.",
+              "required": [],
+              "title": "storageClassName",
+              "type": "string"
+            }
+          },
+          "required": [],
+          "title": "persistence"
+        },
+        "resources": {
+          "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.ResourceRequirements",
+          "required": []
+        },
+        "resourcesPreset": {
+          "default": "small",
+          "description": "Named resource sizing for the broker container. Ignored when `valkey.resources` is set.",
+          "enum": [
+            "",
+            "nano",
+            "micro",
+            "small",
+            "medium",
+            "large"
+          ],
+          "required": [],
+          "title": "resourcesPreset"
+        }
+      },
+      "required": [],
+      "title": "valkey"
+    }
+  },
+  "required": [],
+  "type": "object"
+}

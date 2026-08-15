@@ -1,0 +1,66 @@
+{{- if include "paperless-ngx.componentEnabled" (dict "ctx" . "component" "gotenberg") }}
+{{- $gotenberg := .Values.tika.gotenberg }}
+{{- /*
+  Gotenberg renders office documents and e-mail to PDF with LibreOffice and Chromium. Both write
+  their working files under /tmp, which the library already provisions as an emptyDir for a
+  read-only root filesystem, so nothing else has to be writable.
+
+  The two Chromium flags are the reason this is worth configuring rather than running stock. An
+  `.eml` file is untrusted input, and a headless browser that executes its JavaScript and follows
+  its references is a server-side request forgery primitive pointed at the cluster: tracking
+  pixels resolve, and so does anything on a private address. `--chromium-disable-javascript` and
+  an allow list confined to the request's own temporary directory are what keep the render local.
+*/}}
+{{- $probe := dict "enabled" true "httpGet" (dict "path" "/health" "port" "gotenberg") }}
+{{- $ctx := include "paperless-ngx.component.context" (dict
+      "ctx" .
+      "image" $gotenberg.image
+      "runAsUser" 1001 "runAsGroup" 1001
+      "resourcesPreset" $gotenberg.resourcesPreset
+      "resources" $gotenberg.resources
+      "livenessProbe" (merge (dict "periodSeconds" 30 "timeoutSeconds" 10 "failureThreshold" 5) (deepCopy $probe))
+      "readinessProbe" (merge (dict "periodSeconds" 15 "timeoutSeconds" 5 "failureThreshold" 3) (deepCopy $probe))
+    ) | fromYaml }}
+{{- $args := list "gotenberg" }}
+{{- if $gotenberg.disableJavaScript }}
+{{- $args = append $args "--chromium-disable-javascript=true" }}
+{{- end }}
+{{- with $gotenberg.allowList }}
+{{- $args = append $args (printf "--chromium-allow-list=%s" .) }}
+{{- end }}
+{{- include "paperless-ngx.component.service" (dict "ctx" . "component" "gotenberg" "port" 3000) }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  {{- include "paperless-ngx.component.metadata" (dict "ctx" . "component" "gotenberg") | nindent 2 }}
+spec:
+  replicas: 1
+  revisionHistoryLimit: {{ .Values.revisionHistoryLimit }}
+  selector:
+    matchLabels:
+      {{- include "paperless-ngx.component.selectorLabels" (dict "ctx" . "component" "gotenberg") | nindent 6 }}
+  template:
+    metadata:
+      {{- with (include "common.tplvalues.merge" (dict "values" (list .Values.podAnnotations .Values.commonAnnotations) "context" $)) }}
+      annotations:
+        {{- . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "common.podLabels" $ctx | nindent 8 }}
+        app.kubernetes.io/component: gotenberg
+    spec:
+      {{- include "common.podSpec.common" $ctx | nindent 6 }}
+      containers:
+        {{- include "common.container" (dict
+              "ctx" $ctx
+              "name" "gotenberg"
+              "command" (list "/usr/bin/tini" "--")
+              "args" $args
+              "ports" (list (dict "name" "gotenberg" "containerPort" 3000 "protocol" "TCP"))
+            ) | nindent 8 }}
+      {{- with (include "common.volumes" (dict "ctx" $ctx)) }}
+      volumes:
+        {{- . | nindent 8 }}
+      {{- end }}
+{{- end }}

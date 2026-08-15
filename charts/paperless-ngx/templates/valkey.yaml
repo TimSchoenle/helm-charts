@@ -1,0 +1,119 @@
+{{- if include "paperless-ngx.componentEnabled" (dict "ctx" . "component" "valkey") }}
+{{- $valkey := .Values.valkey }}
+{{- $hasPassword := include "paperless-ngx.hasCredential" (dict "ctx" . "value" .Values.redis.password) }}
+{{- /*
+  The broker. Valkey rather than Redis because that is what upstream's own compose stack moved
+  to, and it speaks the same protocol.
+
+  Two configurations, decided by whether a password was supplied:
+
+    without  `--protected-mode no`, because Valkey otherwise answers only the loopback interface
+             when it has neither a bind directive nor a password — which reads as "the broker
+             refuses every connection" from the application's side. What actually protects it
+             then is the NetworkPolicy: nothing but this release's application pod may reach it.
+    with     `--requirepass`, passed through the environment rather than as an argument, so the
+             password does not end up readable in `kubectl get pod -o yaml` or in the process
+             table of the node. The health probe has to authenticate too, which is why it goes
+             through a shell as well.
+
+  Persistence is off by default: what lives here is a work queue, and losing it re-consumes
+  whatever is still sitting in the consumption directory, while keeping it also keeps a task
+  that crashes the worker.
+*/}}
+{{- /*
+  The persistence half of the configuration, written once and then spelled either as argv
+  entries or as one shell word list. `--save ""` is why it cannot simply be joined with spaces
+  in both cases: the empty argument is what disables snapshotting, and a shell drops it unless
+  the quotes survive.
+*/}}
+{{- $persistenceArgs := list "--save" "" "--appendonly" "no" }}
+{{- $persistenceShell := "--save '' --appendonly no" }}
+{{- if $valkey.persistence.enabled }}
+{{- $persistenceArgs = list "--appendonly" "yes" "--dir" "/data" }}
+{{- $persistenceShell = "--appendonly yes --dir /data" }}
+{{- end }}
+{{- $probeCommand := list "valkey-cli" "ping" }}
+{{- $command := list "valkey-server" }}
+{{- $args := concat (list "--protected-mode" "no") $persistenceArgs }}
+{{- if $hasPassword }}
+{{- $probeCommand = list "sh" "-c" "exec valkey-cli --no-auth-warning -a \"$REDIS_PASSWORD\" ping" }}
+{{- $command = list "sh" "-c" }}
+{{- $args = list (printf "exec valkey-server --requirepass \"$REDIS_PASSWORD\" %s" $persistenceShell) }}
+{{- end }}
+{{- $probe := dict "enabled" true "exec" (dict "command" $probeCommand) }}
+{{- $ctx := include "paperless-ngx.component.context" (dict
+      "ctx" .
+      "image" $valkey.image
+      "runAsUser" 1000 "runAsGroup" 1000
+      "resourcesPreset" $valkey.resourcesPreset
+      "resources" $valkey.resources
+      "livenessProbe" (merge (dict "periodSeconds" 30 "timeoutSeconds" 5 "failureThreshold" 5) (deepCopy $probe))
+      "readinessProbe" (merge (dict "periodSeconds" 10 "timeoutSeconds" 3 "failureThreshold" 3) (deepCopy $probe))
+    ) | fromYaml }}
+{{- $env := list }}
+{{- if $hasPassword }}
+{{- $env = append $env (dict "name" "REDIS_PASSWORD" "valueFrom" (dict "secretKeyRef" (dict
+      "name" (include "common.secretName" .)
+      "key" (include "paperless-ngx.secretKeyName" (dict "ctx" . "key" "redis-password" "override" .Values.redis.existingSecretKey))))) }}
+{{- end }}
+{{- $mounts := list (dict "name" "data" "mountPath" "/data") }}
+{{- $volumes := list }}
+{{- if not $valkey.persistence.enabled }}
+{{- $volumes = append $volumes (dict "name" "data" "emptyDir" dict) }}
+{{- else if $valkey.persistence.existingClaim }}
+{{- $volumes = append $volumes (dict "name" "data" "persistentVolumeClaim" (dict "claimName" $valkey.persistence.existingClaim)) }}
+{{- end }}
+{{- include "paperless-ngx.component.service" (dict "ctx" . "component" "valkey" "port" 6379) }}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  {{- include "paperless-ngx.component.metadata" (dict "ctx" . "component" "valkey") | nindent 2 }}
+spec:
+  replicas: 1
+  serviceName: {{ include "paperless-ngx.componentName" (dict "ctx" . "component" "valkey") }}
+  revisionHistoryLimit: {{ .Values.revisionHistoryLimit }}
+  selector:
+    matchLabels:
+      {{- include "paperless-ngx.component.selectorLabels" (dict "ctx" . "component" "valkey") | nindent 6 }}
+  template:
+    metadata:
+      {{- with (include "common.tplvalues.merge" (dict "values" (list .Values.podAnnotations .Values.commonAnnotations) "context" $)) }}
+      annotations:
+        {{- . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "common.podLabels" $ctx | nindent 8 }}
+        app.kubernetes.io/component: valkey
+    spec:
+      {{- include "common.podSpec.common" $ctx | nindent 6 }}
+      containers:
+        {{- include "common.container" (dict
+              "ctx" $ctx
+              "name" "valkey"
+              "command" $command
+              "args" $args
+              "env" $env
+              "ports" (list (dict "name" "valkey" "containerPort" 6379 "protocol" "TCP"))
+              "volumeMounts" $mounts
+            ) | nindent 8 }}
+      volumes:
+        {{- include "common.volumes" (dict "ctx" $ctx "volumes" $volumes) | nindent 8 }}
+  {{- if and $valkey.persistence.enabled (not $valkey.persistence.existingClaim) }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          {{- include "common.immutableLabels" $ctx | nindent 10 }}
+          app.kubernetes.io/component: valkey
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        {{- with $valkey.persistence.storageClassName }}
+        storageClassName: {{ . | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ $valkey.persistence.size | quote }}
+  {{- end }}
+{{- end }}

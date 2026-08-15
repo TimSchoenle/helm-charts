@@ -1,0 +1,276 @@
+suite: test deployment
+templates:
+  - deployment.yaml
+  - configmap.yaml
+  - secret.yaml
+set:
+  paperless.secretKey: ci-secret-key
+tests:
+  - it: runs one pod carrying the whole application
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-paperless-ngx
+      - equal:
+          path: spec.replicas
+          value: 1
+      - lengthEqual:
+          path: spec.template.spec.containers
+          count: 1
+      - equal:
+          path: spec.template.spec.containers[0].ports[0].containerPort
+          value: 8000
+
+  # The component label separates the application from the bundled datastores, which share its
+  # name and instance labels. Without it the Service would put a database behind the web UI.
+  - it: selects only its own pods
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.selector.matchLabels
+          value:
+            app.kubernetes.io/name: paperless-ngx
+            app.kubernetes.io/instance: RELEASE-NAME
+            app.kubernetes.io/component: server
+      - equal:
+          path: spec.template.metadata.labels["app.kubernetes.io/component"]
+          value: server
+
+  # A ReadWriteOnce claim cannot be attached to the replacement pod while the outgoing one holds
+  # it, so a rolling update deadlocks.
+  - it: falls back to Recreate while any volume is ReadWriteOnce
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.strategy.type
+          value: Recreate
+
+  - it: rolls normally once every volume can be shared
+    set:
+      persistence.media.accessMode: ReadWriteMany
+      persistence.data.accessMode: ReadWriteMany
+      persistence.consume.accessMode: ReadWriteMany
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - notExists:
+          path: spec.strategy
+
+  - it: honours an explicit strategy over both
+    set:
+      strategy:
+        type: RollingUpdate
+        rollingUpdate:
+          maxSurge: 0
+          maxUnavailable: 1
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.strategy.type
+          value: RollingUpdate
+
+  - it: mounts every directory the application keeps state in
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: media
+            mountPath: /usr/src/paperless/media
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: data
+            mountPath: /usr/src/paperless/data
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: consume
+            mountPath: /usr/src/paperless/consume
+      # The export directory is one of the image's declared volumes: without a mount of its own
+      # it is read-only, and `document_exporter` fails at the moment somebody needs a backup.
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: export
+            mountPath: /usr/src/paperless/export
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: export
+            emptyDir: {}
+
+  - it: binds each directory to its own claim
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: media
+            persistentVolumeClaim:
+              claimName: RELEASE-NAME-paperless-ngx-media
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: data
+            persistentVolumeClaim:
+              claimName: RELEASE-NAME-paperless-ngx-data
+
+  - it: uses an operator's own claim where one is named
+    set:
+      persistence.consume.existingClaim: scanner-dropbox
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: consume
+            persistentVolumeClaim:
+              claimName: scanner-dropbox
+
+  - it: reads its settings from the ConfigMap
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].envFrom
+          content:
+            configMapRef:
+              name: RELEASE-NAME-paperless-ngx
+
+  - it: reads them from an operator's ConfigMap when one is supplied
+    set:
+      existingConfigMap: paperless-settings
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].envFrom
+          content:
+            configMapRef:
+              name: paperless-settings
+
+  # The kubelet expands `$(REDIS_PASSWORD)` only against variables defined earlier in the list. A
+  # later definition is left as literal text, and the symptom is a broker that refuses a password
+  # nobody can find in the pod spec.
+  - it: defines the broker password before the URL that interpolates it
+    set:
+      redis.password: broker-pw
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].env[0].name
+          value: REDIS_PASSWORD
+      - equal:
+          path: spec.template.spec.containers[0].env[1].name
+          value: PAPERLESS_REDIS
+
+  - it: takes the broker URL verbatim when one is given
+    set:
+      valkey.enabled: false
+      redis.url: rediss://broker.example.com:6380/2
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: PAPERLESS_REDIS
+            value: rediss://broker.example.com:6380/2
+
+  - it: probes the application over HTTP on the path it is served from
+    set:
+      paperless.rootPath: /paperless
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].startupProbe.httpGet.path
+          value: /paperless/
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe.httpGet.path
+          value: /paperless/
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.httpGet.path
+          value: /paperless/
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.httpGet.port
+          value: http
+
+  # The first start migrates the database and builds the search index before the webserver
+  # answers anything, which is minutes rather than seconds on slow storage.
+  - it: gives the first start room before the liveness probe intervenes
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].startupProbe.failureThreshold
+          value: 60
+
+  - it: rolls the pod when the configuration changes
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - exists:
+          path: spec.template.metadata.annotations.checksum/configmap
+      - exists:
+          path: spec.template.metadata.annotations.checksum/secret
+
+  - it: accepts additional environment and volumes
+    set:
+      extraEnv:
+        - name: PAPERLESS_APP_TITLE
+          value: Archive
+      extraVolumes:
+        - name: certificates
+          secret:
+            secretName: internal-ca
+      extraVolumeMounts:
+        - name: certificates
+          mountPath: /etc/ssl/internal
+          readOnly: true
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: PAPERLESS_APP_TITLE
+            value: Archive
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: certificates
+            mountPath: /etc/ssl/internal
+            readOnly: true
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: certificates
+            secret:
+              secretName: internal-ca

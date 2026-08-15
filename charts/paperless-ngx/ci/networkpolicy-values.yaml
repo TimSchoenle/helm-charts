@@ -1,0 +1,47 @@
+# Network policies in the portable dialect, alongside an Ingress — the combination that decides
+# whether the policy admits the thing that publishes the application. Installable because a
+# NetworkPolicy is accepted by any API server; whether a CNI enforces it is the cluster's
+# business and not this chart's.
+paperless:
+  secretKey: ci-secret-key-not-a-real-one
+  admin:
+    user: admin
+    email: admin@example.com
+    password: ci-admin-password
+
+ingress:
+  enabled: true
+  host: paperless.ci.example.com
+  className: nginx
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: 100m
+  tls:
+    enabled: true
+
+networkPolicy:
+  enabled: true
+  engine: kubernetes
+  ingress:
+    controller:
+      enabled: true
+      namespace: ingress-nginx
+      podSelector:
+        app.kubernetes.io/name: ingress-nginx
+  egress:
+    https: true
+    smtp: true
+
+resources:
+  limits:
+    memory: 1Gi
+  requests:
+    cpu: 100m
+    memory: 256Mi
+
+persistence:
+  media:
+    size: 1Gi
+  data:
+    size: 1Gi
+  consume:
+    size: 1Gi

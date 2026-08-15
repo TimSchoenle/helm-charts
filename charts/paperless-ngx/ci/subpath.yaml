@@ -1,0 +1,34 @@
+# Serving under a sub-path of a shared hostname, which is the configuration with the most moving
+# parts: the script name, the static URL that Django does not prefix on its own, and the three
+# probes, whose paths follow the sub-path so they keep pointing at the application rather than at
+# a 404.
+#
+# Named without the `-values` suffix, so `ct install` skips it. It is a render-shape fixture: what
+# it proves is that all five of those values agree, and installing it would only re-prove that
+# paperless starts.
+paperless:
+  secretKey: ci-secret-key-not-a-real-one
+  rootPath: /paperless
+  url: https://apps.ci.example.com/paperless
+  proxy:
+    trustForwardedProto: true
+    trustedProxies:
+      - 10.0.0.0/8
+
+ingress:
+  enabled: true
+  host: apps.ci.example.com
+  path: /paperless
+  pathType: Prefix
+  className: nginx
+  tls:
+    enabled: true
+    secretName: apps-ci-tls
+
+persistence:
+  media:
+    size: 1Gi
+  data:
+    size: 1Gi
+  consume:
+    size: 1Gi

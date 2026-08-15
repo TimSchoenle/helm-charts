@@ -1,0 +1,488 @@
+{{ template "chart.header" . }}
+
+{{ template "chart.deprecationWarning" . }}
+
+{{ template "chart.badgesSection" . }}
+
+{{ template "chart.description" . }}
+
+Four decisions shape every install, and all four are covered below: the archive lives on volumes
+that must outlive the release ([Storage](#storage)), the application cannot process a single
+document without a broker ([Datastores](#datastores)), Django rejects requests whose hostname it
+was not told about ([Publishing](#publishing)), and office documents need two more services
+([Office and e-mail documents](#office-and-e-mail-documents)).
+
+## Prerequisites
+
+- Kubernetes 1.19+
+- Helm 3.0+
+- A StorageClass, unless every directory is deliberately run on an `emptyDir`
+- A Django secret key — the chart refuses to render without one, and there is no safe default
+- The Prometheus Operator CRDs, if `metrics.prometheusRule` is enabled
+- The Gateway API CRDs, if `gateway` is enabled
+- Cilium 1.16+, if `networkPolicy.engine` is `cilium` or `both`
+
+## Quick start
+
+```shell
+helm repo add timschoenle https://timschoenle.github.io/helm-charts
+helm repo update
+
+helm install [RELEASE_NAME] timschoenle/{{ template "chart.name" . }} \
+  --namespace [NAMESPACE] --create-namespace \
+  --set paperless.secretKey="$(openssl rand -base64 48)" \
+  --set paperless.admin.user=admin \
+  --set paperless.admin.password="$(openssl rand -base64 24)" \
+  --set paperless.admin.email=admin@example.com
+```
+
+That gives you a working archive: paperless-ngx on SQLite, a bundled Valkey as the broker, and
+four claims. Nothing is published yet — reach it with `kubectl port-forward` until you have
+decided how it should be exposed.
+
+Upgrade with `helm upgrade [RELEASE_NAME] timschoenle/{{ template "chart.name" . }} -n [NAMESPACE]`.
+
+> [!WARNING]
+> `helm uninstall` deletes the PersistentVolumeClaims along with the release, and with them every
+> document in the archive. Set
+> `persistence.media.annotations."helm\.sh/resource-policy"=keep` **before** you need it.
+
+## The secret key
+
+`paperless.secretKey` signs session cookies, password reset links and share links. Upstream ships
+a published constant as its fallback, so an instance running on that fallback will hand a forged
+session to anybody who knows it. The chart therefore fails the render rather than starting:
+
+```shell
+helm install ... --set paperless.secretKey="$(openssl rand -base64 48)"
+```
+
+For anything beyond a first try, put it in a Secret instead and keep it out of `values.yaml` and
+out of the Helm release object entirely:
+
+```shell
+kubectl create secret generic paperless-credentials \
+  --namespace [NAMESPACE] \
+  --from-literal=secret-key="$(openssl rand -base64 48)" \
+  --from-literal=admin-password="$(openssl rand -base64 24)" \
+  --from-literal=database-password="$(openssl rand -base64 24)"
+```
+
+```yaml
+existingSecret: paperless-credentials
+```
+
+`existingSecret` replaces the chart's own Secret entirely. The key names it looks for are the
+`existingSecretKey` field beside each credential, so a Secret you already have can keep its own
+naming.
+
+Changing the secret key later invalidates every session and every outstanding share link. It does
+not touch stored documents.
+
+## Storage
+
+Four directories, four claims, because they have genuinely different lifetimes:
+
+| Value | Mount | What it holds | Losing it |
+| --- | --- | --- | --- |
+| `persistence.media` | `/usr/src/paperless/media` | originals, archived PDF/As, thumbnails | loses the archive |
+| `persistence.data` | `/usr/src/paperless/data` | search index, classification model, scheduler state, and the SQLite database | rebuildable, by hand |
+| `persistence.consume` | `/usr/src/paperless/consume` | the drop box | loses what was queued |
+| `persistence.export` | `/usr/src/paperless/export` | `document_exporter` output | scratch space |
+
+`media` is the one to back up. `data` can be rebuilt from it with `document_index reindex` —
+unless the database is SQLite, in which case it *is* the archive's metadata and the chart refuses
+to put it on an `emptyDir`.
+
+`export` is backed by an `emptyDir` unless you enable a claim for it. That is not only a
+convenience: the directory is one of the image's declared volumes, so without a mount of its own
+it is read-only, and an export fails at the moment somebody needs a backup.
+
+Claims default to `ReadWriteOnce`, which forces the Deployment to the `Recreate` update strategy —
+a rolling update deadlocks, because the replacement pod cannot attach a volume the outgoing pod
+still holds. Every upgrade is therefore a short outage.
+
+### Feeding it documents
+
+Upload through the web UI, or drop files into the consumption directory. A `ReadWriteMany` claim
+shared with a scanner is the usual arrangement for the latter:
+
+```yaml
+persistence:
+  consume:
+    existingClaim: scanner-dropbox
+
+paperless:
+  consumer:
+    # Network storage delivers no filesystem events, so the watcher has to poll for them.
+    pollingInterval: 30
+```
+
+## Datastores
+
+**The broker is not optional.** paperless-ngx hands every document to a task worker through
+Redis; without one it starts, serves the web UI and consumes nothing — a failure with no error
+message anywhere. The chart bundles a Valkey for exactly that reason and refuses to render if
+neither a bundled nor an external broker is configured.
+
+| | Bundled | External |
+| --- | --- | --- |
+| Broker | `valkey.enabled` (default **on**) | `redis.host` / `redis.url` |
+| Database | `postgresql.enabled` | `database.host` |
+
+Both bundled datastores are evaluation tier and documented as such: one replica, no failover, no
+backups, no connection pooler. They exist so `helm install` produces a working stack on a bare
+cluster. A production archive points at a managed instance or an operator-run cluster.
+
+### SQLite or PostgreSQL
+
+SQLite is the default and is upstream's supported configuration for a single user. It lives in the
+data volume and needs no second workload. PostgreSQL is upstream's recommendation once several
+people use the archive at once:
+
+```yaml
+database:
+  engine: postgresql
+  password: "" # or existingSecret
+
+postgresql:
+  enabled: true
+  persistence:
+    size: 8Gi
+```
+
+Switching an existing archive is an export and re-import (`document_exporter` then
+`document_importer`), not a values change — the chart cannot migrate the data for you, and
+pointing a populated release at an empty database shows an empty archive rather than an error.
+
+### A broker with a password
+
+The bundled Valkey runs without one by default and is protected by the NetworkPolicy instead.
+Setting `redis.password` switches it to `--requirepass`, passed through the environment rather
+than as an argument so it stays out of `kubectl get pod -o yaml` and out of the node's process
+table. The password is injected into the broker URL by the kubelet, which is why it never appears
+in the ConfigMap either.
+
+Percent-encode a password containing `@`, `/` or `:` — the value becomes part of a URL.
+
+## Publishing
+
+Django validates the `Host` header and the origin of every unsafe request against `PAPERLESS_URL`.
+Get it wrong and the login page loads perfectly and then rejects the login with a CSRF error,
+which is a genuinely confusing failure. The chart derives it from whatever publishes the
+application, so in the common case there is nothing to set:
+
+```yaml
+ingress:
+  enabled: true
+  host: paperless.example.com
+  className: nginx
+  tls:
+    enabled: true
+  annotations:
+    # Uploading a scan is one large POST. The controller's default limit is well below what a
+    # document weighs, and the upload fails at the proxy with an error paperless never sees.
+    nginx.ingress.kubernetes.io/proxy-body-size: 100m
+```
+
+Set `paperless.url` explicitly when something the chart cannot see is in front — a second proxy,
+a CDN, a split-horizon DNS name.
+
+### Gateway API
+
+`gateway` is the same job under the newer API, where the cluster operator owns the `Gateway` and
+this chart owns the `HTTPRoute`:
+
+```yaml
+gateway:
+  enabled: true
+  hostnames:
+    - paperless.example.com
+  parentRefs:
+    - name: shared
+      namespace: gateways
+  timeouts:
+    # Worth raising for the same reason as the body size limit above.
+    request: 300s
+```
+
+`gateway.create` additionally renders a Gateway, for an install with no cluster-wide one to attach
+to. Both switches are independent of `ingress`, so a cluster migrating between the two can run
+both for a while.
+
+### Under a sub-path
+
+Serving at `https://apps.example.com/paperless` takes two settings, because Django prefixes the
+URLs it generates with the script name but not the static ones:
+
+```yaml
+paperless:
+  rootPath: /paperless
+
+ingress:
+  enabled: true
+  host: apps.example.com
+  path: /paperless
+```
+
+The chart sets `PAPERLESS_STATIC_URL` to match, and the three probe paths follow `rootPath` as
+well, so they keep pointing at the application rather than at a 404.
+
+## Office and e-mail documents
+
+PDFs and images need nothing extra. `.docx`, `.odt`, `.xlsx` and `.eml` are rejected at
+consumption unless Apache Tika (text extraction) and Gotenberg (rendering to PDF) are reachable:
+
+```yaml
+tika:
+  enabled: true
+  # Both bundled by default; set an endpoint instead to use servers you already run.
+  server:
+    enabled: true
+  gotenberg:
+    enabled: true
+```
+
+Gotenberg is run with JavaScript disabled and an allow list confined to the request's own
+temporary directory. An e-mail is untrusted input, and a headless browser that executes it and
+follows its references is a server-side request forgery primitive with a document library
+attached: tracking pixels resolve, and so does anything on a private address.
+
+Both images are large — roughly 2.5 GiB together, because Gotenberg carries a LibreOffice and a
+Chromium. Point `tika.server.endpoint` and `tika.gotenberg.endpoint` at shared instances if
+several applications need them.
+
+## Security
+
+Every workload in the release satisfies the restricted Pod Security Standard out of the box:
+
+- runs as the unprivileged account its image was built for — `paperless` (1000), `postgres` (999),
+  `valkey` (1000), `gotenberg` (1001), `tika` (35002)
+- read-only root filesystem, all Linux capabilities dropped, no privilege escalation,
+  `seccompProfile: RuntimeDefault`
+- no ServiceAccount token mounted
+
+The paperless-ngx image supervises its four processes with s6-overlay, which keeps its supervision
+tree under `/run` and executes from it, and OCR writes every intermediate file to
+`PAPERLESS_SCRATCH_DIR` under `/tmp`. Both are `emptyDir` mounts, and `S6_READ_ONLY_ROOT` is set
+so s6-overlay copies its service definitions into the writable one instead of trying to write next
+to them. Without those, the container dies before the application is ever started.
+
+The image detects a non-root start and skips the UID remapping and the recursive `chown` it does
+when started as root — so `USERMAP_UID` and `USERMAP_GID` have no effect here, and `fsGroup` is
+what makes the volumes writable.
+
+Credentials never reach the ConfigMap. Every one is placed in a Secret and consumed with
+`secretKeyRef`; the broker password is interpolated into the URL by the kubelet, from a variable
+that is itself a `secretKeyRef`.
+
+> [!CAUTION]
+> `paperless.remoteUser.enabled` trusts an HTTP header as proof of identity. Only enable it where
+> a proxy strips that header from incoming requests **and** a NetworkPolicy stops anything else
+> from reaching the pod directly — otherwise any pod in the cluster can set it and be any user it
+> likes.
+
+## Network policies
+
+`networkPolicy.enabled` renders one default-deny policy pair per workload: the application reaches
+the broker, the database and the two converters, and none of them reaches back. Every egress rule
+carries a `to:` selector — a rule that lists only `ports:` is not a restriction, because the API
+reads a missing `to` as "all destinations", including the cloud metadata endpoint at
+169.254.169.254.
+
+What crosses the cluster boundary is opt-in and off by default:
+
+| Value | Opens |
+| --- | --- |
+| `networkPolicy.egress.https` | TCP 443, for webhooks, mail fetching and remote OCR |
+| `networkPolicy.egress.smtp` | TCP 587 and 465, for an external mail relay |
+| `networkPolicy.egress.external` | the datastores, when they are not bundled |
+
+`networkPolicy.engine` picks the dialect the same rules are written in — `kubernetes` (default),
+`cilium`, or `both` for a CNI migration. The graph is derived once and rendered twice, so the two
+cannot describe different topologies.
+
+The Cilium dialect can state what the portable API cannot: a named egress destination instead of
+"the entire public internet on port 587".
+
+```yaml
+networkPolicy:
+  enabled: true
+  engine: cilium
+  egress:
+    smtp: true
+  cilium:
+    toFQDNs:
+      - matchName: smtp.example.com
+    dnsMatchPatterns:
+      - matchPattern: "*.example.com"
+```
+
+`dnsMatchPatterns` is what makes that enforceable: an FQDN rule matches the addresses Cilium's DNS
+proxy saw returned for the name, so the DNS rule has to observe the lookup. Naming destinations
+*replaces* the CIDR rule rather than adding to it — emitting both would leave the broad rule in
+place and make the narrow one decorative.
+
+## Monitoring
+
+**paperless-ngx publishes no Prometheus metrics.** There is no queue depth to alert on, no
+consumption failure counter and no OCR duration histogram, and this chart does not pretend
+otherwise: there is no exporter and no ServiceMonitor. What it ships instead is built on series a
+cluster already has — kube-state-metrics for workload health, the kubelet for volume usage.
+
+| Toggle | What it creates |
+| --- | --- |
+| `metrics.prometheusRule.enabled` | a `PrometheusRule` with eight alerts and four recording rules |
+| `metrics.dashboard.enabled` | a labelled ConfigMap the Grafana sidecar loads |
+| `metrics.dashboard.grafanaOperator.enabled` | one `GrafanaDashboard` per file, for grafana-operator v5 |
+
+```yaml
+metrics:
+  prometheusRule:
+    enabled: true
+    scope: namespace
+    labels:
+      release: kube-prometheus-stack
+  dashboard:
+    enabled: true
+```
+
+The `labels` are not decoration: a Prometheus Operator selects rules by label, so without the one
+your instance selects on the object is created and never loaded.
+
+The alerts cover availability, absence, crash loops, restart rate, out-of-memory kills, volume
+fill at two thresholds, and the bundled datastores. Each is evaluated against synthetic series
+with `promtool` in CI, in both the committed form and the namespace-scoped form a cluster actually
+receives.
+
+Two things are worth knowing about how they select objects. Every selector matches this release
+by **name or by label**, joined with `or`, because neither is sufficient alone: the objects carry
+the chart name unless `nameOverride` or `fullnameOverride` renames them, and the
+`app.kubernetes.io/name` join survives a rename but matches nothing at all on a stock
+kube-prometheus-stack — kube-state-metrics stopped exporting object labels by default in v2. A
+default install is therefore matched whatever the metrics stack is configured to export, and a
+renamed one needs `--metric-labels-allowlist` to include that label; the install notes say so when
+a rename is in play. And `metrics.prometheusRule.scope: namespace`
+rewrites every selector to this release's namespace, because a `PrometheusRule` is not confined to
+the namespace it lives in: left unscoped, two installs page each other for outages neither of them
+had.
+
+## Recipes
+
+### A household archive
+
+```yaml
+paperless:
+  secretKey: "" # from `openssl rand -base64 48`
+  timeZone: Europe/Berlin
+  admin:
+    user: admin
+    email: admin@example.com
+    password: ""
+  ocr:
+    language: deu+eng
+
+persistence:
+  media:
+    size: 100Gi
+    annotations:
+      helm.sh/resource-policy: keep
+
+ingress:
+  enabled: true
+  host: paperless.example.com
+  className: nginx
+  tls:
+    enabled: true
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt
+    nginx.ingress.kubernetes.io/proxy-body-size: 100m
+```
+
+`ocr.language` only accepts languages already installed in the image. Upstream installs extra
+Tesseract packs at container start when `PAPERLESS_OCR_LANGUAGES` is set, which needs a writable
+root filesystem, root privileges and internet access from the pod — none of which this chart's
+security baseline provides. Build a derived image instead.
+
+### A shared archive on external datastores
+
+```yaml
+existingSecret: paperless-credentials
+
+paperless:
+  tasks:
+    workers: 2
+    webserverWorkers: 2
+
+database:
+  engine: postgresql
+  host: postgres.data.svc.cluster.local
+  sslMode: require
+
+redis:
+  host: valkey.data.svc.cluster.local
+
+valkey:
+  enabled: false
+
+resources:
+  limits:
+    memory: 4Gi
+  requests:
+    cpu: 1
+    memory: 1Gi
+
+networkPolicy:
+  enabled: true
+  egress:
+    external:
+      enabled: true
+      namespaceSelector:
+        kubernetes.io/metadata.name: data
+```
+
+Raise the memory limit alongside `tasks.workers`: each worker processes a whole document, and a
+large colour scan is hundreds of megabytes of rasterised pages. An out-of-memory kill during
+consumption leaves the file in the consumption directory, where the next scan retries it — and
+reproduces the kill.
+
+### Settings the chart does not model
+
+Anything in upstream's configuration reference can be passed through verbatim. Values are rendered
+through the template engine, so release-scoped values work:
+
+```yaml
+paperless:
+  extraConfig:
+    PAPERLESS_APP_TITLE: "{{ `{{ .Release.Name }}` }} archive"
+    PAPERLESS_ENABLE_NLTK: "false"
+    PAPERLESS_CONSUMER_IGNORE_PATTERNS: '[".DS_Store", "desktop.ini"]'
+```
+
+Never put credentials there — `extraConfig` lands in the ConfigMap, not the Secret. For a setting
+whose value is sensitive, use `extraEnv` with a `secretKeyRef`, or mount the Secret and point the
+image's `PAPERLESS_<NAME>_FILE` indirection at the file.
+
+## Operating it
+
+```shell
+# create a superuser by hand
+kubectl exec -n [NAMESPACE] deployment/[RELEASE_NAME]-paperless-ngx -- createsuperuser
+
+# export the whole archive, then copy it out
+kubectl exec -n [NAMESPACE] deployment/[RELEASE_NAME]-paperless-ngx -- document_exporter ../export
+
+# rebuild the search index after restoring the data volume
+kubectl exec -n [NAMESPACE] deployment/[RELEASE_NAME]-paperless-ngx -- document_index reindex
+```
+
+Upgrades to paperless-ngx itself run their database migrations on start, so a rollback to an
+earlier `image.tag` after a major upgrade is not supported by the application. Export first.
+
+{{ template "chart.valuesSection" . }}
+
+{{ template "chart.sourcesSection" . }}
+
+{{ template "chart.maintainersSection" . }}
+
+{{ template "helm-docs.versionFooter" . }}

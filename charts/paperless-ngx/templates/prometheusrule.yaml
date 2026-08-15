@@ -1,0 +1,20 @@
+{{- /*
+The alerting rules under `rules/`.
+
+They are written against series a cluster already has — kube-state-metrics for workload health,
+the kubelet for volume usage — because paperless-ngx publishes no metrics of its own. That is
+the honest boundary of what this chart can alert on: it can tell you the archive is down, the
+pod is crash-looping, or the media volume is about to fill, and it cannot tell you a document
+failed to OCR.
+
+Which *series* the rules then match is a separate problem with a separate answer: see
+`paperless-ngx.rules.scopePlaceholder` for why every selector in the files carries a placeholder
+matcher, and `common.prometheus.rules.*` for why the files are parsed rather than templated.
+*/ -}}
+{{- if .Values.metrics.prometheusRule.enabled }}
+{{- include "common.prometheus.rules.prometheusRule" (dict
+      "ctx" .
+      "values" .Values.metrics.prometheusRule
+      "scopePlaceholder" (include "paperless-ngx.rules.scopePlaceholder" .)
+      "scopeMatcher" (include "paperless-ngx.rules.scopeMatcher" .)) }}
+{{- end }}

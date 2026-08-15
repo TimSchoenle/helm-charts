@@ -1,0 +1,35 @@
+# Publishing through the Gateway API, with this chart creating the Gateway as well — the
+# self-contained case, where there is no cluster-wide Gateway to attach to.
+#
+# Named without the `-values` suffix, so `ct install` skips it: the Gateway API CRDs are not
+# installed on the CI cluster, and the chart refuses to render without them rather than dropping
+# the route silently. The render and kubeconform jobs declare them with `--api-versions` instead.
+paperless:
+  secretKey: ci-secret-key-not-a-real-one
+
+gateway:
+  enabled: true
+  create: true
+  gatewayClassName: cilium
+  hostnames:
+    - paperless.ci.example.com
+  timeouts:
+    request: 300s
+  tls:
+    enabled: true
+    certificateRefs:
+      - name: paperless-ci-tls
+  httpsRedirect:
+    enabled: true
+
+networkPolicy:
+  enabled: true
+  engine: kubernetes
+
+persistence:
+  media:
+    size: 1Gi
+  data:
+    size: 1Gi
+  consume:
+    size: 1Gi

@@ -1,0 +1,233 @@
+suite: bundled components
+templates:
+  - valkey.yaml
+  - postgresql.yaml
+  - gotenberg.yaml
+  - tika.yaml
+set:
+  paperless.secretKey: ci-secret-key
+tests:
+  - it: runs a broker by default, because nothing is consumed without one
+    template: valkey.yaml
+    asserts:
+      - hasDocuments:
+          count: 2
+      - isKind:
+          of: Service
+        documentIndex: 0
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-paperless-ngx-valkey
+        documentIndex: 0
+      - isKind:
+          of: StatefulSet
+        documentIndex: 1
+
+  # Snapshotting a work queue keeps a task that crashes the worker across every restart, which
+  # is the failure mode persistence would introduce rather than prevent.
+  - it: runs the broker without persistence and without protected mode
+    template: valkey.yaml
+    documentIndex: 1
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].command
+          value: [valkey-server]
+      - equal:
+          path: spec.template.spec.containers[0].args
+          value: ["--protected-mode", "no", "--save", "", "--appendonly", "no"]
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: data
+            emptyDir: {}
+
+  - it: enables append-only persistence when asked for it
+    set:
+      valkey.persistence.enabled: true
+    template: valkey.yaml
+    documentIndex: 1
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].args
+          value: ["--protected-mode", "no", "--appendonly", "yes", "--dir", "/data"]
+      - equal:
+          path: spec.volumeClaimTemplates[0].metadata.name
+          value: data
+
+  # The password reaches the server through the environment, so it is not readable in
+  # `kubectl get pod -o yaml` or in the node's process table — and the probe has to authenticate
+  # with it too, or the pod is never ready.
+  - it: requires a password when one is configured, without exposing it
+    set:
+      redis.password: broker-pw
+    template: valkey.yaml
+    documentIndex: 1
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].command
+          value: [sh, -c]
+      - equal:
+          path: spec.template.spec.containers[0].args
+          value: ['exec valkey-server --requirepass "$REDIS_PASSWORD" --save '''' --appendonly no']
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: REDIS_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: RELEASE-NAME-paperless-ngx
+                key: redis-password
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.exec.command
+          value: [sh, -c, 'exec valkey-cli --no-auth-warning -a "$REDIS_PASSWORD" ping']
+
+  - it: creates no broker when an external one is used
+    set:
+      valkey.enabled: false
+      redis.host: valkey.data.svc
+    template: valkey.yaml
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: creates no database unless one is asked for
+    template: postgresql.yaml
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  # The image refuses to initialise a directory that is not empty, and many storage classes hand
+  # over a fresh claim carrying a lost+found.
+  - it: initialises the database in a subdirectory of its volume
+    set:
+      database.engine: postgresql
+      database.password: db-pw
+      postgresql.enabled: true
+    template: postgresql.yaml
+    documentIndex: 1
+    asserts:
+      - isKind:
+          of: StatefulSet
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: PGDATA
+            value: /var/lib/postgresql/data/pgdata
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: POSTGRES_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: RELEASE-NAME-paperless-ngx
+                key: database-password
+      # The unix socket directory has to be writable under a read-only root filesystem.
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: run
+            mountPath: /var/run/postgresql
+      - equal:
+          path: spec.volumeClaimTemplates[0].spec.resources.requests.storage
+          value: 8Gi
+
+  - it: creates the role and database the application connects with
+    set:
+      database.engine: postgresql
+      database.password: db-pw
+      database.user: documents
+      database.name: documents
+      postgresql.enabled: true
+    template: postgresql.yaml
+    documentIndex: 1
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: POSTGRES_USER
+            value: documents
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: POSTGRES_DB
+            value: documents
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.exec.command
+          value: [pg_isready, -U, documents, -d, documents]
+
+  - it: creates no converters until office document support is switched on
+    templates:
+      - gotenberg.yaml
+      - tika.yaml
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  # An e-mail is untrusted input, and a headless browser that executes it is a request forgery
+  # primitive pointed at the cluster.
+  - it: renders e-mail with JavaScript disabled and no access beyond the request's own files
+    set:
+      tika.enabled: true
+    template: gotenberg.yaml
+    documentIndex: 1
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].args
+          value:
+            - gotenberg
+            - --chromium-disable-javascript=true
+            - --chromium-allow-list=file:///tmp/.*
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe.httpGet.path
+          value: /health
+
+  - it: probes Tika on the endpoint that proves it finished starting
+    set:
+      tika.enabled: true
+    template: tika.yaml
+    documentIndex: 1
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.httpGet.path
+          value: /version
+      - equal:
+          path: spec.template.spec.containers[0].ports[0].containerPort
+          value: 9998
+
+  - it: creates no converter that an external endpoint already provides
+    set:
+      tika.enabled: true
+      tika.server.endpoint: http://tika.docs.svc:9998
+    templates:
+      - tika.yaml
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: gives every component its own component label to be selected by
+    set:
+      tika.enabled: true
+      database.engine: postgresql
+      database.password: db-pw
+      postgresql.enabled: true
+    asserts:
+      - equal:
+          path: spec.selector["app.kubernetes.io/component"]
+          value: valkey
+        template: valkey.yaml
+        documentIndex: 0
+      - equal:
+          path: spec.selector["app.kubernetes.io/component"]
+          value: postgresql
+        template: postgresql.yaml
+        documentIndex: 0
+      - equal:
+          path: spec.selector["app.kubernetes.io/component"]
+          value: gotenberg
+        template: gotenberg.yaml
+        documentIndex: 0
+      - equal:
+          path: spec.selector["app.kubernetes.io/component"]
+          value: tika
+        template: tika.yaml
+        documentIndex: 0

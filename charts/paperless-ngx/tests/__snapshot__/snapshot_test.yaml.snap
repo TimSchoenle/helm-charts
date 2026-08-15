@@ -1,0 +1,2362 @@
+matches the committed snapshot for a default install:
+  1: |
+    apiVersion: v1
+    data:
+      PAPERLESS_ARCHIVE_FILE_GENERATION: auto
+      PAPERLESS_AUDIT_LOG_ENABLED: "true"
+      PAPERLESS_CONSUMER_ASN_BARCODE_PREFIX: ASN
+      PAPERLESS_CONSUMER_DELETE_DUPLICATES: "false"
+      PAPERLESS_CONSUMER_ENABLE_ASN_BARCODE: "false"
+      PAPERLESS_CONSUMER_ENABLE_BARCODES: "false"
+      PAPERLESS_CONSUMER_POLLING_INTERVAL: "0"
+      PAPERLESS_CONSUMER_RECURSIVE: "false"
+      PAPERLESS_CONSUMER_STABILITY_DELAY: "5"
+      PAPERLESS_CONSUMER_SUBDIRS_AS_TAGS: "false"
+      PAPERLESS_DBENGINE: sqlite
+      PAPERLESS_ENABLE_UPDATE_CHECK: "false"
+      PAPERLESS_FILENAME_FORMAT_REMOVE_NONE: "false"
+      PAPERLESS_OCR_CLEAN: clean
+      PAPERLESS_OCR_DESKEW: "true"
+      PAPERLESS_OCR_LANGUAGE: eng
+      PAPERLESS_OCR_MODE: auto
+      PAPERLESS_OCR_OUTPUT_TYPE: pdfa
+      PAPERLESS_OCR_ROTATE_PAGES: "true"
+      PAPERLESS_PROXY_SSL_HEADER: '["HTTP_X_FORWARDED_PROTO","https"]'
+      PAPERLESS_TASK_WORKERS: "1"
+      PAPERLESS_TIME_ZONE: UTC
+      PAPERLESS_USE_X_FORWARD_HOST: "true"
+      PAPERLESS_USE_X_FORWARD_PORT: "true"
+      PAPERLESS_WEBSERVER_WORKERS: "1"
+      PAPERLESS_WORKER_TIMEOUT: "1800"
+    kind: ConfigMap
+    metadata:
+      labels:
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: paperless-ngx
+        app.kubernetes.io/version: 0.0.0
+        helm.sh/chart: paperless-ngx-0.0.0
+      name: RELEASE-NAME-paperless-ngx
+      namespace: NAMESPACE
+  2: |
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      labels:
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: paperless-ngx
+        app.kubernetes.io/version: 0.0.0
+        helm.sh/chart: paperless-ngx-0.0.0
+      name: RELEASE-NAME-paperless-ngx
+      namespace: NAMESPACE
+    spec:
+      replicas: 1
+      revisionHistoryLimit: 3
+      selector:
+        matchLabels:
+          app.kubernetes.io/component: server
+          app.kubernetes.io/instance: RELEASE-NAME
+          app.kubernetes.io/name: paperless-ngx
+      strategy:
+        type: Recreate
+      template:
+        metadata:
+          annotations:
+            checksum/configmap: d18100116547a0380e5aca1357a85120aa9ec7d0e482ab5e9437895ea7d819c6
+            checksum/secret: 0177b709685732d78b602786cce6cb5f7668d33e388d3b3c36ff9623d61eab5e
+          labels:
+            app.kubernetes.io/component: server
+            app.kubernetes.io/instance: RELEASE-NAME
+            app.kubernetes.io/managed-by: Helm
+            app.kubernetes.io/name: paperless-ngx
+            app.kubernetes.io/version: 0.0.0
+        spec:
+          automountServiceAccountToken: false
+          containers:
+            - env:
+                - name: PAPERLESS_REDIS
+                  value: redis://RELEASE-NAME-paperless-ngx-valkey:6379/0
+                - name: PAPERLESS_SECRET_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      key: secret-key
+                      name: RELEASE-NAME-paperless-ngx
+                - name: S6_READ_ONLY_ROOT
+                  value: "1"
+              envFrom:
+                - configMapRef:
+                    name: RELEASE-NAME-paperless-ngx
+              image: ghcr.io/paperless-ngx/paperless-ngx:v0.0.0@sha256:0000000000000000000000000000000000000000000000000000000000000000
+              imagePullPolicy: IfNotPresent
+              livenessProbe:
+                failureThreshold: 5
+                httpGet:
+                  path: /
+                  port: http
+                periodSeconds: 30
+                timeoutSeconds: 10
+              name: paperless-ngx
+              ports:
+                - containerPort: 8000
+                  name: http
+                  protocol: TCP
+              readinessProbe:
+                failureThreshold: 3
+                httpGet:
+                  path: /
+                  port: http
+                periodSeconds: 15
+                timeoutSeconds: 5
+              resources:
+                limits:
+                  memory: 2Gi
+                requests:
+                  cpu: 250m
+                  memory: 512Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
+                privileged: false
+                readOnlyRootFilesystem: true
+                runAsNonRoot: true
+              startupProbe:
+                failureThreshold: 60
+                httpGet:
+                  path: /
+                  port: http
+                initialDelaySeconds: 15
+                periodSeconds: 10
+                timeoutSeconds: 5
+              volumeMounts:
+                - mountPath: /usr/src/paperless/media
+                  name: media
+                - mountPath: /usr/src/paperless/data
+                  name: data
+                - mountPath: /usr/src/paperless/consume
+                  name: consume
+                - mountPath: /usr/src/paperless/export
+                  name: export
+                - mountPath: /run
+                  name: run
+                - mountPath: /tmp
+                  name: tmp
+          securityContext:
+            fsGroup: 1000
+            fsGroupChangePolicy: OnRootMismatch
+            runAsGroup: 1000
+            runAsNonRoot: true
+            runAsUser: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          serviceAccountName: RELEASE-NAME-paperless-ngx
+          terminationGracePeriodSeconds: 120
+          volumes:
+            - name: media
+              persistentVolumeClaim:
+                claimName: RELEASE-NAME-paperless-ngx-media
+            - name: data
+              persistentVolumeClaim:
+                claimName: RELEASE-NAME-paperless-ngx-data
+            - name: consume
+              persistentVolumeClaim:
+                claimName: RELEASE-NAME-paperless-ngx-consume
+            - emptyDir: {}
+              name: export
+            - emptyDir:
+                sizeLimit: 32Mi
+              name: run
+            - emptyDir:
+                sizeLimit: 2Gi
+              name: tmp
+  3: |
+    apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata:
+      labels:
+        app.kubernetes.io/component: media
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: paperless-ngx
+        app.kubernetes.io/version: 0.0.0
+        helm.sh/chart: paperless-ngx-0.0.0
+      name: RELEASE-NAME-paperless-ngx-media
+      namespace: NAMESPACE
+    spec:
+      accessModes:
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: 20Gi
+  4: |
+    apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata:
+      labels:
+        app.kubernetes.io/component: data
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: paperless-ngx
+        app.kubernetes.io/version: 0.0.0
+        helm.sh/chart: paperless-ngx-0.0.0
+      name: RELEASE-NAME-paperless-ngx-data
+      namespace: NAMESPACE
+    spec:
+      accessModes:
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: 5Gi
+  5: |
+    apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata:
+      labels:
+        app.kubernetes.io/component: consume
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: paperless-ngx
+        app.kubernetes.io/version: 0.0.0
+        helm.sh/chart: paperless-ngx-0.0.0
+      name: RELEASE-NAME-paperless-ngx-consume
+      namespace: NAMESPACE
+    spec:
+      accessModes:
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: 5Gi
+  6: |
+    apiVersion: v1
+    kind: Secret
+    metadata:
+      labels:
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: paperless-ngx
+        app.kubernetes.io/version: 0.0.0
+        helm.sh/chart: paperless-ngx-0.0.0
+      name: RELEASE-NAME-paperless-ngx
+      namespace: NAMESPACE
+    stringData:
+      secret-key: snapshot-secret-key
+    type: Opaque
+  7: |
+    apiVersion: v1
+    kind: Service
+    metadata:
+      labels:
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: paperless-ngx
+        app.kubernetes.io/version: 0.0.0
+        helm.sh/chart: paperless-ngx-0.0.0
+      name: RELEASE-NAME-paperless-ngx
+      namespace: NAMESPACE
+    spec:
+      ports:
+        - name: http
+          port: 8000
+          protocol: TCP
+          targetPort: http
+      selector:
+        app.kubernetes.io/component: server
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/name: paperless-ngx
+      type: ClusterIP
+  8: |
+    apiVersion: v1
+    automountServiceAccountToken: false
+    kind: ServiceAccount
+    metadata:
+      labels:
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: paperless-ngx
+        app.kubernetes.io/version: 0.0.0
+        helm.sh/chart: paperless-ngx-0.0.0
+      name: RELEASE-NAME-paperless-ngx
+      namespace: NAMESPACE
+  9: |
+    apiVersion: v1
+    kind: Service
+    metadata:
+      labels:
+        app.kubernetes.io/component: valkey
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: paperless-ngx
+        app.kubernetes.io/version: 0.0.0
+        helm.sh/chart: paperless-ngx-0.0.0
+      name: RELEASE-NAME-paperless-ngx-valkey
+      namespace: NAMESPACE
+    spec:
+      ports:
+        - name: valkey
+          port: 6379
+          protocol: TCP
+          targetPort: valkey
+      selector:
+        app.kubernetes.io/component: valkey
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/name: paperless-ngx
+      type: ClusterIP
+  10: |
+    apiVersion: apps/v1
+    kind: StatefulSet
+    metadata:
+      labels:
+        app.kubernetes.io/component: valkey
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: paperless-ngx
+        app.kubernetes.io/version: 0.0.0
+        helm.sh/chart: paperless-ngx-0.0.0
+      name: RELEASE-NAME-paperless-ngx-valkey
+      namespace: NAMESPACE
+    spec:
+      replicas: 1
+      revisionHistoryLimit: 3
+      selector:
+        matchLabels:
+          app.kubernetes.io/component: valkey
+          app.kubernetes.io/instance: RELEASE-NAME
+          app.kubernetes.io/name: paperless-ngx
+      serviceName: RELEASE-NAME-paperless-ngx-valkey
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/component: valkey
+            app.kubernetes.io/instance: RELEASE-NAME
+            app.kubernetes.io/managed-by: Helm
+            app.kubernetes.io/name: paperless-ngx
+        spec:
+          automountServiceAccountToken: false
+          containers:
+            - args:
+                - --protected-mode
+                - "no"
+                - --save
+                - ""
+                - --appendonly
+                - "no"
+              command:
+                - valkey-server
+              image: valkey/valkey:v0.0.0@sha256:1111111111111111111111111111111111111111111111111111111111111111
+              imagePullPolicy: IfNotPresent
+              livenessProbe:
+                exec:
+                  command:
+                    - valkey-cli
+                    - ping
+                failureThreshold: 5
+                periodSeconds: 30
+                timeoutSeconds: 5
+              name: valkey
+              ports:
+                - containerPort: 6379
+                  name: valkey
+                  protocol: TCP
+              readinessProbe:
+                exec:
+                  command:
+                    - valkey-cli
+                    - ping
+                failureThreshold: 3
+                periodSeconds: 10
+                timeoutSeconds: 3
+              resources:
+                limits:
+                  memory: 256Mi
+                requests:
+                  cpu: 50m
+                  memory: 128Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
+                privileged: false
+                readOnlyRootFilesystem: true
+                runAsNonRoot: true
+              volumeMounts:
+                - mountPath: /tmp
+                  name: tmp
+                - mountPath: /data
+                  name: data
+          securityContext:
+            fsGroup: 1000
+            fsGroupChangePolicy: OnRootMismatch
+            runAsGroup: 1000
+            runAsNonRoot: true
+            runAsUser: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          serviceAccountName: RELEASE-NAME-paperless-ngx
+          volumes:
+            - emptyDir: {}
+              name: tmp
+            - emptyDir: {}
+              name: data
+matches the committed snapshot for external datastores behind a Gateway:
+  1: |
+    apiVersion: cilium.io/v2
+    kind: CiliumNetworkPolicy
+    metadata:
+      labels:
+        app.kubernetes.io/component: server
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: paperless-ngx
+        app.kubernetes.io/version: 0.0.0
+        helm.sh/chart: paperless-ngx-0.0.0
+      name: RELEASE-NAME-paperless-ngx-ingress
+      namespace: NAMESPACE
+    spec:
+      description: documents in, nothing out
+      enableDefaultDeny:
+        egress: false
+        ingress: true
+      endpointSelector:
+        matchLabels:
+          app.kubernetes.io/component: server
+          app.kubernetes.io/instance: RELEASE-NAME
+          app.kubernetes.io/name: paperless-ngx
+      ingress:
+        - fromEndpoints:
+            - matchLabels:
+                gateway.networking.k8s.io/gateway-name: shared
+                io.kubernetes.pod.namespace: gateways
+          toPorts:
+            - ports:
+                - port: "8000"
+                  protocol: TCP
+  2: |
+    apiVersion: cilium.io/v2
+    kind: CiliumNetworkPolicy
+    metadata:
+      labels:
+        app.kubernetes.io/component: server
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: paperless-ngx
+        app.kubernetes.io/version: 0.0.0
+        helm.sh/chart: paperless-ngx-0.0.0
+      name: RELEASE-NAME-paperless-ngx-egress
+      namespace: NAMESPACE
+    spec:
+      description: documents in, nothing out
+      egress:
+        - toEndpoints:
+            - matchLabels:
+                io.kubernetes.pod.namespace: kube-system
+                k8s-app: kube-dns
+          toPorts:
+            - ports:
+                - port: "53"
+                  protocol: UDP
+                - port: "53"
+                  protocol: TCP
+              rules:
+                dns:
+                  - matchPattern: '*'
+        - toEndpoints:
+            - matchLabels:
+                io.kubernetes.pod.namespace: NAMESPACE
+          toPorts:
+            - ports:
+                - port: "6379"
+                  protocol: TCP
+                - port: "5432"
+                  protocol: TCP
+      enableDefaultDeny:
+        egress: true
+        ingress: false
+      endpointSelector:
+        matchLabels:
+          app.kubernetes.io/component: server
+          app.kubernetes.io/instance: RELEASE-NAME
+          app.kubernetes.io/name: paperless-ngx
+  3: |
+    apiVersion: v1
+    data:
+      PAPERLESS_ARCHIVE_FILE_GENERATION: auto
+      PAPERLESS_AUDIT_LOG_ENABLED: "true"
+      PAPERLESS_CONSUMER_ASN_BARCODE_PREFIX: ASN
+      PAPERLESS_CONSUMER_DELETE_DUPLICATES: "false"
+      PAPERLESS_CONSUMER_ENABLE_ASN_BARCODE: "false"
+      PAPERLESS_CONSUMER_ENABLE_BARCODES: "false"
+      PAPERLESS_CONSUMER_POLLING_INTERVAL: "0"
+      PAPERLESS_CONSUMER_RECURSIVE: "false"
+      PAPERLESS_CONSUMER_STABILITY_DELAY: "5"
+      PAPERLESS_CONSUMER_SUBDIRS_AS_TAGS: "false"
+      PAPERLESS_DBENGINE: postgresql
+      PAPERLESS_DBHOST: postgres.data.svc
+      PAPERLESS_DBNAME: paperless
+      PAPERLESS_DBPORT: "5432"
+      PAPERLESS_DBUSER: paperless
+      PAPERLESS_ENABLE_UPDATE_CHECK: "false"
+      PAPERLESS_FILENAME_FORMAT_REMOVE_NONE: "false"
+      PAPERLESS_FORCE_SCRIPT_NAME: /paperless
+      PAPERLESS_OCR_CLEAN: clean
+      PAPERLESS_OCR_DESKEW: "true"
+      PAPERLESS_OCR_LANGUAGE: eng
+      PAPERLESS_OCR_MODE: auto
+      PAPERLESS_OCR_OUTPUT_TYPE: pdfa
+      PAPERLESS_OCR_ROTATE_PAGES: "true"
+      PAPERLESS_PROXY_SSL_HEADER: '["HTTP_X_FORWARDED_PROTO","https"]'
+      PAPERLESS_STATIC_URL: /paperless/static/
+      PAPERLESS_TASK_WORKERS: "1"
+      PAPERLESS_TIME_ZONE: UTC
+      PAPERLESS_URL: https://paperless.example.com
+      PAPERLESS_USE_X_FORWARD_HOST: "true"
+      PAPERLESS_USE_X_FORWARD_PORT: "true"
+      PAPERLESS_WEBSERVER_WORKERS: "1"
+      PAPERLESS_WORKER_TIMEOUT: "1800"
+    kind: ConfigMap
+    metadata:
+      labels:
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: paperless-ngx
+        app.kubernetes.io/version: 0.0.0
+        helm.sh/chart: paperless-ngx-0.0.0
+      name: RELEASE-NAME-paperless-ngx
+      namespace: NAMESPACE
+  4: |
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      labels:
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: paperless-ngx
+        app.kubernetes.io/version: 0.0.0
+        helm.sh/chart: paperless-ngx-0.0.0
+      name: RELEASE-NAME-paperless-ngx
+      namespace: NAMESPACE
+    spec:
+      replicas: 1
+      revisionHistoryLimit: 3
+      selector:
+        matchLabels:
+          app.kubernetes.io/component: server
+          app.kubernetes.io/instance: RELEASE-NAME
+          app.kubernetes.io/name: paperless-ngx
+      strategy:
+        type: Recreate
+      template:
+        metadata:
+          annotations:
+            checksum/configmap: f5c82bef6ec35dfdfefe6be5a517f2013978777b0efc1d4c3f7b11affe33a826
+          labels:
+            app.kubernetes.io/component: server
+            app.kubernetes.io/instance: RELEASE-NAME
+            app.kubernetes.io/managed-by: Helm
+            app.kubernetes.io/name: paperless-ngx
+            app.kubernetes.io/version: 0.0.0
+        spec:
+          automountServiceAccountToken: false
+          containers:
+            - env:
+                - name: REDIS_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      key: redis-password
+                      name: paperless-credentials
+                - name: PAPERLESS_REDIS
+                  value: redis://:$(REDIS_PASSWORD)@valkey.data.svc:6379/0
+                - name: PAPERLESS_SECRET_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      key: secret-key
+                      name: paperless-credentials
+                - name: PAPERLESS_DBPASS
+                  valueFrom:
+                    secretKeyRef:
+                      key: database-password
+                      name: paperless-credentials
+                - name: S6_READ_ONLY_ROOT
+                  value: "1"
+              envFrom:
+                - configMapRef:
+                    name: RELEASE-NAME-paperless-ngx
+              image: ghcr.io/paperless-ngx/paperless-ngx:v0.0.0@sha256:0000000000000000000000000000000000000000000000000000000000000000
+              imagePullPolicy: IfNotPresent
+              livenessProbe:
+                failureThreshold: 5
+                httpGet:
+                  path: /paperless/
+                  port: http
+                periodSeconds: 30
+                timeoutSeconds: 10
+              name: paperless-ngx
+              ports:
+                - containerPort: 8000
+                  name: http
+                  protocol: TCP
+              readinessProbe:
+                failureThreshold: 3
+                httpGet:
+                  path: /paperless/
+                  port: http
+                periodSeconds: 15
+                timeoutSeconds: 5
+              resources:
+                limits:
+                  memory: 2Gi
+                requests:
+                  cpu: 250m
+                  memory: 512Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
+                privileged: false
+                readOnlyRootFilesystem: true
+                runAsNonRoot: true
+              startupProbe:
+                failureThreshold: 60
+                httpGet:
+                  path: /paperless/
+                  port: http
+                initialDelaySeconds: 15
+                periodSeconds: 10
+                timeoutSeconds: 5
+              volumeMounts:
+                - mountPath: /usr/src/paperless/media
+                  name: media
+                - mountPath: /usr/src/paperless/data
+                  name: data
+                - mountPath: /usr/src/paperless/consume
+                  name: consume
+                - mountPath: /usr/src/paperless/export
+                  name: export
+                - mountPath: /run
+                  name: run
+                - mountPath: /tmp
+                  name: tmp
+          securityContext:
+            fsGroup: 1000
+            fsGroupChangePolicy: OnRootMismatch
+            runAsGroup: 1000
+            runAsNonRoot: true
+            runAsUser: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          serviceAccountName: RELEASE-NAME-paperless-ngx
+          terminationGracePeriodSeconds: 120
+          volumes:
+            - name: media
+              persistentVolumeClaim:
+                claimName: paperless-media
+            - name: data
+              persistentVolumeClaim:
+                claimName: RELEASE-NAME-paperless-ngx-data
+            - name: consume
+              persistentVolumeClaim:
+                claimName: RELEASE-NAME-paperless-ngx-consume
+            - name: export
+              persistentVolumeClaim:
+                claimName: RELEASE-NAME-paperless-ngx-export
+            - emptyDir:
+                sizeLimit: 32Mi
+              name: run
+            - emptyDir:
+                sizeLimit: 2Gi
+              name: tmp
+  5: |
+    apiVersion: gateway.networking.k8s.io/v1
+    kind: HTTPRoute
+    metadata:
+      labels:
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: paperless-ngx
+        app.kubernetes.io/version: 0.0.0
+        helm.sh/chart: paperless-ngx-0.0.0
+      name: RELEASE-NAME-paperless-ngx
+      namespace: NAMESPACE
+    spec:
+      hostnames:
+        - paperless.example.com
+      parentRefs:
+        - group: gateway.networking.k8s.io
+          kind: Gateway
+          name: shared
+          namespace: gateways
+      rules:
+        - backendRefs:
+            - name: RELEASE-NAME-paperless-ngx
+              port: 8000
+          matches:
+            - path:
+                type: PathPrefix
+                value: /
+  6: |
+    apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata:
+      labels:
+        app.kubernetes.io/component: data
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: paperless-ngx
+        app.kubernetes.io/version: 0.0.0
+        helm.sh/chart: paperless-ngx-0.0.0
+      name: RELEASE-NAME-paperless-ngx-data
+      namespace: NAMESPACE
+    spec:
+      accessModes:
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: 5Gi
+  7: |
+    apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata:
+      labels:
+        app.kubernetes.io/component: consume
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: paperless-ngx
+        app.kubernetes.io/version: 0.0.0
+        helm.sh/chart: paperless-ngx-0.0.0
+      name: RELEASE-NAME-paperless-ngx-consume
+      namespace: NAMESPACE
+    spec:
+      accessModes:
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: 5Gi
+  8: |
+    apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata:
+      labels:
+        app.kubernetes.io/component: export
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: paperless-ngx
+        app.kubernetes.io/version: 0.0.0
+        helm.sh/chart: paperless-ngx-0.0.0
+      name: RELEASE-NAME-paperless-ngx-export
+      namespace: NAMESPACE
+    spec:
+      accessModes:
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: 10Gi
+  9: |
+    apiVersion: v1
+    kind: Service
+    metadata:
+      labels:
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: paperless-ngx
+        app.kubernetes.io/version: 0.0.0
+        helm.sh/chart: paperless-ngx-0.0.0
+      name: RELEASE-NAME-paperless-ngx
+      namespace: NAMESPACE
+    spec:
+      ports:
+        - name: http
+          port: 8000
+          protocol: TCP
+          targetPort: http
+      selector:
+        app.kubernetes.io/component: server
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/name: paperless-ngx
+      type: ClusterIP
+  10: |
+    apiVersion: v1
+    automountServiceAccountToken: false
+    kind: ServiceAccount
+    metadata:
+      labels:
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: paperless-ngx
+        app.kubernetes.io/version: 0.0.0
+        helm.sh/chart: paperless-ngx-0.0.0
+      name: RELEASE-NAME-paperless-ngx
+      namespace: NAMESPACE
+matches the committed snapshot for the full stack behind an Ingress:
+  1: |
+    apiVersion: v1
+    data:
+      PAPERLESS_ADMIN_MAIL: admin@example.com
+      PAPERLESS_ADMIN_USER: admin
+      PAPERLESS_ARCHIVE_FILE_GENERATION: auto
+      PAPERLESS_AUDIT_LOG_ENABLED: "true"
+      PAPERLESS_CONSUMER_ASN_BARCODE_PREFIX: ASN
+      PAPERLESS_CONSUMER_DELETE_DUPLICATES: "false"
+      PAPERLESS_CONSUMER_ENABLE_ASN_BARCODE: "false"
+      PAPERLESS_CONSUMER_ENABLE_BARCODES: "false"
+      PAPERLESS_CONSUMER_POLLING_INTERVAL: "0"
+      PAPERLESS_CONSUMER_RECURSIVE: "false"
+      PAPERLESS_CONSUMER_STABILITY_DELAY: "5"
+      PAPERLESS_CONSUMER_SUBDIRS_AS_TAGS: "false"
+      PAPERLESS_DBENGINE: postgresql
+      PAPERLESS_DBHOST: RELEASE-NAME-paperless-ngx-postgresql
+      PAPERLESS_DBNAME: paperless
+      PAPERLESS_DBPORT: "5432"
+      PAPERLESS_DBUSER: paperless
+      PAPERLESS_EMAIL_HOST: smtp.example.com
+      PAPERLESS_EMAIL_PORT: "587"
+      PAPERLESS_EMAIL_USE_SSL: "false"
+      PAPERLESS_EMAIL_USE_TLS: "true"
+      PAPERLESS_ENABLE_UPDATE_CHECK: "false"
+      PAPERLESS_FILENAME_FORMAT_REMOVE_NONE: "false"
+      PAPERLESS_OCR_CLEAN: clean
+      PAPERLESS_OCR_DESKEW: "true"
+      PAPERLESS_OCR_LANGUAGE: eng
+      PAPERLESS_OCR_MODE: auto
+      PAPERLESS_OCR_OUTPUT_TYPE: pdfa
+      PAPERLESS_OCR_ROTATE_PAGES: "true"
+      PAPERLESS_PROXY_SSL_HEADER: '["HTTP_X_FORWARDED_PROTO","https"]'
+      PAPERLESS_TASK_WORKERS: "1"
+      PAPERLESS_TIKA_ENABLED: "true"
+      PAPERLESS_TIKA_ENDPOINT: http://RELEASE-NAME-paperless-ngx-tika:9998
+      PAPERLESS_TIKA_GOTENBERG_ENDPOINT: http://RELEASE-NAME-paperless-ngx-gotenberg:3000
+      PAPERLESS_TIME_ZONE: UTC
+      PAPERLESS_URL: https://paperless.example.com
+      PAPERLESS_USE_X_FORWARD_HOST: "true"
+      PAPERLESS_USE_X_FORWARD_PORT: "true"
+      PAPERLESS_WEBSERVER_WORKERS: "1"
+      PAPERLESS_WORKER_TIMEOUT: "1800"
+    kind: ConfigMap
+    metadata:
+      labels:
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: paperless-ngx
+        app.kubernetes.io/version: 0.0.0
+        helm.sh/chart: paperless-ngx-0.0.0
+      name: RELEASE-NAME-paperless-ngx
+      namespace: NAMESPACE
+  2: |
+    apiVersion: v1
+    data:
+      paperless-ngx-overview.json: |
+        {
+          "uid": "paperless-ngx-overview",
+          "title": "paperless-ngx",
+          "description": "Health of a paperless-ngx release. Built on kube-state-metrics, the kubelet and cAdvisor, because paperless-ngx publishes no metrics of its own: this shows whether the archive is up, whether it is restarting, and whether it is running out of disk.",
+          "tags": ["paperless-ngx", "documents"],
+          "schemaVersion": 39,
+          "version": 1,
+          "editable": true,
+          "graphTooltip": 1,
+          "time": { "from": "now-24h", "to": "now" },
+          "refresh": "1m",
+          "annotations": { "list": [] },
+          "templating": {
+            "list": [
+              {
+                "name": "datasource",
+                "label": "Data source",
+                "type": "datasource",
+                "query": "prometheus",
+                "current": {},
+                "hide": 0,
+                "refresh": 1,
+                "regex": ""
+              },
+              {
+                "name": "namespace",
+                "label": "Namespace",
+                "type": "query",
+                "datasource": { "type": "prometheus", "uid": "${datasource}" },
+                "query": "label_values(namespace_deployment:paperless_ngx_replicas_available:max, namespace)",
+                "refresh": 2,
+                "sort": 1,
+                "includeAll": true,
+                "multi": true,
+                "current": {},
+                "hide": 0
+              }
+            ]
+          },
+          "panels": [
+            {
+              "id": 1,
+              "type": "stat",
+              "title": "Application replicas available",
+              "description": "Zero means the web UI, the REST API and the document consumer are all unavailable — they share one pod. One is the intended state; this workload is a singleton.",
+              "datasource": { "type": "prometheus", "uid": "${datasource}" },
+              "gridPos": { "h": 5, "w": 6, "x": 0, "y": 0 },
+              "options": {
+                "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+                "colorMode": "background",
+                "graphMode": "none",
+                "textMode": "auto"
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "unit": "short",
+                  "mappings": [],
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      { "color": "red", "value": null },
+                      { "color": "green", "value": 1 }
+                    ]
+                  }
+                },
+                "overrides": []
+              },
+              "targets": [
+                {
+                  "refId": "A",
+                  "datasource": { "type": "prometheus", "uid": "${datasource}" },
+                  "expr": "namespace_deployment:paperless_ngx_replicas_available:max{namespace=~\"$namespace\"}",
+                  "legendFormat": "{{deployment}}"
+                }
+              ]
+            },
+            {
+              "id": 2,
+              "type": "stat",
+              "title": "Datastore replicas ready",
+              "description": "The bundled Valkey and PostgreSQL. A broker at zero stops every document from being processed while the web UI keeps answering, which is the confusing half of an outage here.",
+              "datasource": { "type": "prometheus", "uid": "${datasource}" },
+              "gridPos": { "h": 5, "w": 6, "x": 6, "y": 0 },
+              "options": {
+                "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+                "colorMode": "background",
+                "graphMode": "none",
+                "textMode": "auto"
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "unit": "short",
+                  "mappings": [],
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      { "color": "red", "value": null },
+                      { "color": "green", "value": 1 }
+                    ]
+                  }
+                },
+                "overrides": []
+              },
+              "targets": [
+                {
+                  "refId": "A",
+                  "datasource": { "type": "prometheus", "uid": "${datasource}" },
+                  "expr": "namespace_statefulset:paperless_ngx_replicas_ready:max{namespace=~\"$namespace\"}",
+                  "legendFormat": "{{statefulset}}"
+                }
+              ]
+            },
+            {
+              "id": 3,
+              "type": "gauge",
+              "title": "Volume usage",
+              "description": "Fraction of each claim in use. The media claim filling up stops documents being archived; the data claim filling up stops the search index being written.",
+              "datasource": { "type": "prometheus", "uid": "${datasource}" },
+              "gridPos": { "h": 5, "w": 12, "x": 12, "y": 0 },
+              "options": {
+                "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+                "showThresholdLabels": false,
+                "showThresholdMarkers": true
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "unit": "percentunit",
+                  "min": 0,
+                  "max": 1,
+                  "mappings": [],
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      { "color": "green", "value": null },
+                      { "color": "orange", "value": 0.85 },
+                      { "color": "red", "value": 0.95 }
+                    ]
+                  }
+                },
+                "overrides": []
+              },
+              "targets": [
+                {
+                  "refId": "A",
+                  "datasource": { "type": "prometheus", "uid": "${datasource}" },
+                  "expr": "namespace_persistentvolumeclaim:paperless_ngx_volume_used:ratio{namespace=~\"$namespace\"}",
+                  "legendFormat": "{{persistentvolumeclaim}}"
+                }
+              ]
+            },
+            {
+              "id": 4,
+              "type": "timeseries",
+              "title": "Container restarts (1h)",
+              "description": "Restarts per container over a trailing hour. A steady climb without sustained backoff is usually the out-of-memory kill that OCR produces on a document larger than the memory limit.",
+              "datasource": { "type": "prometheus", "uid": "${datasource}" },
+              "gridPos": { "h": 8, "w": 12, "x": 0, "y": 5 },
+              "options": {
+                "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["max"] },
+                "tooltip": { "mode": "multi", "sort": "desc" }
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "unit": "short",
+                  "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 10, "showPoints": "never" },
+                  "mappings": [],
+                  "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] }
+                },
+                "overrides": []
+              },
+              "targets": [
+                {
+                  "refId": "A",
+                  "datasource": { "type": "prometheus", "uid": "${datasource}" },
+                  "expr": "namespace_pod_container:paperless_ngx_restarts:increase1h{namespace=~\"$namespace\"}",
+                  "legendFormat": "{{pod}} / {{container}}"
+                }
+              ]
+            },
+            {
+              "id": 5,
+              "type": "timeseries",
+              "title": "Firing alerts",
+              "description": "Every alert this chart's rules are currently firing, so the dashboard and the pager agree on what is wrong.",
+              "datasource": { "type": "prometheus", "uid": "${datasource}" },
+              "gridPos": { "h": 8, "w": 12, "x": 12, "y": 5 },
+              "options": {
+                "legend": { "displayMode": "table", "placement": "bottom", "calcs": [] },
+                "tooltip": { "mode": "multi", "sort": "desc" }
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "unit": "short",
+                  "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 20, "showPoints": "never" },
+                  "mappings": [],
+                  "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }] }
+                },
+                "overrides": []
+              },
+              "targets": [
+                {
+                  "refId": "A",
+                  "datasource": { "type": "prometheus", "uid": "${datasource}" },
+                  "expr": "ALERTS{alertname=~\"PaperlessNgx.*\", alertstate=\"firing\", namespace=~\"$namespace\"}",
+                  "legendFormat": "{{alertname}} {{severity}}"
+                }
+              ]
+            },
+            {
+              "id": 6,
+              "type": "timeseries",
+              "title": "CPU usage",
+              "description": "OCR is CPU-bound and bursty: a flat line at the request is idle, and a plateau is a document being processed. Sustained saturation means `paperless.tasks.workers` and the CPU request disagree.",
+              "datasource": { "type": "prometheus", "uid": "${datasource}" },
+              "gridPos": { "h": 8, "w": 12, "x": 0, "y": 13 },
+              "options": {
+                "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"] },
+                "tooltip": { "mode": "multi", "sort": "desc" }
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "unit": "short",
+                  "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 10, "showPoints": "never" },
+                  "mappings": [],
+                  "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] }
+                },
+                "overrides": []
+              },
+              "targets": [
+                {
+                  "refId": "A",
+                  "datasource": { "type": "prometheus", "uid": "${datasource}" },
+                  "expr": "sum by (pod) (rate(container_cpu_usage_seconds_total{namespace=~\"$namespace\", pod=~\".*paperless-ngx.*\", container!=\"\"}[5m]))",
+                  "legendFormat": "{{pod}}"
+                }
+              ]
+            },
+            {
+              "id": 7,
+              "type": "timeseries",
+              "title": "Memory working set",
+              "description": "Peak memory is set by the largest document being processed, multiplied by the worker count. The distance between this and `resources.limits.memory` is the headroom before an out-of-memory kill.",
+              "datasource": { "type": "prometheus", "uid": "${datasource}" },
+              "gridPos": { "h": 8, "w": 12, "x": 12, "y": 13 },
+              "options": {
+                "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"] },
+                "tooltip": { "mode": "multi", "sort": "desc" }
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "unit": "bytes",
+                  "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 10, "showPoints": "never" },
+                  "mappings": [],
+                  "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] }
+                },
+                "overrides": []
+              },
+              "targets": [
+                {
+                  "refId": "A",
+                  "datasource": { "type": "prometheus", "uid": "${datasource}" },
+                  "expr": "sum by (pod) (container_memory_working_set_bytes{namespace=~\"$namespace\", pod=~\".*paperless-ngx.*\", container!=\"\"})",
+                  "legendFormat": "{{pod}}"
+                }
+              ]
+            },
+            {
+              "id": 8,
+              "type": "timeseries",
+              "title": "Volume used",
+              "description": "Absolute usage per claim, which is what the growth rate has to be read from — the archive only ever grows, so this is the line that predicts the next expansion.",
+              "datasource": { "type": "prometheus", "uid": "${datasource}" },
+              "gridPos": { "h": 8, "w": 24, "x": 0, "y": 21 },
+              "options": {
+                "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["last", "max"] },
+                "tooltip": { "mode": "multi", "sort": "desc" }
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "unit": "bytes",
+                  "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 10, "showPoints": "never" },
+                  "mappings": [],
+                  "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] }
+                },
+                "overrides": []
+              },
+              "targets": [
+                {
+                  "refId": "A",
+                  "datasource": { "type": "prometheus", "uid": "${datasource}" },
+                  "expr": "sum by (persistentvolumeclaim) (kubelet_volume_stats_used_bytes{namespace=~\"$namespace\", persistentvolumeclaim=~\".*paperless-ngx.*\"})",
+                  "legendFormat": "{{persistentvolumeclaim}}"
+                }
+              ]
+            }
+          ]
+        }
+    kind: ConfigMap
+    metadata:
+      labels:
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: paperless-ngx
+        app.kubernetes.io/version: 0.0.0
+        grafana_dashboard: "1"
+        helm.sh/chart: paperless-ngx-0.0.0
+      name: RELEASE-NAME-paperless-ngx-dashboards
+      namespace: NAMESPACE
+  3: |
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      labels:
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: paperless-ngx
+        app.kubernetes.io/version: 0.0.0
+        helm.sh/chart: paperless-ngx-0.0.0
+      name: RELEASE-NAME-paperless-ngx
+      namespace: NAMESPACE
+    spec:
+      replicas: 1
+      revisionHistoryLimit: 3
+      selector:
+        matchLabels:
+          app.kubernetes.io/component: server
+          app.kubernetes.io/instance: RELEASE-NAME
+          app.kubernetes.io/name: paperless-ngx
+      strategy:
+        type: Recreate
+      template:
+        metadata:
+          annotations:
+            checksum/configmap: d72a5dae8a30ffa95342717f6ff7166acd2adbe0b0ae4ab9d2afb92bc218587c
+            checksum/secret: 3123afc432665efaa3d908d5d92e51e4d7dfb71834083d7dca6d58e5a403cefa
+          labels:
+            app.kubernetes.io/component: server
+            app.kubernetes.io/instance: RELEASE-NAME
+            app.kubernetes.io/managed-by: Helm
+            app.kubernetes.io/name: paperless-ngx
+            app.kubernetes.io/version: 0.0.0
+        spec:
+          automountServiceAccountToken: false
+          containers:
+            - env:
+                - name: REDIS_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      key: redis-password
+                      name: RELEASE-NAME-paperless-ngx
+                - name: PAPERLESS_REDIS
+                  value: redis://:$(REDIS_PASSWORD)@RELEASE-NAME-paperless-ngx-valkey:6379/0
+                - name: PAPERLESS_SECRET_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      key: secret-key
+                      name: RELEASE-NAME-paperless-ngx
+                - name: PAPERLESS_ADMIN_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      key: admin-password
+                      name: RELEASE-NAME-paperless-ngx
+                - name: PAPERLESS_DBPASS
+                  valueFrom:
+                    secretKeyRef:
+                      key: database-password
+                      name: RELEASE-NAME-paperless-ngx
+                - name: PAPERLESS_EMAIL_HOST_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      key: email-password
+                      name: RELEASE-NAME-paperless-ngx
+                - name: S6_READ_ONLY_ROOT
+                  value: "1"
+              envFrom:
+                - configMapRef:
+                    name: RELEASE-NAME-paperless-ngx
+              image: ghcr.io/paperless-ngx/paperless-ngx:v0.0.0@sha256:0000000000000000000000000000000000000000000000000000000000000000
+              imagePullPolicy: IfNotPresent
+              livenessProbe:
+                failureThreshold: 5
+                httpGet:
+                  path: /
+                  port: http
+                periodSeconds: 30
+                timeoutSeconds: 10
+              name: paperless-ngx
+              ports:
+                - containerPort: 8000
+                  name: http
+                  protocol: TCP
+              readinessProbe:
+                failureThreshold: 3
+                httpGet:
+                  path: /
+                  port: http
+                periodSeconds: 15
+                timeoutSeconds: 5
+              resources:
+                limits:
+                  memory: 2Gi
+                requests:
+                  cpu: 250m
+                  memory: 512Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
+                privileged: false
+                readOnlyRootFilesystem: true
+                runAsNonRoot: true
+              startupProbe:
+                failureThreshold: 60
+                httpGet:
+                  path: /
+                  port: http
+                initialDelaySeconds: 15
+                periodSeconds: 10
+                timeoutSeconds: 5
+              volumeMounts:
+                - mountPath: /usr/src/paperless/media
+                  name: media
+                - mountPath: /usr/src/paperless/data
+                  name: data
+                - mountPath: /usr/src/paperless/consume
+                  name: consume
+                - mountPath: /usr/src/paperless/export
+                  name: export
+                - mountPath: /run
+                  name: run
+                - mountPath: /tmp
+                  name: tmp
+          securityContext:
+            fsGroup: 1000
+            fsGroupChangePolicy: OnRootMismatch
+            runAsGroup: 1000
+            runAsNonRoot: true
+            runAsUser: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          serviceAccountName: RELEASE-NAME-paperless-ngx
+          terminationGracePeriodSeconds: 120
+          volumes:
+            - name: media
+              persistentVolumeClaim:
+                claimName: RELEASE-NAME-paperless-ngx-media
+            - name: data
+              persistentVolumeClaim:
+                claimName: RELEASE-NAME-paperless-ngx-data
+            - name: consume
+              persistentVolumeClaim:
+                claimName: RELEASE-NAME-paperless-ngx-consume
+            - emptyDir: {}
+              name: export
+            - emptyDir:
+                sizeLimit: 32Mi
+              name: run
+            - emptyDir:
+                sizeLimit: 2Gi
+              name: tmp
+  4: |
+    apiVersion: v1
+    kind: Service
+    metadata:
+      labels:
+        app.kubernetes.io/component: gotenberg
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: paperless-ngx
+        app.kubernetes.io/version: 0.0.0
+        helm.sh/chart: paperless-ngx-0.0.0
+      name: RELEASE-NAME-paperless-ngx-gotenberg
+      namespace: NAMESPACE
+    spec:
+      ports:
+        - name: gotenberg
+          port: 3000
+          protocol: TCP
+          targetPort: gotenberg
+      selector:
+        app.kubernetes.io/component: gotenberg
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/name: paperless-ngx
+      type: ClusterIP
+  5: |
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      labels:
+        app.kubernetes.io/component: gotenberg
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: paperless-ngx
+        app.kubernetes.io/version: 0.0.0
+        helm.sh/chart: paperless-ngx-0.0.0
+      name: RELEASE-NAME-paperless-ngx-gotenberg
+      namespace: NAMESPACE
+    spec:
+      replicas: 1
+      revisionHistoryLimit: 3
+      selector:
+        matchLabels:
+          app.kubernetes.io/component: gotenberg
+          app.kubernetes.io/instance: RELEASE-NAME
+          app.kubernetes.io/name: paperless-ngx
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/component: gotenberg
+            app.kubernetes.io/instance: RELEASE-NAME
+            app.kubernetes.io/managed-by: Helm
+            app.kubernetes.io/name: paperless-ngx
+        spec:
+          automountServiceAccountToken: false
+          containers:
+            - args:
+                - gotenberg
+                - --chromium-disable-javascript=true
+                - --chromium-allow-list=file:///tmp/.*
+              command:
+                - /usr/bin/tini
+                - --
+              image: gotenberg/gotenberg:v0.0.0@sha256:4444444444444444444444444444444444444444444444444444444444444444
+              imagePullPolicy: IfNotPresent
+              livenessProbe:
+                failureThreshold: 5
+                httpGet:
+                  path: /health
+                  port: gotenberg
+                periodSeconds: 30
+                timeoutSeconds: 10
+              name: gotenberg
+              ports:
+                - containerPort: 3000
+                  name: gotenberg
+                  protocol: TCP
+              readinessProbe:
+                failureThreshold: 3
+                httpGet:
+                  path: /health
+                  port: gotenberg
+                periodSeconds: 15
+                timeoutSeconds: 5
+              resources:
+                limits:
+                  memory: 1Gi
+                requests:
+                  cpu: 250m
+                  memory: 512Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
+                privileged: false
+                readOnlyRootFilesystem: true
+                runAsNonRoot: true
+              volumeMounts:
+                - mountPath: /tmp
+                  name: tmp
+          securityContext:
+            fsGroup: 1001
+            fsGroupChangePolicy: OnRootMismatch
+            runAsGroup: 1001
+            runAsNonRoot: true
+            runAsUser: 1001
+            seccompProfile:
+              type: RuntimeDefault
+          serviceAccountName: RELEASE-NAME-paperless-ngx
+          volumes:
+            - emptyDir: {}
+              name: tmp
+  6: |
+    apiVersion: networking.k8s.io/v1
+    kind: Ingress
+    metadata:
+      labels:
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: paperless-ngx
+        app.kubernetes.io/version: 0.0.0
+        helm.sh/chart: paperless-ngx-0.0.0
+      name: RELEASE-NAME-paperless-ngx
+      namespace: NAMESPACE
+    spec:
+      rules:
+        - host: paperless.example.com
+          http:
+            paths:
+              - backend:
+                  service:
+                    name: RELEASE-NAME-paperless-ngx
+                    port:
+                      number: 8000
+                path: /
+                pathType: Prefix
+      tls:
+        - hosts:
+            - paperless.example.com
+          secretName: RELEASE-NAME-paperless-ngx-tls
+  7: |
+    apiVersion: networking.k8s.io/v1
+    kind: NetworkPolicy
+    metadata:
+      labels:
+        app.kubernetes.io/component: server
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: paperless-ngx
+        app.kubernetes.io/version: 0.0.0
+        helm.sh/chart: paperless-ngx-0.0.0
+      name: RELEASE-NAME-paperless-ngx
+      namespace: NAMESPACE
+    spec:
+      egress:
+        - ports:
+            - port: 53
+              protocol: UDP
+            - port: 53
+              protocol: TCP
+          to:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: kube-system
+              podSelector:
+                matchLabels:
+                  k8s-app: kube-dns
+        - ports:
+            - port: 6379
+              protocol: TCP
+          to:
+            - podSelector:
+                matchLabels:
+                  app.kubernetes.io/component: valkey
+                  app.kubernetes.io/instance: RELEASE-NAME
+                  app.kubernetes.io/name: paperless-ngx
+        - ports:
+            - port: 5432
+              protocol: TCP
+          to:
+            - podSelector:
+                matchLabels:
+                  app.kubernetes.io/component: postgresql
+                  app.kubernetes.io/instance: RELEASE-NAME
+                  app.kubernetes.io/name: paperless-ngx
+        - ports:
+            - port: 3000
+              protocol: TCP
+          to:
+            - podSelector:
+                matchLabels:
+                  app.kubernetes.io/component: gotenberg
+                  app.kubernetes.io/instance: RELEASE-NAME
+                  app.kubernetes.io/name: paperless-ngx
+        - ports:
+            - port: 9998
+              protocol: TCP
+          to:
+            - podSelector:
+                matchLabels:
+                  app.kubernetes.io/component: tika
+                  app.kubernetes.io/instance: RELEASE-NAME
+                  app.kubernetes.io/name: paperless-ngx
+        - ports:
+            - port: 443
+              protocol: TCP
+            - port: 587
+              protocol: TCP
+            - port: 465
+              protocol: TCP
+          to:
+            - ipBlock:
+                cidr: 0.0.0.0/0
+                except:
+                  - 10.0.0.0/8
+                  - 172.16.0.0/12
+                  - 192.168.0.0/16
+                  - 169.254.0.0/16
+      ingress:
+        - from:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: ingress-nginx
+              podSelector:
+                matchLabels:
+                  app.kubernetes.io/name: ingress-nginx
+          ports:
+            - port: 8000
+              protocol: TCP
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/component: server
+          app.kubernetes.io/instance: RELEASE-NAME
+          app.kubernetes.io/name: paperless-ngx
+      policyTypes:
+        - Ingress
+        - Egress
+  8: |
+    apiVersion: networking.k8s.io/v1
+    kind: NetworkPolicy
+    metadata:
+      labels:
+        app.kubernetes.io/component: postgresql
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: paperless-ngx
+        app.kubernetes.io/version: 0.0.0
+        helm.sh/chart: paperless-ngx-0.0.0
+      name: RELEASE-NAME-paperless-ngx-postgresql
+      namespace: NAMESPACE
+    spec:
+      egress:
+        - ports:
+            - port: 53
+              protocol: UDP
+            - port: 53
+              protocol: TCP
+          to:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: kube-system
+              podSelector:
+                matchLabels:
+                  k8s-app: kube-dns
+      ingress:
+        - from:
+            - podSelector:
+                matchLabels:
+                  app.kubernetes.io/component: server
+                  app.kubernetes.io/instance: RELEASE-NAME
+                  app.kubernetes.io/name: paperless-ngx
+          ports:
+            - port: 5432
+              protocol: TCP
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/component: postgresql
+          app.kubernetes.io/instance: RELEASE-NAME
+          app.kubernetes.io/name: paperless-ngx
+      policyTypes:
+        - Ingress
+        - Egress
+  9: |
+    apiVersion: networking.k8s.io/v1
+    kind: NetworkPolicy
+    metadata:
+      labels:
+        app.kubernetes.io/component: valkey
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: paperless-ngx
+        app.kubernetes.io/version: 0.0.0
+        helm.sh/chart: paperless-ngx-0.0.0
+      name: RELEASE-NAME-paperless-ngx-valkey
+      namespace: NAMESPACE
+    spec:
+      egress:
+        - ports:
+            - port: 53
+              protocol: UDP
+            - port: 53
+              protocol: TCP
+          to:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: kube-system
+              podSelector:
+                matchLabels:
+                  k8s-app: kube-dns
+      ingress:
+        - from:
+            - podSelector:
+                matchLabels:
+                  app.kubernetes.io/component: server
+                  app.kubernetes.io/instance: RELEASE-NAME
+                  app.kubernetes.io/name: paperless-ngx
+          ports:
+            - port: 6379
+              protocol: TCP
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/component: valkey
+          app.kubernetes.io/instance: RELEASE-NAME
+          app.kubernetes.io/name: paperless-ngx
+      policyTypes:
+        - Ingress
+        - Egress
+  10: |
+    apiVersion: networking.k8s.io/v1
+    kind: NetworkPolicy
+    metadata:
+      labels:
+        app.kubernetes.io/component: gotenberg
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: paperless-ngx
+        app.kubernetes.io/version: 0.0.0
+        helm.sh/chart: paperless-ngx-0.0.0
+      name: RELEASE-NAME-paperless-ngx-gotenberg
+      namespace: NAMESPACE
+    spec:
+      egress:
+        - ports:
+            - port: 53
+              protocol: UDP
+            - port: 53
+              protocol: TCP
+          to:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: kube-system
+              podSelector:
+                matchLabels:
+                  k8s-app: kube-dns
+      ingress:
+        - from:
+            - podSelector:
+                matchLabels:
+                  app.kubernetes.io/component: server
+                  app.kubernetes.io/instance: RELEASE-NAME
+                  app.kubernetes.io/name: paperless-ngx
+          ports:
+            - port: 3000
+              protocol: TCP
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/component: gotenberg
+          app.kubernetes.io/instance: RELEASE-NAME
+          app.kubernetes.io/name: paperless-ngx
+      policyTypes:
+        - Ingress
+        - Egress
+  11: |
+    apiVersion: networking.k8s.io/v1
+    kind: NetworkPolicy
+    metadata:
+      labels:
+        app.kubernetes.io/component: tika
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: paperless-ngx
+        app.kubernetes.io/version: 0.0.0
+        helm.sh/chart: paperless-ngx-0.0.0
+      name: RELEASE-NAME-paperless-ngx-tika
+      namespace: NAMESPACE
+    spec:
+      egress:
+        - ports:
+            - port: 53
+              protocol: UDP
+            - port: 53
+              protocol: TCP
+          to:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: kube-system
+              podSelector:
+                matchLabels:
+                  k8s-app: kube-dns
+      ingress:
+        - from:
+            - podSelector:
+                matchLabels:
+                  app.kubernetes.io/component: server
+                  app.kubernetes.io/instance: RELEASE-NAME
+                  app.kubernetes.io/name: paperless-ngx
+          ports:
+            - port: 9998
+              protocol: TCP
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/component: tika
+          app.kubernetes.io/instance: RELEASE-NAME
+          app.kubernetes.io/name: paperless-ngx
+      policyTypes:
+        - Ingress
+        - Egress
+  12: |
+    apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata:
+      labels:
+        app.kubernetes.io/component: media
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: paperless-ngx
+        app.kubernetes.io/version: 0.0.0
+        helm.sh/chart: paperless-ngx-0.0.0
+      name: RELEASE-NAME-paperless-ngx-media
+      namespace: NAMESPACE
+    spec:
+      accessModes:
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: 20Gi
+  13: |
+    apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata:
+      labels:
+        app.kubernetes.io/component: data
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: paperless-ngx
+        app.kubernetes.io/version: 0.0.0
+        helm.sh/chart: paperless-ngx-0.0.0
+      name: RELEASE-NAME-paperless-ngx-data
+      namespace: NAMESPACE
+    spec:
+      accessModes:
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: 5Gi
+  14: |
+    apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata:
+      labels:
+        app.kubernetes.io/component: consume
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: paperless-ngx
+        app.kubernetes.io/version: 0.0.0
+        helm.sh/chart: paperless-ngx-0.0.0
+      name: RELEASE-NAME-paperless-ngx-consume
+      namespace: NAMESPACE
+    spec:
+      accessModes:
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: 5Gi
+  15: |
+    apiVersion: v1
+    kind: Service
+    metadata:
+      labels:
+        app.kubernetes.io/component: postgresql
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: paperless-ngx
+        app.kubernetes.io/version: 0.0.0
+        helm.sh/chart: paperless-ngx-0.0.0
+      name: RELEASE-NAME-paperless-ngx-postgresql
+      namespace: NAMESPACE
+    spec:
+      ports:
+        - name: postgresql
+          port: 5432
+          protocol: TCP
+          targetPort: postgresql
+      selector:
+        app.kubernetes.io/component: postgresql
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/name: paperless-ngx
+      type: ClusterIP
+  16: |
+    apiVersion: apps/v1
+    kind: StatefulSet
+    metadata:
+      labels:
+        app.kubernetes.io/component: postgresql
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: paperless-ngx
+        app.kubernetes.io/version: 0.0.0
+        helm.sh/chart: paperless-ngx-0.0.0
+      name: RELEASE-NAME-paperless-ngx-postgresql
+      namespace: NAMESPACE
+    spec:
+      replicas: 1
+      revisionHistoryLimit: 3
+      selector:
+        matchLabels:
+          app.kubernetes.io/component: postgresql
+          app.kubernetes.io/instance: RELEASE-NAME
+          app.kubernetes.io/name: paperless-ngx
+      serviceName: RELEASE-NAME-paperless-ngx-postgresql
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/component: postgresql
+            app.kubernetes.io/instance: RELEASE-NAME
+            app.kubernetes.io/managed-by: Helm
+            app.kubernetes.io/name: paperless-ngx
+        spec:
+          automountServiceAccountToken: false
+          containers:
+            - env:
+                - name: POSTGRES_USER
+                  value: paperless
+                - name: POSTGRES_DB
+                  value: paperless
+                - name: PGDATA
+                  value: /var/lib/postgresql/data/pgdata
+                - name: POSTGRES_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      key: database-password
+                      name: RELEASE-NAME-paperless-ngx
+              image: postgres:v0.0.0@sha256:2222222222222222222222222222222222222222222222222222222222222222
+              imagePullPolicy: IfNotPresent
+              livenessProbe:
+                exec:
+                  command:
+                    - pg_isready
+                    - -U
+                    - paperless
+                    - -d
+                    - paperless
+                failureThreshold: 5
+                periodSeconds: 30
+                timeoutSeconds: 5
+              name: postgresql
+              ports:
+                - containerPort: 5432
+                  name: postgresql
+                  protocol: TCP
+              readinessProbe:
+                exec:
+                  command:
+                    - pg_isready
+                    - -U
+                    - paperless
+                    - -d
+                    - paperless
+                failureThreshold: 3
+                periodSeconds: 10
+                timeoutSeconds: 3
+              resources:
+                limits:
+                  memory: 512Mi
+                requests:
+                  cpu: 100m
+                  memory: 256Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
+                privileged: false
+                readOnlyRootFilesystem: true
+                runAsNonRoot: true
+              volumeMounts:
+                - mountPath: /tmp
+                  name: tmp
+                - mountPath: /var/lib/postgresql/data
+                  name: data
+                - mountPath: /var/run/postgresql
+                  name: run
+          securityContext:
+            fsGroup: 999
+            fsGroupChangePolicy: OnRootMismatch
+            runAsGroup: 999
+            runAsNonRoot: true
+            runAsUser: 999
+            seccompProfile:
+              type: RuntimeDefault
+          serviceAccountName: RELEASE-NAME-paperless-ngx
+          volumes:
+            - emptyDir: {}
+              name: tmp
+            - emptyDir: {}
+              name: run
+      volumeClaimTemplates:
+        - metadata:
+            labels:
+              app.kubernetes.io/component: postgresql
+              app.kubernetes.io/instance: RELEASE-NAME
+              app.kubernetes.io/managed-by: Helm
+              app.kubernetes.io/name: paperless-ngx
+            name: data
+          spec:
+            accessModes:
+              - ReadWriteOnce
+            resources:
+              requests:
+                storage: 8Gi
+  17: |
+    apiVersion: monitoring.coreos.com/v1
+    kind: PrometheusRule
+    metadata:
+      labels:
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: paperless-ngx
+        app.kubernetes.io/version: 0.0.0
+        helm.sh/chart: paperless-ngx-0.0.0
+      name: RELEASE-NAME-paperless-ngx
+      namespace: NAMESPACE
+    spec:
+      groups:
+        - name: paperless-ngx-workload
+          rules:
+            - expr: |-
+                max by (namespace, deployment) (
+                  kube_deployment_status_replicas_available{namespace="NAMESPACE", deployment=~".*paperless-ngx.*"}
+                  or
+                  kube_deployment_status_replicas_available{namespace="NAMESPACE"}
+                  * on (namespace, deployment) group_left ()
+                  max by (namespace, deployment) (
+                    kube_deployment_labels{namespace="NAMESPACE", label_app_kubernetes_io_name="paperless-ngx"}
+                  )
+                )
+              record: namespace_deployment:paperless_ngx_replicas_available:max
+            - expr: |-
+                max by (namespace, statefulset) (
+                  kube_statefulset_status_replicas_ready{namespace="NAMESPACE", statefulset=~".*paperless-ngx.*"}
+                  or
+                  kube_statefulset_status_replicas_ready{namespace="NAMESPACE"}
+                  * on (namespace, statefulset) group_left ()
+                  max by (namespace, statefulset) (
+                    kube_statefulset_labels{namespace="NAMESPACE", label_app_kubernetes_io_name="paperless-ngx"}
+                  )
+                )
+              record: namespace_statefulset:paperless_ngx_replicas_ready:max
+            - expr: |-
+                max by (namespace, persistentvolumeclaim) (
+                  kubelet_volume_stats_used_bytes{namespace="NAMESPACE", persistentvolumeclaim=~".*paperless-ngx.*"}
+                  / kubelet_volume_stats_capacity_bytes{namespace="NAMESPACE"}
+                  or
+                  kubelet_volume_stats_used_bytes{namespace="NAMESPACE"}
+                  / kubelet_volume_stats_capacity_bytes{namespace="NAMESPACE"}
+                  * on (namespace, persistentvolumeclaim) group_left ()
+                  max by (namespace, persistentvolumeclaim) (
+                    kube_persistentvolumeclaim_labels{namespace="NAMESPACE", label_app_kubernetes_io_name="paperless-ngx"}
+                  )
+                )
+              record: namespace_persistentvolumeclaim:paperless_ngx_volume_used:ratio
+            - expr: |-
+                max by (namespace, pod, container) (
+                  increase(kube_pod_container_status_restarts_total{namespace="NAMESPACE", pod=~".*paperless-ngx.*"}[1h])
+                  or
+                  increase(kube_pod_container_status_restarts_total{namespace="NAMESPACE"}[1h])
+                  * on (namespace, pod) group_left ()
+                  max by (namespace, pod) (
+                    kube_pod_labels{namespace="NAMESPACE", label_app_kubernetes_io_name="paperless-ngx"}
+                  )
+                )
+              record: namespace_pod_container:paperless_ngx_restarts:increase1h
+        - name: paperless-ngx-alerts
+          rules:
+            - alert: PaperlessNgxDown
+              annotations:
+                description: 'The web UI, the REST API and the document consumer are all in this one pod, so nothing is being served and nothing is being ingested. Start with `kubectl -n {{ $labels.namespace }} describe deployment {{ $labels.deployment }}` and the pod''s own events. The failures that stop a start rather than crash it are a database or broker that cannot be reached, a volume that cannot be attached — a ReadWriteOnce claim still held by the outgoing pod is the usual one — and a rejected secret. A deliberately stopped release (`replicaCount: 0`) fires this too; silence it there.'
+                summary: paperless-ngx {{ $labels.deployment }} has no available replica
+              expr: namespace_deployment:paperless_ngx_replicas_available:max{namespace="NAMESPACE"} == 0
+              for: 5m
+              labels:
+                severity: critical
+            - alert: PaperlessNgxAbsent
+              annotations:
+                description: 'Either the release was uninstalled, or kube-state-metrics is not running and every other alert in this group is disarmed along with this one. Check `kubectl get deployment -l app.kubernetes.io/name=paperless-ngx -A` first; if the Deployment is there, the gap is in the monitoring stack rather than in the archive. A release renamed with `nameOverride` on a cluster whose kube-state-metrics does not export object labels looks identical from here. This alert deliberately names no namespace: `absent()` synthesises its series from equality matchers alone, so with rule scoping turned off there is no namespace label to name.'
+                summary: No paperless-ngx Deployment is being reported
+              expr: absent(namespace_deployment:paperless_ngx_replicas_available:max{namespace="NAMESPACE"})
+              for: 15m
+              labels:
+                severity: warning
+            - alert: PaperlessNgxCrashLooping
+              annotations:
+                description: '`kubectl -n {{ $labels.namespace }} logs {{ $labels.pod }} -c {{ $labels.container }} --previous` shows why the last attempt died. For the application container the common causes are a database migration that cannot complete, a broker that refuses the password, and a data volume whose ownership does not match `runAsUser` — the last of which appears as a permission error on `/usr/src/paperless/data` rather than as anything about Kubernetes.'
+                summary: '{{ $labels.container }} in {{ $labels.pod }} is crash-looping'
+              expr: |-
+                max by (namespace, pod, container) (
+                  kube_pod_container_status_waiting_reason{namespace="NAMESPACE", pod=~".*paperless-ngx.*", reason="CrashLoopBackOff"}
+                  or
+                  kube_pod_container_status_waiting_reason{namespace="NAMESPACE", reason="CrashLoopBackOff"}
+                  * on (namespace, pod) group_left ()
+                  max by (namespace, pod) (
+                    kube_pod_labels{namespace="NAMESPACE", label_app_kubernetes_io_name="paperless-ngx"}
+                  )
+                ) > 0
+              for: 15m
+              labels:
+                severity: critical
+            - alert: PaperlessNgxRestarting
+              annotations:
+                description: 'More than three restarts in an hour, without the sustained backoff that would fire PaperlessNgxCrashLooping. Check `kubectl -n {{ $labels.namespace }} describe pod {{ $labels.pod }}` for the last terminated state. If it is `OOMKilled`, the memory limit is below what a document in the consumption directory costs to process: raise `resources.limits.memory`, or lower `paperless.tasks.workers`, which multiplies it.'
+                summary: '{{ $labels.container }} in {{ $labels.pod }} restarted repeatedly in the last hour'
+              expr: namespace_pod_container:paperless_ngx_restarts:increase1h{namespace="NAMESPACE"} > 3
+              for: 10m
+              labels:
+                severity: warning
+            - alert: PaperlessNgxOOMKilled
+              annotations:
+                description: OCR holds a whole rasterised document in memory, so the peak is set by the largest document anyone feeds it and by `paperless.tasks.workers`, which multiplies that peak. A kill during consumption leaves the document in the consumption directory and it is retried on the next scan — which reproduces the kill. Raise `resources.limits.memory` in namespace {{ $labels.namespace }}, or move the offending file out of the way first.
+                summary: '{{ $labels.container }} in {{ $labels.pod }} was killed for exceeding its memory limit'
+              expr: |-
+                max by (namespace, pod, container) (
+                  kube_pod_container_status_last_terminated_reason{namespace="NAMESPACE", pod=~".*paperless-ngx.*", reason="OOMKilled"}
+                  or
+                  kube_pod_container_status_last_terminated_reason{namespace="NAMESPACE", reason="OOMKilled"}
+                  * on (namespace, pod) group_left ()
+                  max by (namespace, pod) (
+                    kube_pod_labels{namespace="NAMESPACE", label_app_kubernetes_io_name="paperless-ngx"}
+                  )
+                ) > 0
+              for: 5m
+              labels:
+                severity: warning
+            - alert: PaperlessNgxVolumeFillingUp
+              annotations:
+                description: '`kubectl -n {{ $labels.namespace }} edit pvc {{ $labels.persistentvolumeclaim }}` and raise `spec.resources.requests.storage` if the StorageClass allows expansion. Which volume this is decides what happens when it fills: the media claim stops documents being archived, the data claim stops the search index being written, and the consume claim stops new files being accepted.'
+                summary: '{{ $labels.persistentvolumeclaim }} is over 85% full'
+              expr: namespace_persistentvolumeclaim:paperless_ngx_volume_used:ratio{namespace="NAMESPACE"} > 0.85
+              for: 15m
+              labels:
+                severity: warning
+            - alert: PaperlessNgxVolumeAlmostFull
+              annotations:
+                description: At this point consumption fails and, on the data volume, the search index can be left half-written — which is repaired with `document_index reindex` after there is room again. Expand `kubectl -n {{ $labels.namespace }} get pvc {{ $labels.persistentvolumeclaim }}` now.
+                summary: '{{ $labels.persistentvolumeclaim }} is over 95% full'
+              expr: namespace_persistentvolumeclaim:paperless_ngx_volume_used:ratio{namespace="NAMESPACE"} > 0.95
+              for: 5m
+              labels:
+                severity: critical
+            - alert: PaperlessNgxDatastoreDown
+              annotations:
+                description: '`kubectl -n {{ $labels.namespace }} describe statefulset {{ $labels.statefulset }}`. A bundled Valkey being down stops every document from being processed while the web UI keeps working, which is the confusing half of this. A bundled PostgreSQL being down stops everything. Both are single-replica evaluation-tier workloads: if this is a production archive, that is the finding, not the outage.'
+                summary: paperless-ngx datastore {{ $labels.statefulset }} has no ready replica
+              expr: namespace_statefulset:paperless_ngx_replicas_ready:max{namespace="NAMESPACE"} == 0
+              for: 5m
+              labels:
+                severity: critical
+  18: |
+    apiVersion: v1
+    kind: Secret
+    metadata:
+      labels:
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: paperless-ngx
+        app.kubernetes.io/version: 0.0.0
+        helm.sh/chart: paperless-ngx-0.0.0
+      name: RELEASE-NAME-paperless-ngx
+      namespace: NAMESPACE
+    stringData:
+      admin-password: hunter2
+      database-password: db-pw
+      email-password: mail-pw
+      redis-password: broker-pw
+      secret-key: snapshot-secret-key
+    type: Opaque
+  19: |
+    apiVersion: v1
+    kind: Service
+    metadata:
+      labels:
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: paperless-ngx
+        app.kubernetes.io/version: 0.0.0
+        helm.sh/chart: paperless-ngx-0.0.0
+      name: RELEASE-NAME-paperless-ngx
+      namespace: NAMESPACE
+    spec:
+      ports:
+        - name: http
+          port: 8000
+          protocol: TCP
+          targetPort: http
+      selector:
+        app.kubernetes.io/component: server
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/name: paperless-ngx
+      type: ClusterIP
+  20: |
+    apiVersion: v1
+    automountServiceAccountToken: false
+    kind: ServiceAccount
+    metadata:
+      labels:
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: paperless-ngx
+        app.kubernetes.io/version: 0.0.0
+        helm.sh/chart: paperless-ngx-0.0.0
+      name: RELEASE-NAME-paperless-ngx
+      namespace: NAMESPACE
+  21: |
+    apiVersion: v1
+    kind: Service
+    metadata:
+      labels:
+        app.kubernetes.io/component: tika
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: paperless-ngx
+        app.kubernetes.io/version: 0.0.0
+        helm.sh/chart: paperless-ngx-0.0.0
+      name: RELEASE-NAME-paperless-ngx-tika
+      namespace: NAMESPACE
+    spec:
+      ports:
+        - name: tika
+          port: 9998
+          protocol: TCP
+          targetPort: tika
+      selector:
+        app.kubernetes.io/component: tika
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/name: paperless-ngx
+      type: ClusterIP
+  22: |
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      labels:
+        app.kubernetes.io/component: tika
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: paperless-ngx
+        app.kubernetes.io/version: 0.0.0
+        helm.sh/chart: paperless-ngx-0.0.0
+      name: RELEASE-NAME-paperless-ngx-tika
+      namespace: NAMESPACE
+    spec:
+      replicas: 1
+      revisionHistoryLimit: 3
+      selector:
+        matchLabels:
+          app.kubernetes.io/component: tika
+          app.kubernetes.io/instance: RELEASE-NAME
+          app.kubernetes.io/name: paperless-ngx
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/component: tika
+            app.kubernetes.io/instance: RELEASE-NAME
+            app.kubernetes.io/managed-by: Helm
+            app.kubernetes.io/name: paperless-ngx
+        spec:
+          automountServiceAccountToken: false
+          containers:
+            - image: apache/tika:v0.0.0@sha256:3333333333333333333333333333333333333333333333333333333333333333
+              imagePullPolicy: IfNotPresent
+              livenessProbe:
+                failureThreshold: 5
+                httpGet:
+                  path: /version
+                  port: tika
+                periodSeconds: 30
+                timeoutSeconds: 10
+              name: tika
+              ports:
+                - containerPort: 9998
+                  name: tika
+                  protocol: TCP
+              readinessProbe:
+                failureThreshold: 5
+                httpGet:
+                  path: /version
+                  port: tika
+                initialDelaySeconds: 10
+                periodSeconds: 15
+                timeoutSeconds: 5
+              resources:
+                limits:
+                  memory: 1Gi
+                requests:
+                  cpu: 250m
+                  memory: 512Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
+                privileged: false
+                readOnlyRootFilesystem: true
+                runAsNonRoot: true
+              volumeMounts:
+                - mountPath: /tmp
+                  name: tmp
+          securityContext:
+            fsGroup: 35002
+            fsGroupChangePolicy: OnRootMismatch
+            runAsGroup: 35002
+            runAsNonRoot: true
+            runAsUser: 35002
+            seccompProfile:
+              type: RuntimeDefault
+          serviceAccountName: RELEASE-NAME-paperless-ngx
+          volumes:
+            - emptyDir: {}
+              name: tmp
+  23: |
+    apiVersion: v1
+    kind: Service
+    metadata:
+      labels:
+        app.kubernetes.io/component: valkey
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: paperless-ngx
+        app.kubernetes.io/version: 0.0.0
+        helm.sh/chart: paperless-ngx-0.0.0
+      name: RELEASE-NAME-paperless-ngx-valkey
+      namespace: NAMESPACE
+    spec:
+      ports:
+        - name: valkey
+          port: 6379
+          protocol: TCP
+          targetPort: valkey
+      selector:
+        app.kubernetes.io/component: valkey
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/name: paperless-ngx
+      type: ClusterIP
+  24: |
+    apiVersion: apps/v1
+    kind: StatefulSet
+    metadata:
+      labels:
+        app.kubernetes.io/component: valkey
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: paperless-ngx
+        app.kubernetes.io/version: 0.0.0
+        helm.sh/chart: paperless-ngx-0.0.0
+      name: RELEASE-NAME-paperless-ngx-valkey
+      namespace: NAMESPACE
+    spec:
+      replicas: 1
+      revisionHistoryLimit: 3
+      selector:
+        matchLabels:
+          app.kubernetes.io/component: valkey
+          app.kubernetes.io/instance: RELEASE-NAME
+          app.kubernetes.io/name: paperless-ngx
+      serviceName: RELEASE-NAME-paperless-ngx-valkey
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/component: valkey
+            app.kubernetes.io/instance: RELEASE-NAME
+            app.kubernetes.io/managed-by: Helm
+            app.kubernetes.io/name: paperless-ngx
+        spec:
+          automountServiceAccountToken: false
+          containers:
+            - args:
+                - exec valkey-server --requirepass "$REDIS_PASSWORD" --save '' --appendonly no
+              command:
+                - sh
+                - -c
+              env:
+                - name: REDIS_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      key: redis-password
+                      name: RELEASE-NAME-paperless-ngx
+              image: valkey/valkey:v0.0.0@sha256:1111111111111111111111111111111111111111111111111111111111111111
+              imagePullPolicy: IfNotPresent
+              livenessProbe:
+                exec:
+                  command:
+                    - sh
+                    - -c
+                    - exec valkey-cli --no-auth-warning -a "$REDIS_PASSWORD" ping
+                failureThreshold: 5
+                periodSeconds: 30
+                timeoutSeconds: 5
+              name: valkey
+              ports:
+                - containerPort: 6379
+                  name: valkey
+                  protocol: TCP
+              readinessProbe:
+                exec:
+                  command:
+                    - sh
+                    - -c
+                    - exec valkey-cli --no-auth-warning -a "$REDIS_PASSWORD" ping
+                failureThreshold: 3
+                periodSeconds: 10
+                timeoutSeconds: 3
+              resources:
+                limits:
+                  memory: 256Mi
+                requests:
+                  cpu: 50m
+                  memory: 128Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
+                privileged: false
+                readOnlyRootFilesystem: true
+                runAsNonRoot: true
+              volumeMounts:
+                - mountPath: /tmp
+                  name: tmp
+                - mountPath: /data
+                  name: data
+          securityContext:
+            fsGroup: 1000
+            fsGroupChangePolicy: OnRootMismatch
+            runAsGroup: 1000
+            runAsNonRoot: true
+            runAsUser: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          serviceAccountName: RELEASE-NAME-paperless-ngx
+          volumes:
+            - emptyDir: {}
+              name: tmp
+            - emptyDir: {}
+              name: data

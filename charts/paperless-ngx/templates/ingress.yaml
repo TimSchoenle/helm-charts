@@ -1,0 +1,46 @@
+{{- /*
+Publishing through an Ingress controller.
+
+One host, one backend: paperless-ngx serves its UI, its REST API and its static files from the
+same origin, so there is nothing here to split across paths.
+
+The one thing worth setting in `ingress.annotations` is the controller's request body limit.
+Uploading a scan through the web UI is a single large POST, and every controller has a default
+below what a document weighs — the upload fails at the proxy, with a message paperless never
+sees and cannot explain.
+*/ -}}
+{{- if .Values.ingress.enabled }}
+{{- $host := tpl (required "ingress.host is required when ingress.enabled is true" .Values.ingress.host) . }}
+apiVersion: {{ include "common.capabilities.ingress.apiVersion" . }}
+kind: Ingress
+metadata:
+  name: {{ include "common.fullname" . }}
+  namespace: {{ include "common.namespace" . }}
+  labels:
+    {{- include "common.labels" . | nindent 4 }}
+  {{- with (include "common.tplvalues.merge" (dict "values" (list .Values.ingress.annotations .Values.commonAnnotations) "context" $)) }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with .Values.ingress.className }}
+  ingressClassName: {{ . | quote }}
+  {{- end }}
+  {{- if .Values.ingress.tls.enabled }}
+  tls:
+    - hosts:
+        - {{ $host | quote }}
+      secretName: {{ .Values.ingress.tls.secretName | default (printf "%s-tls" (include "common.fullname" .)) }}
+  {{- end }}
+  rules:
+    - host: {{ $host | quote }}
+      http:
+        paths:
+          - path: {{ .Values.ingress.path }}
+            pathType: {{ .Values.ingress.pathType }}
+            backend:
+              service:
+                name: {{ include "common.fullname" . }}
+                port:
+                  number: {{ int .Values.service.port }}
+{{- end }}

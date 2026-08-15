@@ -1,0 +1,201 @@
+suite: test configmap
+templates:
+  - configmap.yaml
+set:
+  paperless.secretKey: ci-secret-key
+tests:
+  - it: writes the settings a default install needs and nothing more
+    asserts:
+      - hasDocuments:
+          count: 1
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-paperless-ngx
+      - equal:
+          path: data.PAPERLESS_TIME_ZONE
+          value: "UTC"
+      - equal:
+          path: data.PAPERLESS_DBENGINE
+          value: "sqlite"
+      # An empty string is a *configured* empty value to the application, not an absent one, so
+      # settings with nothing to say are omitted rather than written blank.
+      - notExists:
+          path: data.PAPERLESS_URL
+      - notExists:
+          path: data.PAPERLESS_ADMIN_USER
+      - notExists:
+          path: data.PAPERLESS_TIKA_ENABLED
+      # The broker URL interpolates a password, and `envFrom` values are never expanded.
+      - notExists:
+          path: data.PAPERLESS_REDIS
+
+  # Django validates the Host header and the origin of every unsafe request against this. Getting
+  # it wrong shows up as a login form that loads and then rejects the login.
+  - it: derives the external URL from the Ingress
+    set:
+      ingress.enabled: true
+      ingress.host: paperless.example.com
+      ingress.tls.enabled: true
+    asserts:
+      - equal:
+          path: data.PAPERLESS_URL
+          value: https://paperless.example.com
+
+  - it: derives it from the first Gateway hostname when there is no Ingress
+    set:
+      gateway.enabled: true
+      gateway.create: true
+      gateway.gatewayClassName: cilium
+      gateway.hostnames:
+        - paperless.example.com
+        - documents.example.com
+    capabilities:
+      apiVersions:
+        - gateway.networking.k8s.io/v1
+    asserts:
+      - equal:
+          path: data.PAPERLESS_URL
+          value: https://paperless.example.com
+
+  - it: lets an explicit URL win over both
+    set:
+      paperless.url: https://docs.example.com
+      ingress.enabled: true
+      ingress.host: paperless.internal
+    asserts:
+      - equal:
+          path: data.PAPERLESS_URL
+          value: https://docs.example.com
+
+  # Django prefixes the URLs it generates with the script name but not the static ones, so a
+  # sub-path install without this loads with every stylesheet 404ing from the root.
+  - it: sets both halves of a sub-path install
+    set:
+      paperless.rootPath: /paperless
+    asserts:
+      - equal:
+          path: data.PAPERLESS_FORCE_SCRIPT_NAME
+          value: /paperless
+      - equal:
+          path: data.PAPERLESS_STATIC_URL
+          value: /paperless/static/
+
+  - it: passes the proxy headers a published install depends on
+    asserts:
+      - equal:
+          path: data.PAPERLESS_USE_X_FORWARD_HOST
+          value: "true"
+      - equal:
+          path: data.PAPERLESS_PROXY_SSL_HEADER
+          value: '["HTTP_X_FORWARDED_PROTO","https"]'
+
+  - it: leaves the SSL header out when nothing terminates TLS in front
+    set:
+      paperless.proxy.trustForwardedProto: false
+    asserts:
+      - notExists:
+          path: data.PAPERLESS_PROXY_SSL_HEADER
+
+  - it: joins list settings the way the application parses them
+    set:
+      paperless.allowedHosts:
+        - paperless.example.com
+        - paperless.internal
+      paperless.proxy.trustedProxies:
+        - 10.0.0.0/8
+    asserts:
+      - equal:
+          path: data.PAPERLESS_ALLOWED_HOSTS
+          value: paperless.example.com,paperless.internal
+      - equal:
+          path: data.PAPERLESS_TRUSTED_PROXIES
+          value: 10.0.0.0/8
+
+  - it: renders OCR arguments as the JSON object the application expects
+    set:
+      paperless.ocr.userArgs:
+        invalidate_digital_signatures: true
+      paperless.ocr.pages: 5
+    asserts:
+      - equal:
+          path: data.PAPERLESS_OCR_USER_ARGS
+          value: '{"invalidate_digital_signatures":true}'
+      - equal:
+          path: data.PAPERLESS_OCR_PAGES
+          value: "5"
+
+  - it: points the application at the bundled converters
+    set:
+      tika.enabled: true
+    asserts:
+      - equal:
+          path: data.PAPERLESS_TIKA_ENABLED
+          value: "true"
+      - equal:
+          path: data.PAPERLESS_TIKA_ENDPOINT
+          value: http://RELEASE-NAME-paperless-ngx-tika:9998
+      - equal:
+          path: data.PAPERLESS_TIKA_GOTENBERG_ENDPOINT
+          value: http://RELEASE-NAME-paperless-ngx-gotenberg:3000
+
+  - it: points it at external ones when they are named
+    set:
+      tika.enabled: true
+      tika.server.endpoint: http://tika.docs.svc:9998
+      tika.gotenberg.endpoint: http://gotenberg.docs.svc:3000
+    asserts:
+      - equal:
+          path: data.PAPERLESS_TIKA_ENDPOINT
+          value: http://tika.docs.svc:9998
+      - equal:
+          path: data.PAPERLESS_TIKA_GOTENBERG_ENDPOINT
+          value: http://gotenberg.docs.svc:3000
+
+  - it: addresses the bundled database by its Service name
+    set:
+      database.engine: postgresql
+      database.password: p
+      postgresql.enabled: true
+    asserts:
+      - equal:
+          path: data.PAPERLESS_DBHOST
+          value: RELEASE-NAME-paperless-ngx-postgresql
+      - equal:
+          path: data.PAPERLESS_DBPORT
+          value: "5432"
+      - equal:
+          path: data.PAPERLESS_DBNAME
+          value: paperless
+      # The password is not here. It is in the Secret, referenced by the pod.
+      - notExists:
+          path: data.PAPERLESS_DBPASS
+
+  - it: uses the engine's own default port for an external database
+    set:
+      database.engine: mariadb
+      database.host: mariadb.data.svc
+      database.password: p
+    asserts:
+      - equal:
+          path: data.PAPERLESS_DBPORT
+          value: "3306"
+
+  - it: renders extra settings through the template engine
+    set:
+      paperless.extraConfig:
+        PAPERLESS_APP_TITLE: "{{ .Release.Name }} archive"
+        PAPERLESS_ENABLE_NLTK: "false"
+    asserts:
+      - equal:
+          path: data.PAPERLESS_APP_TITLE
+          value: RELEASE-NAME archive
+      - equal:
+          path: data.PAPERLESS_ENABLE_NLTK
+          value: "false"
+
+  - it: creates nothing when an existing ConfigMap is supplied
+    set:
+      existingConfigMap: paperless-settings
+    asserts:
+      - hasDocuments:
+          count: 0

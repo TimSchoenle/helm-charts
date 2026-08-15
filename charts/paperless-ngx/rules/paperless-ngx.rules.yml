@@ -1,0 +1,252 @@
+# Alerts for a paperless-ngx release, and the recording rules they read.
+#
+# What these can and cannot see
+# -----------------------------
+# paperless-ngx exposes no Prometheus endpoint. There is no queue depth to alert on, no
+# consumption failure counter, no OCR duration histogram — and inventing an approximation of one
+# would be worse than saying so. Everything here is therefore built on series a cluster already
+# has:
+#
+#   kube-state-metrics  workload health: available replicas, restarts, waiting reasons,
+#                       last termination reason
+#   kubelet             volume usage, which is the one resource this application reliably runs
+#                       out of
+#
+# Selecting this release's objects
+# --------------------------------
+# Neither of the two available answers is sufficient on its own, so every selector below uses
+# both, joined with `or`:
+#
+#   by name    every object this chart creates carries the chart name, so `.*paperless-ngx.*`
+#              finds them — unless `nameOverride` or `fullnameOverride` renames them.
+#   by label   joining against `kube_*_labels` on `label_app_kubernetes_io_name` survives any
+#              rename, but kube-state-metrics stopped exporting object labels by default in v2,
+#              so on a stock kube-prometheus-stack that join matches nothing at all.
+#
+# Together they cover both: a default install is matched by name whatever kube-state-metrics is
+# configured to export, and a renamed one is matched by label wherever
+# `--metric-labels-allowlist` includes `app.kubernetes.io/name`. `or` returns the right-hand
+# series only for label sets the left-hand side did not produce, so an install matched by both
+# is still one series.
+#
+# `paperless_ngx_scope=~".*"` is the scope placeholder: an always-true matcher on a label nothing
+# emits, which the chart replaces with a real `namespace="..."` matcher. Without it a second
+# install of this chart in the same cluster pages this one for its outages. Every new selector
+# must carry one, and `.github/scripts/audit-observability.py` fails the build if one does not.
+#
+# Runbooks name only labels the alert's own expression produces. A `$labels.x` that the
+# expression aggregated away renders as an empty string, which turns a runbook command into a
+# confidently wrong one delivered at three in the morning.
+
+groups:
+  - name: paperless-ngx-workload
+    rules:
+      # The application Deployment's availability, reduced to one series per release. `max` and
+      # not `sum`: a rollout briefly produces two ReplicaSets, and summing them would report two
+      # available replicas for a workload that is a singleton by design.
+      - record: namespace_deployment:paperless_ngx_replicas_available:max
+        expr: >-
+          max by (namespace, deployment) (
+            kube_deployment_status_replicas_available{paperless_ngx_scope=~".*", deployment=~".*paperless-ngx.*"}
+            or
+            kube_deployment_status_replicas_available{paperless_ngx_scope=~".*"}
+            * on (namespace, deployment) group_left ()
+            max by (namespace, deployment) (
+              kube_deployment_labels{paperless_ngx_scope=~".*", label_app_kubernetes_io_name="paperless-ngx"}
+            )
+          )
+
+      # The bundled datastores, which are StatefulSets rather than Deployments.
+      - record: namespace_statefulset:paperless_ngx_replicas_ready:max
+        expr: >-
+          max by (namespace, statefulset) (
+            kube_statefulset_status_replicas_ready{paperless_ngx_scope=~".*", statefulset=~".*paperless-ngx.*"}
+            or
+            kube_statefulset_status_replicas_ready{paperless_ngx_scope=~".*"}
+            * on (namespace, statefulset) group_left ()
+            max by (namespace, statefulset) (
+              kube_statefulset_labels{paperless_ngx_scope=~".*", label_app_kubernetes_io_name="paperless-ngx"}
+            )
+          )
+
+      # Volume fill, as a fraction. Recorded rather than written out twice, because two alerts
+      # differ only in their threshold and a divergent copy of this expression would be the kind
+      # of defect nobody notices until one of them stops firing.
+      - record: namespace_persistentvolumeclaim:paperless_ngx_volume_used:ratio
+        expr: >-
+          max by (namespace, persistentvolumeclaim) (
+            kubelet_volume_stats_used_bytes{paperless_ngx_scope=~".*", persistentvolumeclaim=~".*paperless-ngx.*"}
+            / kubelet_volume_stats_capacity_bytes{paperless_ngx_scope=~".*"}
+            or
+            kubelet_volume_stats_used_bytes{paperless_ngx_scope=~".*"}
+            / kubelet_volume_stats_capacity_bytes{paperless_ngx_scope=~".*"}
+            * on (namespace, persistentvolumeclaim) group_left ()
+            max by (namespace, persistentvolumeclaim) (
+              kube_persistentvolumeclaim_labels{paperless_ngx_scope=~".*", label_app_kubernetes_io_name="paperless-ngx"}
+            )
+          )
+
+      # Restarts over a window long enough to distinguish a crash loop from a rollout.
+      - record: namespace_pod_container:paperless_ngx_restarts:increase1h
+        expr: >-
+          max by (namespace, pod, container) (
+            increase(kube_pod_container_status_restarts_total{paperless_ngx_scope=~".*", pod=~".*paperless-ngx.*"}[1h])
+            or
+            increase(kube_pod_container_status_restarts_total{paperless_ngx_scope=~".*"}[1h])
+            * on (namespace, pod) group_left ()
+            max by (namespace, pod) (
+              kube_pod_labels{paperless_ngx_scope=~".*", label_app_kubernetes_io_name="paperless-ngx"}
+            )
+          )
+
+  - name: paperless-ngx-alerts
+    rules:
+      # The archive is unreachable. Five minutes is past the kubelet's own restart cycle, so by
+      # the time this fires a restart has already been tried and did not help.
+      - alert: PaperlessNgxDown
+        expr: namespace_deployment:paperless_ngx_replicas_available:max{paperless_ngx_scope=~".*"} == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "paperless-ngx {{ $labels.deployment }} has no available replica"
+          description: >-
+            The web UI, the REST API and the document consumer are all in this one pod, so
+            nothing is being served and nothing is being ingested. Start with
+            `kubectl -n {{ $labels.namespace }} describe deployment {{ $labels.deployment }}`
+            and the pod's own events. The failures that stop a start rather than crash it are a
+            database or broker that cannot be reached, a volume that cannot be attached — a
+            ReadWriteOnce claim still held by the outgoing pod is the usual one — and a rejected
+            secret. A deliberately stopped release (`replicaCount: 0`) fires this too; silence
+            it there.
+
+      # Nothing is reporting on this release at all. `== 0` cannot express that: with the
+      # Deployment gone there is no series left to be zero.
+      - alert: PaperlessNgxAbsent
+        expr: absent(namespace_deployment:paperless_ngx_replicas_available:max{paperless_ngx_scope=~".*"})
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "No paperless-ngx Deployment is being reported"
+          description: >-
+            Either the release was uninstalled, or kube-state-metrics is not running and every
+            other alert in this group is disarmed along with this one. Check
+            `kubectl get deployment -l app.kubernetes.io/name=paperless-ngx -A` first; if the
+            Deployment is there, the gap is in the monitoring stack rather than in the archive.
+            A release renamed with `nameOverride` on a cluster whose kube-state-metrics does not
+            export object labels looks identical from here. This alert deliberately names no
+            namespace: `absent()` synthesises its series from equality matchers alone, so with
+            rule scoping turned off there is no namespace label to name.
+
+      # A container that keeps dying. Fifteen minutes of backoff is well past a transient
+      # dependency being slow to accept connections.
+      - alert: PaperlessNgxCrashLooping
+        expr: >-
+          max by (namespace, pod, container) (
+            kube_pod_container_status_waiting_reason{paperless_ngx_scope=~".*", pod=~".*paperless-ngx.*", reason="CrashLoopBackOff"}
+            or
+            kube_pod_container_status_waiting_reason{paperless_ngx_scope=~".*", reason="CrashLoopBackOff"}
+            * on (namespace, pod) group_left ()
+            max by (namespace, pod) (
+              kube_pod_labels{paperless_ngx_scope=~".*", label_app_kubernetes_io_name="paperless-ngx"}
+            )
+          ) > 0
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.container }} in {{ $labels.pod }} is crash-looping"
+          description: >-
+            `kubectl -n {{ $labels.namespace }} logs {{ $labels.pod }} -c {{ $labels.container }}
+            --previous` shows why the last attempt died. For the application container the
+            common causes are a database migration that cannot complete, a broker that refuses
+            the password, and a data volume whose ownership does not match `runAsUser` — the
+            last of which appears as a permission error on `/usr/src/paperless/data` rather than
+            as anything about Kubernetes.
+
+      # Restarting repeatedly without staying down long enough to count as a crash loop. This is
+      # what an out-of-memory kill during OCR looks like from the outside.
+      - alert: PaperlessNgxRestarting
+        expr: namespace_pod_container:paperless_ngx_restarts:increase1h{paperless_ngx_scope=~".*"} > 3
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.container }} in {{ $labels.pod }} restarted repeatedly in the last hour"
+          description: >-
+            More than three restarts in an hour, without the sustained backoff that would fire
+            PaperlessNgxCrashLooping. Check `kubectl -n {{ $labels.namespace }} describe pod
+            {{ $labels.pod }}` for the last terminated state. If it is `OOMKilled`, the memory
+            limit is below what a document in the consumption directory costs to process:
+            raise `resources.limits.memory`, or lower `paperless.tasks.workers`, which
+            multiplies it.
+
+      # The specific case above, named, because the remedy is different from a restart loop.
+      - alert: PaperlessNgxOOMKilled
+        expr: >-
+          max by (namespace, pod, container) (
+            kube_pod_container_status_last_terminated_reason{paperless_ngx_scope=~".*", pod=~".*paperless-ngx.*", reason="OOMKilled"}
+            or
+            kube_pod_container_status_last_terminated_reason{paperless_ngx_scope=~".*", reason="OOMKilled"}
+            * on (namespace, pod) group_left ()
+            max by (namespace, pod) (
+              kube_pod_labels{paperless_ngx_scope=~".*", label_app_kubernetes_io_name="paperless-ngx"}
+            )
+          ) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.container }} in {{ $labels.pod }} was killed for exceeding its memory limit"
+          description: >-
+            OCR holds a whole rasterised document in memory, so the peak is set by the largest
+            document anyone feeds it and by `paperless.tasks.workers`, which multiplies that
+            peak. A kill during consumption leaves the document in the consumption directory and
+            it is retried on the next scan — which reproduces the kill. Raise
+            `resources.limits.memory` in namespace {{ $labels.namespace }}, or move the offending
+            file out of the way first.
+
+      # Volume fill, warned early enough to do something about it.
+      - alert: PaperlessNgxVolumeFillingUp
+        expr: namespace_persistentvolumeclaim:paperless_ngx_volume_used:ratio{paperless_ngx_scope=~".*"} > 0.85
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.persistentvolumeclaim }} is over 85% full"
+          description: >-
+            `kubectl -n {{ $labels.namespace }} edit pvc {{ $labels.persistentvolumeclaim }}`
+            and raise `spec.resources.requests.storage` if the StorageClass allows expansion.
+            Which volume this is decides what happens when it fills: the media claim stops
+            documents being archived, the data claim stops the search index being written, and
+            the consume claim stops new files being accepted.
+
+      - alert: PaperlessNgxVolumeAlmostFull
+        expr: namespace_persistentvolumeclaim:paperless_ngx_volume_used:ratio{paperless_ngx_scope=~".*"} > 0.95
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.persistentvolumeclaim }} is over 95% full"
+          description: >-
+            At this point consumption fails and, on the data volume, the search index can be left
+            half-written — which is repaired with `document_index reindex` after there is room
+            again. Expand
+            `kubectl -n {{ $labels.namespace }} get pvc {{ $labels.persistentvolumeclaim }}` now.
+
+      # The bundled datastores. Neither is a singleton by accident: this chart runs one replica
+      # of each, so ready-replicas of zero means the archive has lost its database or its broker.
+      - alert: PaperlessNgxDatastoreDown
+        expr: namespace_statefulset:paperless_ngx_replicas_ready:max{paperless_ngx_scope=~".*"} == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "paperless-ngx datastore {{ $labels.statefulset }} has no ready replica"
+          description: >-
+            `kubectl -n {{ $labels.namespace }} describe statefulset {{ $labels.statefulset }}`.
+            A bundled Valkey being down stops every document from being processed while the web
+            UI keeps working, which is the confusing half of this. A bundled PostgreSQL being
+            down stops everything. Both are single-replica evaluation-tier workloads: if this is
+            a production archive, that is the finding, not the outage.

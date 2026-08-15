@@ -17,6 +17,11 @@ tests:
       - equal:
           path: data.PAPERLESS_DBENGINE
           value: "sqlite"
+      # Must stay inside the `tmp` mount, which is the only thing `persistence.scratchSizeLimit`
+      # can bound. Relying on the image default would make that limit a coincidence.
+      - equal:
+          path: data.PAPERLESS_SCRATCH_DIR
+          value: "/tmp/paperless"
       # An empty string is a *configured* empty value to the application, not an absent one, so
       # settings with nothing to say are omitted rather than written blank.
       - notExists:

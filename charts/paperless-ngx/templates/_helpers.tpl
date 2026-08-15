@@ -297,16 +297,6 @@ spec.
       name: {{ $secret }}
       key: {{ include "paperless-ngx.secretKeyName" (dict "ctx" $ctx "key" "email-password" "override" $ctx.Values.paperless.email.existingSecretKey) }}
 {{- end }}
-{{- if include "common.readOnlyRootFilesystem" $ctx }}
-{{- /*
-  s6-overlay, which supervises the four processes in this image, keeps its supervision tree and
-  the container environment under /run. With a read-only root filesystem it has to be told so,
-  and it then copies its service definitions into the writable /run mounted below instead of
-  trying to write next to them.
-*/}}
-- name: S6_READ_ONLY_ROOT
-  value: "1"
-{{- end }}
 {{- end -}}
 
 {{/*
@@ -332,33 +322,29 @@ Arguments:
 {{/*
 All pod volumes this chart contributes.
 
-Three of them exist only because the root filesystem is read-only, and each is a boot failure
-without it:
+Two of them are not application data:
 
-  run    s6-overlay's supervision tree and container environment. It is executed from, so it
-         must not be mounted `noexec` — an `emptyDir` is not, which is why this is one.
   tmp    `PAPERLESS_SCRATCH_DIR`, where every intermediate file OCR produces is written:
-         rasterised pages, unpaper output, the PDF being assembled. Sized deliberately, because
-         it is charged against the node's ephemeral storage.
+         rasterised pages, unpaper output, the PDF being assembled. It is an `emptyDir` rather
+         than the container's own writable layer so that `sizeLimit` can cap it — this is
+         charged against the node's ephemeral storage either way, but only a volume can be
+         bounded, and an OCR run on a large document is what exhausts a node.
   export `document_exporter`'s output directory. It is one of the image's declared volumes, so
          it exists in the layer and is read-only without a mount of its own — and the container
          reports that as a warning at start and as a failure only when somebody runs an export.
+
+Note that /run is deliberately *not* mounted; see `paperless-ngx.validateValues` for why.
 */}}
 {{- define "paperless-ngx.volumes" -}}
 {{- $ctx := . -}}
 {{- range $volume := list "media" "data" "consume" "export" }}
 {{ include "paperless-ngx.dataVolume" (dict "ctx" $ctx "volume" $volume) }}
 {{- end }}
-{{- if include "common.readOnlyRootFilesystem" $ctx }}
-- name: run
-  emptyDir:
-    sizeLimit: 32Mi
 - name: tmp
   emptyDir:
     {{- with $ctx.Values.persistence.scratchSizeLimit }}
     sizeLimit: {{ . }}
     {{- end }}
-{{- end }}
 {{- end -}}
 
 {{/*
@@ -367,7 +353,6 @@ paths below are whole directories the application owns, and a subPath mount woul
 stop receiving updates to the volume it came from.
 */}}
 {{- define "paperless-ngx.volumeMounts" -}}
-{{- $ctx := . -}}
 - name: media
   mountPath: /usr/src/paperless/media
 - name: data
@@ -376,12 +361,8 @@ stop receiving updates to the volume it came from.
   mountPath: /usr/src/paperless/consume
 - name: export
   mountPath: /usr/src/paperless/export
-{{- if include "common.readOnlyRootFilesystem" $ctx }}
-- name: run
-  mountPath: /run
 - name: tmp
   mountPath: /tmp
-{{- end }}
 {{- end -}}
 
 {{/*
@@ -394,6 +375,25 @@ values rather than properties of one.
 {{- define "paperless-ngx.validateValues" -}}
 {{- $messages := list -}}
 {{- $values := .Values -}}
+
+{{- /*
+  The image boots under s6-overlay, which refuses to start unless /run is writable and either
+  belongs to the UID it runs as or is world-writable (mode 1777, as it is in the image itself).
+  Neither is reachable from here: an `emptyDir` is always created owned by uid 0, `fsGroup`
+  moves only its group and caps the mode at 2775, `emptyDir` has no `defaultMode` to raise it,
+  and the capabilities that would let the container fix it by hand are the ones the restricted
+  preset drops. Mounting anything at /run therefore replaces a directory s6-overlay accepts with
+  one it rejects, and a read-only root filesystem leaves it nothing else to write to.
+
+  So the root filesystem stays writable for this container, and /run is left as the image ships
+  it. Every other part of the restricted baseline is unaffected: the container still runs as a
+  non-root user, drops all capabilities, forbids privilege escalation and keeps the default
+  seccomp profile. Caught here because the alternative is a crash loop whose only symptom is a
+  message from s6-overlay's preinit about permissions on a directory nobody configured.
+*/ -}}
+{{- if (include "common.readOnlyRootFilesystem" .) -}}
+{{- $messages = append $messages "  - securityContext.readOnlyRootFilesystem must stay false for this chart. The image's s6-overlay init requires a writable /run that it owns or that is world-writable, and no Kubernetes volume can be either, so the container would fail to boot. The rest of the restricted baseline (runAsNonRoot, dropped capabilities, no privilege escalation, seccomp) is unaffected and still applies." -}}
+{{- end -}}
 
 {{- /* The one credential with no safe default. */ -}}
 {{- if not (include "paperless-ngx.hasCredential" (dict "ctx" . "value" $values.paperless.secretKey)) -}}

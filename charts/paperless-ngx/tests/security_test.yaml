@@ -33,9 +33,10 @@ tests:
       - equal:
           path: spec.template.spec.containers[0].securityContext.privileged
           value: false
+      # The one field of the baseline this image cannot keep; see the dedicated case below.
       - equal:
           path: spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem
-          value: true
+          value: false
       - equal:
           path: spec.template.spec.containers[0].securityContext.runAsNonRoot
           value: true
@@ -69,19 +70,14 @@ tests:
           path: spec.template.spec.automountServiceAccountToken
           value: false
 
-  # s6-overlay supervises the four processes in this image from /run and executes from it, and
-  # OCR writes every intermediate file to /tmp. Without both mounts the container dies before
-  # the application is ever started.
-  - it: provides the writable directories a read-only root filesystem needs
+  # OCR writes every intermediate file to PAPERLESS_SCRATCH_DIR. It is a volume rather than the
+  # container's writable layer purely so that sizeLimit can bound it, because a single OCR run on
+  # a large document is what fills a node's ephemeral storage.
+  - it: bounds the OCR scratch directory with a sized volume
     documentSelector:
       path: kind
       value: Deployment
     asserts:
-      - contains:
-          path: spec.template.spec.containers[0].volumeMounts
-          content:
-            name: run
-            mountPath: /run
       - contains:
           path: spec.template.spec.containers[0].volumeMounts
           content:
@@ -90,31 +86,49 @@ tests:
       - contains:
           path: spec.template.spec.volumes
           content:
-            name: run
-            emptyDir:
-              sizeLimit: 32Mi
-      - contains:
-          path: spec.template.spec.volumes
-          content:
             name: tmp
             emptyDir:
               sizeLimit: 2Gi
 
-  - it: tells s6-overlay that the root filesystem is read-only
+  # s6-overlay refuses to boot unless /run is writable and either owned by its own UID or
+  # world-writable, which is how the image ships it. Mounting a volume there replaces a directory
+  # it accepts with one it rejects — an emptyDir is owned by uid 0, fsGroup moves only the group,
+  # and there is no defaultMode for emptyDir — so nothing may be mounted at /run, and the root
+  # filesystem has to stay writable for s6-overlay to have anywhere to work.
+  - it: leaves /run as the image ships it
     documentSelector:
       path: kind
       value: Deployment
     asserts:
-      - contains:
+      - notContains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            mountPath: /run
+          any: true
+      - notContains:
+          path: spec.template.spec.volumes
+          content:
+            name: run
+          any: true
+      - notContains:
           path: spec.template.spec.containers[0].env
           content:
             name: S6_READ_ONLY_ROOT
-            value: "1"
+          any: true
 
-  # Turning the preset off is an operator's decision, and the two halves have to move together:
-  # without a read-only root filesystem the writable mounts are noise, and the flag telling
-  # s6-overlay about one would be a lie.
-  - it: drops the read-only scaffolding when the root filesystem is writable
+  # A crash loop whose only symptom is a message from s6-overlay's preinit about permissions on a
+  # directory nobody configured is not a debuggable failure. Reject it at render time instead.
+  - it: refuses to render with a read-only root filesystem
+    set:
+      securityContext.readOnlyRootFilesystem: true
+    asserts:
+      - template: deployment.yaml
+        failedTemplate:
+          errorPattern: securityContext\.readOnlyRootFilesystem must stay false
+
+  # Turning the preset off entirely is an operator's decision, but it must not resurrect the /run
+  # mount, which would break the container just as surely.
+  - it: still leaves /run alone when the preset is off
     set:
       securityContextPreset: none
     documentSelector:
@@ -124,13 +138,8 @@ tests:
       - notContains:
           path: spec.template.spec.containers[0].volumeMounts
           content:
-            name: run
             mountPath: /run
-      - notContains:
-          path: spec.template.spec.containers[0].env
-          content:
-            name: S6_READ_ONLY_ROOT
-            value: "1"
+          any: true
 
   - it: holds the bundled datastores to the same baseline
     set:

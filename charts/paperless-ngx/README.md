@@ -256,15 +256,29 @@ Every workload in the release satisfies the restricted Pod Security Standard out
 
 - runs as the unprivileged account its image was built for — `paperless` (1000), `postgres` (999),
   `valkey` (1000), `gotenberg` (1001), `tika` (35002)
-- read-only root filesystem, all Linux capabilities dropped, no privilege escalation,
+- all Linux capabilities dropped, no privilege escalation,
   `seccompProfile: RuntimeDefault`
 - no ServiceAccount token mounted
 
-The paperless-ngx image supervises its four processes with s6-overlay, which keeps its supervision
-tree under `/run` and executes from it, and OCR writes every intermediate file to
-`PAPERLESS_SCRATCH_DIR` under `/tmp`. Both are `emptyDir` mounts, and `S6_READ_ONLY_ROOT` is set
-so s6-overlay copies its service definitions into the writable one instead of trying to write next
-to them. Without those, the container dies before the application is ever started.
+The one exception is the root filesystem, which stays writable for the server container. The image
+supervises its four processes with s6-overlay, whose `preinit` refuses to start unless `/run` is
+writable and either owned by the UID it runs as or world-writable — mode `1777`, which is how the
+image itself ships it. Kubernetes cannot reproduce either condition: an `emptyDir` is always
+created owned by uid 0, `fsGroup` moves only its group and caps the mode at `2775`, `emptyDir` has
+no `defaultMode` to raise it, and the capabilities that would let the container fix it by hand are
+exactly the ones the restricted preset drops. Mounting anything at `/run` therefore replaces a
+directory s6-overlay accepts with one it rejects, and a read-only root filesystem leaves it nothing
+else to write to. So `/run` is left as the image ships it, and
+`securityContext.readOnlyRootFilesystem` is `false`; setting it back to `true` fails the render with
+an explanation rather than producing a crash loop. Everything else in the baseline is unaffected —
+the container still runs as a non-root user, drops all capabilities, forbids privilege escalation
+and keeps `seccompProfile: RuntimeDefault`. The bundled datastores keep the full preset, read-only
+root filesystem included.
+
+OCR writes every intermediate file to `PAPERLESS_SCRATCH_DIR` under `/tmp`. That is an `emptyDir`
+rather than the container's own writable layer so that `sizeLimit` can bound it: the space is
+charged against the node's ephemeral storage either way, but only a volume can be capped, and a
+single OCR run on a large document is what exhausts a node.
 
 The image detects a non-root start and skips the UID remapping and the recursive `chown` it does
 when started as root — so `USERMAP_UID` and `USERMAP_GID` have no effect here, and `fsGroup` is

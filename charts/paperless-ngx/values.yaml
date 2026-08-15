@@ -1941,8 +1941,20 @@ securityContextPreset: restricted
 # @schema
 # $ref: https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.SecurityContext
 # @schema
-# -- Container security context, merged over the preset.
-securityContext: {}
+# -- Container security context, merged over the preset. `readOnlyRootFilesystem` is deliberately
+# turned back off: the image boots under s6-overlay, which refuses to start unless `/run` is
+# writable and either owned by the UID it runs as or world-writable. An `emptyDir` is always
+# created owned by uid 0, `fsGroup` moves only its group, and `emptyDir` has no `defaultMode` — so
+# no volume can satisfy it, and a read-only root filesystem leaves it nothing else to write to.
+# The rest of the baseline still applies: non-root, all capabilities dropped, no privilege
+# escalation, `seccompProfile: RuntimeDefault`. Setting this back to `true` fails the render with
+# an explanation rather than producing a crash loop.
+securityContext:
+  # @schema
+  # type: boolean
+  # @schema
+  # -- Whether the container's root filesystem is immutable. Must stay `false`; see above.
+  readOnlyRootFilesystem: false
 
 # @schema
 # additionalProperties: true

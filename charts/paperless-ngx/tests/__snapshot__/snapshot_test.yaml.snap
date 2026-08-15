@@ -22,6 +22,7 @@ matches the committed snapshot for a default install:
       PAPERLESS_OCR_OUTPUT_TYPE: pdfa
       PAPERLESS_OCR_ROTATE_PAGES: "true"
       PAPERLESS_PROXY_SSL_HEADER: '["HTTP_X_FORWARDED_PROTO","https"]'
+      PAPERLESS_SCRATCH_DIR: /tmp/paperless
       PAPERLESS_TASK_WORKERS: "1"
       PAPERLESS_TIME_ZONE: UTC
       PAPERLESS_USE_X_FORWARD_HOST: "true"
@@ -42,6 +43,8 @@ matches the committed snapshot for a default install:
     apiVersion: apps/v1
     kind: Deployment
     metadata:
+      annotations:
+        ignore-check.kube-linter.io/no-read-only-root-fs: s6-overlay requires a writable /run that no volume type can supply; every other part of the restricted baseline still applies to this container.
       labels:
         app.kubernetes.io/instance: RELEASE-NAME
         app.kubernetes.io/managed-by: Helm
@@ -63,7 +66,7 @@ matches the committed snapshot for a default install:
       template:
         metadata:
           annotations:
-            checksum/configmap: d18100116547a0380e5aca1357a85120aa9ec7d0e482ab5e9437895ea7d819c6
+            checksum/configmap: d47575c6335a1d5edc4a73bc0bfe4ce46cef30ca2037e2aeff5f286d63e15057
             checksum/secret: 0177b709685732d78b602786cce6cb5f7668d33e388d3b3c36ff9623d61eab5e
           labels:
             app.kubernetes.io/component: server
@@ -82,8 +85,6 @@ matches the committed snapshot for a default install:
                     secretKeyRef:
                       key: secret-key
                       name: RELEASE-NAME-paperless-ngx
-                - name: S6_READ_ONLY_ROOT
-                  value: "1"
               envFrom:
                 - configMapRef:
                     name: RELEASE-NAME-paperless-ngx
@@ -120,7 +121,7 @@ matches the committed snapshot for a default install:
                   drop:
                     - ALL
                 privileged: false
-                readOnlyRootFilesystem: true
+                readOnlyRootFilesystem: false
                 runAsNonRoot: true
               startupProbe:
                 failureThreshold: 60
@@ -139,8 +140,6 @@ matches the committed snapshot for a default install:
                   name: consume
                 - mountPath: /usr/src/paperless/export
                   name: export
-                - mountPath: /run
-                  name: run
                 - mountPath: /tmp
                   name: tmp
           securityContext:
@@ -165,9 +164,6 @@ matches the committed snapshot for a default install:
                 claimName: RELEASE-NAME-paperless-ngx-consume
             - emptyDir: {}
               name: export
-            - emptyDir:
-                sizeLimit: 32Mi
-              name: run
             - emptyDir:
                 sizeLimit: 2Gi
               name: tmp
@@ -507,6 +503,7 @@ matches the committed snapshot for external datastores behind a Gateway:
       PAPERLESS_OCR_OUTPUT_TYPE: pdfa
       PAPERLESS_OCR_ROTATE_PAGES: "true"
       PAPERLESS_PROXY_SSL_HEADER: '["HTTP_X_FORWARDED_PROTO","https"]'
+      PAPERLESS_SCRATCH_DIR: /tmp/paperless
       PAPERLESS_STATIC_URL: /paperless/static/
       PAPERLESS_TASK_WORKERS: "1"
       PAPERLESS_TIME_ZONE: UTC
@@ -529,6 +526,8 @@ matches the committed snapshot for external datastores behind a Gateway:
     apiVersion: apps/v1
     kind: Deployment
     metadata:
+      annotations:
+        ignore-check.kube-linter.io/no-read-only-root-fs: s6-overlay requires a writable /run that no volume type can supply; every other part of the restricted baseline still applies to this container.
       labels:
         app.kubernetes.io/instance: RELEASE-NAME
         app.kubernetes.io/managed-by: Helm
@@ -550,7 +549,7 @@ matches the committed snapshot for external datastores behind a Gateway:
       template:
         metadata:
           annotations:
-            checksum/configmap: f5c82bef6ec35dfdfefe6be5a517f2013978777b0efc1d4c3f7b11affe33a826
+            checksum/configmap: c210e3dd9c9dedba56ca444848852a208095fcd81a530935e8b8b7f459b0115f
           labels:
             app.kubernetes.io/component: server
             app.kubernetes.io/instance: RELEASE-NAME
@@ -578,8 +577,6 @@ matches the committed snapshot for external datastores behind a Gateway:
                     secretKeyRef:
                       key: database-password
                       name: paperless-credentials
-                - name: S6_READ_ONLY_ROOT
-                  value: "1"
               envFrom:
                 - configMapRef:
                     name: RELEASE-NAME-paperless-ngx
@@ -616,7 +613,7 @@ matches the committed snapshot for external datastores behind a Gateway:
                   drop:
                     - ALL
                 privileged: false
-                readOnlyRootFilesystem: true
+                readOnlyRootFilesystem: false
                 runAsNonRoot: true
               startupProbe:
                 failureThreshold: 60
@@ -635,8 +632,6 @@ matches the committed snapshot for external datastores behind a Gateway:
                   name: consume
                 - mountPath: /usr/src/paperless/export
                   name: export
-                - mountPath: /run
-                  name: run
                 - mountPath: /tmp
                   name: tmp
           securityContext:
@@ -662,9 +657,6 @@ matches the committed snapshot for external datastores behind a Gateway:
             - name: export
               persistentVolumeClaim:
                 claimName: RELEASE-NAME-paperless-ngx-export
-            - emptyDir:
-                sizeLimit: 32Mi
-              name: run
             - emptyDir:
                 sizeLimit: 2Gi
               name: tmp
@@ -823,6 +815,7 @@ matches the committed snapshot for the full stack behind an Ingress:
       PAPERLESS_OCR_OUTPUT_TYPE: pdfa
       PAPERLESS_OCR_ROTATE_PAGES: "true"
       PAPERLESS_PROXY_SSL_HEADER: '["HTTP_X_FORWARDED_PROTO","https"]'
+      PAPERLESS_SCRATCH_DIR: /tmp/paperless
       PAPERLESS_TASK_WORKERS: "1"
       PAPERLESS_TIKA_ENABLED: "true"
       PAPERLESS_TIKA_ENDPOINT: http://RELEASE-NAME-paperless-ngx-tika:9998
@@ -1159,6 +1152,8 @@ matches the committed snapshot for the full stack behind an Ingress:
     apiVersion: apps/v1
     kind: Deployment
     metadata:
+      annotations:
+        ignore-check.kube-linter.io/no-read-only-root-fs: s6-overlay requires a writable /run that no volume type can supply; every other part of the restricted baseline still applies to this container.
       labels:
         app.kubernetes.io/instance: RELEASE-NAME
         app.kubernetes.io/managed-by: Helm
@@ -1180,7 +1175,7 @@ matches the committed snapshot for the full stack behind an Ingress:
       template:
         metadata:
           annotations:
-            checksum/configmap: d72a5dae8a30ffa95342717f6ff7166acd2adbe0b0ae4ab9d2afb92bc218587c
+            checksum/configmap: 037bfe9553361ea35f89bad9f13923f9e0075e752509950923de6708c34c8660
             checksum/secret: 3123afc432665efaa3d908d5d92e51e4d7dfb71834083d7dca6d58e5a403cefa
           labels:
             app.kubernetes.io/component: server
@@ -1219,8 +1214,6 @@ matches the committed snapshot for the full stack behind an Ingress:
                     secretKeyRef:
                       key: email-password
                       name: RELEASE-NAME-paperless-ngx
-                - name: S6_READ_ONLY_ROOT
-                  value: "1"
               envFrom:
                 - configMapRef:
                     name: RELEASE-NAME-paperless-ngx
@@ -1257,7 +1250,7 @@ matches the committed snapshot for the full stack behind an Ingress:
                   drop:
                     - ALL
                 privileged: false
-                readOnlyRootFilesystem: true
+                readOnlyRootFilesystem: false
                 runAsNonRoot: true
               startupProbe:
                 failureThreshold: 60
@@ -1276,8 +1269,6 @@ matches the committed snapshot for the full stack behind an Ingress:
                   name: consume
                 - mountPath: /usr/src/paperless/export
                   name: export
-                - mountPath: /run
-                  name: run
                 - mountPath: /tmp
                   name: tmp
           securityContext:
@@ -1302,9 +1293,6 @@ matches the committed snapshot for the full stack behind an Ingress:
                 claimName: RELEASE-NAME-paperless-ngx-consume
             - emptyDir: {}
               name: export
-            - emptyDir:
-                sizeLimit: 32Mi
-              name: run
             - emptyDir:
                 sizeLimit: 2Gi
               name: tmp

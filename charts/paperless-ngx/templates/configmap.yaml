@@ -93,6 +93,18 @@ data:
   {{- end }}
   PAPERLESS_ARCHIVE_FILE_GENERATION: {{ $paperless.archiveFileGeneration | quote }}
 
+  {{- /*
+    Stated rather than left to the default, which is `tempfile.gettempdir()/paperless` and so
+    happens to land in the `tmp` volume today. That is the only reason `persistence.scratchSizeLimit`
+    bounds anything: OCR writes every rasterised page, unpaper output and partially assembled PDF
+    here, and the space is charged against the node's ephemeral storage. If upstream ever changed
+    that default — or anything set `TMPDIR` — the scratch directory would move into the container's
+    writable layer, where nothing caps it, and the first symptom would be a node filling up under a
+    large scan. Pinning it to the mount makes the limit a property of the chart rather than a
+    coincidence. It is deliberately not a value: a path outside the mount silently removes the cap.
+  */}}
+  PAPERLESS_SCRATCH_DIR: "/tmp/paperless"
+
   PAPERLESS_CONSUMER_POLLING_INTERVAL: {{ $paperless.consumer.pollingInterval | quote }}
   PAPERLESS_CONSUMER_STABILITY_DELAY: {{ $paperless.consumer.stabilityDelay | quote }}
   PAPERLESS_CONSUMER_RECURSIVE: {{ $paperless.consumer.recursive | quote }}

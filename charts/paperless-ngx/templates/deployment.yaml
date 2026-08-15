@@ -6,10 +6,20 @@ metadata:
   namespace: {{ include "common.namespace" . }}
   labels:
     {{- include "common.labels" . | nindent 4 }}
-  {{- with (include "common.annotations" .) }}
   annotations:
+    {{- /*
+      The one documented deviation from the restricted baseline this repository enforces, scoped
+      to this workload rather than relaxed repo-wide. The image boots under s6-overlay, which
+      refuses to start unless /run is writable and either owned by the UID it runs as or
+      world-writable; no Kubernetes volume can be either, so a read-only root filesystem leaves
+      it nowhere to work. See `paperless-ngx.validateValues` for the full reasoning.
+    */}}
+    ignore-check.kube-linter.io/no-read-only-root-fs: >-
+      s6-overlay requires a writable /run that no volume type can supply; every other part of the
+      restricted baseline still applies to this container.
+    {{- with (include "common.annotations" .) }}
     {{- . | nindent 4 }}
-  {{- end }}
+    {{- end }}
 spec:
   {{- /*
     paperless-ngx is a singleton. This one pod runs the webserver, the task workers, the

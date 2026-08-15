@@ -744,7 +744,8 @@ earlier `image.tag` after a major upgrade is not supported by the application. E
 | resources.requests.memory | string | `"512Mi"` | Minimum guaranteed memory allocation. |
 | resourcesPreset | string | `""` | Named resource sizing for the paperless-ngx container. Ignored when `resources` is set, which it is by default — no preset is large enough for OCR. |
 | revisionHistoryLimit | int | `3` | Number of old ReplicaSets retained for rollback. |
-| securityContext | object | `{}` | Container security context, merged over the preset. |
+| securityContext | object | `{"readOnlyRootFilesystem":false}` | Container security context, merged over the preset. `readOnlyRootFilesystem` is deliberately turned back off: the image boots under s6-overlay, which refuses to start unless `/run` is writable and either owned by the UID it runs as or world-writable. An `emptyDir` is always created owned by uid 0, `fsGroup` moves only its group, and `emptyDir` has no `defaultMode` — so no volume can satisfy it, and a read-only root filesystem leaves it nothing else to write to. The rest of the baseline still applies: non-root, all capabilities dropped, no privilege escalation, `seccompProfile: RuntimeDefault`. Setting this back to `true` fails the render with an explanation rather than producing a crash loop. |
+| securityContext.readOnlyRootFilesystem | bool | `false` | Whether the container's root filesystem is immutable. Must stay `false`; see above. |
 | securityContextPreset | string | `"restricted"` | Container security context baseline. `restricted` drops all Linux capabilities and forbids privilege escalation, running as root and a writable root filesystem. |
 | service.annotations | object | `{}` | Annotations for the Service, e.g. cloud load balancer configuration. |
 | service.ipFamilyPolicy | string | `""` | IP family policy for the Service. |

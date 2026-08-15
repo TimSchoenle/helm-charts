@@ -1,0 +1,35 @@
+# The observability objects. Installable because the install job applies the Prometheus Operator
+# CRDs before it runs, so the `PrometheusRule` this creates is accepted by a real API server —
+# which is the half of the render that `helm template` cannot check.
+#
+# `metrics.dashboard.grafanaOperator` is deliberately left off: its CRDs are not installed on the
+# CI cluster, and the chart refuses to render rather than dropping the objects silently. The
+# render-only `ci/grafana-operator.yaml` fixture covers that path instead.
+paperless:
+  secretKey: ci-secret-key-not-a-real-one
+
+metrics:
+  prometheusRule:
+    enabled: true
+    scope: namespace
+    labels:
+      release: kube-prometheus-stack
+  dashboard:
+    enabled: true
+    label: grafana_dashboard
+    labelValue: "1"
+
+resources:
+  limits:
+    memory: 1Gi
+  requests:
+    cpu: 100m
+    memory: 256Mi
+
+persistence:
+  media:
+    size: 1Gi
+  data:
+    size: 1Gi
+  consume:
+    size: 1Gi

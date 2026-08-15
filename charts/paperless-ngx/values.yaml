@@ -1,0 +1,2193 @@
+# vim: set ft=yaml:
+# yaml-language-server: $schema=values.schema.json
+
+# @schema
+# additionalProperties: true
+# @schema
+image:
+  # @schema
+  # type: string
+  # @schema
+  # -- Registry host. Empty means Docker Hub, which does not host paperless-ngx — the default
+  # below names GitHub's registry explicitly instead.
+  registry: ""
+
+  # @schema
+  # type: string
+  # @schema
+  # -- The container image repository. The official image, published by the paperless-ngx
+  # project, running its whole stack (webserver, consumer, task worker and scheduler) under
+  # one s6-overlay supervision tree.
+  repository: ghcr.io/paperless-ngx/paperless-ngx
+
+  # @schema
+  # type: string
+  # @schema
+  # -- The container image tag. Defaults to the chart's `appVersion` when empty.
+  tag: 3.0.5@sha256:65a4cabf0169ea7fbd90ab7bb28ba3f8b5909613635acda1a03ad606f34b456b
+
+  # @schema
+  # enum: ["", Always, IfNotPresent, Never]
+  # @schema
+  # -- The image pull policy. Empty resolves automatically from the tag/digest.
+  pullPolicy: ""
+
+# @schema
+# type: array
+# @schema
+# -- Optional image pull secrets for private registries.
+imagePullSecrets: []
+
+# @schema
+# type: string
+# @schema
+# -- Name of an existing Secret holding every credential this chart consumes: the Django secret
+# key, the admin password, and the database, broker and SMTP passwords. When set, the chart
+# creates no Secret of its own and the plaintext fields below are ignored — which keeps them out
+# of `values.yaml` and out of the Helm release object. The key names it looks for are the
+# `existingSecretKey` fields beside each credential.
+existingSecret: ""
+
+# @schema
+# type: string
+# @schema
+# -- Name of an existing ConfigMap holding the `PAPERLESS_*` settings. When set, the chart
+# creates none of its own and every value under `paperless` below is ignored — the ConfigMap is
+# mounted with `envFrom` exactly as the generated one would be. For a deployment that manages the
+# application's configuration outside this chart; the credentials still come from `existingSecret`.
+existingConfigMap: ""
+
+# @schema
+# additionalProperties: true
+# @schema
+paperless:
+  # @schema
+  # type: string
+  # @schema
+  # -- The external URL paperless-ngx is reached on, scheme included
+  # (`https://paperless.example.com`). Django validates the `Host` header and the origin of every
+  # unsafe request against it, so a wrong or missing value shows up as a working login page that
+  # rejects the login with a CSRF error. Empty derives it from `ingress.host`, or from the first
+  # `gateway.hostnames` entry, which is correct for the common single-hostname install.
+  url: ""
+
+  # @schema
+  # type: string
+  # @schema
+  # -- IANA time zone used for dates in the UI, in filenames and in scheduled tasks.
+  timeZone: UTC
+
+  # @schema
+  # type: string
+  # @schema
+  # -- Django secret key. It signs session cookies, password reset links and share links. There
+  # is no safe default, so the chart refuses to render without one here or in `existingSecret`:
+  # the upstream fallback is a published constant, and a deployment running on it hands anybody
+  # the ability to forge a session. Generate one with `openssl rand -base64 48`.
+  #
+  # Changing it later invalidates every session and every outstanding share link; it does not
+  # touch stored documents.
+  secretKey: ""
+
+  # @schema
+  # type: string
+  # @schema
+  # -- Key inside `existingSecret` that holds the Django secret key.
+  existingSecretKey: secret-key
+
+  # @schema
+  # type: string
+  # @schema
+  # -- Serve paperless-ngx under a sub-path of the hostname (`/paperless`), for a reverse proxy
+  # that hosts several applications on one origin. Leave empty to serve at the root. The default
+  # probe paths follow this value, so they keep pointing at the application when it moves.
+  rootPath: ""
+
+  # @schema
+  # additionalProperties: true
+  # @schema
+  # -- The superuser created on first start. Without it the instance comes up with no account at
+  # all and the only way in is `kubectl exec ... createsuperuser`.
+  admin:
+    # @schema
+    # type: string
+    # @schema
+    # -- Username of the superuser to create. Empty creates none. The account is created once;
+    # changing the password here afterwards does update it, and changing the username creates a
+    # second account rather than renaming the first.
+    user: ""
+
+    # @schema
+    # type: string
+    # @schema
+    # -- E-mail address of the superuser.
+    email: ""
+
+    # @schema
+    # type: string
+    # @schema
+    # -- Password of the superuser. Ignored when `existingSecret` is set. Required whenever
+    # `admin.user` is.
+    password: ""
+
+    # @schema
+    # type: string
+    # @schema
+    # -- Key inside `existingSecret` that holds the admin password.
+    existingSecretKey: admin-password
+
+  # @schema
+  # type: array
+  # items:
+  #   type: string
+  # @schema
+  # -- Hostnames Django accepts a request for, beyond the one derived from `paperless.url`.
+  # Empty keeps the upstream default of `*`, which is safe here only because the Service and the
+  # NetworkPolicy already decide who may connect at all.
+  allowedHosts: []
+
+  # @schema
+  # type: array
+  # items:
+  #   type: string
+  # @schema
+  # -- Additional origins trusted for unsafe requests (POST, PUT, DELETE), scheme included.
+  # `paperless.url` is trusted automatically; this is for the second hostname a migration or a
+  # split-horizon DNS setup adds.
+  csrfTrustedOrigins: []
+
+  # @schema
+  # type: array
+  # items:
+  #   type: string
+  # @schema
+  # -- Additional origins allowed to make cross-origin browser requests, scheme included. Needed
+  # only by a separate frontend or a browser extension; the web UI is same-origin.
+  corsAllowedHosts: []
+
+  # @schema
+  # additionalProperties: true
+  # @schema
+  # -- How to interpret the headers a reverse proxy, Ingress controller or Gateway adds.
+  proxy:
+    # @schema
+    # type: boolean
+    # @schema
+    # -- Trust `X-Forwarded-Host`. On by default: behind an Ingress the `Host` header is the
+    # internal Service name, and without this the absolute URLs paperless generates — share
+    # links, password reset mails, the OAuth callback — point at a name nobody can resolve.
+    useXForwardedHost: true
+
+    # @schema
+    # type: boolean
+    # @schema
+    # -- Trust `X-Forwarded-Port`, so generated URLs carry the port the client actually used
+    # rather than the container port.
+    useXForwardedPort: true
+
+    # @schema
+    # type: boolean
+    # @schema
+    # -- Treat `X-Forwarded-Proto: https` as proof the client request was HTTPS. Required for
+    # secure cookies and correct `https://` links whenever TLS is terminated at the proxy, which
+    # is the normal arrangement for both `ingress` and `gateway` below.
+    #
+    # Only ever set this where a proxy actually strips and re-sets the header. A pod reachable
+    # directly would let any client claim its plaintext request was encrypted.
+    trustForwardedProto: true
+
+    # @schema
+    # type: array
+    # items:
+    #   type: string
+    # @schema
+    # -- Proxy addresses whose forwarding headers are trusted, as IPs or CIDRs. Empty trusts the
+    # headers unconditionally, which is what the settings above already do; naming the Ingress
+    # controller's pod CIDR here narrows that.
+    trustedProxies: []
+
+  # @schema
+  # additionalProperties: true
+  # @schema
+  # -- Authentication delegated to a proxy in front of paperless — an OAuth2 proxy, an
+  # authentication middleware, a service mesh — which authenticates the user and passes the
+  # resulting name in a header.
+  remoteUser:
+    # @schema
+    # type: boolean
+    # @schema
+    # -- Trust the header for the web UI. **Only enable this when the proxy strips the header
+    # from incoming requests.** Anything that can reach the pod directly can otherwise set it
+    # and be whoever it likes, which is why the NetworkPolicy below matters as much as this flag.
+    enabled: false
+
+    # @schema
+    # type: boolean
+    # @schema
+    # -- Trust the header for the REST API as well. Separate from the UI switch because API
+    # clients usually authenticate with a token instead, and accepting both widens the surface.
+    api: false
+
+    # @schema
+    # type: string
+    # @schema
+    # -- WSGI name of the header carrying the username. Django's own spelling: `Remote-User`
+    # over the wire arrives as `HTTP_REMOTE_USER`.
+    headerName: HTTP_REMOTE_USER
+
+  # @schema
+  # additionalProperties: true
+  # @schema
+  # -- Optical character recognition, performed by OCRmyPDF and Tesseract.
+  ocr:
+    # @schema
+    # type: string
+    # @schema
+    # -- Tesseract language, as a three-letter ISO 639-2 code; several are combined with `+`
+    # (`deu+eng`). **Only languages already installed in the image work.** Upstream installs
+    # additional packs at container start when `PAPERLESS_OCR_LANGUAGES` is set, which needs a
+    # writable root filesystem, root privileges and internet access from the pod — none of which
+    # this chart's security baseline provides. Build a derived image instead.
+    language: eng
+
+    # @schema
+    # enum: [auto, force, redo, off]
+    # @schema
+    # -- When to run OCR. `auto` skips pages that already carry text, `redo` replaces existing
+    # text layers, `force` rasterises and re-recognises everything, `off` disables OCR entirely.
+    mode: auto
+
+    # @schema
+    # enum: [pdfa, pdf, pdfa-1, pdfa-2, pdfa-3]
+    # @schema
+    # -- Format of the generated archive file. The PDF/A variants are the archival ones and the
+    # reason to run this software at all.
+    outputType: pdfa
+
+    # @schema
+    # type: integer
+    # minimum: 0
+    # @schema
+    # -- Only OCR the first N pages of a document. `0` means all of them.
+    pages: 0
+
+    # @schema
+    # enum: [clean, clean-final, none]
+    # @schema
+    # -- Run unpaper to clean scans before recognition. `clean-final` also keeps the cleaned
+    # image in the archive file, which loses fidelity to the original scan.
+    clean: clean
+
+    # @schema
+    # type: boolean
+    # @schema
+    # -- Straighten crooked scans before recognition.
+    deskew: true
+
+    # @schema
+    # type: boolean
+    # @schema
+    # -- Detect and correct page rotation.
+    rotatePages: true
+
+    # @schema
+    # type: integer
+    # minimum: 0
+    # @schema
+    # -- Assume this DPI for images that do not declare one. `0` leaves it to OCRmyPDF, which
+    # refuses images with no resolution information rather than guessing.
+    imageDpi: 0
+
+    # @schema
+    # type: object
+    # additionalProperties: true
+    # @schema
+    # -- Extra arguments handed to OCRmyPDF verbatim, as a mapping. Rendered to the JSON object
+    # the application expects, e.g. `{"invalidate_digital_signatures": true}`.
+    userArgs: {}
+
+  # @schema
+  # enum: [auto, always, never]
+  # @schema
+  # -- When to produce an archived PDF/A alongside the original. `never` halves the storage a
+  # document costs and gives up full-text search of scans.
+  archiveFileGeneration: auto
+
+  # @schema
+  # additionalProperties: true
+  # @schema
+  # -- The consumption directory watcher: what happens to files dropped into
+  # `/usr/src/paperless/consume`.
+  consumer:
+    # @schema
+    # type: number
+    # minimum: 0
+    # @schema
+    # -- Seconds between directory scans. `0` uses filesystem events instead, which is instant
+    # and correct on a local volume. **Network storage (NFS, SMB, most ReadWriteMany classes)
+    # delivers no events**, so a share that everybody drops scans into needs polling — 10 to 30
+    # seconds is the usual choice.
+    pollingInterval: 0
+
+    # @schema
+    # type: number
+    # minimum: 0
+    # @schema
+    # -- Seconds a file must stop changing before it is consumed, so a document that is still
+    # being copied is not ingested half-written.
+    stabilityDelay: 5
+
+    # @schema
+    # type: boolean
+    # @schema
+    # -- Also watch subdirectories of the consumption directory.
+    recursive: false
+
+    # @schema
+    # type: boolean
+    # @schema
+    # -- Turn each subdirectory name into a tag. Requires `consumer.recursive`.
+    subdirsAsTags: false
+
+    # @schema
+    # type: boolean
+    # @schema
+    # -- Delete an incoming file that is byte-identical to a document already stored, instead of
+    # reporting it as a failed consumption.
+    deleteDuplicates: false
+
+    # @schema
+    # additionalProperties: true
+    # @schema
+    # -- Barcode handling. Every option here costs an extra rendering pass per page.
+    barcodes:
+      # @schema
+      # type: boolean
+      # @schema
+      # -- Split one incoming file into several documents at pages carrying a separator barcode.
+      enabled: false
+
+      # @schema
+      # type: boolean
+      # @schema
+      # -- Read the archive serial number from a barcode.
+      asn: false
+
+      # @schema
+      # type: string
+      # @schema
+      # -- Prefix identifying an ASN barcode.
+      asnPrefix: ASN
+
+  # @schema
+  # additionalProperties: true
+  # @schema
+  # -- Task execution. These are the knobs that decide how much CPU and memory the pod actually
+  # uses, so they belong next to `resources` in your head.
+  tasks:
+    # @schema
+    # type: integer
+    # minimum: 1
+    # @schema
+    # -- Celery workers consuming documents in parallel. Each one processes a whole document,
+    # so this multiplies peak memory.
+    workers: 1
+
+    # @schema
+    # type: integer
+    # minimum: 0
+    # @schema
+    # -- Threads each worker gives to OCR. `0` lets the application derive it from the worker
+    # count and the CPUs it can see — which, in a container, is the *node's* CPU count and not
+    # the limit, so a busy node is a good reason to pin this.
+    threadsPerWorker: 0
+
+    # @schema
+    # type: integer
+    # minimum: 1
+    # @schema
+    # -- Seconds after which a single task is abandoned. The default is generous because a large
+    # scanned document legitimately takes minutes.
+    timeout: 1800
+
+    # @schema
+    # type: integer
+    # minimum: 1
+    # @schema
+    # -- Granian worker processes serving HTTP. One is enough for a household; raise it for an
+    # instance several people browse at once.
+    webserverWorkers: 1
+
+  # @schema
+  # type: string
+  # @schema
+  # -- Storage layout of the original files inside the media volume, e.g.
+  # `{{ created_year }}/{{ correspondent }}/{{ title }}`. Empty stores everything flat under
+  # `documents/originals`. Changing it later renames files on disk on the next run of the
+  # `document_renamer` command; it does not reorganise them by itself.
+  filenameFormat: ""
+
+  # @schema
+  # type: boolean
+  # @schema
+  # -- Drop the placeholder from `filenameFormat` when the field is empty, rather than writing
+  # the literal word `none` into the path.
+  filenameFormatRemoveNone: false
+
+  # @schema
+  # additionalProperties: true
+  # @schema
+  # -- Outgoing mail, used for password resets and for sharing documents by link. Incoming mail
+  # accounts are configured in the web UI instead, not here.
+  email:
+    # @schema
+    # type: string
+    # @schema
+    # -- SMTP host. Empty disables outgoing mail, and password resets stop working with it.
+    host: ""
+
+    # @schema
+    # type: integer
+    # minimum: 1
+    # maximum: 65535
+    # @schema
+    # -- SMTP port.
+    port: 587
+
+    # @schema
+    # type: string
+    # @schema
+    # -- SMTP username.
+    user: ""
+
+    # @schema
+    # type: string
+    # @schema
+    # -- SMTP password. Ignored when `existingSecret` is set.
+    password: ""
+
+    # @schema
+    # type: string
+    # @schema
+    # -- Key inside `existingSecret` that holds the SMTP password.
+    existingSecretKey: email-password
+
+    # @schema
+    # type: boolean
+    # @schema
+    # -- Use STARTTLS. Mutually exclusive with `email.useSsl`.
+    useTls: true
+
+    # @schema
+    # type: boolean
+    # @schema
+    # -- Use implicit TLS (SMTPS, usually port 465). Mutually exclusive with `email.useTls`.
+    useSsl: false
+
+    # @schema
+    # type: string
+    # @schema
+    # -- Envelope sender address. Empty uses the application default, which many relays reject.
+    from: ""
+
+  # @schema
+  # type: boolean
+  # @schema
+  # -- Let the web UI check GitHub for newer releases. Off by default: the version this pod runs
+  # is decided by `image.tag`, so the check can only ever report that the chart is behind, and
+  # it is an outbound call the NetworkPolicy would otherwise have to permit.
+  updateCheck: false
+
+  # @schema
+  # type: boolean
+  # @schema
+  # -- Record who changed what in the audit log.
+  auditLog: true
+
+  # @schema
+  # type: object
+  # additionalProperties:
+  #   type: string
+  # @schema
+  # -- Additional `PAPERLESS_*` settings written to the ConfigMap verbatim, for anything this
+  # chart does not model (see the upstream configuration reference for the full list). Values are
+  # rendered through the template engine, so `{{ .Release.Name }}` works.
+  #
+  # Never put credentials here — the ConfigMap is not a Secret. Use `extraEnv` with a
+  # `secretKeyRef`, or the `PAPERLESS_<NAME>_FILE` indirection the image supports.
+  extraConfig: {}
+
+# @schema
+# additionalProperties: true
+# @schema
+# -- Which database paperless-ngx stores its metadata in. The documents themselves always live
+# on the media volume; this holds the index, the tags, the correspondents and the audit log.
+database:
+  # @schema
+  # enum: [sqlite, postgresql, mariadb]
+  # @schema
+  # -- Database engine. `sqlite` keeps everything in the data volume and needs no second
+  # workload — the right answer for a single-user instance. PostgreSQL is upstream's
+  # recommendation for anything larger and is the only engine this chart can bundle.
+  engine: sqlite
+
+  # @schema
+  # type: string
+  # @schema
+  # -- Database host. Empty resolves to the bundled PostgreSQL when `postgresql.enabled` is set;
+  # otherwise it is required for every engine except SQLite.
+  host: ""
+
+  # @schema
+  # type: integer
+  # minimum: 0
+  # maximum: 65535
+  # @schema
+  # -- Database port. `0` uses the engine's default (5432 for PostgreSQL, 3306 for MariaDB).
+  port: 0
+
+  # @schema
+  # type: string
+  # @schema
+  # -- Database name. Also the database the bundled PostgreSQL creates on first start.
+  name: paperless
+
+  # @schema
+  # type: string
+  # @schema
+  # -- Database user. Also the role the bundled PostgreSQL creates on first start.
+  user: paperless
+
+  # @schema
+  # type: string
+  # @schema
+  # -- Database password. Ignored when `existingSecret` is set. Required for every engine except
+  # SQLite — including the bundled PostgreSQL, whose superuser it becomes.
+  password: ""
+
+  # @schema
+  # type: string
+  # @schema
+  # -- Key inside `existingSecret` that holds the database password.
+  existingSecretKey: database-password
+
+  # @schema
+  # type: string
+  # @schema
+  # -- TLS mode for the connection. Empty uses the engine default, which is `prefer` for
+  # PostgreSQL and `PREFERRED` for MariaDB — both of which fall back to plaintext without
+  # telling anyone. Set `require` (PostgreSQL) or `REQUIRED` (MariaDB) for a database outside
+  # the cluster.
+  sslMode: ""
+
+  # @schema
+  # type: integer
+  # minimum: 0
+  # @schema
+  # -- Maximum size of the connection pool. `0` leaves pooling off, which is correct for a
+  # single-replica deployment talking to a database on the same network.
+  poolSize: 0
+
+# @schema
+# additionalProperties: true
+# @schema
+# -- A single-instance PostgreSQL bundled with the release, so `helm install` produces a working
+# stack on a bare cluster. Evaluation tier by design: one replica, no failover, no backups, no
+# connection pooler. A production deployment points `database.host` at a managed instance or an
+# operator-run cluster instead.
+postgresql:
+  # @schema
+  # type: boolean
+  # @schema
+  # -- Run PostgreSQL as part of this release. Requires `database.engine: postgresql`.
+  enabled: false
+
+  # @schema
+  # additionalProperties: true
+  # @schema
+  image:
+    # @schema
+    # type: string
+    # @schema
+    # -- Registry host. Empty means Docker Hub.
+    registry: ""
+
+    # @schema
+    # type: string
+    # @schema
+    # -- Image repository. The official PostgreSQL image, matching the major version upstream's
+    # own compose stack ships.
+    repository: postgres
+
+    # @schema
+    # type: string
+    # @schema
+    # -- Image tag, pinned by digest. Changing the *major* version in place does not work:
+    # PostgreSQL refuses to start on a data directory written by a different major, and this
+    # chart runs no `pg_upgrade`.
+    tag: 18.6@sha256:ae6c78831cbc35fa3a4aaf4d763ddacf6183d6004774cc2dc28b3920410d1d1a
+
+    # @schema
+    # enum: ["", Always, IfNotPresent, Never]
+    # @schema
+    # -- The image pull policy. Empty resolves automatically from the tag/digest.
+    pullPolicy: ""
+
+  # @schema
+  # additionalProperties: true
+  # @schema
+  # -- Storage for the database. This is the one volume in the release whose loss cannot be
+  # recovered from the documents themselves.
+  persistence:
+    # @schema
+    # type: boolean
+    # @schema
+    # -- Create a PersistentVolumeClaim. Disabled means an emptyDir, and every restart is an
+    # empty paperless with the documents still on the media volume and nothing indexing them.
+    enabled: true
+
+    # @schema
+    # type: string
+    # @schema
+    # -- Use an existing PersistentVolumeClaim instead of the StatefulSet's own.
+    existingClaim: ""
+
+    # @schema
+    # type: string
+    # @schema
+    # -- StorageClass for the claim. Empty uses the cluster default.
+    storageClassName: ""
+
+    # @schema
+    # type: string
+    # @schema
+    # -- The storage size requested for the volume.
+    size: 8Gi
+
+  # @schema
+  # enum: ["", nano, micro, small, medium, large]
+  # @schema
+  # -- Named resource sizing for the database container. Ignored when
+  # `postgresql.resources` is set.
+  resourcesPreset: medium
+
+  # @schema
+  # $ref: https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.ResourceRequirements
+  # @schema
+  # -- Explicit resource requests and limits for the database container.
+  resources: {}
+
+# @schema
+# additionalProperties: true
+# @schema
+# -- The Redis-protocol broker paperless-ngx uses to hand work from the webserver and the
+# directory watcher to the task workers. It is not optional: without it the application starts
+# and then consumes nothing.
+redis:
+  # @schema
+  # type: string
+  # @schema
+  # -- Full broker URL (`redis://host:6379/0`, `rediss://…` for TLS), overriding every field
+  # below. Use it for a managed service whose URL carries options this chart does not model.
+  # A password embedded here ends up in the ConfigMap — put it in `redis.password` instead,
+  # which keeps it in the Secret.
+  url: ""
+
+  # @schema
+  # type: string
+  # @schema
+  # -- Broker host. Empty resolves to the bundled Valkey when `valkey.enabled` is set.
+  host: ""
+
+  # @schema
+  # type: integer
+  # minimum: 1
+  # maximum: 65535
+  # @schema
+  # -- Broker port.
+  port: 6379
+
+  # @schema
+  # type: integer
+  # minimum: 0
+  # @schema
+  # -- Redis database index.
+  database: 0
+
+  # @schema
+  # type: boolean
+  # @schema
+  # -- Connect with TLS (`rediss://`).
+  tls: false
+
+  # @schema
+  # type: string
+  # @schema
+  # -- Broker username, for a server with ACLs configured.
+  username: ""
+
+  # @schema
+  # type: string
+  # @schema
+  # -- Broker password. Ignored when `existingSecret` is set. It is injected into the URL at
+  # container start rather than written into the ConfigMap, so it never appears in
+  # `kubectl describe`. Passwords containing `@`, `/` or `:` must be percent-encoded, because
+  # the value becomes part of a URL.
+  password: ""
+
+  # @schema
+  # type: string
+  # @schema
+  # -- Key inside `existingSecret` that holds the broker password.
+  existingSecretKey: redis-password
+
+  # @schema
+  # type: string
+  # @schema
+  # -- Prefix for every key and channel, so several installs can share one broker without
+  # consuming each other's tasks.
+  prefix: ""
+
+# @schema
+# additionalProperties: true
+# @schema
+# -- A single-instance Valkey bundled with the release. Valkey is the Redis fork upstream's own
+# compose stack moved to. Evaluation tier, like the bundled PostgreSQL: one replica, no failover.
+valkey:
+  # @schema
+  # type: boolean
+  # @schema
+  # -- Run Valkey as part of this release. On by default, because paperless-ngx cannot process a
+  # single document without a broker and an install that silently does nothing is a worse
+  # default than one extra pod.
+  enabled: true
+
+  # @schema
+  # additionalProperties: true
+  # @schema
+  image:
+    # @schema
+    # type: string
+    # @schema
+    # -- Registry host. Empty means Docker Hub.
+    registry: ""
+
+    # @schema
+    # type: string
+    # @schema
+    # -- Image repository.
+    repository: valkey/valkey
+
+    # @schema
+    # type: string
+    # @schema
+    # -- Image tag, pinned by digest.
+    tag: 9.1.1-alpine@sha256:ee91f7a174ac4d6a6b0685b3a60e321f0a9dbbb691f9b0e285be2ba1d1be8328
+
+    # @schema
+    # enum: ["", Always, IfNotPresent, Never]
+    # @schema
+    # -- The image pull policy. Empty resolves automatically from the tag/digest.
+    pullPolicy: ""
+
+  # @schema
+  # additionalProperties: true
+  # @schema
+  # -- Storage for the broker.
+  persistence:
+    # @schema
+    # type: boolean
+    # @schema
+    # -- Persist the queue across restarts. Off by default: what lives here is a work queue, and
+    # the cost of losing it is that documents already sitting in the consumption directory are
+    # re-consumed on the next scan — while persisting it means a poison task survives every
+    # restart. Turn it on when the consumption directory is a hand-fed drop box rather than a
+    # watched share.
+    enabled: false
+
+    # @schema
+    # type: string
+    # @schema
+    # -- Use an existing PersistentVolumeClaim instead of the StatefulSet's own.
+    existingClaim: ""
+
+    # @schema
+    # type: string
+    # @schema
+    # -- StorageClass for the claim. Empty uses the cluster default.
+    storageClassName: ""
+
+    # @schema
+    # type: string
+    # @schema
+    # -- The storage size requested for the volume.
+    size: 1Gi
+
+  # @schema
+  # enum: ["", nano, micro, small, medium, large]
+  # @schema
+  # -- Named resource sizing for the broker container. Ignored when `valkey.resources` is set.
+  resourcesPreset: small
+
+  # @schema
+  # $ref: https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.ResourceRequirements
+  # @schema
+  # -- Explicit resource requests and limits for the broker container.
+  resources: {}
+
+# @schema
+# additionalProperties: true
+# @schema
+# -- Office and e-mail document support, provided by Apache Tika (text extraction) and Gotenberg
+# (rendering to PDF). Without it, `.docx`, `.odt`, `.xlsx` and `.eml` files are rejected at
+# consumption; PDFs and images never need it.
+tika:
+  # @schema
+  # type: boolean
+  # @schema
+  # -- Enable the Tika parser in paperless-ngx. Both endpoints below have to resolve, whether
+  # they are bundled or external — the parser registers itself for those file types and then
+  # fails every one of them if the services are not there.
+  enabled: false
+
+  # @schema
+  # additionalProperties: true
+  # @schema
+  # -- The Apache Tika server, which extracts text and metadata from office documents.
+  server:
+    # @schema
+    # type: boolean
+    # @schema
+    # -- Run Tika as part of this release. Ignored when `tika.server.endpoint` names an external
+    # one.
+    enabled: true
+
+    # @schema
+    # type: string
+    # @schema
+    # -- URL of an external Tika server (`http://tika.example.svc:9998`). Set this to use one
+    # you already run, and the bundled server is not created.
+    endpoint: ""
+
+    # @schema
+    # additionalProperties: true
+    # @schema
+    image:
+      # @schema
+      # type: string
+      # @schema
+      # -- Registry host. Empty means Docker Hub.
+      registry: ""
+
+      # @schema
+      # type: string
+      # @schema
+      # -- Image repository. The plain image, not `-full`: paperless needs text extraction from
+      # office formats, and the extra parsers in the full image cost roughly a gigabyte.
+      repository: apache/tika
+
+      # @schema
+      # type: string
+      # @schema
+      # -- Image tag, pinned by digest.
+      tag: 3.3.1.0@sha256:90b7fa1dc018434075fce9e1d9b88b1e3d0ea6979d0cf86e116c79a8073ae973
+
+      # @schema
+      # enum: ["", Always, IfNotPresent, Never]
+      # @schema
+      # -- The image pull policy. Empty resolves automatically from the tag/digest.
+      pullPolicy: ""
+
+    # @schema
+    # enum: ["", nano, micro, small, medium, large]
+    # @schema
+    # -- Named resource sizing. Ignored when `tika.server.resources` is set. The JVM sizes its
+    # heap from the memory limit, so shrinking this shrinks the largest document Tika can parse.
+    resourcesPreset: large
+
+    # @schema
+    # $ref: https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.ResourceRequirements
+    # @schema
+    # -- Explicit resource requests and limits for the Tika container.
+    resources: {}
+
+  # @schema
+  # additionalProperties: true
+  # @schema
+  # -- The Gotenberg server, which renders office documents and e-mail to PDF using LibreOffice
+  # and Chromium.
+  gotenberg:
+    # @schema
+    # type: boolean
+    # @schema
+    # -- Run Gotenberg as part of this release. Ignored when `tika.gotenberg.endpoint` names an
+    # external one.
+    enabled: true
+
+    # @schema
+    # type: string
+    # @schema
+    # -- URL of an external Gotenberg server (`http://gotenberg.example.svc:3000`).
+    endpoint: ""
+
+    # @schema
+    # additionalProperties: true
+    # @schema
+    image:
+      # @schema
+      # type: string
+      # @schema
+      # -- Registry host. Empty means Docker Hub.
+      registry: ""
+
+      # @schema
+      # type: string
+      # @schema
+      # -- Image repository. The default edition, which carries both LibreOffice and Chromium —
+      # the trimmed `-chromium` and `-libreoffice` editions each break half of what paperless
+      # asks Gotenberg to do.
+      repository: gotenberg/gotenberg
+
+      # @schema
+      # type: string
+      # @schema
+      # -- Image tag, pinned by digest.
+      tag: 8.36.0@sha256:87c16b9f364279d321bc9772d31fa58aa6abe036423c270698bd636c3a8e9466
+
+      # @schema
+      # enum: ["", Always, IfNotPresent, Never]
+      # @schema
+      # -- The image pull policy. Empty resolves automatically from the tag/digest.
+      pullPolicy: ""
+
+    # @schema
+    # type: boolean
+    # @schema
+    # -- Disable JavaScript in the Chromium used to render `.eml` files. Leave it on: an e-mail
+    # is untrusted input, and a headless browser executing whatever it contains is a
+    # server-side request forgery primitive with a document library attached.
+    disableJavaScript: true
+
+    # @schema
+    # type: string
+    # @schema
+    # -- Regular expression limiting what Chromium may load. The default confines it to the
+    # temporary directory the conversion request itself wrote, so tracking pixels, remote images
+    # and in-cluster URLs are all unreachable.
+    allowList: "file:///tmp/.*"
+
+    # @schema
+    # enum: ["", nano, micro, small, medium, large]
+    # @schema
+    # -- Named resource sizing. Ignored when `tika.gotenberg.resources` is set. LibreOffice and
+    # Chromium are both memory-hungry; below `medium` conversions start failing rather than
+    # slowing down.
+    resourcesPreset: large
+
+    # @schema
+    # $ref: https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.ResourceRequirements
+    # @schema
+    # -- Explicit resource requests and limits for the Gotenberg container.
+    resources: {}
+
+# @schema
+# additionalProperties: true
+# @schema
+# -- The four directories paperless-ngx keeps state in. They are separate claims rather than one,
+# because they have genuinely different lifetimes and sizes: `media` grows forever and is the
+# thing you back up, `data` is rebuildable from it, `consume` is a mailbox, and `export` is
+# scratch space for a command you run by hand.
+persistence:
+  # @schema
+  # additionalProperties: true
+  # @schema
+  # -- `/usr/src/paperless/media` — the documents themselves: originals, archived PDF/As and
+  # thumbnails. Losing this loses the archive.
+  media:
+    # @schema
+    # type: boolean
+    # @schema
+    # -- Create a PersistentVolumeClaim. When disabled an emptyDir is used, and every restart
+    # destroys every stored document.
+    enabled: true
+
+    # @schema
+    # type: string
+    # @schema
+    # -- Use an existing PersistentVolumeClaim instead of creating one.
+    existingClaim: ""
+
+    # @schema
+    # enum: [ReadWriteOnce, ReadOnlyMany, ReadWriteMany]
+    # @schema
+    # -- The access mode for the volume. `ReadWriteOnce` forces the Deployment to the `Recreate`
+    # update strategy, because a rolling update cannot hand a mounted volume over.
+    accessMode: ReadWriteOnce
+
+    # @schema
+    # type: string
+    # @schema
+    # -- StorageClass for the claim. Empty uses the cluster default; `"-"` disables dynamic
+    # provisioning.
+    storageClassName: ""
+
+    # @schema
+    # type: string
+    # @schema
+    # -- The storage size requested for the volume.
+    size: 20Gi
+
+    # @schema
+    # type: object
+    # additionalProperties: true
+    # @schema
+    # -- Annotations for the PersistentVolumeClaim. `helm.sh/resource-policy: keep` belongs here
+    # more than anywhere else in this chart — without it `helm uninstall` deletes the archive.
+    annotations: {}
+
+  # @schema
+  # additionalProperties: true
+  # @schema
+  # -- `/usr/src/paperless/data` — the search index, the trained classification model, the
+  # scheduler's state and, with `database.engine: sqlite`, the database file itself.
+  data:
+    # @schema
+    # type: boolean
+    # @schema
+    # -- Create a PersistentVolumeClaim. Everything here except the SQLite database can be
+    # rebuilt from the media volume, but rebuilding is a manual `document_index reindex`.
+    enabled: true
+
+    # @schema
+    # type: string
+    # @schema
+    # -- Use an existing PersistentVolumeClaim instead of creating one.
+    existingClaim: ""
+
+    # @schema
+    # enum: [ReadWriteOnce, ReadOnlyMany, ReadWriteMany]
+    # @schema
+    # -- The access mode for the volume.
+    accessMode: ReadWriteOnce
+
+    # @schema
+    # type: string
+    # @schema
+    # -- StorageClass for the claim. Empty uses the cluster default; `"-"` disables dynamic
+    # provisioning.
+    storageClassName: ""
+
+    # @schema
+    # type: string
+    # @schema
+    # -- The storage size requested for the volume.
+    size: 5Gi
+
+    # @schema
+    # type: object
+    # additionalProperties: true
+    # @schema
+    # -- Annotations for the PersistentVolumeClaim.
+    annotations: {}
+
+  # @schema
+  # additionalProperties: true
+  # @schema
+  # -- `/usr/src/paperless/consume` — the drop box. Files placed here are ingested and then
+  # removed, so this volume is a mailbox and not storage; it only needs to be large enough for
+  # the biggest batch anyone drops at once.
+  consume:
+    # @schema
+    # type: boolean
+    # @schema
+    # -- Create a PersistentVolumeClaim. An emptyDir works for an instance fed only through the
+    # web UI, and loses whatever was queued on a restart.
+    enabled: true
+
+    # @schema
+    # type: string
+    # @schema
+    # -- Use an existing PersistentVolumeClaim instead of creating one. This is where a
+    # `ReadWriteMany` share belongs, so a scanner or another pod can write into it — set
+    # `paperless.consumer.pollingInterval` as well, because network storage delivers no
+    # filesystem events.
+    existingClaim: ""
+
+    # @schema
+    # enum: [ReadWriteOnce, ReadOnlyMany, ReadWriteMany]
+    # @schema
+    # -- The access mode for the volume.
+    accessMode: ReadWriteOnce
+
+    # @schema
+    # type: string
+    # @schema
+    # -- StorageClass for the claim. Empty uses the cluster default; `"-"` disables dynamic
+    # provisioning.
+    storageClassName: ""
+
+    # @schema
+    # type: string
+    # @schema
+    # -- The storage size requested for the volume.
+    size: 5Gi
+
+    # @schema
+    # type: object
+    # additionalProperties: true
+    # @schema
+    # -- Annotations for the PersistentVolumeClaim.
+    annotations: {}
+
+  # @schema
+  # additionalProperties: true
+  # @schema
+  # -- `/usr/src/paperless/export` — where `document_exporter` writes. Backed by an emptyDir
+  # unless enabled, which is enough to run an export and copy it out with `kubectl cp`, and
+  # keeps the directory writable under a read-only root filesystem either way.
+  export:
+    # @schema
+    # type: boolean
+    # @schema
+    # -- Create a PersistentVolumeClaim, for exports that should outlive the pod.
+    enabled: false
+
+    # @schema
+    # type: string
+    # @schema
+    # -- Use an existing PersistentVolumeClaim instead of creating one.
+    existingClaim: ""
+
+    # @schema
+    # enum: [ReadWriteOnce, ReadOnlyMany, ReadWriteMany]
+    # @schema
+    # -- The access mode for the volume.
+    accessMode: ReadWriteOnce
+
+    # @schema
+    # type: string
+    # @schema
+    # -- StorageClass for the claim. Empty uses the cluster default; `"-"` disables dynamic
+    # provisioning.
+    storageClassName: ""
+
+    # @schema
+    # type: string
+    # @schema
+    # -- The storage size requested for the volume.
+    size: 10Gi
+
+    # @schema
+    # type: object
+    # additionalProperties: true
+    # @schema
+    # -- Annotations for the PersistentVolumeClaim.
+    annotations: {}
+
+  # @schema
+  # type: string
+  # @schema
+  # -- Size limit of the `emptyDir` backing `/tmp`, which holds every intermediate file OCR
+  # produces — rasterised pages, unpaper output, the PDF being assembled. It is charged against
+  # the node's ephemeral storage, and a pod that exceeds it is evicted, so this is the value to
+  # raise when large scans fail with no useful error. Empty removes the limit.
+  scratchSizeLimit: 2Gi
+
+# @schema
+# additionalProperties: true
+# @schema
+service:
+  # @schema
+  # enum: [ClusterIP, NodePort, LoadBalancer]
+  # @schema
+  # -- Service type. `ClusterIP` is right for the normal arrangement, where an Ingress or a
+  # Gateway publishes the application and is the only thing that terminates TLS.
+  type: ClusterIP
+
+  # @schema
+  # type: integer
+  # minimum: 1
+  # maximum: 65535
+  # @schema
+  # -- Port the Service listens on.
+  port: 8000
+
+  # @schema
+  # type: integer
+  # minimum: 0
+  # maximum: 65535
+  # @schema
+  # -- Node port to pin under `NodePort` or `LoadBalancer`. `0` lets Kubernetes allocate one.
+  nodePort: 0
+
+  # @schema
+  # type: object
+  # additionalProperties: true
+  # @schema
+  # -- Annotations for the Service, e.g. cloud load balancer configuration.
+  annotations: {}
+
+  # @schema
+  # type: string
+  # @schema
+  # -- Static IP to request for a LoadBalancer service.
+  loadBalancerIP: ""
+
+  # @schema
+  # type: array
+  # items:
+  #   type: string
+  # @schema
+  # -- CIDRs allowed to reach the LoadBalancer. Empty means everywhere.
+  loadBalancerSourceRanges: []
+
+  # @schema
+  # enum: ["", SingleStack, PreferDualStack, RequireDualStack]
+  # @schema
+  # -- IP family policy for the Service.
+  ipFamilyPolicy: ""
+
+  # @schema
+  # enum: ["", None, ClientIP]
+  # @schema
+  # -- Session affinity. Irrelevant while `replicaCount` is 1, which it has to be.
+  sessionAffinity: ""
+
+# @schema
+# additionalProperties: true
+# @schema
+# -- Publishing through an Ingress controller. Mutually exclusive with `gateway` only in the
+# sense that running both is usually a mistake; the chart lets you, for the window in which a
+# cluster migrates from one to the other.
+ingress:
+  # @schema
+  # type: boolean
+  # @schema
+  # -- Create an Ingress.
+  enabled: false
+
+  # @schema
+  # type: string
+  # @schema
+  # -- Hostname to publish. Required when the Ingress is enabled, and used as the default for
+  # `paperless.url`.
+  host: ""
+
+  # @schema
+  # type: string
+  # @schema
+  # -- IngressClass to use. Empty uses the cluster's default class.
+  className: ""
+
+  # @schema
+  # type: string
+  # @schema
+  # -- Path to publish under. Leave at `/` unless `paperless.rootPath` moves the application.
+  path: /
+
+  # @schema
+  # enum: [Prefix, Exact, ImplementationSpecific]
+  # @schema
+  # -- Path matching mode.
+  pathType: Prefix
+
+  # @schema
+  # type: object
+  # additionalProperties: true
+  # @schema
+  # -- Annotations for the Ingress. This is where controller-specific configuration goes —
+  # certificate issuance, and above all the request body size limit: uploading a document
+  # through the web UI fails at the controller's default (1 MiB on ingress-nginx) long before
+  # paperless sees it. For ingress-nginx that is
+  # `nginx.ingress.kubernetes.io/proxy-body-size: 100m`.
+  annotations: {}
+
+  # @schema
+  # additionalProperties: true
+  # @schema
+  # -- TLS configuration.
+  tls:
+    # @schema
+    # type: boolean
+    # @schema
+    # -- Serve the host over TLS.
+    enabled: false
+
+    # @schema
+    # type: string
+    # @schema
+    # -- Secret holding the certificate. Empty uses `<fullname>-tls`, which is the name
+    # cert-manager creates from an `ingress.annotations` issuer annotation.
+    secretName: ""
+
+# @schema
+# additionalProperties: true
+# @schema
+# -- Publishing through the Gateway API. The cluster operator owns the `Gateway`; this chart
+# owns the `HTTPRoute` that attaches to it.
+gateway:
+  # @schema
+  # type: boolean
+  # @schema
+  # -- Create an HTTPRoute. Requires the Gateway API CRDs; the chart refuses to render without
+  # them rather than dropping the route silently.
+  enabled: false
+
+  # @schema
+  # type: array
+  # items:
+  #   type: string
+  # @schema
+  # -- Hostnames the route serves. Used as the default for `paperless.url`. Required unless
+  # `gateway.create` is set, because a route with no hostnames matches every hostname its
+  # listener accepts — on a shared Gateway that quietly steals other applications' traffic.
+  hostnames: []
+
+  # @schema
+  # type: array
+  # items:
+  #   type: object
+  #   additionalProperties: true
+  # @schema
+  # -- Gateways to attach to, as `{name, namespace, sectionName}` entries. Empty attaches to the
+  # Gateway this chart creates, when `gateway.create` is set.
+  parentRefs: []
+
+  # @schema
+  # type: string
+  # @schema
+  # -- Path prefix the route matches.
+  path: /
+
+  # @schema
+  # type: array
+  # @schema
+  # -- HTTPRoute filters — header manipulation, request mirroring, URL rewriting. These are the
+  # typed replacement for what Ingress expressed as controller-specific annotations.
+  filters: []
+
+  # @schema
+  # type: object
+  # additionalProperties: true
+  # @schema
+  # -- Route timeouts, e.g. `{request: 300s}`. Worth raising: uploading a large scan through the
+  # gateway can outlast a default request timeout.
+  timeouts: {}
+
+  # @schema
+  # type: object
+  # additionalProperties: true
+  # @schema
+  # -- Annotations for the HTTPRoute and, when created, the Gateway.
+  annotations: {}
+
+  # @schema
+  # type: boolean
+  # @schema
+  # -- Also create a Gateway, for an install with no cluster-wide one to attach to.
+  create: false
+
+  # @schema
+  # type: string
+  # @schema
+  # -- GatewayClass for the created Gateway. Required when `gateway.create` is set — a Gateway
+  # without one is never reconciled by anything.
+  gatewayClassName: ""
+
+  # @schema
+  # additionalProperties: true
+  # @schema
+  # -- TLS for the created Gateway's HTTPS listener.
+  tls:
+    # @schema
+    # type: boolean
+    # @schema
+    # -- Add an HTTPS listener.
+    enabled: false
+
+    # @schema
+    # enum: ["", Terminate, Passthrough]
+    # @schema
+    # -- TLS mode for the listener.
+    mode: Terminate
+
+    # @schema
+    # type: array
+    # @schema
+    # -- Certificates the listener terminates with, as `{name}` or `{name, namespace}` entries.
+    # Required for a `Terminate` listener: unlike an Ingress, nothing looks a certificate up
+    # from the hostname.
+    certificateRefs: []
+
+  # @schema
+  # additionalProperties: true
+  # @schema
+  # -- A second route that redirects plaintext requests to HTTPS.
+  httpsRedirect:
+    # @schema
+    # type: boolean
+    # @schema
+    # -- Create the redirect route.
+    enabled: false
+
+    # @schema
+    # type: string
+    # @schema
+    # -- Listener the redirect route binds to. It must be the plaintext one: bound to every
+    # listener, an HTTPS listener would redirect to itself forever.
+    sectionName: http
+
+    # @schema
+    # type: integer
+    # @schema
+    # -- HTTP status code for the redirect.
+    statusCode: 301
+
+# @schema
+# additionalProperties: true
+# @schema
+# -- Monitoring. paperless-ngx exposes no Prometheus endpoint of its own, so everything here is
+# built on series a cluster already has: kube-state-metrics for workload health and the kubelet
+# for volume usage. That is a real limit, and it is stated rather than papered over — there are
+# no alerts on queue depth or consumption failures, because nothing publishes them.
+metrics:
+  # @schema
+  # additionalProperties: true
+  # @schema
+  # -- The PrometheusRule carrying this chart's alerting rules.
+  prometheusRule:
+    # @schema
+    # type: boolean
+    # @schema
+    # -- Create the PrometheusRule. Requires the Prometheus Operator CRDs.
+    enabled: false
+
+    # @schema
+    # enum: [namespace, none]
+    # @schema
+    # -- How far the rules are scoped. A PrometheusRule is not confined to its own namespace, so
+    # `none` makes this release alert on every other paperless-ngx in the cluster as well.
+    # `namespace` rewrites every selector to match only this release's namespace.
+    scope: namespace
+
+    # @schema
+    # type: object
+    # additionalProperties: true
+    # @schema
+    # -- Extra labels for the PrometheusRule, e.g. the `release` label a Prometheus Operator
+    # instance selects rules on. Without the one your instance selects, the object is created
+    # and never loaded.
+    labels: {}
+
+  # @schema
+  # additionalProperties: true
+  # @schema
+  # -- Grafana dashboards, shipped as a labelled ConfigMap and optionally as
+  # `GrafanaDashboard` custom resources.
+  dashboard:
+    # @schema
+    # type: boolean
+    # @schema
+    # -- Create the dashboard ConfigMap for the Grafana sidecar to discover.
+    enabled: false
+
+    # @schema
+    # type: string
+    # @schema
+    # -- Label the Grafana sidecar selects dashboards on.
+    label: grafana_dashboard
+
+    # @schema
+    # type: string
+    # @schema
+    # -- Value for that label.
+    labelValue: "1"
+
+    # @schema
+    # additionalProperties: true
+    # @schema
+    # -- grafana-operator v5 delivery, which — unlike the sidecar — can be granted
+    # cross-namespace import from this side.
+    grafanaOperator:
+      # @schema
+      # type: boolean
+      # @schema
+      # -- Also create one `GrafanaDashboard` per dashboard file. Requires
+      # `metrics.dashboard.enabled`, because the custom resources reference the ConfigMap rather
+      # than inlining the JSON.
+      enabled: false
+
+      # @schema
+      # type: boolean
+      # @schema
+      # -- Allow a Grafana in another namespace to import these dashboards.
+      allowCrossNamespaceImport: true
+
+      # @schema
+      # type: object
+      # additionalProperties: true
+      # @schema
+      # -- Which Grafana instances import them. An empty selector matches none, so the
+      # dashboards would be created and then ignored.
+      instanceSelector:
+        matchLabels:
+          dashboards: grafana
+
+      # @schema
+      # type: string
+      # @schema
+      # -- Grafana folder to file the dashboards under. Empty uses the operator's default.
+      folder: ""
+
+      # @schema
+      # type: string
+      # @schema
+      # -- How often the operator re-applies them.
+      resyncPeriod: 5m
+
+# @schema
+# additionalProperties: true
+# @schema
+# -- Network policies. Every workload in the release gets a default-deny pair, with exactly the
+# rules the enabled components need — the application reaches the broker, the database and the
+# document converters, and nothing reaches back.
+networkPolicy:
+  # @schema
+  # type: boolean
+  # @schema
+  # -- Create the policies.
+  enabled: false
+
+  # @schema
+  # enum: [kubernetes, cilium, both]
+  # @schema
+  # -- Which policy dialect to render. `kubernetes` emits the portable
+  # `networking.k8s.io/v1` objects; `cilium` emits `CiliumNetworkPolicy`, which states
+  # default-deny explicitly and can name egress destinations by DNS name; `both` emits both, for
+  # the window in which a cluster is migrating between CNIs.
+  engine: kubernetes
+
+  # @schema
+  # additionalProperties: true
+  # @schema
+  # -- Who may reach the application's HTTP port.
+  ingress:
+    # @schema
+    # additionalProperties: true
+    # @schema
+    # -- The Ingress controller.
+    controller:
+      # @schema
+      # type: boolean
+      # @schema
+      # -- Allow ingress from the controller's pods. Enabled automatically alongside
+      # `ingress.enabled`; without it an enabled Ingress resolves and then times out.
+      enabled: true
+
+      # @schema
+      # type: string
+      # @schema
+      # -- Namespace the Ingress controller runs in.
+      namespace: ingress-nginx
+
+      # @schema
+      # type: object
+      # additionalProperties: true
+      # @schema
+      # -- Pod selector for the Ingress controller.
+      podSelector:
+        app.kubernetes.io/name: ingress-nginx
+
+    # @schema
+    # additionalProperties: true
+    # @schema
+    # -- The Gateway API data plane. Its namespace and selector are derived from
+    # `gateway.parentRefs`, because the Gateway a policy must admit is by definition the one
+    # this chart's route attaches to.
+    gateway:
+      # @schema
+      # type: boolean
+      # @schema
+      # -- Allow ingress from the Gateway's pods. Only has an effect while `gateway.enabled` is
+      # set.
+      enabled: true
+
+      # @schema
+      # type: object
+      # additionalProperties: true
+      # @schema
+      # -- Override the namespace selector for the Gateway's data plane.
+      namespaceSelector: {}
+
+      # @schema
+      # type: object
+      # additionalProperties: true
+      # @schema
+      # -- Override the pod selector for the Gateway's data plane. The default matches the
+      # `gateway.networking.k8s.io/gateway-name` label every implementation sets.
+      podSelector: {}
+
+    # @schema
+    # type: array
+    # items:
+    #   $ref: https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyIngressRule
+    # @schema
+    # -- Ingress rules appended verbatim to the application's policy, for peers this chart does
+    # not model — a backup job reaching the API, or a second namespace's scanner sidecar.
+    extraRules: []
+
+  # @schema
+  # additionalProperties: true
+  # @schema
+  # -- Where the application may connect. Cluster DNS and the enabled in-release components are
+  # always permitted; these are the destinations outside the release.
+  egress:
+    # @schema
+    # additionalProperties: true
+    # @schema
+    # -- A database or broker outside this release, when `postgresql.enabled` or
+    # `valkey.enabled` is false.
+    external:
+      # @schema
+      # type: boolean
+      # @schema
+      # -- Allow egress to the external database and broker addresses.
+      enabled: true
+
+      # @schema
+      # type: object
+      # additionalProperties: true
+      # @schema
+      # -- Namespace selector for them. Empty means this release's namespace.
+      namespaceSelector: {}
+
+      # @schema
+      # type: object
+      # additionalProperties: true
+      # @schema
+      # -- Pod selector for them. Empty selects every pod in the selected namespaces, which is
+      # as narrow as the portable API can be about a datastore it cannot name.
+      podSelector: {}
+
+    # @schema
+    # type: boolean
+    # @schema
+    # -- Allow outbound HTTPS to the public internet, minus RFC1918 space and the cloud metadata
+    # endpoint. Needed only for features that leave the cluster: outgoing mail over an external
+    # relay, webhooks, mail fetching, or a remote OCR endpoint.
+    https: false
+
+    # @schema
+    # type: boolean
+    # @schema
+    # -- Allow outbound SMTP submission (TCP 587 and 465) to the same destinations.
+    smtp: false
+
+    # @schema
+    # type: string
+    # @schema
+    # -- Destination CIDR for the internet-facing egress rules.
+    cidr: 0.0.0.0/0
+
+    # @schema
+    # type: array
+    # items:
+    #   type: string
+    # @schema
+    # -- CIDRs carved out of `cidr`. The defaults exclude private space and link-local
+    # 169.254.0.0/16, which is where the cloud instance metadata endpoint lives.
+    except:
+      - 10.0.0.0/8
+      - 172.16.0.0/12
+      - 192.168.0.0/16
+      - 169.254.0.0/16
+
+    # @schema
+    # type: array
+    # items:
+    #   $ref: https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyEgressRule
+    # @schema
+    # -- Egress rules appended verbatim to the application's policy.
+    extraRules: []
+
+  # @schema
+  # additionalProperties: true
+  # @schema
+  # -- Cilium-only additions, used when `engine` is `cilium` or `both`. Every rule above is
+  # translated automatically; these are the ones the portable API cannot express.
+  cilium:
+    # @schema
+    # type: string
+    # @schema
+    # -- `spec.description`, which Cilium surfaces in `cilium policy get` and in Hubble flow
+    # verdicts — the one place a rule's reason is visible to whoever is debugging a dropped
+    # packet.
+    description: ""
+
+    # @schema
+    # type: boolean
+    # @schema
+    # -- State default-deny explicitly rather than relying on it being implied by the presence
+    # of rules. Requires Cilium 1.16+.
+    enableDefaultDeny: true
+
+    # @schema
+    # type: array
+    # @schema
+    # -- Egress destinations by DNS name, replacing the internet-wide CIDR rules for
+    # `egress.https` and `egress.smtp` — e.g. `- matchName: smtp.example.com`. Ships empty, so
+    # an unconfigured install keeps the portable CIDR form.
+    toFQDNs: []
+
+    # @schema
+    # type: array
+    # @schema
+    # -- What the DNS proxy may resolve, e.g. `- matchPattern: "*.example.com"`. Defaults to
+    # everything. An FQDN rule is enforced against the addresses Cilium's DNS proxy saw
+    # returned, so without a DNS rule observing the lookup every `toFQDNs` entry matches
+    # nothing.
+    dnsMatchPatterns: []
+
+# @schema
+# additionalProperties: true
+# @schema
+# -- Startup probe. Generous on purpose: the first start runs database migrations, builds the
+# search index and creates the superuser before the webserver accepts anything.
+startupProbe:
+  # @schema
+  # type: boolean
+  # @schema
+  # -- Enable the startup probe.
+  enabled: true
+
+  # @schema
+  # additionalProperties: true
+  # @schema
+  # -- HTTP handler for the probe. The path follows `paperless.rootPath`; an unauthenticated
+  # request there is redirected to the login page, and a redirect counts as success.
+  httpGet:
+    # @schema
+    # type: string
+    # @schema
+    # -- Path to request.
+    path: '{{ .Values.paperless.rootPath }}/'
+
+    # @schema
+    # type: string
+    # @schema
+    # -- Named container port to probe.
+    port: http
+
+  # @schema
+  # type: integer
+  # @schema
+  # -- Delay before the first probe.
+  initialDelaySeconds: 15
+
+  # @schema
+  # type: integer
+  # @schema
+  # -- Probe interval.
+  periodSeconds: 10
+
+  # @schema
+  # type: integer
+  # @schema
+  # -- Probe timeout.
+  timeoutSeconds: 5
+
+  # @schema
+  # type: integer
+  # @schema
+  # -- Consecutive failures before the container is considered failed. 60 x 10s covers a
+  # ten-minute first start, which a large migration on slow storage genuinely takes.
+  failureThreshold: 60
+
+# @schema
+# additionalProperties: true
+# @schema
+# -- Liveness probe. Restarts the container when the webserver stops answering.
+livenessProbe:
+  # @schema
+  # type: boolean
+  # @schema
+  # -- Enable the liveness probe.
+  enabled: true
+
+  # @schema
+  # additionalProperties: true
+  # @schema
+  # -- HTTP handler for the probe.
+  httpGet:
+    # @schema
+    # type: string
+    # @schema
+    # -- Path to request.
+    path: '{{ .Values.paperless.rootPath }}/'
+
+    # @schema
+    # type: string
+    # @schema
+    # -- Named container port to probe.
+    port: http
+
+  # @schema
+  # type: integer
+  # @schema
+  # -- Probe interval.
+  periodSeconds: 30
+
+  # @schema
+  # type: integer
+  # @schema
+  # -- Probe timeout.
+  timeoutSeconds: 10
+
+  # @schema
+  # type: integer
+  # @schema
+  # -- Consecutive failures before the container is restarted. Deliberately tolerant: a restart
+  # interrupts every document being processed, and the webserver shares a pod with workers that
+  # can saturate it.
+  failureThreshold: 5
+
+# @schema
+# additionalProperties: true
+# @schema
+# -- Readiness probe. Takes the pod out of the Service while it cannot serve requests.
+readinessProbe:
+  # @schema
+  # type: boolean
+  # @schema
+  # -- Enable the readiness probe.
+  enabled: true
+
+  # @schema
+  # additionalProperties: true
+  # @schema
+  # -- HTTP handler for the probe.
+  httpGet:
+    # @schema
+    # type: string
+    # @schema
+    # -- Path to request.
+    path: '{{ .Values.paperless.rootPath }}/'
+
+    # @schema
+    # type: string
+    # @schema
+    # -- Named container port to probe.
+    port: http
+
+  # @schema
+  # type: integer
+  # @schema
+  # -- Probe interval.
+  periodSeconds: 15
+
+  # @schema
+  # type: integer
+  # @schema
+  # -- Probe timeout.
+  timeoutSeconds: 5
+
+  # @schema
+  # type: integer
+  # @schema
+  # -- Consecutive failures before the pod is taken out of the Service.
+  failureThreshold: 3
+
+# @schema
+# enum: [restricted, none]
+# @schema
+# -- Pod security context baseline. `restricted` applies the Pod Security Standards restricted
+# profile (`runAsNonRoot`, `seccompProfile: RuntimeDefault`, `fsGroupChangePolicy:
+# OnRootMismatch`) on top of the identity fields below.
+podSecurityContextPreset: restricted
+
+# @schema
+# $ref: https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.PodSecurityContext
+# @schema
+# -- Pod security context, merged over the preset. The identity fields match the `paperless`
+# account in the official image. The image detects that it was started as a non-root user and
+# skips the UID remapping and the recursive `chown` it would otherwise do — so `USERMAP_UID` and
+# `USERMAP_GID` have no effect here, and `fsGroup` is what actually makes the volumes writable.
+podSecurityContext:
+  # @schema
+  # type: integer
+  # @schema
+  # -- User ID to run as.
+  runAsUser: 1000
+
+  # @schema
+  # type: integer
+  # @schema
+  # -- Primary group ID to run as.
+  runAsGroup: 1000
+
+  # @schema
+  # type: integer
+  # @schema
+  # -- Group ID applied to the mounted volumes.
+  fsGroup: 1000
+
+# @schema
+# enum: [restricted, none]
+# @schema
+# -- Container security context baseline. `restricted` drops all Linux capabilities and forbids
+# privilege escalation, running as root and a writable root filesystem.
+securityContextPreset: restricted
+
+# @schema
+# $ref: https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.SecurityContext
+# @schema
+# -- Container security context, merged over the preset. `readOnlyRootFilesystem` is deliberately
+# turned back off: the image boots under s6-overlay, which refuses to start unless `/run` is
+# writable and either owned by the UID it runs as or world-writable. An `emptyDir` is always
+# created owned by uid 0, `fsGroup` moves only its group, and `emptyDir` has no `defaultMode` — so
+# no volume can satisfy it, and a read-only root filesystem leaves it nothing else to write to.
+# The rest of the baseline still applies: non-root, all capabilities dropped, no privilege
+# escalation, `seccompProfile: RuntimeDefault`. Setting this back to `true` fails the render with
+# an explanation rather than producing a crash loop.
+securityContext:
+  # @schema
+  # type: boolean
+  # @schema
+  # -- Whether the container's root filesystem is immutable. Must stay `false`; see above.
+  readOnlyRootFilesystem: false
+
+# @schema
+# additionalProperties: true
+# @schema
+serviceAccount:
+  # @schema
+  # type: boolean
+  # @schema
+  # -- Whether to create a dedicated service account.
+  create: true
+
+  # @schema
+  # type: object
+  # additionalProperties: true
+  # @schema
+  # -- Additional annotations for the service account.
+  annotations: {}
+
+  # @schema
+  # type: string
+  # @schema
+  # -- Custom service account name (auto-generated if empty).
+  name: ""
+
+  # @schema
+  # type: boolean
+  # @schema
+  # -- Whether to automount the service account token.
+  automountToken: false
+
+# @schema
+# $ref: https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.ResourceRequirements
+# @schema
+# -- Resource requests and limits for the paperless-ngx container. It runs the webserver, the
+# directory watcher, the scheduler and the OCR workers in one pod, so the limit has to cover the
+# worst document anyone feeds it — not the idle footprint, which is a tenth of this.
+resources:
+  # @schema
+  # additionalProperties: true
+  # @schema
+  # -- Resource limits.
+  limits:
+    # @schema
+    # type: string
+    # @schema
+    # -- Maximum allowed memory usage. Raise it alongside `paperless.tasks.workers`: each
+    # worker processes a whole document, and a large colour scan is hundreds of megabytes of
+    # rasterised pages. No CPU limit is set on purpose — throttling OCR only makes it slower,
+    # while a memory limit is what protects the node.
+    memory: 2Gi
+
+  # @schema
+  # additionalProperties: true
+  # @schema
+  # -- Resource requests.
+  requests:
+    # @schema
+    # type: string
+    # @schema
+    # -- Minimum CPU requested. OCR is CPU-bound and bursty; this reserves enough to keep the
+    # web UI responsive while a document is being processed.
+    cpu: 250m
+
+    # @schema
+    # type: string
+    # @schema
+    # -- Minimum guaranteed memory allocation.
+    memory: 512Mi
+
+# @schema
+# enum: ["", nano, micro, small, medium, large]
+# @schema
+# -- Named resource sizing for the paperless-ngx container. Ignored when `resources` is set,
+# which it is by default — no preset is large enough for OCR.
+resourcesPreset: ""
+
+# @schema
+# type: integer
+# @schema
+# -- Number of old ReplicaSets retained for rollback.
+revisionHistoryLimit: 3
+
+# @schema
+# $ref: https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.apps.v1.DeploymentStrategy
+# @schema
+# -- Deployment update strategy. Empty falls back to `Recreate` whenever a ReadWriteOnce volume
+# is attached, because a rolling update cannot hand that volume over.
+strategy: {}
+
+# @schema
+# type: integer
+# @schema
+# -- Grace period for pod shutdown. Long enough for a task in flight to finish writing rather
+# than leaving a half-processed document behind.
+terminationGracePeriodSeconds: 120
+
+# @schema
+# type: boolean
+# @schema
+# -- Mount the ServiceAccount API token into the pod. Set on the pod itself, which is what
+# actually keeps the token out of the container: the ServiceAccount-level setting is ignored as
+# soon as a pod names a different account.
+automountServiceAccountToken: false
+
+# @schema
+# type: object
+# additionalProperties: true
+# @schema
+# -- Labels added to every object this chart creates.
+commonLabels: {}
+
+# @schema
+# type: object
+# additionalProperties: true
+# @schema
+# -- Annotations added to every object this chart creates.
+commonAnnotations: {}
+
+# @schema
+# enum: ["", soft, hard]
+# @schema
+# -- Shorthand for spreading replicas across nodes. Of no use to a singleton; it exists because
+# the library supports it. Ignored when `affinity` is set.
+podAntiAffinity: ""
+
+# @schema
+# type: array
+# items:
+#   $ref: https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.EnvVar
+# @schema
+# -- Additional environment variables for the paperless-ngx container. The place for a setting
+# whose value must come from a Secret: the image also resolves any `PAPERLESS_<NAME>_FILE`
+# variable by reading the file it points at, which pairs with a mounted Secret from
+# `extraVolumes`.
+extraEnv: []
+
+# @schema
+# type: string
+# @schema
+# -- Kubernetes version to target when branching on API availability. Lets `helm template`
+# render for a specific cluster version without a live connection.
+kubeVersionOverride: ""
+
+# @schema
+# type: integer
+# minimum: 0
+# maximum: 1
+# @schema
+# -- Number of replicas. paperless-ngx is a singleton: the pod also runs the scheduler and the
+# directory watcher, so a second replica double-schedules every periodic task and races the
+# first one for files in the consumption directory. Only `0` (stopped) and `1` are meaningful.
+replicaCount: 1
+
+# @schema
+# type: string
+# @schema
+# -- Override the chart name used in resource names and labels.
+nameOverride: ""
+
+# @schema
+# type: string
+# @schema
+# -- Override the full generated resource name.
+fullnameOverride: ""
+
+# @schema
+# type: string
+# @schema
+# -- Deploy into a namespace other than the release namespace.
+namespaceOverride: ""
+
+# @schema
+# type: object
+# additionalProperties: true
+# @schema
+# -- Additional annotations to add to the pod.
+podAnnotations: {}
+
+# @schema
+# type: object
+# additionalProperties: true
+# @schema
+# -- Additional labels to add to the pod.
+podLabels: {}
+
+# @schema
+# type: object
+# additionalProperties:
+#   type: string
+# @schema
+# -- Node selector for pod assignment.
+nodeSelector: {}
+
+# @schema
+# type: array
+# items:
+#   $ref: https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.Toleration
+# @schema
+# -- Tolerations for pod assignment.
+tolerations: []
+
+# @schema
+# $ref: https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.Affinity
+# @schema
+# -- Explicit affinity rules. Wins over `podAntiAffinity`.
+affinity: {}
+
+# @schema
+# type: array
+# items:
+#   $ref: https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.TopologySpreadConstraint
+# @schema
+# -- Pod topology spread constraints for availability.
+topologySpreadConstraints: []
+
+# @schema
+# type: string
+# @schema
+# -- Optional Kubernetes PriorityClass name.
+priorityClassName: ""
+
+# @schema
+# type: array
+# items:
+#   $ref: https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.Volume
+# @schema
+# -- Additional volumes added to the pod.
+extraVolumes: []
+
+# @schema
+# type: array
+# items:
+#   $ref: https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.VolumeMount
+# @schema
+# -- Additional volume mounts added to the paperless-ngx container.
+extraVolumeMounts: []

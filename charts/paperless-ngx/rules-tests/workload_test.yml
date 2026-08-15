@@ -1,0 +1,134 @@
+# Restarts, crash loops, memory kills and volume fill — the failure modes that show up while
+# the Deployment still reports an available replica.
+rule_files:
+  - paperless-ngx.rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  # A container stuck in CrashLoopBackOff. The long `for` is what separates it from a dependency
+  # that was slow to accept connections during a rollout.
+  - interval: 1m
+    input_series:
+      - series: 'kube_pod_container_status_waiting_reason{namespace="docs", pod="pngx-paperless-ngx-abc", container="paperless-ngx", reason="CrashLoopBackOff"}'
+        values: '1x30'
+      # The same pod waiting for a different reason must not fire it.
+      - series: 'kube_pod_container_status_waiting_reason{namespace="docs", pod="pngx-paperless-ngx-abc", container="paperless-ngx", reason="ContainerCreating"}'
+        values: '1x30'
+    promql_expr_test:
+      - expr: ALERTS{alertname="PaperlessNgxCrashLooping"}
+        eval_time: 10m
+        exp_samples:
+          - labels: 'ALERTS{alertname="PaperlessNgxCrashLooping", alertstate="pending", namespace="docs", pod="pngx-paperless-ngx-abc", container="paperless-ngx", severity="critical"}'
+            value: 1
+      - expr: ALERTS{alertname="PaperlessNgxCrashLooping", alertstate="firing"}
+        eval_time: 20m
+        exp_samples:
+          - labels: 'ALERTS{alertname="PaperlessNgxCrashLooping", alertstate="firing", namespace="docs", pod="pngx-paperless-ngx-abc", container="paperless-ngx", severity="critical"}'
+            value: 1
+
+  # Repeated restarts without sustained backoff: four in an hour crosses the threshold, and the
+  # bundled datastores are covered by the same rule because their pods carry the chart name too.
+  - interval: 1m
+    input_series:
+      - series: 'kube_pod_container_status_restarts_total{namespace="docs", pod="pngx-paperless-ngx-abc", container="paperless-ngx"}'
+        values: '0+1x60'
+    promql_expr_test:
+      - expr: ALERTS{alertname="PaperlessNgxRestarting", alertstate="firing"}
+        eval_time: 40m
+        exp_samples:
+          - labels: 'ALERTS{alertname="PaperlessNgxRestarting", alertstate="firing", namespace="docs", pod="pngx-paperless-ngx-abc", container="paperless-ngx", severity="warning"}'
+            value: 1
+
+  # One restart in an hour is a rollout, not a fault.
+  - interval: 1m
+    input_series:
+      - series: 'kube_pod_container_status_restarts_total{namespace="docs", pod="pngx-paperless-ngx-abc", container="paperless-ngx"}'
+        values: '0 0 0 1 1x56'
+    promql_expr_test:
+      - expr: ALERTS{alertname="PaperlessNgxRestarting"}
+        eval_time: 40m
+        exp_samples: []
+
+  # An out-of-memory kill, named separately because the remedy is a limit and not a restart.
+  - interval: 1m
+    input_series:
+      - series: 'kube_pod_container_status_last_terminated_reason{namespace="docs", pod="pngx-paperless-ngx-abc", container="paperless-ngx", reason="OOMKilled"}'
+        values: '1x20'
+      - series: 'kube_pod_container_status_last_terminated_reason{namespace="docs", pod="pngx-paperless-ngx-abc", container="paperless-ngx", reason="Completed"}'
+        values: '1x20'
+    promql_expr_test:
+      - expr: ALERTS{alertname="PaperlessNgxOOMKilled", alertstate="firing"}
+        eval_time: 10m
+        exp_samples:
+          - labels: 'ALERTS{alertname="PaperlessNgxOOMKilled", alertstate="firing", namespace="docs", pod="pngx-paperless-ngx-abc", container="paperless-ngx", severity="warning"}'
+            value: 1
+
+  # Volume fill. The recorded ratio drives both thresholds, so a divergent copy of the
+  # expression cannot creep into one of them.
+  - interval: 1m
+    input_series:
+      - series: 'kube_deployment_status_replicas_available{namespace="docs", deployment="pngx-paperless-ngx"}'
+        values: '1x30'
+      - series: 'kubelet_volume_stats_used_bytes{namespace="docs", persistentvolumeclaim="pngx-paperless-ngx-media"}'
+        values: '900+0x30'
+      - series: 'kubelet_volume_stats_capacity_bytes{namespace="docs", persistentvolumeclaim="pngx-paperless-ngx-media"}'
+        values: '1000+0x30'
+      - series: 'kubelet_volume_stats_used_bytes{namespace="docs", persistentvolumeclaim="pngx-paperless-ngx-data"}'
+        values: '100+0x30'
+      - series: 'kubelet_volume_stats_capacity_bytes{namespace="docs", persistentvolumeclaim="pngx-paperless-ngx-data"}'
+        values: '1000+0x30'
+    promql_expr_test:
+      - expr: namespace_persistentvolumeclaim:paperless_ngx_volume_used:ratio
+        eval_time: 20m
+        exp_samples:
+          - labels: 'namespace_persistentvolumeclaim:paperless_ngx_volume_used:ratio{namespace="docs", persistentvolumeclaim="pngx-paperless-ngx-media"}'
+            value: 0.9
+          - labels: 'namespace_persistentvolumeclaim:paperless_ngx_volume_used:ratio{namespace="docs", persistentvolumeclaim="pngx-paperless-ngx-data"}'
+            value: 0.1
+      # 90% crosses the warning threshold and not the critical one, and only the claim that
+      # crossed it alerts.
+      - expr: ALERTS{alertname="PaperlessNgxVolumeFillingUp", alertstate="firing"}
+        eval_time: 20m
+        exp_samples:
+          - labels: 'ALERTS{alertname="PaperlessNgxVolumeFillingUp", alertstate="firing", namespace="docs", persistentvolumeclaim="pngx-paperless-ngx-media", severity="warning"}'
+            value: 1
+      - expr: ALERTS{alertname="PaperlessNgxVolumeAlmostFull"}
+        eval_time: 20m
+        exp_samples: []
+
+  # Past 95% both fire: the warning is not superseded, so a silence on one does not hide the
+  # other.
+  - interval: 1m
+    input_series:
+      - series: 'kube_deployment_status_replicas_available{namespace="docs", deployment="pngx-paperless-ngx"}'
+        values: '1x30'
+      - series: 'kubelet_volume_stats_used_bytes{namespace="docs", persistentvolumeclaim="pngx-paperless-ngx-media"}'
+        values: '960+0x30'
+      - series: 'kubelet_volume_stats_capacity_bytes{namespace="docs", persistentvolumeclaim="pngx-paperless-ngx-media"}'
+        values: '1000+0x30'
+    promql_expr_test:
+      - expr: count(ALERTS{alertstate="firing"})
+        eval_time: 20m
+        exp_samples:
+          - labels: '{}'
+            value: 2
+      - expr: ALERTS{alertname="PaperlessNgxVolumeAlmostFull", alertstate="firing"}
+        eval_time: 20m
+        exp_samples:
+          - labels: 'ALERTS{alertname="PaperlessNgxVolumeAlmostFull", alertstate="firing", namespace="docs", persistentvolumeclaim="pngx-paperless-ngx-media", severity="critical"}'
+            value: 1
+
+  # A claim belonging to another application is not swept in by the name matcher.
+  - interval: 1m
+    input_series:
+      - series: 'kube_deployment_status_replicas_available{namespace="docs", deployment="pngx-paperless-ngx"}'
+        values: '1x30'
+      - series: 'kubelet_volume_stats_used_bytes{namespace="docs", persistentvolumeclaim="some-other-app-data"}'
+        values: '990+0x30'
+      - series: 'kubelet_volume_stats_capacity_bytes{namespace="docs", persistentvolumeclaim="some-other-app-data"}'
+        values: '1000+0x30'
+    promql_expr_test:
+      - expr: ALERTS
+        eval_time: 20m
+        exp_samples: []

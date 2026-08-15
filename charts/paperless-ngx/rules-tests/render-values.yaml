@@ -1,0 +1,16 @@
+# Values `.github/scripts/test-rules.sh` renders this chart with before extracting its
+# `PrometheusRule`.
+#
+# Everything here exists to get exactly one PrometheusRule out of `helm template`: the rules
+# themselves, plus the one credential the chart's validator refuses to render without. Nothing
+# about the workloads matters — the rendered rules are the only output the harness keeps.
+paperless:
+  secretKey: rules-test-secret-key
+
+metrics:
+  prometheusRule:
+    enabled: true
+    # The harness renders into the `rules-test` namespace, and `scoping_test.yml` asserts that
+    # series from any other namespace are ignored. That makes this value part of the contract
+    # between the runner and the suite.
+    scope: namespace

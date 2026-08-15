@@ -1,0 +1,93 @@
+# Whether the archive is up, and whether anything is reporting on it at all.
+#
+# Every assertion queries `ALERTS`, which the rule manager writes as the alerts evaluate. That
+# matters: it exercises each rule exactly as shipped — its expression, its `for` duration and its
+# labels — rather than a copy of the expression pasted into the test, which would still pass
+# after someone broke the real one. Runbook prose is deliberately not asserted here;
+# `audit-observability.py` checks that separately, so a wording change does not break a logic
+# test.
+rule_files:
+  - paperless-ngx.rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  # The Deployment losing its only replica, and the `for` duration that keeps a single scrape
+  # gap from paging.
+  - interval: 1m
+    input_series:
+      - series: 'kube_deployment_status_replicas_available{namespace="docs", deployment="pngx-paperless-ngx"}'
+        values: '1 1 0x20'
+    promql_expr_test:
+      # Two minutes into the outage the alert is pending, not firing: `for: 5m` has not elapsed.
+      - expr: ALERTS{alertname="PaperlessNgxDown"}
+        eval_time: 4m
+        exp_samples:
+          - labels: 'ALERTS{alertname="PaperlessNgxDown", alertstate="pending", namespace="docs", deployment="pngx-paperless-ngx", severity="critical"}'
+            value: 1
+      - expr: ALERTS{alertname="PaperlessNgxDown", alertstate="firing"}
+        eval_time: 8m
+        exp_samples:
+          - labels: 'ALERTS{alertname="PaperlessNgxDown", alertstate="firing", namespace="docs", deployment="pngx-paperless-ngx", severity="critical"}'
+            value: 1
+
+  # A healthy release alerts on nothing, and a Deployment belonging to something else is not
+  # picked up by the name matcher.
+  - interval: 1m
+    input_series:
+      - series: 'kube_deployment_status_replicas_available{namespace="docs", deployment="pngx-paperless-ngx"}'
+        values: '1x20'
+      - series: 'kube_deployment_status_replicas_available{namespace="docs", deployment="some-other-app"}'
+        values: '0x20'
+    promql_expr_test:
+      - expr: ALERTS
+        eval_time: 10m
+        exp_samples: []
+
+  # Nothing reporting at all — the Deployment gone, or kube-state-metrics down. `== 0` cannot
+  # express this, because there is no series left to be zero.
+  - interval: 1m
+    input_series:
+      - series: 'kube_pod_container_status_restarts_total{namespace="docs", pod="pngx-paperless-ngx-abc", container="paperless-ngx"}'
+        values: '0x30'
+    promql_expr_test:
+      - expr: ALERTS{alertname="PaperlessNgxAbsent", alertstate="firing"}
+        eval_time: 20m
+        exp_samples:
+          # No namespace label: `absent()` synthesises its series from the equality matchers in
+          # its argument, and the scope placeholder is a regex one. The runbook is written not
+          # to depend on it.
+          - labels: 'ALERTS{alertname="PaperlessNgxAbsent", alertstate="firing", severity="warning"}'
+            value: 1
+
+  # A reporting Deployment satisfies it, whatever its state.
+  - interval: 1m
+    input_series:
+      - series: 'kube_deployment_status_replicas_available{namespace="docs", deployment="pngx-paperless-ngx"}'
+        values: '0x30'
+    promql_expr_test:
+      - expr: ALERTS{alertname="PaperlessNgxAbsent"}
+        eval_time: 20m
+        exp_samples: []
+
+  # The bundled datastores. A StatefulSet with no ready replica is the broker or the database
+  # gone, which is a different alert from the application itself being down.
+  - interval: 1m
+    input_series:
+      - series: 'kube_statefulset_status_replicas_ready{namespace="docs", statefulset="pngx-paperless-ngx-valkey"}'
+        values: '1 0x20'
+      - series: 'kube_statefulset_status_replicas_ready{namespace="docs", statefulset="pngx-paperless-ngx-postgresql"}'
+        values: '1x21'
+    promql_expr_test:
+      - expr: ALERTS{alertname="PaperlessNgxDatastoreDown", alertstate="firing"}
+        eval_time: 8m
+        exp_samples:
+          - labels: 'ALERTS{alertname="PaperlessNgxDatastoreDown", alertstate="firing", namespace="docs", statefulset="pngx-paperless-ngx-valkey", severity="critical"}'
+            value: 1
+      # The healthy database is not swept up with it: the alert is per StatefulSet, not per
+      # release.
+      - expr: count(ALERTS{alertname="PaperlessNgxDatastoreDown", alertstate="firing"})
+        eval_time: 8m
+        exp_samples:
+          - labels: '{}'
+            value: 1

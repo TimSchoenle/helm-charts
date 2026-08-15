@@ -1,0 +1,35 @@
+# The bundled PostgreSQL, which is the other half of the datastore story: the application has to
+# wait for it, migrate against it and stay up. Exercises the StatefulSet, its claim, the
+# credential shared between the server and the client, and the `PAPERLESS_DB*` environment the
+# ConfigMap builds.
+paperless:
+  secretKey: ci-secret-key-not-a-real-one
+  admin:
+    user: admin
+    email: admin@example.com
+    password: ci-admin-password
+
+database:
+  engine: postgresql
+  password: ci-database-password
+
+postgresql:
+  enabled: true
+  persistence:
+    size: 1Gi
+  resourcesPreset: small
+
+resources:
+  limits:
+    memory: 1Gi
+  requests:
+    cpu: 100m
+    memory: 256Mi
+
+persistence:
+  media:
+    size: 1Gi
+  data:
+    size: 1Gi
+  consume:
+    size: 1Gi

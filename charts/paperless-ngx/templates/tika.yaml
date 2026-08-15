@@ -1,0 +1,57 @@
+{{- if include "paperless-ngx.componentEnabled" (dict "ctx" . "component" "tika") }}
+{{- $tika := .Values.tika.server }}
+{{- /*
+  Apache Tika extracts the text and metadata paperless-ngx indexes from office documents.
+
+  The image already runs as an unprivileged numeric UID and needs nothing writable but the JVM's
+  temporary directory, so it inherits the chart's security baseline unchanged. Its entrypoint is
+  a shell command that assembles the classpath from an image-internal version variable, which is
+  why nothing here overrides it.
+
+  Probed on `/version`, the cheapest endpoint that proves the server is initialised rather than
+  merely listening — Tika has no dedicated health route.
+*/}}
+{{- $probe := dict "enabled" true "httpGet" (dict "path" "/version" "port" "tika") }}
+{{- $ctx := include "paperless-ngx.component.context" (dict
+      "ctx" .
+      "image" $tika.image
+      "runAsUser" 35002 "runAsGroup" 35002
+      "resourcesPreset" $tika.resourcesPreset
+      "resources" $tika.resources
+      "livenessProbe" (merge (dict "periodSeconds" 30 "timeoutSeconds" 10 "failureThreshold" 5) (deepCopy $probe))
+      "readinessProbe" (merge (dict "initialDelaySeconds" 10 "periodSeconds" 15 "timeoutSeconds" 5 "failureThreshold" 5) (deepCopy $probe))
+    ) | fromYaml }}
+{{- include "paperless-ngx.component.service" (dict "ctx" . "component" "tika" "port" 9998) }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  {{- include "paperless-ngx.component.metadata" (dict "ctx" . "component" "tika") | nindent 2 }}
+spec:
+  replicas: 1
+  revisionHistoryLimit: {{ .Values.revisionHistoryLimit }}
+  selector:
+    matchLabels:
+      {{- include "paperless-ngx.component.selectorLabels" (dict "ctx" . "component" "tika") | nindent 6 }}
+  template:
+    metadata:
+      {{- with (include "common.tplvalues.merge" (dict "values" (list .Values.podAnnotations .Values.commonAnnotations) "context" $)) }}
+      annotations:
+        {{- . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "common.podLabels" $ctx | nindent 8 }}
+        app.kubernetes.io/component: tika
+    spec:
+      {{- include "common.podSpec.common" $ctx | nindent 6 }}
+      containers:
+        {{- include "common.container" (dict
+              "ctx" $ctx
+              "name" "tika"
+              "ports" (list (dict "name" "tika" "containerPort" 9998 "protocol" "TCP"))
+            ) | nindent 8 }}
+      {{- with (include "common.volumes" (dict "ctx" $ctx)) }}
+      volumes:
+        {{- . | nindent 8 }}
+      {{- end }}
+{{- end }}

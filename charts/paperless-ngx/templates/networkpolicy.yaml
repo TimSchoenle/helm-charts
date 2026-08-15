@@ -1,0 +1,127 @@
+{{- /*
+The plan from `_netpol.tpl`, said in `networking.k8s.io/v1`.
+
+Default-deny is implicit and deliberate: every policy names both policy types, so anything the
+plan does not list is denied. A component with an empty egress list would be cut off from DNS as
+well, which is why the plan always includes it.
+
+The central rule the egress side enforces: every rule carries a `to:` selector. A rule that lists
+only `ports:` is not a restriction — the API reads a missing `to` as "all destinations", so "the
+application may talk HTTPS" actually reads "it may talk to anything, anywhere, on 443",
+including the cloud metadata endpoint at 169.254.169.254.
+*/ -}}
+
+{{- define "paperless-ngx.netpol.peer" -}}
+{{- if .namespace }}
+- namespaceSelector:
+    matchLabels:
+      {{- toYaml .namespace | nindent 6 }}
+  {{- with .selector }}
+  podSelector:
+    matchLabels:
+      {{- toYaml . | nindent 6 }}
+  {{- end }}
+{{- else }}
+- podSelector:
+    matchLabels:
+      {{- toYaml .selector | nindent 6 }}
+{{- end }}
+{{- end -}}
+
+{{- define "paperless-ngx.netpol.dnsPeers" -}}
+- namespaceSelector:
+    matchLabels:
+      kubernetes.io/metadata.name: kube-system
+  podSelector:
+    matchLabels:
+      k8s-app: kube-dns
+{{- end -}}
+
+{{- define "paperless-ngx.netpol.internetPeers" -}}
+- ipBlock:
+    cidr: {{ .Values.networkPolicy.egress.cidr | quote }}
+    {{- with .Values.networkPolicy.egress.except }}
+    except:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+{{- end -}}
+
+{{- define "paperless-ngx.netpol.ports" -}}
+{{- range . }}
+- port: {{ int .port }}
+  protocol: {{ .protocol | default "TCP" }}
+{{- end }}
+{{- end -}}
+
+{{- if .Values.networkPolicy.enabled }}
+{{- if has (.Values.networkPolicy.engine | default "kubernetes") (list "kubernetes" "both") }}
+{{- range $policy := include "paperless-ngx.netpol.plan" . | fromYamlArray }}
+---
+apiVersion: {{ include "common.capabilities.networkPolicy.apiVersion" $ }}
+kind: NetworkPolicy
+metadata:
+  name: {{ $policy.name }}
+  namespace: {{ include "common.namespace" $ }}
+  labels:
+    {{- include "common.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $policy.component }}
+  {{- with (include "common.annotations" $) }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- toYaml $policy.selector | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  {{- /*
+    Stated as `[]` rather than left absent. An empty rule list is the intentional default-deny
+    case — an unpublished application admits nobody — and `ingress: null` says the same thing to
+    the API server while reading as an accident to everyone else.
+  */}}
+  {{- $extraIngress := ternary $.Values.networkPolicy.ingress.extraRules list (eq $policy.component "server") }}
+  ingress:{{ if not (or $policy.ingress $extraIngress) }} []{{ end }}
+    {{- range $rule := $policy.ingress }}
+    - from:
+        {{- include "paperless-ngx.netpol.peer" $rule | nindent 8 }}
+      ports:
+        {{- include "paperless-ngx.netpol.ports" $rule.ports | nindent 8 }}
+    {{- end }}
+    {{- if eq $policy.component "server" }}
+    {{- with $.Values.networkPolicy.ingress.extraRules }}
+    {{- include "common.tplvalues.render" (dict "value" . "context" $) | nindent 4 }}
+    {{- end }}
+    {{- end }}
+  {{- $extraEgress := ternary $.Values.networkPolicy.egress.extraRules list (eq $policy.component "server") }}
+  egress:{{ if not (or $policy.egress $extraEgress) }} []{{ end }}
+    {{- range $rule := $policy.egress }}
+    {{- if $rule.dns }}
+    - to:
+        {{- include "paperless-ngx.netpol.dnsPeers" $ | nindent 8 }}
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    {{- else if $rule.internet }}
+    - to:
+        {{- include "paperless-ngx.netpol.internetPeers" $ | nindent 8 }}
+      ports:
+        {{- include "paperless-ngx.netpol.ports" $rule.ports | nindent 8 }}
+    {{- else }}
+    - to:
+        {{- include "paperless-ngx.netpol.peer" $rule | nindent 8 }}
+      ports:
+        {{- include "paperless-ngx.netpol.ports" $rule.ports | nindent 8 }}
+    {{- end }}
+    {{- end }}
+    {{- if eq $policy.component "server" }}
+    {{- with $.Values.networkPolicy.egress.extraRules }}
+    {{- include "common.tplvalues.render" (dict "value" . "context" $) | nindent 4 }}
+    {{- end }}
+    {{- end }}
+{{- end }}
+{{- end }}
+{{- end }}

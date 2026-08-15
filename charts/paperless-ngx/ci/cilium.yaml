@@ -1,0 +1,36 @@
+# The same policy graph in Cilium's dialect, with the rules the portable API cannot express: a
+# named egress destination for the mail relay instead of "the whole public internet on 587", and
+# default-deny stated rather than implied.
+#
+# Named without the `-values` suffix, so `ct install` skips it: `CiliumNetworkPolicy` is a CRD the
+# CI cluster does not have, and the chart refuses to render without it. `engine: both` is used
+# here on purpose — it renders the portable pair alongside the Cilium one, so the fixture proves
+# the two dialects describe the same graph.
+paperless:
+  secretKey: ci-secret-key-not-a-real-one
+  email:
+    host: smtp.example.com
+    user: paperless
+    password: ci-mail-password
+
+networkPolicy:
+  enabled: true
+  engine: both
+  egress:
+    https: true
+    smtp: true
+  cilium:
+    description: "documents in, mail out"
+    enableDefaultDeny: true
+    toFQDNs:
+      - matchName: smtp.example.com
+    dnsMatchPatterns:
+      - matchPattern: "*.example.com"
+
+persistence:
+  media:
+    size: 1Gi
+  data:
+    size: 1Gi
+  consume:
+    size: 1Gi

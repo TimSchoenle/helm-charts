@@ -451,9 +451,45 @@ jobs:
       # The old revision's ci/ values files drive the install, and the same paths are then used
       # for the upgrade. `--skip-missing-values` skips the ones this revision renamed or
       # removed, which would otherwise fail with nothing to upgrade with.
+      #
+      # A chart added by the PR has no revision on the target branch to upgrade *from*, and `ct`
+      # does not exempt that case the way it exempts a major-version bump: it checks the previous
+      # revision out and builds the chart's dependencies there before it ever notices the chart is
+      # new, so the whole run dies on a directory that was never supposed to exist. The changed
+      # charts are therefore partitioned by whether they exist on the target branch, and only the
+      # pre-existing ones are put through `--upgrade`; new charts get a plain install, which is
+      # the entire test that is meaningful for them.
+      #
+      # `origin/main` mirrors `remote`/`target-branch` in ct.yaml — keep the two in step.
       - name: Run chart-testing (install & upgrade)
         if: needs.lint.outputs.changed == 'true'
-        run: ct install --config ./.github/configs/ct.yaml --upgrade --skip-missing-values
+        run: |
+          set -euo pipefail
+
+          existing=()
+          added=()
+          while read -r chart; do
+            [[ -n "$chart" ]] || continue
+            if git cat-file -e "origin/main:${chart}/Chart.yaml" 2>/dev/null; then
+              existing+=("$chart")
+            else
+              added+=("$chart")
+            fi
+          done < <(ct list-changed --config ./.github/configs/ct.yaml)
+
+          if [[ ${#existing[@]} -gt 0 ]]; then
+            charts="$(IFS=,; echo "${existing[*]}")"
+            echo "::group::install & upgrade ${charts}"
+            ct install --config ./.github/configs/ct.yaml --upgrade --skip-missing-values --charts "${charts}"
+            echo "::endgroup::"
+          fi
+
+          if [[ ${#added[@]} -gt 0 ]]; then
+            charts="$(IFS=,; echo "${added[*]}")"
+            echo "::group::install (new chart, no previous revision) ${charts}"
+            ct install --config ./.github/configs/ct.yaml --charts "${charts}"
+            echo "::endgroup::"
+          fi
 
   renovate-validate:
     name: Validate Renovate Config

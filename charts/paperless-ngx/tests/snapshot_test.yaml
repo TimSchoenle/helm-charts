@@ -1,0 +1,91 @@
+suite: rendered manifest snapshot
+# Locks the full rendered output of every template in this chart. Any change to the common
+# library or to this chart's templates that alters a manifest shows up here as a reviewable diff;
+# regenerate deliberately with `helm unittest -u charts/paperless-ngx`.
+templates:
+  - deployment.yaml
+  - configmap.yaml
+  - secret.yaml
+  - service.yaml
+  - serviceaccount.yaml
+  - persistentvolumeclaim.yaml
+  - valkey.yaml
+  - postgresql.yaml
+  - gotenberg.yaml
+  - tika.yaml
+  - ingress.yaml
+  - httproute.yaml
+  - networkpolicy.yaml
+  - ciliumnetworkpolicy.yaml
+  - prometheusrule.yaml
+  - dashboard-configmap.yaml
+# Chart version, appVersion and every image coordinate are pinned to placeholders, so a routine
+# version or image bump never invalidates the snapshot. That those fields are wired up correctly
+# is asserted in security_test.yaml and components_test.yaml; this suite guards the *shape* of
+# the rendered manifests only.
+chart:
+  version: 0.0.0
+  appVersion: 0.0.0
+set:
+  paperless.secretKey: snapshot-secret-key
+  image.tag: v0.0.0@sha256:0000000000000000000000000000000000000000000000000000000000000000
+  valkey.image.tag: v0.0.0@sha256:1111111111111111111111111111111111111111111111111111111111111111
+  postgresql.image.tag: v0.0.0@sha256:2222222222222222222222222222222222222222222222222222222222222222
+  tika.server.image.tag: v0.0.0@sha256:3333333333333333333333333333333333333333333333333333333333333333
+  tika.gotenberg.image.tag: v0.0.0@sha256:4444444444444444444444444444444444444444444444444444444444444444
+tests:
+  - it: matches the committed snapshot for a default install
+    asserts:
+      - matchSnapshot: {}
+
+  - it: matches the committed snapshot for the full stack behind an Ingress
+    set:
+      paperless.admin.user: admin
+      paperless.admin.email: admin@example.com
+      paperless.admin.password: hunter2
+      paperless.email.host: smtp.example.com
+      paperless.email.password: mail-pw
+      redis.password: broker-pw
+      database.engine: postgresql
+      database.password: db-pw
+      postgresql.enabled: true
+      tika.enabled: true
+      ingress.enabled: true
+      ingress.host: paperless.example.com
+      ingress.tls.enabled: true
+      networkPolicy.enabled: true
+      networkPolicy.egress.https: true
+      networkPolicy.egress.smtp: true
+      metrics.prometheusRule.enabled: true
+      metrics.dashboard.enabled: true
+    capabilities:
+      apiVersions:
+        - monitoring.coreos.com/v1
+    asserts:
+      - matchSnapshot: {}
+
+  - it: matches the committed snapshot for external datastores behind a Gateway
+    set:
+      existingSecret: paperless-credentials
+      paperless.rootPath: /paperless
+      database.engine: postgresql
+      database.host: postgres.data.svc
+      redis.host: valkey.data.svc
+      valkey.enabled: false
+      persistence.media.existingClaim: paperless-media
+      persistence.export.enabled: true
+      gateway.enabled: true
+      gateway.hostnames:
+        - paperless.example.com
+      gateway.parentRefs:
+        - name: shared
+          namespace: gateways
+      networkPolicy.enabled: true
+      networkPolicy.engine: cilium
+      networkPolicy.cilium.description: documents in, nothing out
+    capabilities:
+      apiVersions:
+        - gateway.networking.k8s.io/v1
+        - cilium.io/v2
+    asserts:
+      - matchSnapshot: {}

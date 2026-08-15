@@ -1,0 +1,27 @@
+# Everything the chart is willing to run on an emptyDir. The data volume is deliberately still a
+# claim: with `database.engine: sqlite` the database lives inside it, and the chart refuses to
+# put that on an emptyDir rather than shipping an archive that empties itself on every restart.
+#
+# What this covers is the volume wiring, which is the part that differs — an emptyDir and a claim
+# are mounted at the same paths and the container must not be able to tell.
+paperless:
+  secretKey: ci-secret-key-not-a-real-one
+
+persistence:
+  media:
+    enabled: false
+  data:
+    enabled: true
+    size: 1Gi
+  consume:
+    enabled: false
+  export:
+    enabled: false
+  scratchSizeLimit: 512Mi
+
+resources:
+  limits:
+    memory: 1Gi
+  requests:
+    cpu: 100m
+    memory: 256Mi

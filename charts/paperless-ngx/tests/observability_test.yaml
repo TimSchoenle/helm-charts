@@ -1,0 +1,137 @@
+suite: alerting rules and dashboards
+templates:
+  - prometheusrule.yaml
+  - dashboard-configmap.yaml
+  - grafanadashboard.yaml
+set:
+  paperless.secretKey: ci-secret-key
+tests:
+  - it: creates nothing by default
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: carries every rule group the chart ships
+    set:
+      metrics.prometheusRule.enabled: true
+    capabilities:
+      apiVersions:
+        - monitoring.coreos.com/v1
+    template: prometheusrule.yaml
+    asserts:
+      - isKind:
+          of: PrometheusRule
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-paperless-ngx
+      - equal:
+          path: spec.groups[0].name
+          value: paperless-ngx-workload
+      - equal:
+          path: spec.groups[1].name
+          value: paperless-ngx-alerts
+
+  # A Prometheus Operator selects rules by label. Without the one the instance selects on, the
+  # object is created and never loaded — which looks exactly like a working install.
+  - it: carries the labels a Prometheus selects rules on
+    set:
+      metrics.prometheusRule.enabled: true
+      metrics.prometheusRule.labels:
+        release: kube-prometheus-stack
+    capabilities:
+      apiVersions:
+        - monitoring.coreos.com/v1
+    template: prometheusrule.yaml
+    asserts:
+      - equal:
+          path: metadata.labels.release
+          value: kube-prometheus-stack
+
+  # A PrometheusRule is not confined to its own namespace, so an unscoped rule matches another
+  # release's objects and two installs page each other for outages neither of them had.
+  - it: scopes every expression to the release's namespace
+    set:
+      metrics.prometheusRule.enabled: true
+      metrics.prometheusRule.scope: namespace
+    capabilities:
+      apiVersions:
+        - monitoring.coreos.com/v1
+    release:
+      namespace: documents
+    template: prometheusrule.yaml
+    asserts:
+      - matchRegex:
+          path: spec.groups[0].rules[0].expr
+          pattern: 'namespace="documents"'
+      - notMatchRegex:
+          path: spec.groups[0].rules[0].expr
+          pattern: 'paperless_ngx_scope'
+
+  # The placeholder is itself an always-true matcher, so unscoped rules are the committed files
+  # unchanged rather than a second rendering path.
+  - it: leaves the placeholder in place when scoping is turned off
+    set:
+      metrics.prometheusRule.enabled: true
+      metrics.prometheusRule.scope: none
+    capabilities:
+      apiVersions:
+        - monitoring.coreos.com/v1
+    template: prometheusrule.yaml
+    asserts:
+      - matchRegex:
+          path: spec.groups[0].rules[0].expr
+          pattern: 'paperless_ngx_scope=~".\*"'
+
+  - it: ships the dashboard for the Grafana sidecar to find
+    set:
+      metrics.dashboard.enabled: true
+    template: dashboard-configmap.yaml
+    asserts:
+      - isKind:
+          of: ConfigMap
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-paperless-ngx-dashboards
+      - equal:
+          path: metadata.labels.grafana_dashboard
+          value: "1"
+      - exists:
+          path: data["paperless-ngx-overview.json"]
+
+  - it: labels it for a sidecar configured differently
+    set:
+      metrics.dashboard.enabled: true
+      metrics.dashboard.label: grafana_dashboards
+      metrics.dashboard.labelValue: paperless
+    template: dashboard-configmap.yaml
+    asserts:
+      - equal:
+          path: metadata.labels.grafana_dashboards
+          value: paperless
+
+  # The custom resource references the ConfigMap rather than inlining the JSON, so the two are
+  # created together or not at all.
+  - it: adds the operator's own resource, pointing at that ConfigMap
+    set:
+      metrics.dashboard.enabled: true
+      metrics.dashboard.grafanaOperator.enabled: true
+      metrics.dashboard.grafanaOperator.folder: Documents
+    capabilities:
+      apiVersions:
+        - grafana.integreatly.org/v1beta1
+    template: grafanadashboard.yaml
+    asserts:
+      - isKind:
+          of: GrafanaDashboard
+      - equal:
+          path: spec.allowCrossNamespaceImport
+          value: true
+      - equal:
+          path: spec.folder
+          value: Documents
+      - equal:
+          path: spec.configMapRef.name
+          value: RELEASE-NAME-paperless-ngx-dashboards
+      - equal:
+          path: spec.configMapRef.key
+          value: paperless-ngx-overview.json

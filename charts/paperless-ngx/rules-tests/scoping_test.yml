@@ -1,0 +1,91 @@
+# Namespace scoping, evaluated against the rules as a cluster actually receives them.
+#
+# The other files here run the rules as committed, carrying the `paperless_ngx_scope=~".*"`
+# placeholder. This one runs `rendered.rules.yml` — the `PrometheusRule` as `helm template`
+# produces it, with the placeholder replaced by `namespace="rules-test"` — because the
+# substitution rewrites every expression in the chart and is therefore a different string from
+# the one the other tests exercise. Validating only the committed form would leave the mechanism
+# that rewrites it completely untested.
+#
+# `.github/scripts/test-rules.sh` stages that file and pins the namespace; the two must agree.
+#
+# What this proves is the property the scoping exists for. A `PrometheusRule` is not confined to
+# its own namespace, so an unscoped rule matches a Deployment called `…paperless-ngx…` belonging
+# to somebody else's release — and two installs of this chart then page each other for outages
+# neither of them had.
+rule_files:
+  - rendered.rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  # The same outage in two namespaces. Only the release's own may alert.
+  - interval: 1m
+    input_series:
+      - series: 'kube_deployment_status_replicas_available{namespace="rules-test", deployment="pngx-paperless-ngx"}'
+        values: '0x20'
+      - series: 'kube_deployment_status_replicas_available{namespace="someone-elses-release", deployment="other-paperless-ngx"}'
+        values: '0x20'
+    promql_expr_test:
+      - expr: ALERTS{alertname="PaperlessNgxDown", alertstate="firing"}
+        eval_time: 10m
+        exp_samples:
+          - labels: 'ALERTS{alertname="PaperlessNgxDown", alertstate="firing", namespace="rules-test", deployment="pngx-paperless-ngx", severity="critical"}'
+            value: 1
+
+  # A neighbouring release failing on its own must produce nothing here at all. This is the
+  # assertion that would have caught unscoped rules: without the substitution both namespaces
+  # match and this returns samples.
+  - interval: 1m
+    input_series:
+      - series: 'kube_deployment_status_replicas_available{namespace="someone-elses-release", deployment="other-paperless-ngx"}'
+        values: '0x30'
+      - series: 'kube_statefulset_status_replicas_ready{namespace="someone-elses-release", statefulset="other-paperless-ngx-valkey"}'
+        values: '0x30'
+      - series: 'kubelet_volume_stats_used_bytes{namespace="someone-elses-release", persistentvolumeclaim="other-paperless-ngx-media"}'
+        values: '990+0x30'
+      - series: 'kubelet_volume_stats_capacity_bytes{namespace="someone-elses-release", persistentvolumeclaim="other-paperless-ngx-media"}'
+        values: '1000+0x30'
+      # A healthy Deployment in this release's own namespace, so the absence alert is satisfied
+      # and what remains under test is purely whether the neighbour's outage leaks in.
+      - series: 'kube_deployment_status_replicas_available{namespace="rules-test", deployment="pngx-paperless-ngx"}'
+        values: '1x30'
+    promql_expr_test:
+      - expr: ALERTS
+        eval_time: 20m
+        exp_samples: []
+
+  # Scoping must not leak into the recording rules either: a neighbour's full volume may not be
+  # folded into this release's series.
+  - interval: 1m
+    input_series:
+      - series: 'kubelet_volume_stats_used_bytes{namespace="rules-test", persistentvolumeclaim="pngx-paperless-ngx-media"}'
+        values: '500+0x30'
+      - series: 'kubelet_volume_stats_capacity_bytes{namespace="rules-test", persistentvolumeclaim="pngx-paperless-ngx-media"}'
+        values: '1000+0x30'
+      - series: 'kubelet_volume_stats_used_bytes{namespace="someone-elses-release", persistentvolumeclaim="other-paperless-ngx-media"}'
+        values: '990+0x30'
+      - series: 'kubelet_volume_stats_capacity_bytes{namespace="someone-elses-release", persistentvolumeclaim="other-paperless-ngx-media"}'
+        values: '1000+0x30'
+    promql_expr_test:
+      - expr: namespace_persistentvolumeclaim:paperless_ngx_volume_used:ratio
+        eval_time: 20m
+        exp_samples:
+          # The neighbour's near-full volume produces no series of its own.
+          - labels: 'namespace_persistentvolumeclaim:paperless_ngx_volume_used:ratio{namespace="rules-test", persistentvolumeclaim="pngx-paperless-ngx-media"}'
+            value: 0.5
+
+  # The one alert whose label set changes shape under scoping. `absent()` synthesises its series
+  # from the *equality* matchers in its argument: unscoped there are none, while the rendered
+  # form carries a real `namespace="rules-test"` through. The runbook is written not to depend on
+  # it either way.
+  - interval: 1m
+    input_series:
+      - series: 'kube_deployment_status_replicas_available{namespace="someone-elses-release", deployment="other-paperless-ngx"}'
+        values: '1x30'
+    promql_expr_test:
+      - expr: ALERTS{alertname="PaperlessNgxAbsent", alertstate="firing"}
+        eval_time: 20m
+        exp_samples:
+          - labels: 'ALERTS{alertname="PaperlessNgxAbsent", alertstate="firing", namespace="rules-test", severity="warning"}'
+            value: 1

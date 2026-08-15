@@ -1,0 +1,89 @@
+{{- if include "paperless-ngx.componentEnabled" (dict "ctx" . "component" "postgresql") }}
+{{- $postgresql := .Values.postgresql }}
+{{- /*
+  PGDATA points at a subdirectory of the mount: the official image refuses to initialise a data
+  directory that is not empty, and on many storage classes a fresh claim arrives carrying a
+  `lost+found`. `/var/run/postgresql` is an emptyDir because the unix socket directory has to be
+  writable under a read-only root filesystem.
+
+  There is no `POSTGRES_INITDB_ARGS` and no init script: the database this creates is a stock
+  one, and everything paperless-ngx needs in it is created by its own migrations.
+*/}}
+{{- $probe := dict "enabled" true "exec" (dict "command" (list "pg_isready" "-U" .Values.database.user "-d" .Values.database.name)) }}
+{{- $ctx := include "paperless-ngx.component.context" (dict
+      "ctx" .
+      "image" $postgresql.image
+      "runAsUser" 999 "runAsGroup" 999
+      "resourcesPreset" $postgresql.resourcesPreset
+      "resources" $postgresql.resources
+      "livenessProbe" (merge (dict "periodSeconds" 30 "timeoutSeconds" 5 "failureThreshold" 5) (deepCopy $probe))
+      "readinessProbe" (merge (dict "periodSeconds" 10 "timeoutSeconds" 3 "failureThreshold" 3) (deepCopy $probe))
+    ) | fromYaml }}
+{{- $env := list
+      (dict "name" "POSTGRES_USER" "value" .Values.database.user)
+      (dict "name" "POSTGRES_DB" "value" .Values.database.name)
+      (dict "name" "PGDATA" "value" "/var/lib/postgresql/data/pgdata")
+      (dict "name" "POSTGRES_PASSWORD" "valueFrom" (dict "secretKeyRef" (dict
+        "name" (include "common.secretName" .)
+        "key" (include "paperless-ngx.secretKeyName" (dict "ctx" . "key" "database-password" "override" .Values.database.existingSecretKey))))) }}
+{{- $mounts := list
+      (dict "name" "data" "mountPath" "/var/lib/postgresql/data")
+      (dict "name" "run" "mountPath" "/var/run/postgresql") }}
+{{- $volumes := list (dict "name" "run" "emptyDir" dict) }}
+{{- if not $postgresql.persistence.enabled }}
+{{- $volumes = append $volumes (dict "name" "data" "emptyDir" dict) }}
+{{- else if $postgresql.persistence.existingClaim }}
+{{- $volumes = append $volumes (dict "name" "data" "persistentVolumeClaim" (dict "claimName" $postgresql.persistence.existingClaim)) }}
+{{- end }}
+{{- include "paperless-ngx.component.service" (dict "ctx" . "component" "postgresql" "port" 5432) }}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  {{- include "paperless-ngx.component.metadata" (dict "ctx" . "component" "postgresql") | nindent 2 }}
+spec:
+  replicas: 1
+  serviceName: {{ include "paperless-ngx.componentName" (dict "ctx" . "component" "postgresql") }}
+  revisionHistoryLimit: {{ .Values.revisionHistoryLimit }}
+  selector:
+    matchLabels:
+      {{- include "paperless-ngx.component.selectorLabels" (dict "ctx" . "component" "postgresql") | nindent 6 }}
+  template:
+    metadata:
+      {{- with (include "common.tplvalues.merge" (dict "values" (list .Values.podAnnotations .Values.commonAnnotations) "context" $)) }}
+      annotations:
+        {{- . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "common.podLabels" $ctx | nindent 8 }}
+        app.kubernetes.io/component: postgresql
+    spec:
+      {{- include "common.podSpec.common" $ctx | nindent 6 }}
+      containers:
+        {{- include "common.container" (dict
+              "ctx" $ctx
+              "name" "postgresql"
+              "ports" (list (dict "name" "postgresql" "containerPort" 5432 "protocol" "TCP"))
+              "env" $env
+              "volumeMounts" $mounts
+            ) | nindent 8 }}
+      volumes:
+        {{- include "common.volumes" (dict "ctx" $ctx "volumes" $volumes) | nindent 8 }}
+  {{- if and $postgresql.persistence.enabled (not $postgresql.persistence.existingClaim) }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          {{- include "common.immutableLabels" $ctx | nindent 10 }}
+          app.kubernetes.io/component: postgresql
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        {{- with $postgresql.persistence.storageClassName }}
+        storageClassName: {{ . | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ $postgresql.persistence.size | quote }}
+  {{- end }}
+{{- end }}

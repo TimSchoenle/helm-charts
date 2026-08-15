@@ -1,0 +1,98 @@
+{{ include "common.fullname" . }} has been deployed.
+
+1. Watch the first start. It runs the database migrations, builds the search index and creates
+   the superuser before the webserver answers anything, which takes minutes rather than seconds:
+
+     kubectl rollout status -n {{ include "common.namespace" . }} deployment/{{ include "common.fullname" . }} --timeout=15m
+
+2. Reach the web UI at:
+{{- $url := include "paperless-ngx.url" . }}
+{{- if $url }}
+
+     {{ $url }}
+{{- else if eq .Values.service.type "LoadBalancer" }}
+
+     kubectl get svc -n {{ include "common.namespace" . }} {{ include "common.fullname" . }} -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+
+   on port {{ .Values.service.port }}.
+{{- else }}
+
+     kubectl port-forward -n {{ include "common.namespace" . }} svc/{{ include "common.fullname" . }} 8000:{{ .Values.service.port }}
+
+   then open http://localhost:8000. This is a ClusterIP Service, so nothing outside the cluster
+   reaches it until you enable `ingress` or `gateway`.
+{{- end }}
+
+3. Log in as:
+{{- if .Values.paperless.admin.user }}
+
+     {{ .Values.paperless.admin.user }}, with the password from the Secret {{ include "common.secretName" . }}
+     (key {{ include "paperless-ngx.secretKeyName" (dict "ctx" . "key" "admin-password" "override" .Values.paperless.admin.existingSecretKey) }}).
+{{- else }}
+
+   No superuser was configured, so there is no account to log in with. Create one:
+
+     kubectl exec -n {{ include "common.namespace" . }} deployment/{{ include "common.fullname" . }} -- createsuperuser
+
+   or set `paperless.admin.user` and `paperless.admin.password` and upgrade.
+{{- end }}
+
+4. Feed it documents by dropping files into the consumption directory:
+
+     kubectl cp ./scan.pdf {{ include "common.namespace" . }}/$(kubectl get pod -n {{ include "common.namespace" . }} -l app.kubernetes.io/instance={{ .Release.Name }},app.kubernetes.io/component=server -o name | head -1 | cut -d/ -f2):/usr/src/paperless/consume/
+
+   or upload them through the web UI, which needs no volume access at all.
+
+{{- if .Values.persistence.media.enabled }}
+{{- if not (index .Values.persistence.media.annotations "helm.sh/resource-policy") }}
+
+WARNING: the media PersistentVolumeClaim is owned by this release, so `helm uninstall` deletes
+it and every document with it. Set
+persistence.media.annotations."helm\.sh/resource-policy"=keep before you need it.
+{{- end }}
+{{- else }}
+
+WARNING: persistence.media.enabled is false. Every document lives on an emptyDir and is gone the
+next time the pod restarts.
+{{- end }}
+{{- if and (eq .Values.database.engine "sqlite") (not .Values.postgresql.enabled) }}
+
+NOTE: this instance runs on SQLite in the data volume. That is upstream's supported default for a
+single user; switch to `database.engine=postgresql` before several people use it at once, and
+note that switching is an export and re-import rather than a values change.
+{{- end }}
+{{- if and .Values.tika.enabled (not (or .Values.tika.server.enabled .Values.tika.server.endpoint)) }}
+
+NOTE: tika.enabled is set but no Tika server is reachable; office documents will fail to consume.
+{{- end }}
+{{- if not .Values.tika.enabled }}
+
+NOTE: office and e-mail documents (.docx, .odt, .xlsx, .eml) are rejected at consumption. Set
+`tika.enabled=true` to run Tika and Gotenberg alongside the archive and accept them.
+{{- end }}
+{{- if and .Values.paperless.remoteUser.enabled (not .Values.networkPolicy.enabled) }}
+
+WARNING: paperless.remoteUser.enabled trusts an HTTP header for authentication while no
+NetworkPolicy restricts who may reach the pod. Anything able to connect directly — any pod in the
+cluster — can set that header and be any user it likes. Enable networkPolicy, or put the
+authenticating proxy in the only path that reaches this Service.
+{{- end }}
+{{- if .Values.metrics.prometheusRule.enabled }}
+{{- if or (and .Values.nameOverride (not (contains "paperless-ngx" .Values.nameOverride))) (and .Values.fullnameOverride (not (contains "paperless-ngx" .Values.fullnameOverride))) }}
+
+WARNING: the objects in this release were renamed away from the chart name, and the alerting
+rules find them either by that name or by an `app.kubernetes.io/name` label from
+kube-state-metrics — which does not export object labels unless `--metric-labels-allowlist`
+says so. Confirm the rules see anything at all:
+
+  kubectl -n {{ include "common.namespace" . }} exec deploy/prometheus -- promtool query instant \
+    http://localhost:9090 'namespace_deployment:paperless_ngx_replicas_available:max'
+
+An empty result means every alert in this release is installed and permanently silent.
+{{- end }}
+{{- end }}
+{{- if and .Values.metrics.prometheusRule.enabled (eq .Values.metrics.prometheusRule.scope "none") }}
+
+NOTE: metrics.prometheusRule.scope is "none", so these rules also match every other paperless-ngx
+release in the cluster and page you for their outages.
+{{- end }}

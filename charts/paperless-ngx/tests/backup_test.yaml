@@ -75,12 +75,24 @@ tests:
           value: [/usr/bin/bash, -c]
       - matchRegex:
           path: spec.jobTemplate.spec.template.spec.containers[0].args[0]
-          pattern: 'document_exporter "\$\{BACKUP_TARGET\}"'
+          pattern: 'python3 manage\.py document_exporter "\$\{BACKUP_TARGET\}"'
 
-  # These three are written by the image's s6 init step into /run/s6/container_environment, which a
-  # container overriding `command` never runs. Without them the wrapper scripts in /usr/local/bin
-  # dispatch on the user name and cd into an empty path.
-  - it: supplies the environment the image's own wrapper scripts expect
+  # /usr/local/bin/document_exporter is the obvious thing to call and cannot be: its `with-contenv`
+  # shebang execs `s6-envdir /run/s6/container_environment`, a directory only the image's init step
+  # creates, so the wrapper dies before reaching Python. manage.py is all the wrapper runs anyway.
+  - it: calls the management command rather than the image's s6 wrapper
+    documentSelector:
+      path: kind
+      value: CronJob
+    asserts:
+      - notMatchRegex:
+          path: spec.jobTemplate.spec.template.spec.containers[0].args[0]
+          pattern: '(?m)^\(?document_exporter'
+
+  # Written by the image's s6 init step into /run/s6/container_environment, which a container
+  # overriding `command` never runs. Without them the script cds into an empty path and Django
+  # writes its dotfiles into kubelet's /root default, which uid 1000 cannot create.
+  - it: supplies the environment the image's init step would otherwise write
     documentSelector:
       path: kind
       value: CronJob
@@ -93,8 +105,8 @@ tests:
       - contains:
           path: spec.jobTemplate.spec.template.spec.containers[0].env
           content:
-            name: USER_IS_NON_ROOT
-            value: "true"
+            name: HOME
+            value: /usr/src/paperless
 
   # A backup container configured differently from the application is one that backs up a
   # different database. Both read the same ConfigMap and the same Secret.

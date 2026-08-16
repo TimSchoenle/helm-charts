@@ -15,10 +15,15 @@ second copy, works under `ReadWriteOnce`, and fails the pod instead of starting 
 archive.
 
 The image's entrypoint is not usable for either of them: it is `/init`, which brings up the whole
-s6-overlay supervision tree — webserver, workers, scheduler. Both commands therefore override
-`command` and call the wrapper scripts in `/usr/local/bin` directly. Those wrappers work outside
-the supervision tree: `with-contenv` tolerates a missing `/run/s6/container_environment`, and
-uid 1000 in the image is the `paperless` account the wrappers dispatch on.
+s6-overlay supervision tree — webserver, workers, scheduler. Neither are the `document_exporter`
+and `document_importer` wrappers in `/usr/local/bin`, despite being exactly the commands wanted:
+their shebang is `with-contenv`, which execs `s6-envdir /run/s6/container_environment`, and that
+directory is written by the s6 init step a one-shot container never runs — so the wrapper exits
+with `unable to envdir ...: No such file or directory` before it ever reaches Python.
+
+Both commands therefore override `command` and call `manage.py` directly. That is all the wrappers
+themselves do once their uid dispatch has taken the non-root branch, which is the only branch this
+chart's `podSecurityContext` can reach.
 
 Every environment variable and every mount is derived from the same helpers the Deployment uses.
 That is the point of this file — a backup container whose configuration has drifted from the
@@ -150,30 +155,25 @@ podAffinity:
 {{- end -}}
 
 {{/*
-The three variables the image's own wrapper scripts expect and that nothing outside the s6
-supervision tree provides.
+The two variables the image leaves to its s6 init step, which a container that overrides `command`
+never runs.
 
-`init-start` writes them into `/run/s6/container_environment` at container start, and every script
-in `/usr/local/bin` reads them back through its `with-contenv` shebang. A one-shot command that
-overrides `command` never runs `init-start`, so all three arrive empty:
+`init-start` writes them into `/run/s6/container_environment` at container start, and the scripts
+in `/usr/local/bin` read them back through their `with-contenv` shebang. Nothing sets them for a
+one-shot command, so both arrive empty:
 
-  PAPERLESS_SRC_DIR   the wrappers `cd` into it. Empty happens to leave the process in the image's
+  PAPERLESS_SRC_DIR   where `manage.py` lives; the scripts below `cd` into it, exactly as the
+                      image's own wrappers do. Empty happens to leave the process in the image's
                       WORKDIR, which is the same directory — so the command works by luck, and
                       stops working the day the WORKDIR moves.
-  USER_IS_NON_ROOT    picks the wrapper's dispatch branch. Without it the fallback compares the
-                      *user name* to `paperless`, which is true only as long as
-                      `podSecurityContext.runAsUser` stays 1000; changing it turns every one-shot
-                      command into `Unknown user` with no other explanation.
-  HOME                Python and Django write dotfiles into it, and the image leaves it at root's
-                      home for a container that never ran the init step.
+  HOME                Python and Django write dotfiles into it. Left unset, kubelet defaults it to
+                      `/root`, which uid 1000 cannot write.
 
 Stated here rather than assumed, so the failure is impossible rather than unlikely.
 */}}
 {{- define "paperless-ngx.oneShot.env" -}}
 - name: PAPERLESS_SRC_DIR
   value: /usr/src/paperless/src
-- name: USER_IS_NON_ROOT
-  value: "true"
 - name: HOME
   value: /usr/src/paperless
 {{- end -}}
@@ -295,7 +295,11 @@ echo "exporting to ${BACKUP_TARGET}/${zip_name}.zip"
 echo "exporting to ${BACKUP_TARGET}"
 {{- end }}
 
-document_exporter "${BACKUP_TARGET}" "${args[@]}"
+# `manage.py` and not `/usr/local/bin/document_exporter`: that wrapper's `with-contenv` shebang
+# needs an `/run/s6/container_environment` only the image's init step creates, and this container
+# does not run it. The `cd` is the wrapper's, kept in a subshell so the retention pass below still
+# resolves `BACKUP_TARGET` against the directory it was created in.
+(cd -- "${PAPERLESS_SRC_DIR}" && python3 manage.py document_exporter "${BACKUP_TARGET}" "${args[@]}")
 
 {{- if eq $backup.mode "zip" }}
 
@@ -570,7 +574,10 @@ args+=(--passphrase "${RESTORE_PASSPHRASE}")
 {{- end }}
 
 echo "importing from ${RESTORE_SOURCE}"
-document_importer "${RESTORE_SOURCE}" "${args[@]}"
+# `manage.py` and not `/usr/local/bin/document_importer`: that wrapper's `with-contenv` shebang
+# needs an `/run/s6/container_environment` only the image's init step creates, and this container
+# does not run it. The wrapper's own `cd` has already happened above.
+python3 manage.py document_importer "${RESTORE_SOURCE}" "${args[@]}"
 
 date -u +%Y-%m-%dT%H:%M:%SZ > "${RESTORE_MARKER}"
 echo "import complete; API tokens are not part of an export and have to be re-issued"

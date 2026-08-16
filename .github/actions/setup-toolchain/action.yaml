@@ -1,0 +1,42 @@
+name: 'Setup Toolchain'
+description: >-
+  Installs just, a pinned Helm and the chart plugins this repository depends on. Every gate in
+  this repository is a `just` recipe, so a job that runs one needs both.
+inputs:
+  helm-version:
+    description: >-
+      Helm version to install. Pinned by default: `latest` silently carried this repository
+      from Helm 3 to Helm 4, changing the toolchain that packages and signs releases with no
+      signal in any diff.
+    required: false
+    default: 'v3.21.3'
+  just-version:
+    description: >-
+      just version to install. Pinned for the same reason as Helm — the recipes are the build
+      system, so the runner that interprets them is part of the toolchain.
+    required: false
+    default: '1.58.0'
+runs:
+  using: "composite"
+  steps:
+    - name: Install just
+      uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
+      with:
+        just-version: ${{ inputs.just-version }}
+
+    - name: Install Helm
+      uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+      with:
+        version: ${{ inputs.helm-version }}
+
+    # The plugin versions live in the justfile rather than here, so that a local shell and a
+    # runner install the same ones and a bump is a single edit.
+    - name: Install Helm plugins
+      shell: bash
+      run: just plugins
+
+    - name: Report installed versions
+      shell: bash
+      run: |
+        just --version
+        just versions

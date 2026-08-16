@@ -36,11 +36,26 @@ for chart in charts/*/; do
     [ -e "$values" ] || continue
     target="$out/${name}--$(basename "$values")"
     echo "Rendering ${name} with $(basename "$values")"
-    if ! helm template "$name" "$chart" \
-          --namespace default \
-          "${api_version_args[@]}" \
-          --values "$values" \
-          "$@" > "$target"; then
+    # Every `values.schema.json` in this repo states its Kubernetes types by URL, so validating
+    # values is a network call and a reset connection fails a chart that is entirely valid. Retried
+    # rather than tolerated: a real schema violation fails all three attempts just as it fails one,
+    # and each attempt rewrites `$target` from scratch so a half-written render cannot survive.
+    rendered=0
+    for attempt in 1 2 3; do
+      if helm template "$name" "$chart" \
+            --namespace default \
+            "${api_version_args[@]}" \
+            --values "$values" \
+            "$@" > "$target"; then
+        rendered=1
+        break
+      fi
+      if [ "$attempt" -lt 3 ]; then
+        echo "Retrying ${name} with $(basename "$values") (attempt $((attempt + 1)) of 3)"
+        sleep "$((attempt * 3))"
+      fi
+    done
+    if [ "$rendered" -eq 0 ]; then
       echo "FAILED to render: ${name} with $(basename "$values")"
       failed=1
     fi

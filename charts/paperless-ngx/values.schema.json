@@ -3533,7 +3533,7 @@
         },
         "enabled": {
           "default": false,
-          "description": "Run the import on the next start of the application pod.\n\n**The target must be an empty installation.** The importer refuses to run against a database\nthat already holds users or documents, so this belongs on a fresh release rather than on one\nthat has been serving for a while. To restore over an existing instance, delete the media and\ndata volumes first, so there is nothing left to refuse.\n\n**The image version must match the one that produced the export.** An export carries an exact\nimage of the database, and the schema changes between releases; the importer warns about a\nmismatch and then keeps going, which is the failure mode that costs an archive. Pin `image.tag`\nto the source instance's version, import, then upgrade.",
+          "description": "Run the import on the next start of the application pod.\n\n**The target must be an empty installation.** The importer cannot merge into one that already\nholds documents — it fails on the first document whose file is already on disk, part-way\nthrough the copy — so this belongs on a fresh release rather than on one that has been serving\nfor a while. The import container checks for that up front and refuses to start, rather than\nletting it happen half-way. To restore over an existing instance, delete the media and data\nvolumes first, so there is nothing left to collide with.\n\n**An import that dies part-way is retried automatically.** The database load is an upsert and\nre-runs cleanly, but the file copy refuses to overwrite what an earlier attempt already put in\nplace, so the next pod start clears that partial copy before importing again. What it deletes\nis bounded by `restore.markerFile`: only a tree the chart itself verified empty and then wrote\ninto is ever cleared.\n\n**The image version must match the one that produced the export.** An export carries an exact\nimage of the database, and the schema changes between releases; the importer warns about a\nmismatch and then keeps going, which is the failure mode that costs an archive. Pin `image.tag`\nto the source instance's version, import, then upgrade.",
           "required": [],
           "title": "enabled",
           "type": "boolean"
@@ -3547,7 +3547,7 @@
         },
         "markerFile": {
           "default": ".helm-restore-complete",
-          "description": "Name of the marker file written to the data volume once the import succeeds. Its presence\nis what makes the import run exactly once; deleting it re-arms the import on the next restart,\nwhich then fails against the now non-empty installation unless the volumes were cleared too.",
+          "description": "Name of the marker file written to the data volume once the import succeeds. Its presence\nis what makes the import run exactly once; deleting it re-arms the import on the next restart,\nwhich then fails against the now non-empty installation unless the volumes were cleared too.\n\nA companion `\u003cmarkerFile\u003e.attempt` is written beside it *before* the import and removed on\nsuccess. Finding it on a later start is what tells the container an earlier attempt died\npart-way, and is the only thing that lets it clear that attempt's partial copy and retry.\nDeleting it by hand while a partial copy is on disk leaves the import unable to make progress.",
           "required": [],
           "title": "markerFile",
           "type": "string"

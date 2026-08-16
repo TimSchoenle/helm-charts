@@ -179,6 +179,40 @@ Stated here rather than assumed, so the failure is impossible rather than unlike
 {{- end -}}
 
 {{/*
+The directories the same init step creates, for the same reason.
+
+`init-folders` runs before anything else in the image and makes the working tree the application
+assumes: the four volume roots, the scratch directory, and `data/index`. A container that
+overrides `command` skips it, and every one of those is then a directory some code path expects to
+exist rather than to create.
+
+`data/index` is the one that actually bites. `document_importer` finishes by rebuilding the search
+index, and `wipe_index` iterates the index directory without creating it — so a fresh import copies
+the entire archive into place and then dies on `FileNotFoundError: .../data/index`. Because that is
+after the copy and before the marker, the next start finds a populated media tree and a completed
+import that was never recorded, which is the shape the retry logic exists to survive but should
+never have had to.
+
+The defaults and the environment variables that override them are the image's own, expanded here
+by the same `${VAR:-default}` form its script uses, so the two cannot disagree about where anything
+lives. Emitted as one list for both one-shot containers rather than trimmed per container: a
+`mkdir -p` too many costs nothing, and two hand-tuned lists would drift.
+*/}}
+{{- define "paperless-ngx.oneShot.dirs" -}}
+data_dir="${PAPERLESS_DATA_DIR:-/usr/src/paperless/data}"
+media_dir="${PAPERLESS_MEDIA_ROOT:-/usr/src/paperless/media}"
+mkdir -p -- \
+  /usr/src/paperless/export \
+  "${data_dir}" \
+  "${data_dir}/index" \
+  "${media_dir}" \
+  "${media_dir}/documents/originals" \
+  "${media_dir}/documents/thumbnails" \
+  "${PAPERLESS_CONSUMPTION_DIR:-/usr/src/paperless/consume}" \
+  "${PAPERLESS_SCRATCH_DIR:-/tmp/paperless}"
+{{- end -}}
+
+{{/*
 Environment for the backup container.
 
 The application's own, plus the export parameters. Those are passed as variables rather than
@@ -269,6 +303,7 @@ export would delete yesterday's good archive on the strength of today's broken o
 {{- $backup := $ctx.Values.backup -}}
 set -euo pipefail
 
+{{ include "paperless-ngx.oneShot.dirs" $ctx }}
 mkdir -p -- "${BACKUP_TARGET}"
 
 args=(
@@ -431,6 +466,8 @@ Environment for the import container: the application's own, plus the import par
   value: {{ include "paperless-ngx.restore.sourcePath" $ctx | quote }}
 - name: RESTORE_MARKER
   value: {{ printf "/usr/src/paperless/data/%s" $restore.markerFile | quote }}
+- name: RESTORE_ATTEMPT_MARKER
+  value: {{ printf "/usr/src/paperless/data/%s.attempt" $restore.markerFile | quote }}
 {{- if include "paperless-ngx.restore.usesUrl" $ctx }}
 - name: RESTORE_URL
   valueFrom:
@@ -500,6 +537,26 @@ imported data.
 It is written last, only after `document_importer` returns successfully. An import interrupted
 half-way leaves no marker, so the next start retries it; that is the right behaviour, because the
 alternative is an instance that comes up serving a partial archive and says nothing.
+
+Making that retry actually succeed takes a second marker, because `document_importer` is only
+half restartable. Its database load is an upsert — `bulk_create(update_conflicts=True)` — so
+re-running it over rows a failed attempt already inserted is a no-op. Its file copy is not: it
+opens with `if Path(document.source_path).is_file(): raise FileExistsError(...)` and upstream
+offers no flag to skip or overwrite. So an attempt killed part-way through the copy — OOM, a
+drained node, a deadline — leaves files behind that make every later attempt die on the first one
+of them. Without intervention that is a permanent crash loop, and the traceback names a document
+rather than the cause.
+
+The `.attempt` marker turns that into a retry. It is written *before* the import and removed only
+on success, so finding it on a later start proves an earlier attempt did not finish, and the only
+thing that can have written into the media document tree is that attempt — which makes clearing
+the tree and importing again safe rather than merely convenient.
+
+That proof is why the first attempt refuses to start against a tree that already holds files. It
+is not a second opinion on the `restore.enabled` contract; it is what establishes the invariant
+the reset relies on. Existing *rows* are deliberately not part of it: this chart provisions
+`paperless.admin.user` on first start, and documents recorded without their files are exactly the
+inconsistency an import repairs.
 */}}
 {{- define "paperless-ngx.restore.script" -}}
 {{- $ctx := . -}}
@@ -556,6 +613,42 @@ fi
 
 cd -- "${PAPERLESS_SRC_DIR}"
 
+{{ include "paperless-ngx.oneShot.dirs" $ctx }}
+
+# Asked of Django rather than assumed. The importer copies into ORIGINALS_DIR, ARCHIVE_DIR,
+# THUMBNAIL_DIR and SHARE_LINK_BUNDLE_DIR, which are the four subdirectories of MEDIA_ROOT's
+# `documents/` and nothing else lives there — but MEDIA_ROOT moves with PAPERLESS_MEDIA_ROOT, and
+# a path this script guessed is not one it may delete.
+documents_dir="$(python3 manage.py shell -c 'from django.conf import settings; print("documents_dir=" + str(settings.ORIGINALS_DIR.parent))' | sed -n 's/^documents_dir=//p')"
+
+# The shape is checked as well as the value: `rm` reached through an empty or unexpected variable
+# is the one failure in this script that cannot be undone by running it again.
+case "${documents_dir}" in
+  /*/documents) ;;
+  *)
+    echo "could not resolve the media document directory from Django (got '${documents_dir}'); refusing to go further" >&2
+    exit 1
+    ;;
+esac
+mkdir -p -- "${documents_dir}"
+
+if [ -e "${RESTORE_ATTEMPT_MARKER}" ]; then
+  # Only reachable when a previous attempt wrote this marker and never reached the success path,
+  # so everything below ${documents_dir} was copied there by that attempt. document_importer
+  # refuses to overwrite a file it has already copied, so a clean tree is the only state it can
+  # be retried from.
+  echo "an import started on $(cat -- "${RESTORE_ATTEMPT_MARKER}" 2>/dev/null || echo 'an earlier start') did not finish"
+  echo "clearing the partial copy under ${documents_dir} and importing again"
+  find -- "${documents_dir}" -mindepth 1 -delete
+else
+  if [ -n "$(find -- "${documents_dir}" -mindepth 1 -type f -print -quit)" ]; then
+    echo "${documents_dir} already holds documents, and this release has not started an import before — so these belong to an existing installation, not to a failed attempt." >&2
+    echo "document_importer cannot merge into one: it raises FileExistsError on the first document whose file is already there, part-way through the copy. Import onto a fresh release, or clear the media and data volumes first." >&2
+    exit 1
+  fi
+  date -u +%Y-%m-%dT%H:%M:%SZ > "${RESTORE_ATTEMPT_MARKER}"
+fi
+
 {{- if $restore.runMigrations }}
 
 # document_importer inserts rows; it does not create the schema. Against the empty database it
@@ -580,6 +673,7 @@ echo "importing from ${RESTORE_SOURCE}"
 python3 manage.py document_importer "${RESTORE_SOURCE}" "${args[@]}"
 
 date -u +%Y-%m-%dT%H:%M:%SZ > "${RESTORE_MARKER}"
+rm -f -- "${RESTORE_ATTEMPT_MARKER}"
 echo "import complete; API tokens are not part of an export and have to be re-issued"
 {{- end -}}
 

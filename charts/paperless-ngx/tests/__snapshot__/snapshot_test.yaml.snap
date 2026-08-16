@@ -526,6 +526,17 @@ matches the committed snapshot for a release that backs itself up and was restor
                     - |-
                       set -euo pipefail
 
+                      data_dir="${PAPERLESS_DATA_DIR:-/usr/src/paperless/data}"
+                      media_dir="${PAPERLESS_MEDIA_ROOT:-/usr/src/paperless/media}"
+                      mkdir -p -- \
+                        /usr/src/paperless/export \
+                        "${data_dir}" \
+                        "${data_dir}/index" \
+                        "${media_dir}" \
+                        "${media_dir}/documents/originals" \
+                        "${media_dir}/documents/thumbnails" \
+                        "${PAPERLESS_CONSUMPTION_DIR:-/usr/src/paperless/consume}" \
+                        "${PAPERLESS_SCRATCH_DIR:-/tmp/paperless}"
                       mkdir -p -- "${BACKUP_TARGET}"
 
                       args=(
@@ -774,6 +785,52 @@ matches the committed snapshot for a release that backs itself up and was restor
 
                   cd -- "${PAPERLESS_SRC_DIR}"
 
+                  data_dir="${PAPERLESS_DATA_DIR:-/usr/src/paperless/data}"
+                  media_dir="${PAPERLESS_MEDIA_ROOT:-/usr/src/paperless/media}"
+                  mkdir -p -- \
+                    /usr/src/paperless/export \
+                    "${data_dir}" \
+                    "${data_dir}/index" \
+                    "${media_dir}" \
+                    "${media_dir}/documents/originals" \
+                    "${media_dir}/documents/thumbnails" \
+                    "${PAPERLESS_CONSUMPTION_DIR:-/usr/src/paperless/consume}" \
+                    "${PAPERLESS_SCRATCH_DIR:-/tmp/paperless}"
+
+                  # Asked of Django rather than assumed. The importer copies into ORIGINALS_DIR, ARCHIVE_DIR,
+                  # THUMBNAIL_DIR and SHARE_LINK_BUNDLE_DIR, which are the four subdirectories of MEDIA_ROOT's
+                  # `documents/` and nothing else lives there — but MEDIA_ROOT moves with PAPERLESS_MEDIA_ROOT, and
+                  # a path this script guessed is not one it may delete.
+                  documents_dir="$(python3 manage.py shell -c 'from django.conf import settings; print("documents_dir=" + str(settings.ORIGINALS_DIR.parent))' | sed -n 's/^documents_dir=//p')"
+
+                  # The shape is checked as well as the value: `rm` reached through an empty or unexpected variable
+                  # is the one failure in this script that cannot be undone by running it again.
+                  case "${documents_dir}" in
+                    /*/documents) ;;
+                    *)
+                      echo "could not resolve the media document directory from Django (got '${documents_dir}'); refusing to go further" >&2
+                      exit 1
+                      ;;
+                  esac
+                  mkdir -p -- "${documents_dir}"
+
+                  if [ -e "${RESTORE_ATTEMPT_MARKER}" ]; then
+                    # Only reachable when a previous attempt wrote this marker and never reached the success path,
+                    # so everything below ${documents_dir} was copied there by that attempt. document_importer
+                    # refuses to overwrite a file it has already copied, so a clean tree is the only state it can
+                    # be retried from.
+                    echo "an import started on $(cat -- "${RESTORE_ATTEMPT_MARKER}" 2>/dev/null || echo 'an earlier start') did not finish"
+                    echo "clearing the partial copy under ${documents_dir} and importing again"
+                    find -- "${documents_dir}" -mindepth 1 -delete
+                  else
+                    if [ -n "$(find -- "${documents_dir}" -mindepth 1 -type f -print -quit)" ]; then
+                      echo "${documents_dir} already holds documents, and this release has not started an import before — so these belong to an existing installation, not to a failed attempt." >&2
+                      echo "document_importer cannot merge into one: it raises FileExistsError on the first document whose file is already there, part-way through the copy. Import onto a fresh release, or clear the media and data volumes first." >&2
+                      exit 1
+                    fi
+                    date -u +%Y-%m-%dT%H:%M:%SZ > "${RESTORE_ATTEMPT_MARKER}"
+                  fi
+
                   # document_importer inserts rows; it does not create the schema. Against the empty database it
                   # requires, it would otherwise fail on the first table.
                   echo "applying database migrations"
@@ -793,6 +850,7 @@ matches the committed snapshot for a release that backs itself up and was restor
                   python3 manage.py document_importer "${RESTORE_SOURCE}" "${args[@]}"
 
                   date -u +%Y-%m-%dT%H:%M:%SZ > "${RESTORE_MARKER}"
+                  rm -f -- "${RESTORE_ATTEMPT_MARKER}"
                   echo "import complete; API tokens are not part of an export and have to be re-issued"
               command:
                 - /usr/bin/bash
@@ -818,6 +876,8 @@ matches the committed snapshot for a release that backs itself up and was restor
                   value: /restore
                 - name: RESTORE_MARKER
                   value: /usr/src/paperless/data/.helm-restore-complete
+                - name: RESTORE_ATTEMPT_MARKER
+                  value: /usr/src/paperless/data/.helm-restore-complete.attempt
                 - name: RESTORE_PASSPHRASE
                   valueFrom:
                     secretKeyRef:

@@ -137,6 +137,110 @@ tests:
           path: spec.template.spec.initContainers[0].args[0]
           pattern: 'python3 manage\.py document_importer "\$\{RESTORE_SOURCE\}" "\$\{args\[@\]\}"\n\ndate -u'
 
+  # The attempt marker is the converse of the completion one, and the ordering is the whole point:
+  # written before the importer runs, cleared only once it has returned. Present on a later start
+  # it proves an earlier attempt died part-way, which is what makes clearing that attempt's files
+  # safe. Written after the import, it would prove nothing.
+  - it: records an attempt before importing and clears it on success
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      restore.enabled: true
+      restore.source.existingClaim: old-export
+    asserts:
+      - contains:
+          path: spec.template.spec.initContainers[0].env
+          content:
+            name: RESTORE_ATTEMPT_MARKER
+            value: /usr/src/paperless/data/.helm-restore-complete.attempt
+      - matchRegex:
+          path: spec.template.spec.initContainers[0].args[0]
+          pattern: 'date -u \+%Y-%m-%dT%H:%M:%SZ > "\$\{RESTORE_ATTEMPT_MARKER\}"[\s\S]*python3 manage\.py document_importer'
+      - matchRegex:
+          path: spec.template.spec.initContainers[0].args[0]
+          pattern: 'date -u \+%Y-%m-%dT%H:%M:%SZ > "\$\{RESTORE_MARKER\}"\nrm -f -- "\$\{RESTORE_ATTEMPT_MARKER\}"'
+
+  # document_importer's database load upserts and re-runs cleanly; its file copy raises
+  # FileExistsError on the first document already on disk and has no flag to skip or overwrite.
+  # A clean tree is therefore the only state a killed attempt can be retried from, and without
+  # this the pod crash-loops on a traceback naming a document rather than the cause.
+  - it: clears a killed attempt's partial copy before importing again
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      restore.enabled: true
+      restore.source.existingClaim: old-export
+    asserts:
+      - matchRegex:
+          path: spec.template.spec.initContainers[0].args[0]
+          pattern: 'if \[ -e "\$\{RESTORE_ATTEMPT_MARKER\}" \]; then'
+      - matchRegex:
+          path: spec.template.spec.initContainers[0].args[0]
+          pattern: 'find -- "\$\{documents_dir\}" -mindepth 1 -delete'
+
+  # The invariant the reset rests on. A first attempt against a tree that already holds files
+  # cannot tell its own leftovers from an existing installation's documents, so it refuses rather
+  # than arming a deletion it could not justify — and says so before the copy instead of during.
+  - it: refuses a first import into an installation that already holds documents
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      restore.enabled: true
+      restore.source.existingClaim: old-export
+    asserts:
+      - matchRegex:
+          path: spec.template.spec.initContainers[0].args[0]
+          pattern: 'find -- "\$\{documents_dir\}" -mindepth 1 -type f -print -quit'
+      - matchRegex:
+          path: spec.template.spec.initContainers[0].args[0]
+          pattern: 'already holds documents, and this release has not started an import before'
+
+  # MEDIA_ROOT moves with PAPERLESS_MEDIA_ROOT, so the directory being emptied is read back from
+  # Django rather than assumed — and its shape is checked before use, because `rm` reached through
+  # an empty variable is the one step here that running the pod again cannot undo.
+  - it: resolves the directory it clears from Django and refuses an unexpected one
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      restore.enabled: true
+      restore.source.existingClaim: old-export
+    asserts:
+      - matchRegex:
+          path: spec.template.spec.initContainers[0].args[0]
+          pattern: 'documents_dir="\$\(python3 manage\.py shell -c .*settings\.ORIGINALS_DIR\.parent'
+      - matchRegex:
+          path: spec.template.spec.initContainers[0].args[0]
+          pattern: 'case "\$\{documents_dir\}" in\n  /\*/documents\) ;;'
+      - matchRegex:
+          path: spec.template.spec.initContainers[0].args[0]
+          pattern: 'refusing to go further'
+
+  # Both markers live on the data volume and are named from one value, so an operator who renames
+  # the completion marker does not silently split the pair across two releases' conventions.
+  - it: names both markers from restore.markerFile
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      restore.enabled: true
+      restore.source.existingClaim: old-export
+      restore.markerFile: .imported
+    asserts:
+      - contains:
+          path: spec.template.spec.initContainers[0].env
+          content:
+            name: RESTORE_MARKER
+            value: /usr/src/paperless/data/.imported
+      - contains:
+          path: spec.template.spec.initContainers[0].env
+          content:
+            name: RESTORE_ATTEMPT_MARKER
+            value: /usr/src/paperless/data/.imported.attempt
+
   - it: mounts the source claim read-only and imports from its root
     documentSelector:
       path: kind
@@ -263,6 +367,38 @@ tests:
           content:
             name: HOME
             value: /usr/src/paperless
+
+  # The same init step also creates the working tree, and `data/index` is the one that decides
+  # whether an import succeeds: document_importer finishes by rebuilding the search index, and
+  # `wipe_index` iterates that directory without creating it — so without this a fresh import
+  # copies the whole archive into place and then dies, after the copy and before the marker.
+  #
+  # Expanded from the image's own environment variables rather than written as fixed paths, so
+  # relocating a directory cannot leave the two disagreeing about where it went.
+  - it: creates the directories the image's init step would otherwise create
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      restore.enabled: true
+      restore.source.existingClaim: old-export
+    asserts:
+      - matchRegex:
+          path: spec.template.spec.initContainers[0].args[0]
+          pattern: 'data_dir="\$\{PAPERLESS_DATA_DIR:-/usr/src/paperless/data\}"'
+      - matchRegex:
+          path: spec.template.spec.initContainers[0].args[0]
+          pattern: 'media_dir="\$\{PAPERLESS_MEDIA_ROOT:-/usr/src/paperless/media\}"'
+      - matchRegex:
+          path: spec.template.spec.initContainers[0].args[0]
+          pattern: '"\$\{data_dir\}/index"'
+      - matchRegex:
+          path: spec.template.spec.initContainers[0].args[0]
+          pattern: '"\$\{PAPERLESS_SCRATCH_DIR:-/tmp/paperless\}"'
+      # Before the importer runs, not after: the directory has to exist by the time it is used.
+      - matchRegex:
+          path: spec.template.spec.initContainers[0].args[0]
+          pattern: 'mkdir -p --[\s\S]*python3 manage\.py document_importer'
 
   - it: reads the same configuration the application will start with
     documentSelector:

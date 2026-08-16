@@ -216,6 +216,29 @@ tests:
           value: true
         documentIndex: 1
 
+  # Cilium validates a rule with
+  # `len(Ingress) == 0 && len(IngressDeny) == 0 && len(Egress) == 0 && len(EgressDeny) == 0`, and
+  # `enableDefaultDeny` is applied after that check rather than satisfying it. An empty list is
+  # therefore admitted by the CRD schema and then marked `Valid: False` by the operator, which
+  # leaves the workload with no policy at all — the opposite of the intent. A one-element list
+  # holding an empty rule passes validation, and an ingress rule naming no peer admits nobody.
+  - it: denies with one empty rule, never an empty list, when nothing is allowed
+    set:
+      networkPolicy.engine: cilium
+    capabilities:
+      apiVersions:
+        - cilium.io/v2
+    template: ciliumnetworkpolicy.yaml
+    documentIndex: 0
+    asserts:
+      - equal:
+          path: spec.ingress
+          value:
+            - {}
+      - lengthEqual:
+          path: spec.ingress
+          count: 1
+
   # The rule the portable API cannot state. It replaces the CIDR form rather than adding to it:
   # emitting both would leave the broad rule in place and make the narrow one decorative.
   - it: names egress destinations instead of permitting the internet

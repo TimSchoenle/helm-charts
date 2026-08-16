@@ -72,10 +72,19 @@ spec:
     egress: false
   {{- /*
     An empty rule list is the intentional default-deny case — an unpublished application admits
-    nobody — and it has to be stated as `[]`. Rendered as an absent value it becomes `null`,
-    which the CRD schema rejects outright.
+    nobody — and it is stated as a single empty rule, not as `[]`. Cilium validates the rule with
+    `len(Ingress) == 0 && len(IngressDeny) == 0 && len(Egress) == 0 && len(EgressDeny) == 0`, so
+    both `[]` and an absent value fail it: the object is admitted by the CRD schema and then
+    marked `Valid: False` by the operator ("rule must have at least one of Ingress, IngressDeny,
+    Egress, EgressDeny"), leaving the workload with no policy at all. `enableDefaultDeny` does
+    not satisfy that check — it is applied after it (cilium/cilium#35558). A one-element list
+    holding an empty rule passes, and an ingress rule naming no peer admits nobody, which is the
+    posture wanted here.
   */}}
-  ingress:{{ if not $policy.ingress }} []{{ end }}
+  ingress:
+    {{- if not $policy.ingress }}
+    - {}
+    {{- end }}
     {{- range $rule := $policy.ingress }}
     - fromEndpoints:
         {{- include "paperless-ngx.cilium.endpoint" $rule | nindent 8 }}
@@ -106,7 +115,10 @@ spec:
   enableDefaultDeny:
     ingress: false
     egress: {{ $defaultDeny }}
-  egress:{{ if not $policy.egress }} []{{ end }}
+  egress:
+    {{- if not $policy.egress }}
+    - {}
+    {{- end }}
     {{- range $rule := $policy.egress }}
     {{- if $rule.dns }}
     - toEndpoints:

@@ -1614,10 +1614,18 @@ restore:
   # @schema
   # -- Run the import on the next start of the application pod.
   #
-  # **The target must be an empty installation.** The importer refuses to run against a database
-  # that already holds users or documents, so this belongs on a fresh release rather than on one
-  # that has been serving for a while. To restore over an existing instance, delete the media and
-  # data volumes first, so there is nothing left to refuse.
+  # **The target must be an empty installation.** The importer cannot merge into one that already
+  # holds documents — it fails on the first document whose file is already on disk, part-way
+  # through the copy — so this belongs on a fresh release rather than on one that has been serving
+  # for a while. The import container checks for that up front and refuses to start, rather than
+  # letting it happen half-way. To restore over an existing instance, delete the media and data
+  # volumes first, so there is nothing left to collide with.
+  #
+  # **An import that dies part-way is retried automatically.** The database load is an upsert and
+  # re-runs cleanly, but the file copy refuses to overwrite what an earlier attempt already put in
+  # place, so the next pod start clears that partial copy before importing again. What it deletes
+  # is bounded by `restore.markerFile`: only a tree the chart itself verified empty and then wrote
+  # into is ever cleared.
   #
   # **The image version must match the one that produced the export.** An export carries an exact
   # image of the database, and the schema changes between releases; the importer warns about a
@@ -1731,6 +1739,11 @@ restore:
   # -- Name of the marker file written to the data volume once the import succeeds. Its presence
   # is what makes the import run exactly once; deleting it re-arms the import on the next restart,
   # which then fails against the now non-empty installation unless the volumes were cleared too.
+  #
+  # A companion `<markerFile>.attempt` is written beside it *before* the import and removed on
+  # success. Finding it on a later start is what tells the container an earlier attempt died
+  # part-way, and is the only thing that lets it clear that attempt's partial copy and retry.
+  # Deleting it by hand while a partial copy is on disk leaves the import unable to make progress.
   markerFile: .helm-restore-complete
 
   # @schema

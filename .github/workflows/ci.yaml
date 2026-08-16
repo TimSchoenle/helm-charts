@@ -200,6 +200,53 @@ jobs:
       - name: Run rule and dashboard tests
         run: bash ./.github/scripts/test-rules.sh
 
+  # Every other job in this workflow renders charts and inspects the result. This one runs a
+  # chart's own shell against the real application, which is the only way to test the parts of a
+  # chart that are a program rather than a manifest — and so it is per-chart by nature. The matrix
+  # is the list of charts that have such a program: `.github/scripts/e2e/<chart>.sh`. Charts
+  # without one are covered by the render, lint, unit-test and install jobs above and need nothing
+  # here.
+  #
+  # paperless-ngx qualifies because its backup CronJob and its import initContainer are scripts
+  # wrapped around upstream management commands, and both defects this gate was written for lived
+  # in upstream's behaviour rather than in the chart's YAML: `document_importer` finishes by
+  # rebuilding a search index whose directory only the image's s6 init step creates, and its file
+  # copy raises `FileExistsError` rather than overwriting, so an attempt killed part-way made every
+  # later one fail on a file it had already written. A rendered manifest looks identical either way.
+  #
+  # Not gated on `list-changed`: the drivers and fixtures live outside `charts/`, where `ct` would
+  # not see them change.
+  e2e:
+    name: End-to-End (${{ matrix.chart }})
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # to checkout code
+    strategy:
+      fail-fast: false
+      matrix:
+        chart: [paperless-ngx]
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Setup Helm Environment
+        uses: ./.github/actions/setup-helm
+
+      - name: Build Helm dependencies
+        uses: ./.github/actions/build-deps
+
+      # PyYAML ships with the runner image's system `python3`; `actions/setup-python` is
+      # deliberately not used here, for the same reason as in the docs job.
+      - name: Run the ${{ matrix.chart }} end-to-end test
+        run: bash ./.github/scripts/e2e/${{ matrix.chart }}.sh
+
   lint:
     name: Lint Charts
     runs-on: ubuntu-latest

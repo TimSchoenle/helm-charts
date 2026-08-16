@@ -108,6 +108,25 @@ tests:
             name: HOME
             value: /usr/src/paperless
 
+  # The same step also creates the working tree the application assumes, including the scratch
+  # directory a zip export assembles itself in. Shared with the import container rather than
+  # trimmed to what the exporter alone needs: a `mkdir -p` too many costs nothing, and two lists
+  # would drift.
+  - it: creates the directories the image's init step would otherwise create
+    documentSelector:
+      path: kind
+      value: CronJob
+    asserts:
+      - matchRegex:
+          path: spec.jobTemplate.spec.template.spec.containers[0].args[0]
+          pattern: 'data_dir="\$\{PAPERLESS_DATA_DIR:-/usr/src/paperless/data\}"'
+      - matchRegex:
+          path: spec.jobTemplate.spec.template.spec.containers[0].args[0]
+          pattern: '"\$\{PAPERLESS_SCRATCH_DIR:-/tmp/paperless\}"'
+      - matchRegex:
+          path: spec.jobTemplate.spec.template.spec.containers[0].args[0]
+          pattern: 'mkdir -p --[\s\S]*document_exporter'
+
   # A backup container configured differently from the application is one that backs up a
   # different database. Both read the same ConfigMap and the same Secret.
   - it: reads the application's own configuration

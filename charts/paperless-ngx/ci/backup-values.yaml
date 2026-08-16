@@ -1,0 +1,57 @@
+# The scheduled export, in the shape most installs will use it: dated archives with a retention
+# window, an encrypted export, and an uploader shipping it off the cluster.
+#
+# Installable, and it stays installable because the CronJob only creates a pod at its schedule —
+# 03:00, which no CI run reaches. What this fixture actually proves is that a real API server
+# accepts the object, which is the half `helm template` cannot check: `spec.timeZone`, the
+# `Forbid` concurrency policy, the init/main container split the uploader produces, and a pod
+# template carrying a required podAffinity.
+#
+# `backup.mode: zip` is paired with `backup.options.delete: false` because it has to be. In zip
+# mode the exporter's `--delete` empties the target directory before moving the new archive in,
+# which would remove every retained archive; the chart refuses to render the combination, and
+# this fixture is also the check that it accepts the correct one.
+paperless:
+  secretKey: ci-secret-key-not-a-real-one
+
+persistence:
+  # Required by `backup.enabled`. Without a claim the export volume belongs to the backup pod and
+  # is deleted along with it.
+  export:
+    enabled: true
+    size: 1Gi
+  media:
+    size: 1Gi
+  data:
+    size: 1Gi
+  consume:
+    size: 1Gi
+
+backup:
+  enabled: true
+  schedule: "0 3 * * *"
+  timeZone: Etc/UTC
+  mode: zip
+  options:
+    delete: false
+    splitManifest: true
+  zip:
+    nameTemplate: paperless-export-%Y-%m-%dT%H%M%SZ
+    retentionCount: 3
+  passphrase: ci-export-passphrase-not-a-real-one
+  # The uploader is a real image with a command that would fail against a remote nobody
+  # configured — which is fine, because nothing runs it here. What is being checked is that an
+  # arbitrary operator-supplied container is rendered verbatim, gets the export volume, and is
+  # sequenced after the exporter rather than beside it.
+  upload:
+    enabled: true
+    container:
+      name: upload
+      image: busybox:1.37
+      command:
+        - sh
+        - -c
+        - 'ls -la /export'
+
+networkPolicy:
+  enabled: true

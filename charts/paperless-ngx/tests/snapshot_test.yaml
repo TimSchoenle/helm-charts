@@ -19,6 +19,7 @@ templates:
   - ciliumnetworkpolicy.yaml
   - prometheusrule.yaml
   - dashboard-configmap.yaml
+  - cronjob-backup.yaml
 # Chart version, appVersion and every image coordinate are pinned to placeholders, so a routine
 # version or image bump never invalidates the snapshot. That those fields are wired up correctly
 # is asserted in security_test.yaml and components_test.yaml; this suite guards the *shape* of
@@ -87,5 +88,36 @@ tests:
       apiVersions:
         - gateway.networking.k8s.io/v1
         - cilium.io/v2
+    asserts:
+      - matchSnapshot: {}
+
+  # The export CronJob and the import initContainer together, because the two share the scoped
+  # render context that keeps their configuration identical to the application's — and a drift in
+  # that context is exactly the kind of change that is invisible in a values diff and obvious in a
+  # rendered one.
+  - it: matches the committed snapshot for a release that backs itself up and was restored
+    set:
+      database.engine: postgresql
+      database.password: db-pw
+      database.sslMode: require
+      postgresql.enabled: true
+      persistence.export.enabled: true
+      backup.enabled: true
+      backup.mode: zip
+      backup.options.delete: false
+      backup.passphrase: export-passphrase
+      backup.timeZone: Europe/Berlin
+      backup.upload.enabled: true
+      backup.upload.container:
+        name: upload
+        image: rclone/rclone:v0.0.0
+        command: [rclone, sync, /export, "remote:paperless"]
+        envFrom:
+          - secretRef:
+              name: rclone-config
+      restore.enabled: true
+      restore.source.existingClaim: paperless-export-from-the-old-cluster
+      restore.passphrase: import-passphrase
+      networkPolicy.enabled: true
     asserts:
       - matchSnapshot: {}

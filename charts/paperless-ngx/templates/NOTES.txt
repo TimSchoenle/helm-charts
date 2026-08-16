@@ -43,6 +43,81 @@
 
    or upload them through the web UI, which needs no volume access at all.
 
+{{- if .Values.restore.enabled }}
+
+5. An import is armed. The application pod runs it before the webserver starts, once, and then
+   records a marker on the data volume so later restarts skip it. Watch it rather than the
+   rollout — a large archive takes a while and the pod stays in Init the whole time:
+
+     kubectl logs -n {{ include "common.namespace" . }} -l app.kubernetes.io/instance={{ .Release.Name }},app.kubernetes.io/component=server -c import -f
+
+   Two things the export does not carry, and that you have to do by hand afterwards: API tokens
+   are not exported and every client needs a new one, and the search index is rebuilt with
+   `kubectl exec ... -- document_index reindex` if search comes back empty.
+
+   NOTE: a `.zip` export is extracted in full into the scratch directory before it is read.
+   persistence.scratchSizeLimit is {{ .Values.persistence.scratchSizeLimit | default "unbounded" }} —
+   it has to exceed the archive's uncompressed size, or the pod is evicted part-way through the
+   import and the next start begins again.
+
+   Once it has completed you can leave `restore.enabled` set; it is a no-op from then on.
+{{- if include "paperless-ngx.restore.usesUrl" . }}
+{{- if and .Values.networkPolicy.enabled (not .Values.networkPolicy.egress.https) }}
+
+   WARNING: the archive is downloaded from a URL while a NetworkPolicy is in force and
+   networkPolicy.egress.https is false. The import container's egress is the application's, so a
+   URL outside the cluster is unreachable and the download retries and then fails the pod. Set
+   networkPolicy.egress.https=true for an internet-hosted archive; an in-cluster one is already
+   covered by the release's own rules.
+{{- end }}
+{{- if not .Values.restore.source.checksum }}
+
+   NOTE: restore.source.checksum is empty, so the downloaded archive is imported without being
+   verified. Set it to the archive's SHA-256 — a truncated transfer otherwise imports as far as it
+   can and then stops, which looks like a partial archive rather than a failed download.
+{{- end }}
+{{- end }}
+{{- if eq (.Values.image.tag | splitList "@" | first | default (printf "%v" .Chart.AppVersion)) (printf "%v" .Chart.AppVersion) }}
+
+   NOTE: this is importing on the chart's default version, {{ .Chart.AppVersion }}. An export
+   carries an exact image of the database, and `document_importer` only *warns* about a version
+   mismatch before carrying on regardless — which is the failure that costs an archive rather than
+   reporting one. If the export came from a different paperless-ngx version, set `image.tag` to
+   that version, import, and upgrade afterwards.
+{{- end }}
+{{- end }}
+{{- if .Values.backup.enabled }}
+
+{{ if .Values.restore.enabled }}6{{ else }}5{{ end }}. Backups run at `{{ .Values.backup.schedule }}`{{ with .Values.backup.timeZone }} ({{ . }}){{ end }}. Do not wait for the first one to find out
+   whether it works:
+
+     kubectl create job -n {{ include "common.namespace" . }} --from=cronjob/{{ include "paperless-ngx.backup.name" . }} backup-manual-1
+     kubectl wait -n {{ include "common.namespace" . }} --for=condition=complete job/backup-manual-1 --timeout=1h
+
+   and confirm the export volume actually holds something afterwards:
+
+     kubectl exec -n {{ include "common.namespace" . }} deployment/{{ include "common.fullname" . }} -- ls -la {{ .Values.backup.target }}
+{{- if not .Values.metrics.prometheusRule.enabled }}
+
+WARNING: backups are scheduled but metrics.prometheusRule.enabled is false, so nothing alerts when
+they stop. A CronJob that quietly stops firing — suspended, or missing its starting deadline every
+run — produces no failed Job and no error anywhere; the only evidence is a `last successful time`
+that stops advancing. Enable the rules, or put your own alert on
+`kube_cronjob_status_last_successful_time`.
+{{- end }}
+{{- if not .Values.backup.upload.enabled }}
+
+NOTE: the export stays on a PersistentVolume in this cluster. That survives a mistake in the web
+UI; it does not survive losing the cluster or the storage backing it. Set `backup.upload` to ship
+it somewhere else, or point a cluster backup tool at the export claim.
+{{- end }}
+{{- if not (include "paperless-ngx.hasCredential" (dict "ctx" . "value" .Values.backup.passphrase)) }}
+
+NOTE: the export is unencrypted. Its `manifest.json` carries password hashes, API tokens and
+e-mail account credentials in plaintext, so wherever it lands is as sensitive as the archive
+itself. Set `backup.passphrase` — and store it somewhere other than the backup.
+{{- end }}
+{{- end }}
 {{- if .Values.persistence.media.enabled }}
 {{- if not (index .Values.persistence.media.annotations "helm.sh/resource-policy") }}
 

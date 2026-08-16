@@ -1,0 +1,33 @@
+# Importing an archive that is already off-cluster, fetched by URL rather than staged into a
+# PersistentVolume by hand.
+#
+# Named without the `-values` suffix, so `ct install` skips it while the render, kubeconform and
+# policy jobs still cover it. It cannot install: the URL points at a host that does not exist, so
+# the import container would retry the download and then fail the pod — which is the correct
+# behaviour and not something worth proving on a CI cluster.
+#
+# What rendering does cover: the URL is a Secret key rather than a ConfigMap entry, the download
+# lands at a fixed path inside the export volume, the checksum is verified before the import, and
+# `networkPolicy.egress.https` is what makes the fetch reachable at all — the import container's
+# egress is the application's, so an internet-hosted archive is denied without it.
+paperless:
+  secretKey: ci-secret-key-not-a-real-one
+
+persistence:
+  # Required by `restore.source.url`: the download needs somewhere with room for the whole archive
+  # that survives a retry rather than starting over.
+  export:
+    enabled: true
+    size: 1Gi
+
+restore:
+  enabled: true
+  source:
+    url: https://backups.invalid/paperless-export-2026-01-01T030000Z.zip
+    checksum: 4f0e0b57b0a06a5e9f4a4fa0a24d0b0d3a2e6f2c1b8d7a9c0e1f2a3b4c5d6e7f
+  passphrase: ci-import-passphrase-not-a-real-one
+
+networkPolicy:
+  enabled: true
+  egress:
+    https: true

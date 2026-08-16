@@ -1,0 +1,110 @@
+# The scheduled export: whether a run failed, whether the schedule has stopped producing
+# successful runs, and whether it was paused and forgotten.
+#
+# The staleness case is the reason this file exists. A failed Job is loud — it leaves a failed pod,
+# a non-zero counter and an alert within minutes. A schedule that quietly stops firing leaves
+# nothing at all: no Job, no pod, no failure to count. It is invisible from every angle except the
+# timestamp of the last success, so that is the series under test here, and the test runs the clock
+# forward past two days to prove the rule actually fires rather than merely parsing.
+#
+# As elsewhere in this suite, every assertion queries `ALERTS` so the shipped expression, `for`
+# duration and labels are what get exercised — not a copy of them.
+rule_files:
+  - paperless-ngx.rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  # A run that exhausted its retries. `kube_job_status_failed` counts failed pods, so it steps off
+  # zero and stays there until the Job is garbage-collected.
+  - interval: 1m
+    input_series:
+      - series: 'kube_job_status_failed{namespace="docs", job_name="pngx-paperless-ngx-backup-29001234"}'
+        values: '0 0 1x20'
+    promql_expr_test:
+      # Still pending three minutes in: `for: 5m` has not elapsed.
+      - expr: ALERTS{alertname="PaperlessNgxBackupFailed"}
+        eval_time: 4m
+        exp_samples:
+          - labels: 'ALERTS{alertname="PaperlessNgxBackupFailed", alertstate="pending", namespace="docs", job_name="pngx-paperless-ngx-backup-29001234", severity="warning"}'
+            value: 1
+      - expr: ALERTS{alertname="PaperlessNgxBackupFailed", alertstate="firing"}
+        eval_time: 10m
+        exp_samples:
+          - labels: 'ALERTS{alertname="PaperlessNgxBackupFailed", alertstate="firing", namespace="docs", job_name="pngx-paperless-ngx-backup-29001234", severity="warning"}'
+            value: 1
+
+  # A succeeding run alerts on nothing, and a failed Job belonging to some other workload in the
+  # same namespace is not swept up by the name matcher.
+  - interval: 1m
+    input_series:
+      - series: 'kube_job_status_failed{namespace="docs", job_name="pngx-paperless-ngx-backup-29001234"}'
+        values: '0x20'
+      - series: 'kube_job_status_failed{namespace="docs", job_name="some-other-app-cleanup-1"}'
+        values: '3x20'
+    promql_expr_test:
+      # Scoped to this file's alerts rather than a bare `ALERTS`: with no Deployment series in the
+      # input, PaperlessNgxAbsent is correctly firing here and has nothing to do with backups.
+      - expr: ALERTS{alertname=~"PaperlessNgxBackup.*"}
+        eval_time: 10m
+        exp_samples: []
+
+  # A fresh success is not stale. The series is a Unix timestamp that stays put between runs, so a
+  # backup taken at the start of the window is still recent an hour later.
+  #
+  # `time()` in promtool starts at 0 and advances with the test, so the timestamp is written as a
+  # negative value: "this many seconds before the test began".
+  - interval: 5m
+    input_series:
+      - series: 'kube_cronjob_status_last_successful_time{namespace="docs", cronjob="pngx-paperless-ngx-backup"}'
+        values: '-3600x24'
+    promql_expr_test:
+      - expr: ALERTS{alertname="PaperlessNgxBackupStale"}
+        eval_time: 2h
+        exp_samples: []
+
+  # The same series two days old. This is the failure the whole alert exists for: nothing has
+  # failed, nothing is pending, there is simply no recent copy of the archive.
+  - interval: 5m
+    input_series:
+      - series: 'kube_cronjob_status_last_successful_time{namespace="docs", cronjob="pngx-paperless-ngx-backup"}'
+        values: '-172800x40'
+    promql_expr_test:
+      # Immediately over the threshold, but held by `for: 1h` — a clock skew between
+      # kube-state-metrics and Prometheus must not page anybody.
+      - expr: ALERTS{alertname="PaperlessNgxBackupStale"}
+        eval_time: 30m
+        exp_samples:
+          - labels: 'ALERTS{alertname="PaperlessNgxBackupStale", alertstate="pending", namespace="docs", cronjob="pngx-paperless-ngx-backup", severity="critical"}'
+            value: 1
+      - expr: ALERTS{alertname="PaperlessNgxBackupStale", alertstate="firing"}
+        eval_time: 90m
+        exp_samples:
+          - labels: 'ALERTS{alertname="PaperlessNgxBackupStale", alertstate="firing", namespace="docs", cronjob="pngx-paperless-ngx-backup", severity="critical"}'
+            value: 1
+
+  # A suspended schedule. Tolerated for six hours so a maintenance window does not page, then
+  # reported — because the alternative is finding out from PaperlessNgxBackupStale two days later.
+  - interval: 5m
+    input_series:
+      - series: 'kube_cronjob_spec_suspend{namespace="docs", cronjob="pngx-paperless-ngx-backup"}'
+        values: '1x100'
+    promql_expr_test:
+      - expr: ALERTS{alertname="PaperlessNgxBackupSuspended", alertstate="firing"}
+        eval_time: 4h
+        exp_samples: []
+      - expr: ALERTS{alertname="PaperlessNgxBackupSuspended", alertstate="firing"}
+        eval_time: 7h
+        exp_samples:
+          - labels: 'ALERTS{alertname="PaperlessNgxBackupSuspended", alertstate="firing", namespace="docs", cronjob="pngx-paperless-ngx-backup", severity="warning"}'
+            value: 1
+
+  # A running schedule is not a suspended one.
+  - interval: 5m
+    input_series:
+      - series: 'kube_cronjob_spec_suspend{namespace="docs", cronjob="pngx-paperless-ngx-backup"}'
+        values: '0x100'
+    promql_expr_test:
+      - expr: ALERTS{alertname="PaperlessNgxBackupSuspended"}
+        eval_time: 7h
+        exp_samples: []

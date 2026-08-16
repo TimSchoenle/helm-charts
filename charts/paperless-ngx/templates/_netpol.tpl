@@ -170,6 +170,41 @@ Usage:
       "ingress" $ingress
       "egress" $egress) -}}
 
+{{- /*
+  The backup pod. It carries its own component label, so nothing above selects it — and a
+  default-deny namespace with no policy naming it produces a Job that reaches neither DNS nor the
+  database and hangs until `activeDeadlineSeconds`, an hour later, with no error that points at
+  the network.
+
+  Its egress is the application's minus the two document converters: `document_exporter` reads
+  the database and the media volume and never renders anything. No ingress at all — it listens on
+  nothing, and the empty rule list is what makes that explicit rather than accidental.
+
+  The internet rules are reused deliberately. `backup.upload` runs in this same pod, and an
+  uploader shipping the export to object storage is exactly what `networkPolicy.egress.https` is
+  for; without it an otherwise correct upload container times out.
+*/ -}}
+{{- if $ctx.Values.backup.enabled -}}
+{{- $backupEgress := list -}}
+{{- range $rule := $egress -}}
+{{- $converter := false -}}
+{{- range $port := ($rule.ports | default list) -}}
+{{- if or (eq (int $port.port) 3000) (eq (int $port.port) 9998) -}}
+{{- $converter = true -}}
+{{- end -}}
+{{- end -}}
+{{- if not $converter -}}
+{{- $backupEgress = append $backupEgress (deepCopy $rule) -}}
+{{- end -}}
+{{- end -}}
+{{- $policies = append $policies (dict
+      "name" (include "paperless-ngx.backup.name" $ctx)
+      "component" "backup"
+      "selector" (include "paperless-ngx.netpol.componentPeer" (dict "ctx" $ctx "component" "backup") | fromYaml).selector
+      "ingress" list
+      "egress" $backupEgress) -}}
+{{- end -}}
+
 {{- /* One policy per bundled component: reachable by the application, and outbound to DNS. */ -}}
 {{- range $component := list "postgresql" "valkey" "gotenberg" "tika" -}}
 {{- if include "paperless-ngx.componentEnabled" (dict "ctx" $ctx "component" $component) -}}

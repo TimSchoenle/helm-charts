@@ -1,0 +1,458 @@
+suite: restore init container
+# Importing an export back into an empty instance.
+#
+# The shape is the argument: the import is an initContainer on the application pod, not a Job, and
+# the assertions below are mostly about why. It has to hold the media and data directories alone,
+# it has to finish before the consumer and the scheduler exist, it has to work under
+# ReadWriteOnce, and it has to run exactly once however many times the pod restarts. An ordinary
+# Job satisfies none of those.
+templates:
+  - deployment.yaml
+  - configmap.yaml
+  - secret.yaml
+set:
+  paperless.secretKey: k
+tests:
+  - it: adds no init container to an ordinary release
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - isNull:
+          path: spec.template.spec.initContainers
+
+  # Before the webserver, the consumer and the scheduler — all of which live in the container this
+  # runs ahead of, and any of which would race the import for the same directories.
+  - it: runs the import ahead of the application container
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      restore.enabled: true
+      restore.source.existingClaim: old-export
+    asserts:
+      - lengthEqual:
+          path: spec.template.spec.initContainers
+          count: 1
+      - equal:
+          path: spec.template.spec.initContainers[0].name
+          value: import
+      - equal:
+          path: spec.template.spec.containers[0].name
+          value: paperless-ngx
+
+  - it: overrides the image entrypoint rather than inheriting the supervision tree
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      restore.enabled: true
+      restore.source.existingClaim: old-export
+    asserts:
+      - equal:
+          path: spec.template.spec.initContainers[0].command
+          value: [/usr/bin/bash, -c]
+      - matchRegex:
+          path: spec.template.spec.initContainers[0].args[0]
+          pattern: 'document_importer "\$\{RESTORE_SOURCE\}"'
+
+  # document_importer inserts rows and does not create the schema, so against the empty database it
+  # insists on it would fail on the first table.
+  - it: migrates before importing
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      restore.enabled: true
+      restore.source.existingClaim: old-export
+    asserts:
+      - matchRegex:
+          path: spec.template.spec.initContainers[0].args[0]
+          pattern: python3 manage.py migrate --no-input
+
+  - it: can skip the migration when something else already ran it
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      restore.enabled: true
+      restore.source.existingClaim: old-export
+      restore.runMigrations: false
+    asserts:
+      - notMatchRegex:
+          path: spec.template.spec.initContainers[0].args[0]
+          pattern: manage.py migrate
+
+  # An initContainer runs on every pod start. Without the marker an upgrade months later would
+  # re-run the import against the archive it wrote itself and fail the pod.
+  - it: runs exactly once, guarded by a marker on the data volume
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      restore.enabled: true
+      restore.source.existingClaim: old-export
+    asserts:
+      - contains:
+          path: spec.template.spec.initContainers[0].env
+          content:
+            name: RESTORE_MARKER
+            value: /usr/src/paperless/data/.helm-restore-complete
+      - matchRegex:
+          path: spec.template.spec.initContainers[0].args[0]
+          pattern: 'if \[ -e "\$\{RESTORE_MARKER\}" \]; then'
+      - matchRegex:
+          path: spec.template.spec.initContainers[0].args[0]
+          pattern: 'exit 0'
+
+  # Written after the importer returns, never before: an interrupted import must leave no marker,
+  # so the next start retries rather than coming up serving half an archive.
+  - it: writes the marker only after a successful import
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      restore.enabled: true
+      restore.source.existingClaim: old-export
+    asserts:
+      - matchRegex:
+          path: spec.template.spec.initContainers[0].args[0]
+          pattern: 'set -euo pipefail'
+      - matchRegex:
+          path: spec.template.spec.initContainers[0].args[0]
+          pattern: 'document_importer "\$\{RESTORE_SOURCE\}" "\$\{args\[@\]\}"\n\ndate -u'
+
+  - it: mounts the source claim read-only and imports from its root
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      restore.enabled: true
+      restore.source.existingClaim: old-export
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: restore-source
+            persistentVolumeClaim:
+              claimName: old-export
+              readOnly: true
+      - contains:
+          path: spec.template.spec.initContainers[0].volumeMounts
+          content:
+            name: restore-source
+            mountPath: /restore
+            readOnly: true
+      - contains:
+          path: spec.template.spec.initContainers[0].env
+          content:
+            name: RESTORE_SOURCE
+            value: /restore
+
+  - it: imports from a path inside the source claim
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      restore.enabled: true
+      restore.source.existingClaim: old-export
+      restore.source.subPath: dumps/paperless-export-2026-01-01.zip
+    asserts:
+      - contains:
+          path: spec.template.spec.initContainers[0].env
+          content:
+            name: RESTORE_SOURCE
+            value: /restore/dumps/paperless-export-2026-01-01.zip
+
+  # Rebuilding an instance in place from the backup it took itself: no second claim, and no
+  # restore-source volume to attach.
+  - it: imports from this release's own export volume
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      restore.enabled: true
+      restore.source.useExportVolume: true
+      persistence.export.enabled: true
+    asserts:
+      - contains:
+          path: spec.template.spec.initContainers[0].env
+          content:
+            name: RESTORE_SOURCE
+            value: /usr/src/paperless/export
+      - notContains:
+          path: spec.template.spec.initContainers[0].volumeMounts
+          content:
+            name: restore-source
+            mountPath: /restore
+            readOnly: true
+
+  # The application container itself has no business seeing the source claim; only the import does.
+  - it: keeps the source claim out of the application container
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      restore.enabled: true
+      restore.source.existingClaim: old-export
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: restore-source
+            mountPath: /restore
+            readOnly: true
+
+  - it: keeps the import passphrase out of the pod spec
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      restore.enabled: true
+      restore.source.existingClaim: old-export
+      restore.passphrase: hunter2
+    asserts:
+      - contains:
+          path: spec.template.spec.initContainers[0].env
+          content:
+            name: RESTORE_PASSPHRASE
+            valueFrom:
+              secretKeyRef:
+                name: RELEASE-NAME-paperless-ngx
+                key: import-passphrase
+      - notMatchRegex:
+          path: spec.template.spec.initContainers[0].args[0]
+          pattern: hunter2
+      - matchRegex:
+          path: spec.template.spec.initContainers[0].args[0]
+          pattern: '--passphrase "\$\{RESTORE_PASSPHRASE\}"'
+
+  - it: supplies the environment the image's own wrapper scripts expect
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      restore.enabled: true
+      restore.source.existingClaim: old-export
+    asserts:
+      - contains:
+          path: spec.template.spec.initContainers[0].env
+          content:
+            name: PAPERLESS_SRC_DIR
+            value: /usr/src/paperless/src
+      - contains:
+          path: spec.template.spec.initContainers[0].env
+          content:
+            name: USER_IS_NON_ROOT
+            value: "true"
+
+  - it: reads the same configuration the application will start with
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      restore.enabled: true
+      restore.source.existingClaim: old-export
+      database.engine: postgresql
+      database.host: postgres.data.svc
+      database.password: db-pw
+    asserts:
+      - equal:
+          path: spec.template.spec.initContainers[0].envFrom[0].configMapRef.name
+          value: RELEASE-NAME-paperless-ngx
+      - contains:
+          path: spec.template.spec.initContainers[0].env
+          content:
+            name: PAPERLESS_DBPASS
+            valueFrom:
+              secretKeyRef:
+                name: RELEASE-NAME-paperless-ngx
+                key: database-password
+
+  # The application's HTTP probes must not be attached to a one-shot command; they would fail
+  # immediately and the API server rejects probes on an initContainer outright.
+  - it: carries no probes
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      restore.enabled: true
+      restore.source.existingClaim: old-export
+    asserts:
+      - isNull:
+          path: spec.template.spec.initContainers[0].startupProbe
+      - isNull:
+          path: spec.template.spec.initContainers[0].livenessProbe
+      - isNull:
+          path: spec.template.spec.initContainers[0].readinessProbe
+
+  - it: applies the restricted container baseline
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      restore.enabled: true
+      restore.source.existingClaim: old-export
+    asserts:
+      - equal:
+          path: spec.template.spec.initContainers[0].securityContext.allowPrivilegeEscalation
+          value: false
+      - equal:
+          path: spec.template.spec.initContainers[0].securityContext.runAsNonRoot
+          value: true
+      - equal:
+          path: spec.template.spec.initContainers[0].securityContext.capabilities.drop
+          value: [ALL]
+
+  - it: is sized for deserialising a manifest rather than for OCR
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      restore.enabled: true
+      restore.source.existingClaim: old-export
+      restore.batchSize: 100
+    asserts:
+      - equal:
+          path: spec.template.spec.initContainers[0].resources.limits.memory
+          value: 512Mi
+      - matchRegex:
+          path: spec.template.spec.initContainers[0].args[0]
+          pattern: --batch-size 100
+
+  # --- a remote archive ------------------------------------------------------------------------
+
+  # The archive is already off-cluster — object storage, another cluster's backup bucket — and
+  # staging it into a PersistentVolume by hand is the only step in the way.
+  - it: downloads the archive from a URL and imports it
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      restore.enabled: true
+      persistence.export.enabled: true
+      restore.source.url: https://backups.example.com/paperless-2026-01-01.zip
+    asserts:
+      - contains:
+          path: spec.template.spec.initContainers[0].env
+          content:
+            name: RESTORE_SOURCE
+            value: /usr/src/paperless/export/.restore/archive.zip
+      - matchRegex:
+          path: spec.template.spec.initContainers[0].args[0]
+          pattern: 'curl --fail --location --show-error --silent'
+      - matchRegex:
+          path: spec.template.spec.initContainers[0].args[0]
+          pattern: 'document_importer "\$\{RESTORE_SOURCE\}"'
+
+  # A presigned URL's query string is the authorisation, so it belongs beside the passphrases and
+  # not in a ConfigMap that `kubectl describe` hands to the whole namespace.
+  - it: treats the download URL as a credential
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      restore.enabled: true
+      persistence.export.enabled: true
+      restore.source.url: https://backups.example.com/paperless.zip?sig=secret
+    asserts:
+      - contains:
+          path: spec.template.spec.initContainers[0].env
+          content:
+            name: RESTORE_URL
+            valueFrom:
+              secretKeyRef:
+                name: RELEASE-NAME-paperless-ngx
+                key: restore-url
+      - notMatchRegex:
+          path: spec.template.spec.initContainers[0].args[0]
+          pattern: sig=secret
+
+  - it: reads the URL from an operator-supplied Secret under its own key
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      restore.enabled: true
+      persistence.export.enabled: true
+      existingSecret: paperless-credentials
+      restore.source.urlExistingSecretKey: presigned-export-url
+    asserts:
+      - contains:
+          path: spec.template.spec.initContainers[0].env
+          content:
+            name: RESTORE_URL
+            valueFrom:
+              secretKeyRef:
+                name: paperless-credentials
+                key: presigned-export-url
+
+  # Without --fail curl writes the 403 body to the file and exits 0, and the import fails much
+  # later on a zip that is really an XML error page. The .part rename is what makes an interrupted
+  # transfer safe to retry rather than something the next start mistakes for a finished archive.
+  - it: never mistakes a failed transfer for a finished archive
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      restore.enabled: true
+      persistence.export.enabled: true
+      restore.source.url: https://backups.example.com/paperless.zip
+    asserts:
+      - matchRegex:
+          path: spec.template.spec.initContainers[0].args[0]
+          pattern: '--output "\$\{RESTORE_SOURCE\}\.part"'
+      - matchRegex:
+          path: spec.template.spec.initContainers[0].args[0]
+          pattern: 'mv -- "\$\{RESTORE_SOURCE\}\.part" "\$\{RESTORE_SOURCE\}"'
+
+  # Verified on every start, not only after a fresh download, so a reused file gets the same
+  # scrutiny as a new one.
+  - it: verifies the archive against a checksum before importing it
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      restore.enabled: true
+      persistence.export.enabled: true
+      restore.source.url: https://backups.example.com/paperless.zip
+      restore.source.checksum: 4f0e0b57b0a06a5e9f4a4fa0a24d0b0d3a2e6f2c1b8d7a9c0e1f2a3b4c5d6e7f
+    asserts:
+      - contains:
+          path: spec.template.spec.initContainers[0].env
+          content:
+            name: RESTORE_CHECKSUM
+            value: 4f0e0b57b0a06a5e9f4a4fa0a24d0b0d3a2e6f2c1b8d7a9c0e1f2a3b4c5d6e7f
+      - matchRegex:
+          path: spec.template.spec.initContainers[0].args[0]
+          pattern: 'sha256sum --check --strict -'
+
+  - it: says so when a downloaded archive is imported unverified
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      restore.enabled: true
+      persistence.export.enabled: true
+      restore.source.url: https://backups.example.com/paperless.zip
+    asserts:
+      - matchRegex:
+          path: spec.template.spec.initContainers[0].args[0]
+          pattern: 'WARNING: restore.source.checksum is empty'
+
+  - it: attaches no source claim for a URL import
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      restore.enabled: true
+      persistence.export.enabled: true
+      restore.source.url: https://backups.example.com/paperless.zip
+    asserts:
+      - notContains:
+          path: spec.template.spec.volumes
+          content:
+            name: restore-source
+            persistentVolumeClaim:
+              claimName: old-export
+              readOnly: true

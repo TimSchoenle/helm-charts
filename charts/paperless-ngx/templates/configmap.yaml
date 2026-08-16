@@ -152,12 +152,16 @@ data:
   PAPERLESS_DBPORT: {{ include "paperless-ngx.databasePort" . | quote }}
   PAPERLESS_DBNAME: {{ .Values.database.name | quote }}
   PAPERLESS_DBUSER: {{ .Values.database.user | quote }}
-  {{- with .Values.database.sslMode }}
-  PAPERLESS_DBSSLMODE: {{ . | quote }}
   {{- end }}
-  {{- if .Values.database.poolSize }}
-  PAPERLESS_DB_POOLSIZE: {{ .Values.database.poolSize | quote }}
-  {{- end }}
+  {{- /*
+    One consolidated `PAPERLESS_DB_OPTIONS` rather than the per-option variables. Upstream
+    deprecated `PAPERLESS_DBSSLMODE` and `PAPERLESS_DB_POOLSIZE` (among others) in favour of it
+    and removes them in 3.2; until then they still work and log a startup warning for each,
+    which is the only symptom until the release that drops them turns it into a silently
+    unencrypted connection. See `paperless-ngx.databaseOptions` for the key translation.
+  */}}
+  {{- with (include "paperless-ngx.databaseOptions" .) }}
+  PAPERLESS_DB_OPTIONS: {{ . | quote }}
   {{- end }}
 
   {{- with .Values.redis.prefix }}

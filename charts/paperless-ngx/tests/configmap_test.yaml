@@ -185,6 +185,70 @@ tests:
           path: data.PAPERLESS_DBPORT
           value: "3306"
 
+  # Upstream deprecated the per-option database variables in favour of one consolidated string and
+  # removes them in 3.2. Emitting them still works today, and logs a deprecation warning per
+  # variable at every start — until the release that drops them turns `sslmode` into a silently
+  # unencrypted connection.
+  - it: consolidates the database driver options rather than emitting the deprecated variables
+    set:
+      database.engine: postgresql
+      database.host: postgres.data.svc
+      database.password: p
+      database.sslMode: require
+      database.poolSize: 10
+    asserts:
+      - equal:
+          path: data.PAPERLESS_DB_OPTIONS
+          value: pool.max_size=10,sslmode=require
+      - notExists:
+          path: data.PAPERLESS_DBSSLMODE
+      - notExists:
+          path: data.PAPERLESS_DB_POOLSIZE
+
+  # The option names are engine-specific, which is the part no single spelling can paper over.
+  - it: uses MariaDB's own spelling of the TLS option
+    set:
+      database.engine: mariadb
+      database.host: mariadb.data.svc
+      database.password: p
+      database.sslMode: REQUIRED
+    asserts:
+      - equal:
+          path: data.PAPERLESS_DB_OPTIONS
+          value: ssl_mode=REQUIRED
+
+  - it: carries driver options this chart does not model
+    set:
+      database.engine: postgresql
+      database.host: postgres.data.svc
+      database.password: p
+      database.options:
+        sslrootcert: /certs/ca.pem
+        connect_timeout: 10
+    asserts:
+      - equal:
+          path: data.PAPERLESS_DB_OPTIONS
+          value: connect_timeout=10,sslrootcert=/certs/ca.pem
+
+  # So an option the chart models can still be overridden without inventing a second mechanism.
+  - it: lets an explicit option win over the modelled shorthand
+    set:
+      database.engine: postgresql
+      database.host: postgres.data.svc
+      database.password: p
+      database.sslMode: require
+      database.options:
+        sslmode: verify-full
+    asserts:
+      - equal:
+          path: data.PAPERLESS_DB_OPTIONS
+          value: sslmode=verify-full
+
+  - it: emits nothing at all when there are no options to set
+    asserts:
+      - notExists:
+          path: data.PAPERLESS_DB_OPTIONS
+
   - it: renders extra settings through the template engine
     set:
       paperless.extraConfig:

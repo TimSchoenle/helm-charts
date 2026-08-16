@@ -272,3 +272,94 @@ tests:
       - hasDocuments:
           count: 4
         template: ciliumnetworkpolicy.yaml
+
+  # The backup pod carries its own component label, so none of the policies above select it. In a
+  # default-deny namespace that means a Job which reaches neither DNS nor the database and hangs
+  # until activeDeadlineSeconds, an hour later, with nothing that points at the network.
+  - it: covers the backup pod, which no other policy in the release selects
+    set:
+      persistence.export.enabled: true
+      backup.enabled: true
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-paperless-ngx-backup
+    asserts:
+      - template: networkpolicy.yaml
+        equal:
+          path: spec.podSelector.matchLabels["app.kubernetes.io/component"]
+          value: backup
+      - template: networkpolicy.yaml
+        equal:
+          path: spec.policyTypes
+          value: [Ingress, Egress]
+      # It listens on nothing. Stated as an empty list rather than omitted, which would mean
+      # "no ingress rules apply" instead of "no ingress is allowed".
+      - template: networkpolicy.yaml
+        equal:
+          path: spec.ingress
+          value: []
+      - template: networkpolicy.yaml
+        contains:
+          path: spec.egress
+          content:
+            to:
+              - podSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: paperless-ngx
+                    app.kubernetes.io/instance: RELEASE-NAME
+                    app.kubernetes.io/component: valkey
+            ports:
+              - port: 6379
+                protocol: TCP
+
+  # document_exporter reads the database and copies files; it never renders a document, so the two
+  # converters are permissions it has no use for.
+  - it: does not let the backup pod reach the document converters
+    set:
+      persistence.export.enabled: true
+      backup.enabled: true
+      tika.enabled: true
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-paperless-ngx-backup
+    asserts:
+      - template: networkpolicy.yaml
+        notContains:
+          path: spec.egress
+          content:
+            to:
+              - podSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: paperless-ngx
+                    app.kubernetes.io/instance: RELEASE-NAME
+                    app.kubernetes.io/component: tika
+            ports:
+              - port: 9998
+                protocol: TCP
+
+  # backup.upload runs in the same pod, so an uploader shipping the export to object storage needs
+  # the same internet egress the application would.
+  - it: lets the backup pod out to the internet when the application may go there
+    set:
+      persistence.export.enabled: true
+      backup.enabled: true
+      networkPolicy.egress.https: true
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-paperless-ngx-backup
+    asserts:
+      - template: networkpolicy.yaml
+        contains:
+          path: spec.egress
+          content:
+            to:
+              - ipBlock:
+                  cidr: 0.0.0.0/0
+                  except:
+                    - 10.0.0.0/8
+                    - 172.16.0.0/12
+                    - 192.168.0.0/16
+                    - 169.254.0.0/16
+            ports:
+              - port: 443
+                protocol: TCP

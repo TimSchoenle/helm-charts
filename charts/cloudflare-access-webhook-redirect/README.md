@@ -1,6 +1,6 @@
 # cloudflare-access-webhook-redirect
 
-![Version: 4.1.1](https://img.shields.io/badge/Version-4.1.1-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: v1.1.0](https://img.shields.io/badge/AppVersion-v1.1.0-informational?style=flat-square)
+![Version: 5.0.0](https://img.shields.io/badge/Version-5.0.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: v1.1.0](https://img.shields.io/badge/AppVersion-v1.1.0-informational?style=flat-square)
 
 A Helm chart for deploying the Cloudflare Access Webhook Redirect service. This service acts as an authentication proxy that validates requests using Cloudflare Access Service Auth tokens before forwarding them to target backend services.
 
@@ -211,6 +211,34 @@ restriction — the NetworkPolicy API reads a missing `to` as *any destination*,
 the cloud instance metadata endpoint at `169.254.169.254`.
 
 ## Upgrading
+
+### 4.x to 5.0
+
+`resourcesPreset` is gone. `resources` is the only sizing knob left, and it already ships with
+the numbers this chart runs on — so a release that never set a preset needs no change, and a
+`helm upgrade` with a values file that still carries one fails schema validation naming the key
+rather than quietly ignoring it.
+
+A preset was a word that meant something different in every chart, and reading the library was
+the only way to find out what `medium` actually reserved. Substitute the block it stood for:
+
+| Preset | requests | limits |
+|---|---|---|
+| `nano` | `cpu: 10m`, `memory: 32Mi` | `memory: 64Mi` |
+| `micro` | `cpu: 25m`, `memory: 64Mi` | `memory: 128Mi` |
+| `small` | `cpu: 50m`, `memory: 128Mi` | `memory: 256Mi` |
+| `medium` | `cpu: 100m`, `memory: 256Mi` | `memory: 512Mi` |
+| `large` | `cpu: 250m`, `memory: 512Mi` | `memory: 1Gi` |
+
+No preset ever set a CPU limit, and this chart's defaults still do not: a CPU limit cannot
+protect the node the way a memory limit does — it only throttles the workload that owns it once
+it is hit. Set `resources.limits.cpu` if you want one.
+
+The same release also documents the `networkPolicy` knobs the `common` library always accepted
+but this chart never listed: `networkPolicy.extraIngress`, `networkPolicy.extraEgress`,
+`networkPolicy.ingress.monitoring.namespaceSelector`, and a `ports` list on the monitoring and
+controller rules. They are additions — nothing that worked before behaves differently.
+
 
 ### 3.x to 4.0
 
@@ -472,7 +500,7 @@ policy pointing at the wrong Gateway looks correct and blocks everything.
 | livenessProbe.timeoutSeconds | int | `5` | Probe timeout |
 | nameOverride | string | `""` | Override the chart name |
 | namespaceOverride | string | `""` | Deploy into a namespace other than the release namespace. |
-| networkPolicy | object | `{"cilium":{"description":"","egress":{"customRules":[],"dnsMatchPatterns":[],"entityPorts":[],"fqdnPorts":[],"httpRules":[],"toEntities":[],"toFQDNs":[]},"enableDefaultDeny":true,"extraEgress":[],"extraIngress":[],"ingress":{"customRules":[],"fromEntities":[]}},"egress":{"cidr":"0.0.0.0/0","customRules":[],"dns":{"enabled":true,"namespaceSelector":{"kubernetes.io/metadata.name":"kube-system"},"podSelector":{"k8s-app":"kube-dns"}},"enabled":true,"except":["10.0.0.0/8","172.16.0.0/12","192.168.0.0/16","169.254.0.0/16"],"http":{"enabled":false},"https":{"enabled":true}},"enabled":false,"engine":"kubernetes","ingress":{"controller":{"enabled":true,"namespace":"traefik","selector":{"app.kubernetes.io/name":"traefik"}},"customRules":[],"enabled":true,"gateway":{"enabled":true,"namespace":"","ports":[],"selector":{}},"monitoring":{"enabled":true,"namespace":"monitoring"}}}` | Network policy configuration |
+| networkPolicy | object | `{"cilium":{"description":"","egress":{"customRules":[],"dnsMatchPatterns":[],"entityPorts":[],"fqdnPorts":[],"httpRules":[],"toEntities":[],"toFQDNs":[]},"enableDefaultDeny":true,"extraEgress":[],"extraIngress":[],"ingress":{"customRules":[],"fromEntities":[]}},"egress":{"cidr":"0.0.0.0/0","customRules":[],"dns":{"enabled":true,"namespaceSelector":{"kubernetes.io/metadata.name":"kube-system"},"podSelector":{"k8s-app":"kube-dns"}},"enabled":true,"except":["10.0.0.0/8","172.16.0.0/12","192.168.0.0/16","169.254.0.0/16"],"http":{"enabled":false},"https":{"enabled":true}},"enabled":false,"engine":"kubernetes","extraEgress":[],"extraIngress":[],"ingress":{"controller":{"enabled":true,"namespace":"traefik","ports":[],"selector":{"app.kubernetes.io/name":"traefik"}},"customRules":[],"enabled":true,"gateway":{"enabled":true,"namespace":"","ports":[],"selector":{}},"monitoring":{"enabled":true,"namespace":"monitoring","namespaceSelector":{},"ports":[]}}}` | Network policy configuration |
 | networkPolicy.cilium | object | `{"description":"","egress":{"customRules":[],"dnsMatchPatterns":[],"entityPorts":[],"fqdnPorts":[],"httpRules":[],"toEntities":[],"toFQDNs":[]},"enableDefaultDeny":true,"extraEgress":[],"extraIngress":[],"ingress":{"customRules":[],"fromEntities":[]}}` | Cilium-only additions, used when `engine` is `cilium` or `both`. Everything above is translated into the CiliumNetworkPolicy automatically; these are the rules the portable API has no way to express.  Note that `extraIngress`, `extraEgress` and the per-section `customRules` above are *not* carried over: those are verbatim `networking.k8s.io/v1` rule objects and are not valid CNP. The fields below are their counterparts. |
 | networkPolicy.cilium.description | string | `""` | `spec.description`, which Cilium surfaces in `cilium policy get` and in Hubble flow verdicts. The one place to record why a rule exists where an operator debugging a drop will actually see it. |
 | networkPolicy.cilium.egress | object | `{"customRules":[],"dnsMatchPatterns":[],"entityPorts":[],"fqdnPorts":[],"httpRules":[],"toEntities":[],"toFQDNs":[]}` | Cilium-only egress rules. |
@@ -504,10 +532,13 @@ policy pointing at the wrong Gateway looks correct and blocks everything.
 | networkPolicy.egress.https.enabled | bool | `true` | Allow egress to TCP/443 on the destinations described by `cidr`/`except` |
 | networkPolicy.enabled | bool | `false` | Enable network policies |
 | networkPolicy.engine | string | `"kubernetes"` | Which policy dialect to render. `kubernetes` emits the portable `networking.k8s.io/v1` pair; `cilium` emits `CiliumNetworkPolicy`, which can express FQDN destinations, named entities and L7 rules that the portable API cannot; `both` emits both, for the window in which a cluster is migrating between CNIs.  The engine picks the dialect, not the rules: every value below is translated either way. |
-| networkPolicy.ingress | object | `{"controller":{"enabled":true,"namespace":"traefik","selector":{"app.kubernetes.io/name":"traefik"}},"customRules":[],"enabled":true,"gateway":{"enabled":true,"namespace":"","ports":[],"selector":{}},"monitoring":{"enabled":true,"namespace":"monitoring"}}` | Ingress configuration |
-| networkPolicy.ingress.controller | object | `{"enabled":true,"namespace":"traefik","selector":{"app.kubernetes.io/name":"traefik"}}` | Ingress Controller configuration |
+| networkPolicy.extraEgress | list | `[]` | Extra egress rules appended regardless of `egress.enabled`. |
+| networkPolicy.extraIngress | list | `[]` | Extra ingress rules appended regardless of `ingress.enabled`. |
+| networkPolicy.ingress | object | `{"controller":{"enabled":true,"namespace":"traefik","ports":[],"selector":{"app.kubernetes.io/name":"traefik"}},"customRules":[],"enabled":true,"gateway":{"enabled":true,"namespace":"","ports":[],"selector":{}},"monitoring":{"enabled":true,"namespace":"monitoring","namespaceSelector":{},"ports":[]}}` | Ingress configuration |
+| networkPolicy.ingress.controller | object | `{"enabled":true,"namespace":"traefik","ports":[],"selector":{"app.kubernetes.io/name":"traefik"}}` | Ingress Controller configuration |
 | networkPolicy.ingress.controller.enabled | bool | `true` | Allow ingress from Ingress Controller |
 | networkPolicy.ingress.controller.namespace | string | `"traefik"` | Namespace where Ingress Controller is running (default: traefik) |
+| networkPolicy.ingress.controller.ports | list | `[]` | Restrict the rule to specific ports. Empty means all ports. |
 | networkPolicy.ingress.controller.selector | object | `{"app.kubernetes.io/name":"traefik"}` | Pod selector for Ingress Controller (default: Traefik label) |
 | networkPolicy.ingress.customRules | list | `[]` | Custom ingress rules |
 | networkPolicy.ingress.enabled | bool | `true` | Enable ingress rules |
@@ -516,9 +547,11 @@ policy pointing at the wrong Gateway looks correct and blocks everything.
 | networkPolicy.ingress.gateway.namespace | string | `""` | Namespace the data plane runs in. Empty derives it from `gateway.parentRefs`. |
 | networkPolicy.ingress.gateway.ports | list | `[]` | Restrict the rule to specific ports. Empty means all ports. |
 | networkPolicy.ingress.gateway.selector | object | `{}` | Pod selector matching the data plane. Empty derives `gateway.networking.k8s.io/gateway-name: <parentRef>`, the label Cilium, Envoy Gateway, Istio and NGINX Gateway Fabric all put on the pods they provision for a Gateway. |
-| networkPolicy.ingress.monitoring | object | `{"enabled":true,"namespace":"monitoring"}` | Monitoring configuration for ingress |
+| networkPolicy.ingress.monitoring | object | `{"enabled":true,"namespace":"monitoring","namespaceSelector":{},"ports":[]}` | Monitoring configuration for ingress |
 | networkPolicy.ingress.monitoring.enabled | bool | `true` | Allow ingress from monitoring namespace |
 | networkPolicy.ingress.monitoring.namespace | string | `"monitoring"` | Namespace where monitoring tools are running |
+| networkPolicy.ingress.monitoring.namespaceSelector | object | `{}` | Namespace selector matching the monitoring namespace, replacing `namespace` when set. For a Prometheus labelled rather than named, or one of several namespaces that scrape. |
+| networkPolicy.ingress.monitoring.ports | list | `[]` | Restrict the rule to specific ports. Empty means all ports. |
 | nodeSelector | object | `{}` | Node selector labels for scheduling |
 | podAnnotations | object | `{}` | Additional annotations for the Pod metadata |
 | podAntiAffinity | string | `""` | Shorthand for spreading replicas across nodes. `soft` prefers, `hard` requires. Ignored when `affinity` is set. |
@@ -544,7 +577,6 @@ policy pointing at the wrong Gateway looks correct and blocks everything.
 | resources.limits.memory | string | `"50Mi"` | Maximum memory usage (e.g. 64Mi) |
 | resources.requests.cpu | string | `"10m"` | Guaranteed CPU request |
 | resources.requests.memory | string | `"35Mi"` | Guaranteed memory request |
-| resourcesPreset | string | `""` | Named resource sizing. Ignored when `resources` is set. |
 | revisionHistoryLimit | int | `3` | Number of old ReplicaSets retained for rollback. |
 | securityContext | object | `{}` | Container security context, merged over the preset. The preset mounts the root filesystem read-only; a writable /tmp is provided automatically via an emptyDir volume. |
 | securityContextPreset | string | `"restricted"` | Container security context baseline. `restricted` drops all Linux capabilities and forbids privilege escalation, running as root and a writable root filesystem. |
@@ -584,6 +616,7 @@ policy pointing at the wrong Gateway looks correct and blocks everything.
 | Name | Email | Url |
 | ---- | ------ | --- |
 | Tim Schönle |  | <https://github.com/TimSchoenle> |
+
 
 ----------------------------------------------
 Autogenerated from chart metadata using [helm-docs v1.14.2](https://github.com/norwoodj/helm-docs/releases/v1.14.2)

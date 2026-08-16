@@ -47,8 +47,6 @@ Args: the root context.
 {{- $values := mergeOverwrite (deepCopy ($root.Values.defaults | default dict)) (dict
       "image" (merge (deepCopy $bootstrap.image) (deepCopy ($root.Values.image | default dict)))
       "imagePullSecrets" ($root.Values.imagePullSecrets | default list)
-      "resourcesPreset" $bootstrap.resourcesPreset
-      "resources" dict
       "startupProbe" (dict "enabled" false)
       "livenessProbe" (dict "enabled" false)
       "readinessProbe" (dict "enabled" false)) -}}
@@ -57,6 +55,11 @@ Args: the root context.
   so a service's extra environment and volumes would otherwise leak into a one-shot command
   that has no use for them — and an extra volume the bootstrap container never mounts.
 */ -}}
+{{- /*
+  Replaced wholesale rather than merged, so `bootstrap.resources` is the whole answer for a
+  one-shot command and `defaults.resources` cannot show through key by key.
+*/ -}}
+{{- $_ := set $values "resources" (deepCopy $bootstrap.resources) -}}
 {{- $_ := set $values "extraEnv" list -}}
 {{- $_ := set $values "extraVolumeMounts" list -}}
 {{- $_ := set $values "extraVolumes" list -}}

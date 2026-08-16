@@ -15,10 +15,17 @@ docs: schema chart-readmes
 #
 # Needs the dependency tree extracted, not just built: the generator resolves the library chart's
 # definitions from `charts/<chart>/charts/common/`. Run `just deps` first.
+#
+# Two invocations, because one cannot cover both. Walking `charts/` finds `charts/common` and the
+# extracted copy of it under every consumer, and the generator keys its results by chart *name* —
+# so the vendored copies shadow the library itself and its own `values.schema.json` is never
+# written. That is silent: the stale file stays checked in and the run exits 0. The second pass
+# points straight at the library, with `--no-dependencies` because a library chart has none.
 [doc("Generate every chart's values.schema.json from the @schema blocks in its values.yaml")]
 [group('docs')]
 schema:
     helm schema --add-schema-reference --chart-search-root {{ charts }}
+    helm schema --add-schema-reference --chart-search-root {{ charts }}/common --no-dependencies
 
 # Render every chart's README.md from its README.md.gotmpl.
 [group('docs')]

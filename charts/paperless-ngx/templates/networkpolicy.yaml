@@ -81,7 +81,7 @@ spec:
     case — an unpublished application admits nobody — and `ingress: null` says the same thing to
     the API server while reading as an accident to everyone else.
   */}}
-  {{- $extraIngress := ternary $.Values.networkPolicy.ingress.extraRules list (eq $policy.component "server") }}
+  {{- $extraIngress := ternary $.Values.networkPolicy.extraIngress list (eq $policy.component "server") }}
   ingress:{{ if not (or $policy.ingress $extraIngress) }} []{{ end }}
     {{- range $rule := $policy.ingress }}
     - from:
@@ -90,11 +90,11 @@ spec:
         {{- include "paperless-ngx.netpol.ports" $rule.ports | nindent 8 }}
     {{- end }}
     {{- if eq $policy.component "server" }}
-    {{- with $.Values.networkPolicy.ingress.extraRules }}
+    {{- with $.Values.networkPolicy.extraIngress }}
     {{- include "common.tplvalues.render" (dict "value" . "context" $) | nindent 4 }}
     {{- end }}
     {{- end }}
-  {{- $extraEgress := ternary $.Values.networkPolicy.egress.extraRules list (eq $policy.component "server") }}
+  {{- $extraEgress := ternary $.Values.networkPolicy.extraEgress list (eq $policy.component "server") }}
   egress:{{ if not (or $policy.egress $extraEgress) }} []{{ end }}
     {{- range $rule := $policy.egress }}
     {{- if $rule.dns }}
@@ -118,7 +118,7 @@ spec:
     {{- end }}
     {{- end }}
     {{- if eq $policy.component "server" }}
-    {{- with $.Values.networkPolicy.egress.extraRules }}
+    {{- with $.Values.networkPolicy.extraEgress }}
     {{- include "common.tplvalues.render" (dict "value" . "context" $) | nindent 4 }}
     {{- end }}
     {{- end }}

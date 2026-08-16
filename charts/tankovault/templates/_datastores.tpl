@@ -33,11 +33,7 @@ app.kubernetes.io/component: {{ .component }}
 A scoped render context for a bundled datastore, so `common.resources`,
 `common.containerSecurityContext` and `common.podSecurityContext` apply to it too.
 
-`resources`, when passed, wins over `resourcesPreset` exactly as `common.resources` defines it.
-It exists for the one datastore no preset can size — the largest is a 1Gi memory limit, and a
-Camoufox browser tier needs more than that before it has solved anything.
-
-Args: ctx (root), component, runAsUser, readOnlyRootFilesystem.
+Args: ctx (root), component, resources, runAsUser, readOnlyRootFilesystem.
 */}}
 {{- define "tankovault.datastore.values" -}}
 {{- $ctx := .ctx -}}
@@ -53,7 +49,6 @@ Args: ctx (root), component, runAsUser, readOnlyRootFilesystem.
       "nameOverride" (include "common.name" $ctx)
       "image" (merge (deepCopy .image) (deepCopy ($ctx.Values.image | default dict)))
       "imagePullSecrets" ($ctx.Values.imagePullSecrets | default list)
-      "resourcesPreset" (.resourcesPreset | default "medium")
       "resources" (.resources | default dict)
       "podSecurityContextPreset" "restricted"
       "podSecurityContext" (dict "runAsUser" (.runAsUser | int) "runAsGroup" (.runAsGroup | int) "fsGroup" (.fsGroup | int))

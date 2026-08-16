@@ -68,10 +68,27 @@ host_path() {
 }
 
 workdir=""
+
+# The containers write into the mounted volumes as uid 1000, inside directories they create
+# themselves with their own umask. A runner that is not uid 1000 cannot unlink anything in those
+# directories, however the tree above them was chmod'ed — unlinking needs write on the parent, and
+# the parent is the container's. So state a container wrote is removed from a container, as root,
+# over the same mount; that is also what emptying a PersistentVolume amounts to.
+#
+# Only paths beneath the mount point are ever passed: `/workdir` is the mount itself and cannot be
+# unlinked from inside it.
+scrub() {
+  docker run --rm -u 0:0 -v "$(host_path "${workdir}")":/workdir \
+    --entrypoint /bin/sh "${image}" -c 'rm -rf -- "$@"' scrub "$@" >/dev/null
+}
+
 cleanup() {
   docker rm --force "${postgres}" >/dev/null 2>&1 || true
   docker network rm "${network}" >/dev/null 2>&1 || true
-  [ -n "${workdir}" ] && rm -rf -- "${workdir}"
+  if [ -n "${workdir}" ]; then
+    scrub /workdir/media /workdir/data /workdir/export /workdir/tmp >/dev/null 2>&1 || true
+    rm -rf -- "${workdir}"
+  fi
   return 0
 }
 trap cleanup EXIT
@@ -305,7 +322,7 @@ paperless() {
 # the importer requires. The database is dropped rather than emptied so the import has to create
 # the schema through the script's own `migrate` step, as it would on a new release.
 reset_installation() {
-  rm -rf -- "${workdir}/media/documents" "${workdir}/data"
+  scrub /workdir/media/documents /workdir/data
   mkdir -p "${workdir}/data"
   chmod 0777 "${workdir}/data"
   docker exec -e PGPASSWORD="${db_password}" "${postgres}" \
@@ -314,7 +331,7 @@ reset_installation() {
 }
 
 clear_export_volume() {
-  rm -rf -- "${workdir}/export"
+  scrub /workdir/export
   mkdir -p "${workdir}/export"
   chmod 0777 "${workdir}/export"
 }
@@ -534,7 +551,14 @@ step "Retrying an import that died part-way through the copy"
 rm -f -- "${workdir}/data/$(basename "${restore_marker}")"
 printf '2026-01-01T00:00:00Z\n' >"${workdir}/data/$(basename "${restore_attempt_marker}")"
 chmod 0666 "${workdir}/data/$(basename "${restore_attempt_marker}")"
-originals | tail -n 1 | xargs -r rm -f
+# Removed through `scrub` for the reason it exists: the file is the container's, in a directory the
+# container made, so the host cannot unlink it.
+newest_original="$(originals | tail -n 1)"
+[ -n "${newest_original}" ] || {
+  echo "the seeded installation has no originals to take away" >&2
+  exit 1
+}
+scrub "/workdir/${newest_original#"${workdir}/"}"
 partial="$(original_count)"
 check "the target is in a partial state" test "${partial}" -gt 0 -a "${partial}" -lt "${seeded_originals}"
 if paperless "${restore_script}"; then

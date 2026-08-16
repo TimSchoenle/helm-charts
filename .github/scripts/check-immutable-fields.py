@@ -83,7 +83,7 @@ MUTABLE_STATEFULSET_SPEC_FIELDS = {
 }
 
 # The catalog kubeconform resolves `-schema-location default` against, so the cross-check below
-# reads the same schema data the manifests are already validated with in validate-manifests.sh.
+# reads the same schema data `just validate-manifests` already validates the manifests with.
 SCHEMA_URL = (
     "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/"
     "v{version}-standalone-strict/statefulset-apps-v1.json"

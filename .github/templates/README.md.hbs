@@ -90,13 +90,22 @@ dropped.
 | `README.md` (this file) | `.github/templates/README.md.hbs` |
 
 CI regenerates all three on every pull request and commits the result back to the branch, so
-there is no toolchain to install locally. To run the checks yourself:
+there is no toolchain to install locally.
+
+Every check CI runs is a [`just`](https://just.systems) recipe, and the workflows invoke those
+same recipes rather than their own copy of the logic — so any gate can be reproduced locally with
+one command:
 
 ```bash
-helm unittest charts/<chart>          # template unit tests
-ct lint --config ./.github/configs/ct.yaml
-.github/scripts/test-rules.sh         # promtool tests for charts that ship Prometheus rules
+just              # list every recipe, grouped
+just deps         # resolve chart dependencies; a fresh clone needs this first
+just test-unit    # helm unittest, every chart
+just test-rules   # promtool tests for charts that ship Prometheus rules
+just lint         # helm lint the library chart, chart-testing lint the rest
+just check        # everything CI runs that needs no Kubernetes cluster
 ```
+
+Recipes live in `justfile` and `just/*.just`, one file per group.
 
 ## Reporting issues
 

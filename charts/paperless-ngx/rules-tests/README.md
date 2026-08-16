@@ -4,7 +4,7 @@
 with the rest of the repository's:
 
 ```shell
-bash .github/scripts/test-rules.sh
+just test-rules paperless-ngx
 ```
 
 The runner stages the committed rule files, renders this chart's `PrometheusRule` with

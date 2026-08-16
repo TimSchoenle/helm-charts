@@ -1,13 +1,13 @@
 # tankovault rule tests
 
 promtool unit tests for [`charts/tankovault/rules/*.yml`](../rules), run by
-[`.github/scripts/test-rules.sh`](../../../.github/scripts/test-rules.sh) and by the **Rule &
+[`just test-rules`](../../../just/test.just) and by the **Rule &
 Dashboard Tests** CI job.
 
 Run them from the repository root:
 
 ```bash
-.github/scripts/test-rules.sh
+just test-rules tankovault
 ```
 
 Needs Docker (promtool comes from the official Prometheus image), Helm, and a Python with PyYAML.

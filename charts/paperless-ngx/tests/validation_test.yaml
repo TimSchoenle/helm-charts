@@ -227,6 +227,203 @@ tests:
         failedTemplate:
           errorPattern: the Grafana Operator dashboards need the dashboard ConfigMap
 
+  # --- database driver options ---------------------------------------------------------------
+
+  # Pooling is a PostgreSQL driver feature. Silently dropping it would leave an operator believing
+  # a pool size is in effect that nothing reads.
+  - it: refuses a connection pool size on an engine that has no pool
+    set:
+      paperless.secretKey: k
+      database.engine: mariadb
+      database.host: mariadb.data.svc
+      database.password: p
+      database.poolSize: 10
+    asserts:
+      - template: deployment.yaml
+        failedTemplate:
+          errorPattern: database.poolSize is set but database.engine is "mariadb"
+
+  - it: refuses a TLS mode on a database that is a local file
+    set:
+      paperless.secretKey: k
+      database.sslMode: require
+    asserts:
+      - template: deployment.yaml
+        failedTemplate:
+          errorPattern: database.sslMode is set while database.engine is sqlite
+
+  # --- backup ----------------------------------------------------------------------------------
+
+  # The one failure a backup must not have: a schedule that reports success nightly and leaves
+  # nothing behind, because the export volume belongs to the pod that just exited.
+  - it: refuses a backup that would write to an emptyDir
+    set:
+      paperless.secretKey: k
+      backup.enabled: true
+    asserts:
+      - template: deployment.yaml
+        failedTemplate:
+          errorPattern: backup.enabled needs a durable export directory
+
+  # `existingClaim` on its own is not enough and is rejected elsewhere in this suite: the chart
+  # only mounts a claim for a directory whose persistence is enabled.
+  - it: accepts a backup writing to a claim the operator supplied
+    set:
+      paperless.secretKey: k
+      backup.enabled: true
+      persistence.export.enabled: true
+      persistence.export.existingClaim: paperless-export
+    asserts:
+      - template: deployment.yaml
+        notFailedTemplate: {}
+
+  # In zip mode `--delete` empties the target directory rather than pruning stale documents from
+  # it, so it would remove exactly the archives retention is keeping.
+  - it: refuses the delete flag in zip mode
+    set:
+      paperless.secretKey: k
+      backup.enabled: true
+      persistence.export.enabled: true
+      backup.mode: zip
+    asserts:
+      - template: deployment.yaml
+        failedTemplate:
+          errorPattern: backup.mode=zip with backup.options.delete is destructive
+
+  # An explicit affinity wins over the co-scheduling rule, which silently breaks the ReadWriteOnce
+  # arrangement that flag exists to make work.
+  - it: refuses an explicit affinity alongside the co-scheduling flag
+    set:
+      paperless.secretKey: k
+      backup.enabled: true
+      persistence.export.enabled: true
+      backup.affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: storage
+                    operator: In
+                    values: [fast]
+    asserts:
+      - template: deployment.yaml
+        failedTemplate:
+          errorPattern: backup.affinity and backup.coScheduleWithApp are both set
+
+  - it: accepts an explicit affinity once the co-scheduling flag is cleared
+    set:
+      paperless.secretKey: k
+      backup.enabled: true
+      persistence.export.enabled: true
+      backup.coScheduleWithApp: false
+      backup.affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: storage
+                    operator: In
+                    values: [fast]
+    asserts:
+      - template: deployment.yaml
+        notFailedTemplate: {}
+
+  - it: requires a container for the upload step
+    set:
+      paperless.secretKey: k
+      backup.enabled: true
+      persistence.export.enabled: true
+      backup.upload.enabled: true
+    asserts:
+      - template: deployment.yaml
+        failedTemplate:
+          errorPattern: backup.upload.container is empty
+
+  - it: requires the fields the Kubernetes Container schema requires
+    set:
+      paperless.secretKey: k
+      backup.enabled: true
+      persistence.export.enabled: true
+      backup.upload.enabled: true
+      backup.upload.container:
+        command: [rclone, sync]
+    asserts:
+      - template: deployment.yaml
+        failedTemplate:
+          errorPattern: '(?s)backup.upload.container needs a "name".*backup.upload.container needs an? "image"'
+
+  # A stopped release has no application pod to co-schedule with and no media lock to take, so
+  # every run would sit Pending until its deadline.
+  - it: refuses to schedule backups of a stopped release
+    set:
+      paperless.secretKey: k
+      backup.enabled: true
+      persistence.export.enabled: true
+      replicaCount: 0
+    asserts:
+      - template: deployment.yaml
+        failedTemplate:
+          errorPattern: backup.enabled with replicaCount=0
+
+  # --- restore ---------------------------------------------------------------------------------
+
+  - it: refuses an import with nothing to import from
+    set:
+      paperless.secretKey: k
+      restore.enabled: true
+    asserts:
+      - template: deployment.yaml
+        failedTemplate:
+          errorPattern: restore.enabled needs somewhere to read the export from
+
+  # The export volume wins and the named claim is never mounted, which presents as an import that
+  # cannot find a manifest in a claim you can see holds one.
+  - it: refuses two sources for the same import
+    set:
+      paperless.secretKey: k
+      restore.enabled: true
+      restore.source.existingClaim: old-export
+      restore.source.useExportVolume: true
+      persistence.export.enabled: true
+    asserts:
+      - template: deployment.yaml
+        failedTemplate:
+          errorPattern: restore.source.existingClaim, restore.source.useExportVolume are all set
+
+  - it: refuses to import from an export volume that is an emptyDir
+    set:
+      paperless.secretKey: k
+      restore.enabled: true
+      restore.source.useExportVolume: true
+    asserts:
+      - template: deployment.yaml
+        failedTemplate:
+          errorPattern: restore.source.useExportVolume reads this release's export volume
+
+  # The marker that makes the import run once lives on the data volume; on an emptyDir it vanishes
+  # with the pod and every restart re-runs the import against the archive it just wrote.
+  - it: refuses an import whose run-once marker would not survive a restart
+    set:
+      paperless.secretKey: k
+      restore.enabled: true
+      restore.source.existingClaim: old-export
+      persistence.data.enabled: false
+    asserts:
+      - template: deployment.yaml
+        failedTemplate:
+          errorPattern: restore.enabled requires persistence.data.enabled
+
+  - it: refuses to import a whole archive onto an emptyDir
+    set:
+      paperless.secretKey: k
+      restore.enabled: true
+      restore.source.existingClaim: old-export
+      persistence.media.enabled: false
+    asserts:
+      - template: deployment.yaml
+        failedTemplate:
+          errorPattern: restore.enabled with persistence.media.enabled=false
+
   - it: reports every mistake in one go
     set:
       database.engine: postgresql
@@ -245,6 +442,66 @@ tests:
       database.password: p
       postgresql.enabled: true
       tika.enabled: true
+    asserts:
+      - template: deployment.yaml
+        notFailedTemplate: {}
+
+  # --- a remote archive ------------------------------------------------------------------------
+
+  - it: refuses a download URL that curl cannot fetch
+    set:
+      paperless.secretKey: k
+      restore.enabled: true
+      persistence.export.enabled: true
+      restore.source.url: s3://backups/paperless.zip
+    asserts:
+      - template: deployment.yaml
+        failedTemplate:
+          errorPattern: restore.source.url must be an http:// or https:// URL
+
+  # The download lands in the export volume. On an emptyDir a large archive either evicts the pod
+  # mid-transfer or is lost and re-fetched on every retry.
+  - it: refuses to download an archive into an emptyDir
+    set:
+      paperless.secretKey: k
+      restore.enabled: true
+      restore.source.url: https://backups.example.com/paperless.zip
+    asserts:
+      - template: deployment.yaml
+        failedTemplate:
+          errorPattern: restore.source.url downloads the archive into the export volume
+
+  - it: refuses two sources when one of them is a URL
+    set:
+      paperless.secretKey: k
+      restore.enabled: true
+      persistence.export.enabled: true
+      restore.source.url: https://backups.example.com/paperless.zip
+      restore.source.existingClaim: old-export
+    asserts:
+      - template: deployment.yaml
+        failedTemplate:
+          errorPattern: restore.source.existingClaim, restore.source.url are all set
+
+  - it: rejects a subPath that would silently do nothing
+    set:
+      paperless.secretKey: k
+      restore.enabled: true
+      persistence.export.enabled: true
+      restore.source.url: https://backups.example.com/paperless.zip
+      restore.source.subPath: dumps
+    asserts:
+      - template: deployment.yaml
+        failedTemplate:
+          errorPattern: restore.source.subPath does nothing alongside restore.source.url
+
+  - it: accepts a coherent URL import
+    set:
+      paperless.secretKey: k
+      restore.enabled: true
+      persistence.export.enabled: true
+      restore.source.url: https://backups.example.com/paperless.zip
+      restore.source.checksum: 4f0e0b57b0a06a5e9f4a4fa0a24d0b0d3a2e6f2c1b8d7a9c0e1f2a3b4c5d6e7f
     asserts:
       - template: deployment.yaml
         notFailedTemplate: {}

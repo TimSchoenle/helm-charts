@@ -13,6 +13,341 @@
       "title": "automountServiceAccountToken",
       "type": "boolean"
     },
+    "backup": {
+      "additionalProperties": true,
+      "description": "Scheduled logical backups, taken with the `document_exporter` management command. This is a\ndifferent kind of backup from a volume snapshot and neither replaces the other: a snapshot is a\ncrash-consistent copy of bytes that restores onto the same engine at a compatible version, while\nan export is documents plus a `manifest.json` that can be imported into a *fresh* instance — the\nonly form that survives a move to another cluster or the SQLite to PostgreSQL switch.\n\nThe exporter takes the application's own media lock while it runs, so it does not race the\nconsumer for files. It is not a transactional snapshot of the database, though, so schedule it\nfor a quiet hour.",
+      "properties": {
+        "activeDeadlineSeconds": {
+          "default": 21600,
+          "description": "Seconds a run may take before it is killed. Six hours covers a first full export of a large\narchive over slow storage; without it a wedged export blocks every later run under\n`concurrencyPolicy: Forbid`.",
+          "minimum": 1,
+          "required": [],
+          "title": "activeDeadlineSeconds",
+          "type": "integer"
+        },
+        "affinity": {
+          "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.Affinity",
+          "required": []
+        },
+        "backoffLimit": {
+          "default": 1,
+          "description": "Retries before a run is given up on. Low on purpose: an export that failed on a full volume\nor an unreachable database fails the same way three seconds later, and the next scheduled run\nis the real retry.",
+          "minimum": 0,
+          "required": [],
+          "title": "backoffLimit",
+          "type": "integer"
+        },
+        "coScheduleWithApp": {
+          "default": true,
+          "description": "Schedule the backup pod onto the node the application pod is running on, with a required\n`podAffinity`.\n\nThis is what makes the default `ReadWriteOnce` claims work: an RWO volume can be mounted by\nseveral pods at once as long as they share a node, and cannot be attached to two nodes at all.\nWith this off and RWO storage, the Job either happens to land correctly or sits Pending until\nits deadline — a backup that silently never runs.\n\nThe cost is that a backup cannot start while the application pod is down, which is the right\ntrade: it would have nothing consistent to read anyway. Turn it off for `ReadWriteMany`\nstorage, or when `backup.affinity` states the placement explicitly.",
+          "required": [],
+          "title": "coScheduleWithApp",
+          "type": "boolean"
+        },
+        "concurrencyPolicy": {
+          "default": "Forbid",
+          "description": "What to do when a run is still going at the next scheduled time. `Forbid` is the only safe\nanswer here: two exporters writing one target directory interleave their output, and the\nsecond one's `--delete` pass removes files the first has not written yet.",
+          "enum": [
+            "Allow",
+            "Forbid",
+            "Replace"
+          ],
+          "required": [],
+          "title": "concurrencyPolicy"
+        },
+        "enabled": {
+          "default": false,
+          "description": "Create the backup CronJob. Requires `persistence.export.enabled`, because the Job would\notherwise write the archive into its own `emptyDir` and delete it again on completion — a\nbackup that reports success nightly and restores nothing. The chart refuses to render rather\nthan producing that.",
+          "required": [],
+          "title": "enabled",
+          "type": "boolean"
+        },
+        "existingSecretKey": {
+          "default": "export-passphrase",
+          "description": "Key inside `existingSecret` that holds the export passphrase.",
+          "required": [],
+          "title": "existingSecretKey",
+          "type": "string"
+        },
+        "failedJobsHistoryLimit": {
+          "default": 3,
+          "description": "Failed Jobs retained in the CronJob's history. Keep at least a couple: the failed Job's pod\nis the only place the reason is recorded.",
+          "minimum": 0,
+          "required": [],
+          "title": "failedJobsHistoryLimit",
+          "type": "integer"
+        },
+        "mode": {
+          "default": "incremental",
+          "description": "What kind of export to take.\n\n`incremental` keeps one continuously-updated export tree in the target directory, re-writing\nonly the documents that changed since the last run. Cheapest by far, and the right default —\nbut it is one snapshot, not a history, so a document deleted by mistake is gone from the\nbackup on the next run.\n\n`zip` produces a dated archive per run and keeps `backup.zip.retentionCount` of them, which is\nwhat gives you a history to roll back to. **It builds the whole export in the scratch\ndirectory first**, so it needs as much free space there as the entire archive occupies; see\n`backup.scratch`.\n\n`dataOnly` exports the database contents and no files at all. Small and quick, and useful\nalongside a volume snapshot that already covers the media — but on its own it restores an\ninstance that knows about every document and holds none of them.",
+          "enum": [
+            "incremental",
+            "zip",
+            "dataOnly"
+          ],
+          "required": [],
+          "title": "mode"
+        },
+        "nodeSelector": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Node selector for the backup pod. Empty inherits the application's.",
+          "required": [],
+          "title": "nodeSelector",
+          "type": "object"
+        },
+        "options": {
+          "additionalProperties": true,
+          "description": "The exporter's own flags. Every one of these is a documented `document_exporter` option;\nthe names here are the long forms.",
+          "properties": {
+            "batchSize": {
+              "default": 500,
+              "description": "`--batch-size`: database records serialised per batch. Lower it if the Job is killed for\nexceeding its memory limit on a large archive.",
+              "minimum": 1,
+              "required": [],
+              "title": "batchSize",
+              "type": "integer"
+            },
+            "compareChecksums": {
+              "default": false,
+              "description": "`--compare-checksums`: decide what changed by hashing file contents rather than by\ncomparing size and modification time. Slower on every run, and the only setting that\nnotices a file corrupted in place.",
+              "required": [],
+              "title": "compareChecksums",
+              "type": "boolean"
+            },
+            "compareJson": {
+              "default": false,
+              "description": "`--compare-json`: leave the manifest and metadata JSON files alone when their contents\nhave not changed, which keeps an incremental export's modification times stable for a\nfile-level backup tool watching the directory.",
+              "required": [],
+              "title": "compareJson",
+              "type": "boolean"
+            },
+            "delete": {
+              "default": true,
+              "description": "`--delete`: remove exported files that are no longer in the dataset, so the target tracks\nthe archive rather than growing forever. Meaningless in `zip` mode, where the same flag\ninstead empties the target directory before the new archive is moved in — which would\ndestroy every retained archive, so the chart refuses to render that combination.",
+              "required": [],
+              "title": "delete",
+              "type": "boolean"
+            },
+            "noArchive": {
+              "default": false,
+              "description": "`--no-archive`: leave out the generated PDF/A files. They are reproducible from the\noriginals by re-running OCR, so this trades a much smaller backup for a long restore.",
+              "required": [],
+              "title": "noArchive",
+              "type": "boolean"
+            },
+            "noThumbnail": {
+              "default": false,
+              "description": "`--no-thumbnail`: leave out thumbnails, which are regenerated on demand.",
+              "required": [],
+              "title": "noThumbnail",
+              "type": "boolean"
+            },
+            "splitManifest": {
+              "default": false,
+              "description": "`--split-manifest`: write one JSON file per document rather than a single `manifest.json`.\nWorth setting for a large archive — a monolithic manifest is one enormous file that a\ndeduplicating backup tool has to re-transfer whenever any document changes.",
+              "required": [],
+              "title": "splitManifest",
+              "type": "boolean"
+            },
+            "useFilenameFormat": {
+              "default": false,
+              "description": "`--use-filename-format`: name exported files with `paperless.filenameFormat` instead of\nthe exporter's own scheme. Makes the export browsable by a human; makes it less stable,\nbecause renaming a correspondent renames files.",
+              "required": [],
+              "title": "useFilenameFormat",
+              "type": "boolean"
+            },
+            "useFolderPrefix": {
+              "default": false,
+              "description": "`--use-folder-prefix`: sort the export into `archive/`, `originals/`, `thumbnails/` and\n`json/` subdirectories instead of interleaving them.",
+              "required": [],
+              "title": "useFolderPrefix",
+              "type": "boolean"
+            }
+          },
+          "required": [],
+          "title": "options"
+        },
+        "passphrase": {
+          "default": "",
+          "description": "Passphrase encrypting the sensitive fields of the export. Ignored when `existingSecret` is\nset. It reaches the exporter through an environment variable rather than on the command line,\nso it does not appear in the pod spec or in `kubectl describe`.\n\n**Store it somewhere other than the backup.** An encrypted export whose passphrase is lost is\nnot a backup, and the same passphrase has to be given to `restore` on the way back in.",
+          "required": [],
+          "title": "passphrase",
+          "type": "string"
+        },
+        "podAnnotations": {
+          "additionalProperties": true,
+          "description": "Additional annotations for the backup pod.",
+          "required": [],
+          "title": "podAnnotations",
+          "type": "object"
+        },
+        "podLabels": {
+          "additionalProperties": true,
+          "description": "Additional labels for the backup pod.",
+          "required": [],
+          "title": "podLabels",
+          "type": "object"
+        },
+        "resources": {
+          "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.ResourceRequirements",
+          "required": []
+        },
+        "resourcesPreset": {
+          "default": "small",
+          "description": "Named resource sizing for the backup container. Ignored when `backup.resources` is set. The\nexporter copies files and serialises database rows; it does not run OCR, so it needs a\nfraction of what the application does.",
+          "enum": [
+            "",
+            "nano",
+            "micro",
+            "small",
+            "medium",
+            "large"
+          ],
+          "required": [],
+          "title": "resourcesPreset"
+        },
+        "schedule": {
+          "default": "0 3 * * *",
+          "description": "Cron schedule. The default is nightly at 03:00, which is the quiet hour this wants.",
+          "required": [],
+          "title": "schedule",
+          "type": "string"
+        },
+        "scratch": {
+          "additionalProperties": true,
+          "description": "Scratch space for the backup pod, mounted at `/tmp` as `PAPERLESS_SCRATCH_DIR`.\n\nSeparate from `persistence.scratchSizeLimit` because the requirement differs by orders of\nmagnitude. An incremental export streams straight into the target and needs almost none; a\n`zip` export assembles the **entire** export tree here before compressing it, so it needs as\nmuch free space as the whole archive occupies. An `emptyDir` is charged against the node's\nephemeral storage, and a pod that exceeds its limit is evicted mid-export.",
+          "properties": {
+            "existingClaim": {
+              "default": "",
+              "description": "Use an existing PersistentVolumeClaim for the scratch directory instead of an `emptyDir`.\nThis is the answer for `zip` mode over an archive larger than the node's ephemeral storage.",
+              "required": [],
+              "title": "existingClaim",
+              "type": "string"
+            },
+            "sizeLimit": {
+              "default": "",
+              "description": "Size limit of the `emptyDir`. Empty removes the limit, which is the default here because\na limit too small for the archive turns a backup into an eviction. Ignored when\n`existingClaim` is set.",
+              "required": [],
+              "title": "sizeLimit",
+              "type": "string"
+            }
+          },
+          "required": [],
+          "title": "scratch"
+        },
+        "startingDeadlineSeconds": {
+          "default": 3600,
+          "description": "Seconds a missed schedule may still be started within. Bounded rather than unlimited so a\ncontroller outage does not fire every skipped run at once when it comes back.",
+          "minimum": 0,
+          "required": [],
+          "title": "startingDeadlineSeconds",
+          "type": "integer"
+        },
+        "successfulJobsHistoryLimit": {
+          "default": 3,
+          "description": "Completed Jobs retained in the CronJob's history.",
+          "minimum": 0,
+          "required": [],
+          "title": "successfulJobsHistoryLimit",
+          "type": "integer"
+        },
+        "suspend": {
+          "default": false,
+          "description": "Suspend the schedule without deleting the CronJob, for a maintenance window.",
+          "required": [],
+          "title": "suspend",
+          "type": "boolean"
+        },
+        "target": {
+          "default": "/usr/src/paperless/export",
+          "description": "Directory the export is written to, inside the export volume.",
+          "required": [],
+          "title": "target",
+          "type": "string"
+        },
+        "timeZone": {
+          "default": "",
+          "description": "IANA time zone the schedule is interpreted in (`Europe/Berlin`). Empty uses the\nkube-controller-manager's zone, which is UTC on most clusters. Requires Kubernetes 1.27+; on\nolder clusters the field is dropped rather than rejected.",
+          "required": [],
+          "title": "timeZone",
+          "type": "string"
+        },
+        "tolerations": {
+          "description": "Tolerations for the backup pod. Empty inherits the application's.",
+          "items": {
+            "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.Toleration",
+            "required": []
+          },
+          "required": [],
+          "title": "tolerations",
+          "type": "array"
+        },
+        "ttlSecondsAfterFinished": {
+          "default": 86400,
+          "description": "Seconds a finished Job is kept before the TTL controller removes it. A day, so the logs of\nlast night's backup are still there in the morning.",
+          "minimum": 0,
+          "required": [],
+          "title": "ttlSecondsAfterFinished",
+          "type": "integer"
+        },
+        "upload": {
+          "additionalProperties": true,
+          "description": "Ship the finished export off the cluster. An export sitting on a PersistentVolume in the\nsame cluster as the archive it backs up survives a mistake, but not the cluster.\n\nThe chart deliberately takes no dependency on any particular tool. When this is enabled the\nexporter moves to an `initContainer` and the container below becomes the pod's main container\n— so it runs only after the export has completed successfully, with the export volume mounted.\nAny image that can copy a directory somewhere (rclone, restic, the AWS CLI, `mc`) works, with\nits own credentials from its own Secret.",
+          "properties": {
+            "container": {
+              "additionalProperties": true,
+              "description": "The container itself, in the `corev1.Container` shape, verbatim apart from the export\nvolume mount the chart appends. `name` and `image` are required; everything else — `command`,\n`env`, `envFrom`, `resources`, `securityContext` — is yours. Required when\n`backup.upload.enabled` is set. Rendered through the template engine, so\n`{{ .Release.Name }}` works.\n\nTyped against the Kubernetes definition would be better, but a `$ref` to it makes the empty\ndefault itself invalid — `name` is a required property — so the object is left open and\n`validateValues` checks what actually matters instead.",
+              "required": [],
+              "title": "container",
+              "type": "object"
+            },
+            "enabled": {
+              "default": false,
+              "description": "Run the upload container after each successful export.",
+              "required": [],
+              "title": "enabled",
+              "type": "boolean"
+            },
+            "mountPath": {
+              "default": "/export",
+              "description": "Where the export volume is mounted in the upload container.",
+              "required": [],
+              "title": "mountPath",
+              "type": "string"
+            }
+          },
+          "required": [],
+          "title": "upload"
+        },
+        "zip": {
+          "additionalProperties": true,
+          "description": "Dated archives, used when `backup.mode` is `zip`.",
+          "properties": {
+            "nameTemplate": {
+              "default": "paperless-export-%Y-%m-%dT%H%M%SZ",
+              "description": "Base name of each archive, as a `strftime` format string; `.zip` is appended. Expanded by\n`date` **inside the container at run time**, not by Helm — a name templated at render time\nwould be frozen at the moment of the last `helm upgrade`, and every run would overwrite the\nsame file.",
+              "required": [],
+              "title": "nameTemplate",
+              "type": "string"
+            },
+            "retentionCount": {
+              "default": 7,
+              "description": "How many archives to keep. After a successful export the oldest are deleted until this\nmany remain, so the export volume has to hold this many copies of the archive.",
+              "minimum": 1,
+              "required": [],
+              "title": "retentionCount",
+              "type": "integer"
+            }
+          },
+          "required": [],
+          "title": "zip"
+        }
+      },
+      "required": [],
+      "title": "backup"
+    },
     "common": {
       "description": "Shared template partials for the TimSchoenle Helm charts",
       "properties": {
@@ -1322,6 +1657,13 @@
           "title": "name",
           "type": "string"
         },
+        "options": {
+          "additionalProperties": true,
+          "description": "Additional driver options, written verbatim into `PAPERLESS_DB_OPTIONS` as\n`key=value` pairs. This is upstream's consolidated replacement for the per-option environment\nvariables, so it is where anything the driver supports but this chart does not model goes:\n`sslrootcert` and `sslcert` for PostgreSQL client certificates, `ssl.ca` for MariaDB,\n`connect_timeout`, `pool.min_size`. Nested options use dot notation, as upstream does.\n\nAn entry here wins over `sslMode` and `poolSize` when the keys collide, so an option the\nchart models can still be overridden without a second mechanism. Paths named here have to be\nmounted into the pod yourself, with `extraVolumes` and `extraVolumeMounts`.",
+          "required": [],
+          "title": "options",
+          "type": "object"
+        },
         "password": {
           "default": "",
           "description": "Database password. Ignored when `existingSecret` is set. Required for every engine except\nSQLite — including the bundled PostgreSQL, whose superuser it becomes.",
@@ -1331,7 +1673,7 @@
         },
         "poolSize": {
           "default": 0,
-          "description": "Maximum size of the connection pool. `0` leaves pooling off, which is correct for a\nsingle-replica deployment talking to a database on the same network.",
+          "description": "Maximum size of the connection pool. `0` leaves pooling off, which is correct for a\nsingle-replica deployment talking to a database on the same network.\n\nRendered into `PAPERLESS_DB_OPTIONS` as `pool.max_size`, replacing the deprecated\n`PAPERLESS_DB_POOLSIZE`. PostgreSQL only — its driver is the one that pools — so the chart\nrefuses to render it for another engine rather than accepting a setting nothing reads.",
           "minimum": 0,
           "required": [],
           "title": "poolSize",
@@ -1348,7 +1690,7 @@
         },
         "sslMode": {
           "default": "",
-          "description": "TLS mode for the connection. Empty uses the engine default, which is `prefer` for\nPostgreSQL and `PREFERRED` for MariaDB — both of which fall back to plaintext without\ntelling anyone. Set `require` (PostgreSQL) or `REQUIRED` (MariaDB) for a database outside\nthe cluster.",
+          "description": "TLS mode for the connection. Empty uses the engine default, which is `prefer` for\nPostgreSQL and `PREFERRED` for MariaDB — both of which fall back to plaintext without\ntelling anyone. Set `require` (PostgreSQL) or `REQUIRED` (MariaDB) for a database outside\nthe cluster.\n\nRendered into `PAPERLESS_DB_OPTIONS` as `sslmode` for PostgreSQL and `ssl_mode` for MariaDB.\nThe dedicated `PAPERLESS_DBSSLMODE` variable this used to emit is deprecated upstream and is\nremoved in 3.2; it still works today and logs a startup warning, which is why the chart no\nlonger emits it. Ignored for SQLite, which has no connection to secure.",
           "required": [],
           "title": "sslMode",
           "type": "string"
@@ -3176,6 +3518,125 @@
       ],
       "required": [],
       "title": "resourcesPreset"
+    },
+    "restore": {
+      "additionalProperties": true,
+      "description": "Importing an export produced by `document_exporter`, whether from a backup of this instance or\nfrom a different paperless-ngx altogether.\n\nThis is deliberately not a Job. `document_importer` needs the media and data directories to\nitself and has to finish before anything else touches them, which no separately-scheduled pod can\npromise — so the import runs as an `initContainer` on the application pod, ahead of the\nwebserver, the consumer and the scheduler. That gives it exclusive access without a second copy\nof the volumes, works under `ReadWriteOnce`, and fails the pod rather than starting a\nhalf-imported archive.\n\nIt runs once, guarded by a marker file on the data volume, and is a no-op on every start after\nthat — so these values can be left in place instead of being removed in a follow-up upgrade.\n\nImporting a `.zip` export extracts it in full to the scratch directory first, so\n`persistence.scratchSizeLimit` has to be at least the archive's uncompressed size or the pod is\nevicted part-way through the import. A directory export carries no such requirement.",
+      "properties": {
+        "batchSize": {
+          "default": 500,
+          "description": "`--batch-size`: database records inserted per batch. Lower it when the import container is\nOOM-killed part-way through a large archive.",
+          "minimum": 1,
+          "required": [],
+          "title": "batchSize",
+          "type": "integer"
+        },
+        "enabled": {
+          "default": false,
+          "description": "Run the import on the next start of the application pod.\n\n**The target must be an empty installation.** The importer refuses to run against a database\nthat already holds users or documents, so this belongs on a fresh release rather than on one\nthat has been serving for a while. To restore over an existing instance, delete the media and\ndata volumes first, so there is nothing left to refuse.\n\n**The image version must match the one that produced the export.** An export carries an exact\nimage of the database, and the schema changes between releases; the importer warns about a\nmismatch and then keeps going, which is the failure mode that costs an archive. Pin `image.tag`\nto the source instance's version, import, then upgrade.",
+          "required": [],
+          "title": "enabled",
+          "type": "boolean"
+        },
+        "existingSecretKey": {
+          "default": "import-passphrase",
+          "description": "Key inside `existingSecret` that holds the import passphrase.",
+          "required": [],
+          "title": "existingSecretKey",
+          "type": "string"
+        },
+        "markerFile": {
+          "default": ".helm-restore-complete",
+          "description": "Name of the marker file written to the data volume once the import succeeds. Its presence\nis what makes the import run exactly once; deleting it re-arms the import on the next restart,\nwhich then fails against the now non-empty installation unless the volumes were cleared too.",
+          "required": [],
+          "title": "markerFile",
+          "type": "string"
+        },
+        "passphrase": {
+          "default": "",
+          "description": "Passphrase the export was encrypted with, matching `backup.passphrase` on the instance that\nproduced it. Ignored when `existingSecret` is set. Passed through the environment rather than\non the command line.",
+          "required": [],
+          "title": "passphrase",
+          "type": "string"
+        },
+        "resources": {
+          "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.ResourceRequirements",
+          "required": []
+        },
+        "resourcesPreset": {
+          "default": "medium",
+          "description": "Named resource sizing for the import container. Ignored when `restore.resources` is set.",
+          "enum": [
+            "",
+            "nano",
+            "micro",
+            "small",
+            "medium",
+            "large"
+          ],
+          "required": [],
+          "title": "resourcesPreset"
+        },
+        "runMigrations": {
+          "default": true,
+          "description": "Run `manage.py migrate` before importing. Required and on by default: `document_importer`\ninserts rows and does not create the schema, so against a genuinely empty database it fails on\nthe first table. Turn it off only when something else has already migrated.",
+          "required": [],
+          "title": "runMigrations",
+          "type": "boolean"
+        },
+        "source": {
+          "additionalProperties": true,
+          "description": "Where the export to import lives.",
+          "properties": {
+            "checksum": {
+              "default": "",
+              "description": "SHA-256 of the archive at `restore.source.url`, as the bare hex digest. Verified before\nthe import and after a resumed download, so a truncated or substituted archive fails the pod\ninstead of importing as far as it can and stopping.\n\nNot a credential: it is a checksum, and it goes in the ConfigMap alongside the other\nsettings. Empty skips verification, which is the wrong default for anything fetched over a\nnetwork you do not own.",
+              "required": [],
+              "title": "checksum",
+              "type": "string"
+            },
+            "existingClaim": {
+              "default": "",
+              "description": "Name of an existing PersistentVolumeClaim holding the export. Required unless\n`restore.source.useExportVolume` is set — the chart cannot import from a volume that does\nnot exist.",
+              "required": [],
+              "title": "existingClaim",
+              "type": "string"
+            },
+            "subPath": {
+              "default": "",
+              "description": "Path within the source volume holding the export — the directory that contains\n`manifest.json`, or a `.zip` file produced by `backup.mode: zip`. Empty imports from the\nroot of the volume. Not used with `restore.source.url`, which names the archive itself.",
+              "required": [],
+              "title": "subPath",
+              "type": "string"
+            },
+            "url": {
+              "default": "",
+              "description": "URL of a `.zip` export to download and import, instead of reading one from a volume. For\nthe case where the export is already off-cluster — object storage, another cluster's backup\nbucket, a release asset — and staging it into a PersistentVolume by hand first is the only\nstep in the way.\n\nIt is fetched into the export volume before the import, which is why\n`persistence.export.enabled` is required: it needs somewhere with room for the whole\narchive, and a download that survives a retry rather than starting over. Written to a\ntemporary name and moved into place only once complete, so an interrupted transfer is never\nmistaken for a finished one.\n\n**Treated as a credential and stored in the Secret, not the ConfigMap.** The URLs that make\nthis useful are presigned ones — S3, GCS, an Azure SAS link — and the signature in the query\nstring *is* the authorisation. Ignored when `existingSecret` is set; put it there under\n`restore.source.urlExistingSecretKey` instead.\n\nOnly `https://` and `http://` are accepted. With a NetworkPolicy in force the download is\nsubject to the application's own egress rules, so an internet-hosted archive needs\n`networkPolicy.egress.https`.",
+              "required": [],
+              "title": "url",
+              "type": "string"
+            },
+            "urlExistingSecretKey": {
+              "default": "restore-url",
+              "description": "Key inside `existingSecret` that holds the download URL.",
+              "required": [],
+              "title": "urlExistingSecretKey",
+              "type": "string"
+            },
+            "useExportVolume": {
+              "default": false,
+              "description": "Import from this release's own export volume instead of a separate claim, for the case\nwhere `backup` wrote it and the instance is being rebuilt in place.",
+              "required": [],
+              "title": "useExportVolume",
+              "type": "boolean"
+            }
+          },
+          "required": [],
+          "title": "source"
+        }
+      },
+      "required": [],
+      "title": "restore"
     },
     "revisionHistoryLimit": {
       "default": 3,

@@ -292,6 +292,73 @@
           "legendFormat": "{{persistentvolumeclaim}}"
         }
       ]
+    },
+    {
+      "id": 9,
+      "type": "stat",
+      "title": "Time since last successful backup",
+      "description": "How old the newest export is. This is the panel that catches a schedule which stopped firing: a suspended CronJob, or one whose runs keep missing their starting deadline, produces no Job, no failed pod and no error anywhere — only this number grows. Empty means no backup CronJob is reporting at all, which is either backup.enabled=false or the same problem one step earlier.",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 5, "w": 8, "x": 0, "y": 29 },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 90000 },
+              { "color": "red", "value": 172800 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "time() - namespace_cronjob:paperless_ngx_backup_last_success:max{namespace=~\"$namespace\"}",
+          "legendFormat": "{{cronjob}}"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Failed backup runs",
+      "description": "Failed pods per backup Job, which is what backoffLimit counts against. A step to a non-zero value is a run that gave up; `kubectl logs job/<name>` on the Job in the legend has the reason. The series lives only as long as the Job does — ttlSecondsAfterFinished and failedJobsHistoryLimit both remove it — so this panel is for the last few days, not for a trend.",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 5, "w": 16, "x": 8, "y": 29 },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 10, "showPoints": "auto" },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "namespace_job_name:paperless_ngx_backup_failed:max{namespace=~\"$namespace\"}",
+          "legendFormat": "{{job_name}}"
+        }
+      ]
     }
   ]
 }

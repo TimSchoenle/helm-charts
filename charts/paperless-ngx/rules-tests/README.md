@@ -16,6 +16,7 @@ Validating only the committed files would leave that substitution untested.
 | --- | --- |
 | `availability_test.yml` | `PaperlessNgxDown`, `PaperlessNgxAbsent`, `PaperlessNgxDatastoreDown` |
 | `workload_test.yml` | `PaperlessNgxCrashLooping`, `PaperlessNgxRestarting`, `PaperlessNgxOOMKilled`, `PaperlessNgxVolumeFillingUp`, `PaperlessNgxVolumeAlmostFull` |
+| `backup_test.yml` | `PaperlessNgxBackupFailed`, `PaperlessNgxBackupStale`, `PaperlessNgxBackupSuspended` |
 | `scoping_test.yml` | the namespace substitution, against `rendered.rules.yml` |
 
 ## Conventions

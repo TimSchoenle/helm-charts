@@ -1,0 +1,496 @@
+suite: backup cronjob
+# The scheduled export. Most of what is asserted here is not the happy path but the ways a backup
+# can look correct and be worthless: a command that starts the whole application instead of the
+# exporter, a container whose configuration has drifted from the one it is meant to back up, a pod
+# that can never be scheduled onto the volumes it reads, and a passphrase sitting in the pod spec.
+#
+# The ConfigMap and Secret are rendered alongside it because the pod annotations checksum them;
+# `documentSelector` keeps every assertion below on the CronJob itself.
+templates:
+  - cronjob-backup.yaml
+  - configmap.yaml
+  - secret.yaml
+set:
+  paperless.secretKey: k
+  persistence.export.enabled: true
+  backup.enabled: true
+tests:
+  - it: is not created unless asked for
+    set:
+      backup.enabled: false
+    asserts:
+      - template: cronjob-backup.yaml
+        hasDocuments:
+          count: 0
+
+  # A change to the application's configuration has to reach the exporter as well, or the next
+  # backup runs against the previous database address.
+  - it: restarts on a configuration change like the application does
+    documentSelector:
+      path: kind
+      value: CronJob
+    asserts:
+      - exists:
+          path: spec.jobTemplate.spec.template.metadata.annotations["checksum/configmap"]
+      - exists:
+          path: spec.jobTemplate.spec.template.metadata.annotations["checksum/secret"]
+
+  - it: creates a suffixed CronJob labelled as its own component
+    documentSelector:
+      path: kind
+      value: CronJob
+    asserts:
+      - isKind:
+          of: CronJob
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-paperless-ngx-backup
+      - equal:
+          path: metadata.labels["app.kubernetes.io/component"]
+          value: backup
+      - equal:
+          path: spec.jobTemplate.spec.template.metadata.labels["app.kubernetes.io/component"]
+          value: backup
+
+  # The application's selector is name+instance+component, so a backup pod carrying `server` would
+  # be picked up by the Service and by the application's NetworkPolicy.
+  - it: does not carry the application's selector labels
+    documentSelector:
+      path: kind
+      value: CronJob
+    asserts:
+      - notEqual:
+          path: spec.jobTemplate.spec.template.metadata.labels["app.kubernetes.io/component"]
+          value: server
+
+  # The image entrypoint is /init, which brings up the whole s6 supervision tree — webserver,
+  # workers and scheduler. A Job that inherited it would serve HTTP forever instead of exporting.
+  - it: overrides the image entrypoint rather than inheriting the supervision tree
+    documentSelector:
+      path: kind
+      value: CronJob
+    asserts:
+      - equal:
+          path: spec.jobTemplate.spec.template.spec.containers[0].command
+          value: [/usr/bin/bash, -c]
+      - matchRegex:
+          path: spec.jobTemplate.spec.template.spec.containers[0].args[0]
+          pattern: 'document_exporter "\$\{BACKUP_TARGET\}"'
+
+  # These three are written by the image's s6 init step into /run/s6/container_environment, which a
+  # container overriding `command` never runs. Without them the wrapper scripts in /usr/local/bin
+  # dispatch on the user name and cd into an empty path.
+  - it: supplies the environment the image's own wrapper scripts expect
+    documentSelector:
+      path: kind
+      value: CronJob
+    asserts:
+      - contains:
+          path: spec.jobTemplate.spec.template.spec.containers[0].env
+          content:
+            name: PAPERLESS_SRC_DIR
+            value: /usr/src/paperless/src
+      - contains:
+          path: spec.jobTemplate.spec.template.spec.containers[0].env
+          content:
+            name: USER_IS_NON_ROOT
+            value: "true"
+
+  # A backup container configured differently from the application is one that backs up a
+  # different database. Both read the same ConfigMap and the same Secret.
+  - it: reads the application's own configuration
+    documentSelector:
+      path: kind
+      value: CronJob
+    set:
+      database.engine: postgresql
+      database.host: postgres.data.svc
+      database.password: db-pw
+    asserts:
+      - equal:
+          path: spec.jobTemplate.spec.template.spec.containers[0].envFrom[0].configMapRef.name
+          value: RELEASE-NAME-paperless-ngx
+      - contains:
+          path: spec.jobTemplate.spec.template.spec.containers[0].env
+          content:
+            name: PAPERLESS_DBPASS
+            valueFrom:
+              secretKeyRef:
+                name: RELEASE-NAME-paperless-ngx
+                key: database-password
+
+  - it: runs the same image as the application
+    documentSelector:
+      path: kind
+      value: CronJob
+    set:
+      image.tag: v9.9.9
+    asserts:
+      - matchRegex:
+          path: spec.jobTemplate.spec.template.spec.containers[0].image
+          pattern: paperless-ngx:v9\.9\.9$
+
+  # media and data default to ReadWriteOnce. An RWO volume can be mounted by several pods sharing
+  # a node and cannot be attached to two nodes at all, so without this the Job is Pending until its
+  # deadline whenever it lands elsewhere — which reads as a backup that silently never ran.
+  - it: pins the pod to the application's node so ReadWriteOnce claims can be mounted
+    documentSelector:
+      path: kind
+      value: CronJob
+    asserts:
+      - equal:
+          path: spec.jobTemplate.spec.template.spec.affinity.podAffinity.requiredDuringSchedulingIgnoredDuringExecution[0].topologyKey
+          value: kubernetes.io/hostname
+      - equal:
+          path: spec.jobTemplate.spec.template.spec.affinity.podAffinity.requiredDuringSchedulingIgnoredDuringExecution[0].labelSelector.matchLabels["app.kubernetes.io/component"]
+          value: server
+
+  - it: drops the co-scheduling rule for ReadWriteMany storage
+    documentSelector:
+      path: kind
+      value: CronJob
+    set:
+      backup.coScheduleWithApp: false
+    asserts:
+      - isNull:
+          path: spec.jobTemplate.spec.template.spec.affinity
+
+  # An anti-affinity meant for spreading application replicas must not survive into the backup pod
+  # and displace the affinity that makes the volumes reachable.
+  - it: is not displaced by the application's spreading rules
+    documentSelector:
+      path: kind
+      value: CronJob
+    set:
+      podAntiAffinity: hard
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+    asserts:
+      - isNull:
+          path: spec.jobTemplate.spec.template.spec.affinity.podAntiAffinity
+      - isNull:
+          path: spec.jobTemplate.spec.template.spec.topologySpreadConstraints
+
+  # The exporter never reads the drop box, and every extra claim is another constraint the pod has
+  # to satisfy before it can be scheduled at all.
+  - it: mounts the archive and the export directory, and not the consumption directory
+    documentSelector:
+      path: kind
+      value: CronJob
+    asserts:
+      - contains:
+          path: spec.jobTemplate.spec.template.spec.containers[0].volumeMounts
+          content:
+            name: media
+            mountPath: /usr/src/paperless/media
+      - contains:
+          path: spec.jobTemplate.spec.template.spec.containers[0].volumeMounts
+          content:
+            name: export
+            mountPath: /usr/src/paperless/export
+      - notContains:
+          path: spec.jobTemplate.spec.template.spec.containers[0].volumeMounts
+          content:
+            name: consume
+            mountPath: /usr/src/paperless/consume
+
+  # A zip export assembles the whole export tree in the scratch directory before compressing it,
+  # so the application's 2 GiB default would evict the pod partway through a large archive.
+  - it: gives the backup pod its own unbounded scratch space
+    documentSelector:
+      path: kind
+      value: CronJob
+    asserts:
+      - contains:
+          path: spec.jobTemplate.spec.template.spec.volumes
+          content:
+            name: tmp
+            emptyDir: {}
+
+  - it: can back the scratch directory with a claim for archives larger than the node
+    documentSelector:
+      path: kind
+      value: CronJob
+    set:
+      backup.scratch.existingClaim: paperless-backup-scratch
+    asserts:
+      - contains:
+          path: spec.jobTemplate.spec.template.spec.volumes
+          content:
+            name: tmp
+            persistentVolumeClaim:
+              claimName: paperless-backup-scratch
+
+  # Two exporters writing one target directory interleave their output, and the second one's
+  # --delete pass removes files the first has not written yet.
+  - it: refuses to overlap runs
+    documentSelector:
+      path: kind
+      value: CronJob
+    asserts:
+      - equal:
+          path: spec.concurrencyPolicy
+          value: Forbid
+
+  - it: bounds a wedged run so it cannot block every later one
+    documentSelector:
+      path: kind
+      value: CronJob
+    asserts:
+      - equal:
+          path: spec.jobTemplate.spec.activeDeadlineSeconds
+          value: 21600
+
+  # OnFailure restarts the container in place, re-entering an export directory left mid-write by
+  # the attempt that just died — and backoffLimit does not count in-place restarts.
+  - it: retries by replacing the pod rather than restarting it in place
+    documentSelector:
+      path: kind
+      value: CronJob
+    asserts:
+      - equal:
+          path: spec.jobTemplate.spec.template.spec.restartPolicy
+          value: Never
+
+  - it: keeps the API token out of the backup pod
+    documentSelector:
+      path: kind
+      value: CronJob
+    asserts:
+      - equal:
+          path: spec.jobTemplate.spec.template.spec.automountServiceAccountToken
+          value: false
+
+  - it: applies the restricted container baseline
+    documentSelector:
+      path: kind
+      value: CronJob
+    asserts:
+      - equal:
+          path: spec.jobTemplate.spec.template.spec.containers[0].securityContext.allowPrivilegeEscalation
+          value: false
+      - equal:
+          path: spec.jobTemplate.spec.template.spec.containers[0].securityContext.runAsNonRoot
+          value: true
+      - equal:
+          path: spec.jobTemplate.spec.template.spec.containers[0].securityContext.capabilities.drop
+          value: [ALL]
+
+  - it: sizes the container for copying files rather than for OCR
+    documentSelector:
+      path: kind
+      value: CronJob
+    asserts:
+      - equal:
+          path: spec.jobTemplate.spec.template.spec.containers[0].resources.limits.memory
+          value: 256Mi
+
+  # --- flags -------------------------------------------------------------------------------
+
+  - it: passes the incremental defaults
+    documentSelector:
+      path: kind
+      value: CronJob
+    asserts:
+      - matchRegex:
+          path: spec.jobTemplate.spec.template.spec.containers[0].args[0]
+          pattern: --no-progress-bar
+      - matchRegex:
+          path: spec.jobTemplate.spec.template.spec.containers[0].args[0]
+          pattern: --delete
+
+  - it: translates the exporter options it models
+    documentSelector:
+      path: kind
+      value: CronJob
+    set:
+      backup.options.compareChecksums: true
+      backup.options.splitManifest: true
+      backup.options.noArchive: true
+      backup.options.batchSize: 100
+    asserts:
+      - matchRegex:
+          path: spec.jobTemplate.spec.template.spec.containers[0].args[0]
+          pattern: --compare-checksums
+      - matchRegex:
+          path: spec.jobTemplate.spec.template.spec.containers[0].args[0]
+          pattern: --split-manifest
+      - matchRegex:
+          path: spec.jobTemplate.spec.template.spec.containers[0].args[0]
+          pattern: --no-archive
+      - matchRegex:
+          path: spec.jobTemplate.spec.template.spec.containers[0].args[0]
+          pattern: --batch-size 100
+
+  - it: exports the database alone in dataOnly mode
+    documentSelector:
+      path: kind
+      value: CronJob
+    set:
+      backup.mode: dataOnly
+    asserts:
+      - matchRegex:
+          path: spec.jobTemplate.spec.template.spec.containers[0].args[0]
+          pattern: --data-only
+
+  # A name templated by Helm is fixed at the moment of the last upgrade, so every nightly run
+  # would overwrite the same file. It has to be expanded by the container.
+  - it: expands the archive name at run time, not at render time
+    documentSelector:
+      path: kind
+      value: CronJob
+    set:
+      backup.mode: zip
+      backup.options.delete: false
+    asserts:
+      - matchRegex:
+          path: spec.jobTemplate.spec.template.spec.containers[0].args[0]
+          pattern: 'zip_name="\$\(date -u \+"\$\{BACKUP_ZIP_NAME_TEMPLATE\}"\)"'
+      - contains:
+          path: spec.jobTemplate.spec.template.spec.containers[0].env
+          content:
+            name: BACKUP_ZIP_NAME_TEMPLATE
+            value: paperless-export-%Y-%m-%dT%H%M%SZ
+
+  - it: prunes old archives only after a successful export
+    documentSelector:
+      path: kind
+      value: CronJob
+    set:
+      backup.mode: zip
+      backup.options.delete: false
+      backup.zip.retentionCount: 3
+    asserts:
+      - matchRegex:
+          path: spec.jobTemplate.spec.template.spec.containers[0].args[0]
+          pattern: 'set -euo pipefail'
+      - matchRegex:
+          path: spec.jobTemplate.spec.template.spec.containers[0].args[0]
+          pattern: 'rm -f -- "\$\{stale\}"'
+      - contains:
+          path: spec.jobTemplate.spec.template.spec.containers[0].env
+          content:
+            name: BACKUP_RETENTION
+            value: "3"
+
+  # --- passphrase --------------------------------------------------------------------------
+
+  # On the command line it would be visible in `kubectl describe pod` and stored in the Helm
+  # release object; through the environment it is a Secret reference like every other credential.
+  - it: keeps the export passphrase out of the pod spec
+    documentSelector:
+      path: kind
+      value: CronJob
+    set:
+      backup.passphrase: hunter2
+    asserts:
+      - contains:
+          path: spec.jobTemplate.spec.template.spec.containers[0].env
+          content:
+            name: BACKUP_PASSPHRASE
+            valueFrom:
+              secretKeyRef:
+                name: RELEASE-NAME-paperless-ngx
+                key: export-passphrase
+      - notMatchRegex:
+          path: spec.jobTemplate.spec.template.spec.containers[0].args[0]
+          pattern: hunter2
+      - matchRegex:
+          path: spec.jobTemplate.spec.template.spec.containers[0].args[0]
+          pattern: '--passphrase "\$\{BACKUP_PASSPHRASE\}"'
+
+  - it: reads the passphrase from an operator-supplied Secret under its own key
+    documentSelector:
+      path: kind
+      value: CronJob
+    set:
+      existingSecret: paperless-credentials
+      backup.existingSecretKey: paperless-export-key
+    asserts:
+      - contains:
+          path: spec.jobTemplate.spec.template.spec.containers[0].env
+          content:
+            name: BACKUP_PASSPHRASE
+            valueFrom:
+              secretKeyRef:
+                name: paperless-credentials
+                key: paperless-export-key
+
+  - it: omits the flag entirely when no passphrase is configured
+    documentSelector:
+      path: kind
+      value: CronJob
+    asserts:
+      - notMatchRegex:
+          path: spec.jobTemplate.spec.template.spec.containers[0].args[0]
+          pattern: --passphrase
+
+  # --- upload ------------------------------------------------------------------------------
+
+  # Ordering comes from the pod, not from a script: init containers run to completion first, so a
+  # failed export never reaches the uploader.
+  - it: sequences the upload after the export by making the export an initContainer
+    documentSelector:
+      path: kind
+      value: CronJob
+    set:
+      backup.upload.enabled: true
+      backup.upload.container:
+        name: upload
+        image: rclone/rclone:1.71
+    asserts:
+      - equal:
+          path: spec.jobTemplate.spec.template.spec.initContainers[0].name
+          value: export
+      - equal:
+          path: spec.jobTemplate.spec.template.spec.containers[0].name
+          value: upload
+      - equal:
+          path: spec.jobTemplate.spec.template.spec.containers[0].image
+          value: rclone/rclone:1.71
+
+  - it: hands the uploader the export volume and nothing else of the chart's
+    documentSelector:
+      path: kind
+      value: CronJob
+    set:
+      backup.upload.enabled: true
+      backup.upload.mountPath: /data
+      backup.upload.container:
+        name: upload
+        image: rclone/rclone:1.71
+    asserts:
+      - equal:
+          path: spec.jobTemplate.spec.template.spec.containers[0].volumeMounts
+          value:
+            - name: export
+              mountPath: /data
+
+  # --- schedule ----------------------------------------------------------------------------
+
+  - it: sets the time zone on a cluster that supports the field
+    documentSelector:
+      path: kind
+      value: CronJob
+    set:
+      backup.timeZone: Europe/Berlin
+      kubeVersionOverride: "1.30.0"
+    asserts:
+      - equal:
+          path: spec.timeZone
+          value: Europe/Berlin
+
+  # Older API servers reject the field outright rather than ignoring it, so an install that would
+  # otherwise work must not carry it.
+  - it: omits the time zone on a cluster that would reject it
+    documentSelector:
+      path: kind
+      value: CronJob
+    set:
+      backup.timeZone: Europe/Berlin
+      kubeVersionOverride: "1.26.0"
+    asserts:
+      - isNull:
+          path: spec.timeZone

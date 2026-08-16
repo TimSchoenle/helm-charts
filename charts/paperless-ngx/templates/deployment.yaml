@@ -59,6 +59,24 @@ spec:
         app.kubernetes.io/component: server
     spec:
       {{- include "common.podSpec.common" . | nindent 6 }}
+      {{- if .Values.restore.enabled }}
+      {{- /*
+        The import runs here rather than as a Job of its own because of what it needs, not out of
+        preference. `document_importer` writes the media and data directories and must be the only
+        thing touching them while it does — and the consumer, the scheduler and the migrations all
+        start the moment this container does. An initContainer is the only placement that puts it
+        strictly before them, and it gets the volumes without a second pod having to attach the
+        same ReadWriteOnce claims.
+
+        It fails the pod when the import fails, which is the point: the alternative is a webserver
+        that comes up serving half an archive.
+
+        A marker file on the data volume makes it a no-op on every subsequent start, so
+        `restore.enabled` can be left set instead of needing a follow-up upgrade to remove it.
+      */}}
+      initContainers:
+        {{- include "paperless-ngx.restore.container" (dict "ctx" $) | nindent 8 }}
+      {{- end }}
       containers:
         {{- include "common.container" (dict
               "ctx" $

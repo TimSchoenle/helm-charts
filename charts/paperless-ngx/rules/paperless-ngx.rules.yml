@@ -86,6 +86,37 @@ groups:
             )
           )
 
+      # When the backup CronJob last completed a run successfully, as a Unix timestamp. This is
+      # the series the whole backup story rests on: a Job that fails is noticed within minutes,
+      # while a schedule that quietly stopped firing — a suspended CronJob, a controller that lost
+      # it, a `startingDeadlineSeconds` every run now misses — produces no failures at all and is
+      # otherwise invisible until a restore is attempted.
+      - record: namespace_cronjob:paperless_ngx_backup_last_success:max
+        expr: >-
+          max by (namespace, cronjob) (
+            kube_cronjob_status_last_successful_time{paperless_ngx_scope=~".*", cronjob=~".*paperless-ngx.*"}
+            or
+            kube_cronjob_status_last_successful_time{paperless_ngx_scope=~".*"}
+            * on (namespace, cronjob) group_left ()
+            max by (namespace, cronjob) (
+              kube_cronjob_labels{paperless_ngx_scope=~".*", label_app_kubernetes_io_name="paperless-ngx"}
+            )
+          )
+
+      # Backup runs that gave up. Kept per Job rather than rolled up to the CronJob, because the
+      # Job name is what `kubectl logs` needs and the CronJob name is not.
+      - record: namespace_job_name:paperless_ngx_backup_failed:max
+        expr: >-
+          max by (namespace, job_name) (
+            kube_job_status_failed{paperless_ngx_scope=~".*", job_name=~".*paperless-ngx-backup.*"}
+            or
+            kube_job_status_failed{paperless_ngx_scope=~".*"}
+            * on (namespace, job_name) group_left ()
+            max by (namespace, job_name) (
+              kube_job_labels{paperless_ngx_scope=~".*", label_app_kubernetes_io_name="paperless-ngx", label_app_kubernetes_io_component="backup"}
+            )
+          )
+
       # Restarts over a window long enough to distinguish a crash loop from a rollout.
       - record: namespace_pod_container:paperless_ngx_restarts:increase1h
         expr: >-
@@ -234,6 +265,75 @@ groups:
             half-written — which is repaired with `document_index reindex` after there is room
             again. Expand
             `kubectl -n {{ $labels.namespace }} get pvc {{ $labels.persistentvolumeclaim }}` now.
+
+      # A backup run that gave up. One failed night is not an outage — the next scheduled run is
+      # the retry — but it is the only warning before the staleness alert below, which by
+      # definition fires a day late.
+      - alert: PaperlessNgxBackupFailed
+        expr: namespace_job_name:paperless_ngx_backup_failed:max{paperless_ngx_scope=~".*"} > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "paperless-ngx backup {{ $labels.job_name }} failed"
+          description: >-
+            `kubectl -n {{ $labels.namespace }} logs job/{{ $labels.job_name }}` has the reason.
+            The ones that recur rather than resolve themselves: the export volume is full, which
+            shows as an OSError partway through and is the same fix as PaperlessNgxVolumeFillingUp;
+            the pod could not be scheduled, which under the default `backup.coScheduleWithApp`
+            means the application pod was not running at the scheduled hour; the run outlived
+            `backup.activeDeadlineSeconds`, which a first full export of a large archive genuinely
+            can. In `zip` mode also check the scratch volume — the whole export is assembled there
+            before it is compressed, and an evicted pod rather than a failed one is what running
+            out of it looks like.
+
+      # No successful backup in two days. This is the one that matters: a backup nobody is
+      # alerted on is a backup nobody has, and the usual way it ends is a schedule that stopped
+      # firing months before anyone tried to restore.
+      #
+      # The threshold is absolute rather than derived from `backup.schedule`, because a
+      # PromQL rule cannot read a cron expression. Two days suits the daily default and every
+      # schedule more frequent than it; on a weekly schedule this alert fires permanently and
+      # should be overridden or dropped.
+      - alert: PaperlessNgxBackupStale
+        expr: (time() - namespace_cronjob:paperless_ngx_backup_last_success:max{paperless_ngx_scope=~".*"}) > 172800
+        for: 1h
+        labels:
+          severity: critical
+        annotations:
+          summary: "paperless-ngx backup {{ $labels.cronjob }} has not succeeded in over two days"
+          description: >-
+            `kubectl -n {{ $labels.namespace }} get cronjob {{ $labels.cronjob }}` and check
+            SUSPEND, LAST SCHEDULE and ACTIVE together. Suspended is the common one. An ACTIVE run
+            that never finishes blocks every later run under `concurrencyPolicy: Forbid`, and the
+            Job it is waiting on is usually Pending because the application pod moved to another
+            node — the export mounts the same ReadWriteOnce claims and cannot follow it. Nothing
+            here means documents are being lost; it means the last copy of them is getting older.
+
+      # Paused and forgotten. Distinct from the alert above because it fires immediately and says
+      # exactly what happened, rather than two days later as an absence.
+      - alert: PaperlessNgxBackupSuspended
+        expr: >-
+          max by (namespace, cronjob) (
+            kube_cronjob_spec_suspend{paperless_ngx_scope=~".*", cronjob=~".*paperless-ngx.*"}
+            or
+            kube_cronjob_spec_suspend{paperless_ngx_scope=~".*"}
+            * on (namespace, cronjob) group_left ()
+            max by (namespace, cronjob) (
+              kube_cronjob_labels{paperless_ngx_scope=~".*", label_app_kubernetes_io_name="paperless-ngx"}
+            )
+          ) > 0
+        for: 6h
+        labels:
+          severity: warning
+        annotations:
+          summary: "paperless-ngx backup {{ $labels.cronjob }} is suspended"
+          description: >-
+            The schedule is paused, so no export is being taken. Six hours of tolerance is there
+            so a maintenance window does not page anybody; past that it is a suspension somebody
+            forgot to lift. Clear `backup.suspend` and upgrade, or
+            `kubectl -n {{ $labels.namespace }} patch cronjob {{ $labels.cronjob }} -p
+            '{"spec":{"suspend":false}}'` if the release itself is mid-change.
 
       # The bundled datastores. Neither is a singleton by accident: this chart runs one replica
       # of each, so ready-replicas of zero means the archive has lost its database or its broker.

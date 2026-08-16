@@ -1,8 +1,8 @@
 # paperless-ngx
 
-![Version: 1.0.0](https://img.shields.io/badge/Version-1.0.0-informational?style=flat-square) ![AppVersion: 3.0.5](https://img.shields.io/badge/AppVersion-3.0.5-informational?style=flat-square)
+![Version: 1.1.0](https://img.shields.io/badge/Version-1.1.0-informational?style=flat-square) ![AppVersion: 3.0.5](https://img.shields.io/badge/AppVersion-3.0.5-informational?style=flat-square)
 
-This chart deploys paperless-ngx — a document management system that scans, indexes and archives your paper documents — hardened to the restricted Pod Security Standard, with per-directory persistence, optional bundled Valkey, PostgreSQL, Gotenberg and Tika, Ingress and Gateway API publishing, Grafana dashboards and Prometheus alerting rules.
+This chart deploys paperless-ngx — a document management system that scans, indexes and archives your paper documents — hardened to the restricted Pod Security Standard, with per-directory persistence, scheduled document_exporter backups and document_importer restores, optional bundled Valkey, PostgreSQL, Gotenberg and Tika, Ingress and Gateway API publishing, Grafana dashboards and Prometheus alerting rules.
 
 Four decisions shape every install, and all four are covered below: the archive lives on volumes
 that must outlive the release ([Storage](#storage)), the application cannot process a single
@@ -94,7 +94,9 @@ to put it on an `emptyDir`.
 
 `export` is backed by an `emptyDir` unless you enable a claim for it. That is not only a
 convenience: the directory is one of the image's declared volumes, so without a mount of its own
-it is read-only, and an export fails at the moment somebody needs a backup.
+it is read-only, and an export fails at the moment somebody needs a backup. `backup.enabled`
+requires a real claim here and the chart refuses to render without one — see
+[Backup and restore](#backup-and-restore).
 
 Claims default to `ReadWriteOnce`, which forces the Deployment to the `Recreate` update strategy —
 a rolling update deadlocks, because the replacement pod cannot attach a volume the outgoing pod
@@ -152,6 +154,34 @@ postgresql:
 Switching an existing archive is an export and re-import (`document_exporter` then
 `document_importer`), not a values change — the chart cannot migrate the data for you, and
 pointing a populated release at an empty database shows an empty archive rather than an error.
+That is what [Backup and restore](#backup-and-restore) automates.
+
+### Driver options
+
+`database.sslMode` and `database.poolSize` are rendered into a single `PAPERLESS_DB_OPTIONS`
+string, which is upstream's consolidated replacement for the per-option environment variables it
+deprecated (`PAPERLESS_DBSSLMODE`, `PAPERLESS_DB_POOLSIZE`, the SSL certificate paths, the
+connection timeout) and removes in 3.2. Emitting the old ones still works and logs a deprecation
+warning per variable at every start; the risk is the release that drops them, where a `sslmode`
+nothing reads is a plaintext connection with nothing said about it.
+
+The option *names* are engine-specific and the chart translates them: `sslmode` for PostgreSQL,
+`ssl_mode` for MariaDB. Pooling is a PostgreSQL driver feature, so `database.poolSize` on another
+engine is rejected rather than silently dropped.
+
+Anything the chart does not model goes in `database.options` verbatim, including nested keys:
+
+```yaml
+database:
+  engine: postgresql
+  sslMode: verify-full
+  options:
+    sslrootcert: /certs/ca.pem     # mount it yourself with extraVolumes
+    connect_timeout: 10
+    pool.min_size: 2
+```
+
+An entry there wins over the modelled shorthand when the keys collide.
 
 ### A broker with a password
 
@@ -344,7 +374,7 @@ cluster already has — kube-state-metrics for workload health, the kubelet for 
 
 | Toggle | What it creates |
 | --- | --- |
-| `metrics.prometheusRule.enabled` | a `PrometheusRule` with eight alerts and four recording rules |
+| `metrics.prometheusRule.enabled` | a `PrometheusRule` with eleven alerts and six recording rules |
 | `metrics.dashboard.enabled` | a labelled ConfigMap the Grafana sidecar loads |
 | `metrics.dashboard.grafanaOperator.enabled` | one `GrafanaDashboard` per file, for grafana-operator v5 |
 
@@ -363,7 +393,9 @@ The `labels` are not decoration: a Prometheus Operator selects rules by label, s
 your instance selects on the object is created and never loaded.
 
 The alerts cover availability, absence, crash loops, restart rate, out-of-memory kills, volume
-fill at two thresholds, and the bundled datastores. Each is evaluated against synthetic series
+fill at two thresholds, the bundled datastores, and — when `backup.enabled` is set — a scheduled
+export that failed, went stale or was suspended (see
+[Knowing it still works](#knowing-it-still-works)). Each is evaluated against synthetic series
 with `promtool` in CI, in both the committed form and the namespace-scoped form a cluster actually
 receives.
 
@@ -475,16 +507,231 @@ Never put credentials there — `extraConfig` lands in the ConfigMap, not the Se
 whose value is sensitive, use `extraEnv` with a `secretKeyRef`, or mount the Secret and point the
 image's `PAPERLESS_<NAME>_FILE` indirection at the file.
 
+## Backup and restore
+
+Two different things live under this heading and neither replaces the other.
+
+A **volume snapshot** — Velero, a CSI `VolumeSnapshot`, restic against the claims — is a
+crash-consistent copy of bytes. It restores quickly and it restores onto the same database engine
+at a compatible application version. Nothing here competes with it.
+
+An **export**, taken with upstream's `document_exporter`, is a logical backup: the documents plus a
+`manifest.json` holding everything the database knows about them. It is slower and larger, and it
+is the only form that restores into a *fresh* instance — which is what you need to move an archive
+to another cluster, to recover from a corrupt database rather than a lost volume, or to make the
+SQLite-to-PostgreSQL switch this chart's notes tell you is an export and re-import.
+
+The chart automates the second. Run both.
+
+### Scheduled exports
+
+```yaml
+persistence:
+  export:
+    enabled: true            # required; without a claim the export dies with the pod
+    size: 50Gi
+    annotations:
+      helm.sh/resource-policy: keep
+
+backup:
+  enabled: true
+  schedule: "0 3 * * *"
+  timeZone: Europe/Berlin
+  passphrase: <openssl rand -base64 32>
+```
+
+That is a nightly incremental export into the export claim: one continuously-updated tree, with
+only the documents that changed since last night rewritten. Cheap, and the right default — but it
+is a mirror, not a history, so a document deleted by mistake is gone from the backup on the next
+run.
+
+For a history, take dated archives instead:
+
+```yaml
+backup:
+  mode: zip
+  options:
+    delete: false            # required in zip mode; see below
+  zip:
+    nameTemplate: paperless-export-%Y-%m-%dT%H%M%SZ
+    retentionCount: 7
+  scratch:
+    existingClaim: paperless-backup-scratch   # for an archive larger than the node's disk
+```
+
+Two things about `zip` mode are worth knowing before you turn it on. The exporter assembles the
+**entire** export tree in the scratch directory and compresses it afterwards, so the pod needs as
+much free scratch space as the whole archive occupies — an `emptyDir` is charged against the
+node's ephemeral storage and a pod that exceeds it is evicted mid-export, which is why
+`backup.scratch` exists. And `--delete` means something different here: rather than pruning stale
+documents it empties the target directory before moving the new archive in, which would destroy
+every archive `retentionCount` is keeping. The chart handles retention itself and refuses to
+render the combination.
+
+### Getting it off the cluster
+
+An export sitting on a PersistentVolume in the same cluster as the archive it backs up survives a
+mistake in the web UI. It does not survive losing the cluster.
+
+`backup.upload` takes an arbitrary container and runs it after the export. The chart takes no
+dependency on any particular tool: the exporter becomes an `initContainer`, so the uploader starts
+only once the export has succeeded, and a failed export never reaches it at all.
+
+```yaml
+backup:
+  upload:
+    enabled: true
+    mountPath: /export
+    container:
+      name: upload
+      image: rclone/rclone:1.71
+      command: ["rclone", "sync", "/export", "remote:paperless-backups"]
+      envFrom:
+        - secretRef:
+            name: rclone-config      # your credentials, your Secret
+```
+
+### How the export pod reaches the volumes
+
+`media` and `data` default to `ReadWriteOnce`. Such a volume can be mounted by several pods that
+share a node and cannot be attached to two nodes at all, so `backup.coScheduleWithApp` (on by
+default) pins the backup pod to the application pod's node with a required `podAffinity`.
+
+Without it, on RWO storage, the Job either lands correctly by luck or sits `Pending` until its
+deadline — which presents as a backup that has silently not run for weeks. The cost is that a
+backup cannot start while the application pod is down, which is the correct trade: it would have
+nothing consistent to read anyway. On `ReadWriteMany` storage, turn it off.
+
+The export takes the application's own media lock while it runs, so it does not race the consumer
+for files. It is not a transactional snapshot of the database, though, which is why the default
+schedule is a quiet hour.
+
+### Restoring
+
+The import is **not** a Job. `document_importer` needs the media and data directories to itself
+and has to finish before anything else touches them — and the consumer, the scheduler and the
+migrations all start the moment the application container does. So it runs as an `initContainer`
+on the application pod: strictly before them, with the volumes already attached, working under
+`ReadWriteOnce`, and failing the pod rather than bringing up a webserver that serves half an
+archive.
+
+```yaml
+image:
+  tag: 3.0.5                 # the version that produced the export
+
+restore:
+  enabled: true
+  source:
+    existingClaim: paperless-export-from-the-old-cluster
+    subPath: paperless-export-2026-01-01T030000Z.zip   # or a directory holding manifest.json
+  passphrase: <the backup.passphrase of the source instance>
+```
+
+The source can be one of three things, and exactly one:
+
+| `restore.source` | Where the export is |
+| --- | --- |
+| `existingClaim` (+ `subPath`) | a PersistentVolumeClaim, mounted read-only |
+| `useExportVolume` | this release's own export volume, for a rebuild in place |
+| `url` (+ `checksum`) | an `http(s)://` zip, downloaded before the import |
+
+#### From a URL
+
+The common case is an archive that is already off-cluster — object storage, another cluster's
+backup bucket, a release asset — where staging it into a PersistentVolume by hand is the only step
+in the way:
+
+```yaml
+persistence:
+  export:
+    enabled: true              # required: the download lands here and needs room for the archive
+    size: 50Gi
+
+restore:
+  enabled: true
+  source:
+    url: https://backups.example.com/paperless-2026-01-01T030000Z.zip?X-Amz-Signature=…
+    checksum: 4f0e0b57b0a06a5e9f4a4fa0a24d0b0d3a2e6f2c1b8d7a9c0e1f2a3b4c5d6e7f
+```
+
+The URL is stored in the **Secret**, not the ConfigMap. The URLs that make this feature worth
+having are presigned ones, where the signature in the query string is the whole of the
+authorisation — so it is treated like the passphrases beside it, and `restore.source.url` is
+ignored in favour of the `restore-url` key when you supply your own `existingSecret`.
+
+`checksum` is optional and you should set it. Without it a truncated transfer imports as far as it
+can and stops, which looks like a partial archive rather than a failed download; with it the pod
+fails outright. It is verified on every start, not only after a fresh download, so a file left
+behind by an earlier attempt gets the same scrutiny.
+
+The download itself is written under a temporary name and moved into place only once `curl` has
+succeeded — with `--fail`, so an HTTP error is an error rather than a 403 body saved as a zip — and
+a retry after an interrupted transfer starts over instead of importing a truncated file.
+
+Note that the import container's egress is the application's. With a NetworkPolicy in force, an
+internet-hosted archive needs `networkPolicy.egress.https`; the install notes say so when the
+combination is missing.
+
+#### Constraints, in the order they bite
+
+1. **The target must be empty.** The importer refuses to run against a database that already holds
+   users or documents. This belongs on a fresh release; to restore over an existing instance,
+   delete the media and data volumes first.
+2. **The version must match.** An export carries an exact image of the database and the schema
+   changes between releases. `document_importer` *warns* about a mismatch and then continues,
+   which is the failure that costs an archive rather than reporting one. Pin `image.tag` to the
+   source instance's version, import, then upgrade.
+3. **API tokens are not exported.** Every client needs a new one afterwards.
+4. **A zip import needs scratch space.** The archive is extracted in full to
+   `/tmp` before it is read, so `persistence.scratchSizeLimit` (2 GiB by default) has to exceed
+   the *uncompressed* size or the pod is evicted part-way through. A directory export has no such
+   requirement.
+
+The import runs once, guarded by a marker file on the data volume, and is a no-op on every start
+after that — so `restore.enabled` can be left in your values instead of needing a follow-up
+upgrade to remove it. Deleting the marker re-arms it.
+
+### Knowing it still works
+
+A backup nobody is alerted on is a backup nobody has. `metrics.prometheusRule.enabled` ships three
+rules for this:
+
+| Alert | Fires when |
+| --- | --- |
+| `PaperlessNgxBackupFailed` | a run exhausted its retries |
+| `PaperlessNgxBackupStale` | no successful run in over two days |
+| `PaperlessNgxBackupSuspended` | the schedule has been paused for six hours |
+
+`PaperlessNgxBackupStale` is the one that matters. A failed Job is loud; a schedule that quietly
+stopped firing leaves no Job, no failed pod and no error anywhere, and the usual way that ends is
+someone discovering it during a restore. Its threshold is absolute rather than derived from
+`backup.schedule` — a PromQL rule cannot read a cron expression — so it suits the daily default
+and anything more frequent, and needs overriding on a weekly schedule.
+
+Do not wait for the first scheduled run to find out whether any of this works:
+
+```shell
+kubectl create job -n [NAMESPACE] --from=cronjob/[RELEASE_NAME]-paperless-ngx-backup backup-manual-1
+kubectl wait -n [NAMESPACE] --for=condition=complete job/backup-manual-1 --timeout=1h
+```
+
+And then, at least once, restore it into a scratch namespace. An export that has never been
+imported is a hypothesis.
+
 ## Operating it
 
 ```shell
 # create a superuser by hand
 kubectl exec -n [NAMESPACE] deployment/[RELEASE_NAME]-paperless-ngx -- createsuperuser
 
-# export the whole archive, then copy it out
+# export the whole archive by hand, then copy it out
 kubectl exec -n [NAMESPACE] deployment/[RELEASE_NAME]-paperless-ngx -- document_exporter ../export
+kubectl cp [NAMESPACE]/[POD]:/usr/src/paperless/export ./paperless-export
 
-# rebuild the search index after restoring the data volume
+# run tonight's scheduled export now
+kubectl create job -n [NAMESPACE] --from=cronjob/[RELEASE_NAME]-paperless-ngx-backup backup-manual-1
+
+# rebuild the search index after restoring the data volume, or after an import
 kubectl exec -n [NAMESPACE] deployment/[RELEASE_NAME]-paperless-ngx -- document_index reindex
 ```
 
@@ -497,17 +744,62 @@ earlier `image.tag` after a major upgrade is not supported by the application. E
 |-----|------|---------|-------------|
 | affinity | object | `{}` | Explicit affinity rules. Wins over `podAntiAffinity`. |
 | automountServiceAccountToken | bool | `false` | Mount the ServiceAccount API token into the pod. Set on the pod itself, which is what actually keeps the token out of the container: the ServiceAccount-level setting is ignored as soon as a pod names a different account. |
+| backup | object | `{"activeDeadlineSeconds":21600,"affinity":{},"backoffLimit":1,"coScheduleWithApp":true,"concurrencyPolicy":"Forbid","enabled":false,"existingSecretKey":"export-passphrase","failedJobsHistoryLimit":3,"mode":"incremental","nodeSelector":{},"options":{"batchSize":500,"compareChecksums":false,"compareJson":false,"delete":true,"noArchive":false,"noThumbnail":false,"splitManifest":false,"useFilenameFormat":false,"useFolderPrefix":false},"passphrase":"","podAnnotations":{},"podLabels":{},"resources":{},"resourcesPreset":"small","schedule":"0 3 * * *","scratch":{"existingClaim":"","sizeLimit":""},"startingDeadlineSeconds":3600,"successfulJobsHistoryLimit":3,"suspend":false,"target":"/usr/src/paperless/export","timeZone":"","tolerations":[],"ttlSecondsAfterFinished":86400,"upload":{"container":{},"enabled":false,"mountPath":"/export"},"zip":{"nameTemplate":"paperless-export-%Y-%m-%dT%H%M%SZ","retentionCount":7}}` | Scheduled logical backups, taken with the `document_exporter` management command. This is a different kind of backup from a volume snapshot and neither replaces the other: a snapshot is a crash-consistent copy of bytes that restores onto the same engine at a compatible version, while an export is documents plus a `manifest.json` that can be imported into a *fresh* instance — the only form that survives a move to another cluster or the SQLite to PostgreSQL switch.  The exporter takes the application's own media lock while it runs, so it does not race the consumer for files. It is not a transactional snapshot of the database, though, so schedule it for a quiet hour. |
+| backup.activeDeadlineSeconds | int | `21600` | Seconds a run may take before it is killed. Six hours covers a first full export of a large archive over slow storage; without it a wedged export blocks every later run under `concurrencyPolicy: Forbid`. |
+| backup.affinity | object | `{}` | Explicit affinity for the backup pod, replacing the co-scheduling rule entirely. Setting this while `backup.coScheduleWithApp` is still on is a contradiction the chart refuses to render, because the pod would then not be co-scheduled and nothing would say so. |
+| backup.backoffLimit | int | `1` | Retries before a run is given up on. Low on purpose: an export that failed on a full volume or an unreachable database fails the same way three seconds later, and the next scheduled run is the real retry. |
+| backup.coScheduleWithApp | bool | `true` | Schedule the backup pod onto the node the application pod is running on, with a required `podAffinity`.  This is what makes the default `ReadWriteOnce` claims work: an RWO volume can be mounted by several pods at once as long as they share a node, and cannot be attached to two nodes at all. With this off and RWO storage, the Job either happens to land correctly or sits Pending until its deadline — a backup that silently never runs.  The cost is that a backup cannot start while the application pod is down, which is the right trade: it would have nothing consistent to read anyway. Turn it off for `ReadWriteMany` storage, or when `backup.affinity` states the placement explicitly. |
+| backup.concurrencyPolicy | string | `"Forbid"` | What to do when a run is still going at the next scheduled time. `Forbid` is the only safe answer here: two exporters writing one target directory interleave their output, and the second one's `--delete` pass removes files the first has not written yet. |
+| backup.enabled | bool | `false` | Create the backup CronJob. Requires `persistence.export.enabled`, because the Job would otherwise write the archive into its own `emptyDir` and delete it again on completion — a backup that reports success nightly and restores nothing. The chart refuses to render rather than producing that. |
+| backup.existingSecretKey | string | `"export-passphrase"` | Key inside `existingSecret` that holds the export passphrase. |
+| backup.failedJobsHistoryLimit | int | `3` | Failed Jobs retained in the CronJob's history. Keep at least a couple: the failed Job's pod is the only place the reason is recorded. |
+| backup.mode | string | `"incremental"` | What kind of export to take.  `incremental` keeps one continuously-updated export tree in the target directory, re-writing only the documents that changed since the last run. Cheapest by far, and the right default — but it is one snapshot, not a history, so a document deleted by mistake is gone from the backup on the next run.  `zip` produces a dated archive per run and keeps `backup.zip.retentionCount` of them, which is what gives you a history to roll back to. **It builds the whole export in the scratch directory first**, so it needs as much free space there as the entire archive occupies; see `backup.scratch`.  `dataOnly` exports the database contents and no files at all. Small and quick, and useful alongside a volume snapshot that already covers the media — but on its own it restores an instance that knows about every document and holds none of them. |
+| backup.nodeSelector | object | `{}` | Node selector for the backup pod. Empty inherits the application's. |
+| backup.options | object | `{"batchSize":500,"compareChecksums":false,"compareJson":false,"delete":true,"noArchive":false,"noThumbnail":false,"splitManifest":false,"useFilenameFormat":false,"useFolderPrefix":false}` | The exporter's own flags. Every one of these is a documented `document_exporter` option; the names here are the long forms. |
+| backup.options.batchSize | int | `500` | `--batch-size`: database records serialised per batch. Lower it if the Job is killed for exceeding its memory limit on a large archive. |
+| backup.options.compareChecksums | bool | `false` | `--compare-checksums`: decide what changed by hashing file contents rather than by comparing size and modification time. Slower on every run, and the only setting that notices a file corrupted in place. |
+| backup.options.compareJson | bool | `false` | `--compare-json`: leave the manifest and metadata JSON files alone when their contents have not changed, which keeps an incremental export's modification times stable for a file-level backup tool watching the directory. |
+| backup.options.delete | bool | `true` | `--delete`: remove exported files that are no longer in the dataset, so the target tracks the archive rather than growing forever. Meaningless in `zip` mode, where the same flag instead empties the target directory before the new archive is moved in — which would destroy every retained archive, so the chart refuses to render that combination. |
+| backup.options.noArchive | bool | `false` | `--no-archive`: leave out the generated PDF/A files. They are reproducible from the originals by re-running OCR, so this trades a much smaller backup for a long restore. |
+| backup.options.noThumbnail | bool | `false` | `--no-thumbnail`: leave out thumbnails, which are regenerated on demand. |
+| backup.options.splitManifest | bool | `false` | `--split-manifest`: write one JSON file per document rather than a single `manifest.json`. Worth setting for a large archive — a monolithic manifest is one enormous file that a deduplicating backup tool has to re-transfer whenever any document changes. |
+| backup.options.useFilenameFormat | bool | `false` | `--use-filename-format`: name exported files with `paperless.filenameFormat` instead of the exporter's own scheme. Makes the export browsable by a human; makes it less stable, because renaming a correspondent renames files. |
+| backup.options.useFolderPrefix | bool | `false` | `--use-folder-prefix`: sort the export into `archive/`, `originals/`, `thumbnails/` and `json/` subdirectories instead of interleaving them. |
+| backup.passphrase | string | `""` | Passphrase encrypting the sensitive fields of the export. Ignored when `existingSecret` is set. It reaches the exporter through an environment variable rather than on the command line, so it does not appear in the pod spec or in `kubectl describe`.  **Store it somewhere other than the backup.** An encrypted export whose passphrase is lost is not a backup, and the same passphrase has to be given to `restore` on the way back in. |
+| backup.podAnnotations | object | `{}` | Additional annotations for the backup pod. |
+| backup.podLabels | object | `{}` | Additional labels for the backup pod. |
+| backup.resources | object | `{}` | Explicit resource requests and limits for the backup container. |
+| backup.resourcesPreset | string | `"small"` | Named resource sizing for the backup container. Ignored when `backup.resources` is set. The exporter copies files and serialises database rows; it does not run OCR, so it needs a fraction of what the application does. |
+| backup.schedule | string | `"0 3 * * *"` | Cron schedule. The default is nightly at 03:00, which is the quiet hour this wants. |
+| backup.scratch | object | `{"existingClaim":"","sizeLimit":""}` | Scratch space for the backup pod, mounted at `/tmp` as `PAPERLESS_SCRATCH_DIR`.  Separate from `persistence.scratchSizeLimit` because the requirement differs by orders of magnitude. An incremental export streams straight into the target and needs almost none; a `zip` export assembles the **entire** export tree here before compressing it, so it needs as much free space as the whole archive occupies. An `emptyDir` is charged against the node's ephemeral storage, and a pod that exceeds its limit is evicted mid-export. |
+| backup.scratch.existingClaim | string | `""` | Use an existing PersistentVolumeClaim for the scratch directory instead of an `emptyDir`. This is the answer for `zip` mode over an archive larger than the node's ephemeral storage. |
+| backup.scratch.sizeLimit | string | `""` | Size limit of the `emptyDir`. Empty removes the limit, which is the default here because a limit too small for the archive turns a backup into an eviction. Ignored when `existingClaim` is set. |
+| backup.startingDeadlineSeconds | int | `3600` | Seconds a missed schedule may still be started within. Bounded rather than unlimited so a controller outage does not fire every skipped run at once when it comes back. |
+| backup.successfulJobsHistoryLimit | int | `3` | Completed Jobs retained in the CronJob's history. |
+| backup.suspend | bool | `false` | Suspend the schedule without deleting the CronJob, for a maintenance window. |
+| backup.target | string | `"/usr/src/paperless/export"` | Directory the export is written to, inside the export volume. |
+| backup.timeZone | string | `""` | IANA time zone the schedule is interpreted in (`Europe/Berlin`). Empty uses the kube-controller-manager's zone, which is UTC on most clusters. Requires Kubernetes 1.27+; on older clusters the field is dropped rather than rejected. |
+| backup.tolerations | list | `[]` | Tolerations for the backup pod. Empty inherits the application's. |
+| backup.ttlSecondsAfterFinished | int | `86400` | Seconds a finished Job is kept before the TTL controller removes it. A day, so the logs of last night's backup are still there in the morning. |
+| backup.upload | object | `{"container":{},"enabled":false,"mountPath":"/export"}` | Ship the finished export off the cluster. An export sitting on a PersistentVolume in the same cluster as the archive it backs up survives a mistake, but not the cluster.  The chart deliberately takes no dependency on any particular tool. When this is enabled the exporter moves to an `initContainer` and the container below becomes the pod's main container — so it runs only after the export has completed successfully, with the export volume mounted. Any image that can copy a directory somewhere (rclone, restic, the AWS CLI, `mc`) works, with its own credentials from its own Secret. |
+| backup.upload.container | object | `{}` | The container itself, in the `corev1.Container` shape, verbatim apart from the export volume mount the chart appends. `name` and `image` are required; everything else — `command`, `env`, `envFrom`, `resources`, `securityContext` — is yours. Required when `backup.upload.enabled` is set. Rendered through the template engine, so `{{ .Release.Name }}` works.  Typed against the Kubernetes definition would be better, but a `$ref` to it makes the empty default itself invalid — `name` is a required property — so the object is left open and `validateValues` checks what actually matters instead. |
+| backup.upload.enabled | bool | `false` | Run the upload container after each successful export. |
+| backup.upload.mountPath | string | `"/export"` | Where the export volume is mounted in the upload container. |
+| backup.zip | object | `{"nameTemplate":"paperless-export-%Y-%m-%dT%H%M%SZ","retentionCount":7}` | Dated archives, used when `backup.mode` is `zip`. |
+| backup.zip.nameTemplate | string | `"paperless-export-%Y-%m-%dT%H%M%SZ"` | Base name of each archive, as a `strftime` format string; `.zip` is appended. Expanded by `date` **inside the container at run time**, not by Helm — a name templated at render time would be frozen at the moment of the last `helm upgrade`, and every run would overwrite the same file. |
+| backup.zip.retentionCount | int | `7` | How many archives to keep. After a successful export the oldest are deleted until this many remain, so the export volume has to hold this many copies of the archive. |
 | commonAnnotations | object | `{}` | Annotations added to every object this chart creates. |
 | commonLabels | object | `{}` | Labels added to every object this chart creates. |
-| database | object | `{"engine":"sqlite","existingSecretKey":"database-password","host":"","name":"paperless","password":"","poolSize":0,"port":0,"sslMode":"","user":"paperless"}` | Which database paperless-ngx stores its metadata in. The documents themselves always live on the media volume; this holds the index, the tags, the correspondents and the audit log. |
+| database | object | `{"engine":"sqlite","existingSecretKey":"database-password","host":"","name":"paperless","options":{},"password":"","poolSize":0,"port":0,"sslMode":"","user":"paperless"}` | Which database paperless-ngx stores its metadata in. The documents themselves always live on the media volume; this holds the index, the tags, the correspondents and the audit log. |
 | database.engine | string | `"sqlite"` | Database engine. `sqlite` keeps everything in the data volume and needs no second workload — the right answer for a single-user instance. PostgreSQL is upstream's recommendation for anything larger and is the only engine this chart can bundle. |
 | database.existingSecretKey | string | `"database-password"` | Key inside `existingSecret` that holds the database password. |
 | database.host | string | `""` | Database host. Empty resolves to the bundled PostgreSQL when `postgresql.enabled` is set; otherwise it is required for every engine except SQLite. |
 | database.name | string | `"paperless"` | Database name. Also the database the bundled PostgreSQL creates on first start. |
+| database.options | object | `{}` | Additional driver options, written verbatim into `PAPERLESS_DB_OPTIONS` as `key=value` pairs. This is upstream's consolidated replacement for the per-option environment variables, so it is where anything the driver supports but this chart does not model goes: `sslrootcert` and `sslcert` for PostgreSQL client certificates, `ssl.ca` for MariaDB, `connect_timeout`, `pool.min_size`. Nested options use dot notation, as upstream does.  An entry here wins over `sslMode` and `poolSize` when the keys collide, so an option the chart models can still be overridden without a second mechanism. Paths named here have to be mounted into the pod yourself, with `extraVolumes` and `extraVolumeMounts`. |
 | database.password | string | `""` | Database password. Ignored when `existingSecret` is set. Required for every engine except SQLite — including the bundled PostgreSQL, whose superuser it becomes. |
-| database.poolSize | int | `0` | Maximum size of the connection pool. `0` leaves pooling off, which is correct for a single-replica deployment talking to a database on the same network. |
+| database.poolSize | int | `0` | Maximum size of the connection pool. `0` leaves pooling off, which is correct for a single-replica deployment talking to a database on the same network.  Rendered into `PAPERLESS_DB_OPTIONS` as `pool.max_size`, replacing the deprecated `PAPERLESS_DB_POOLSIZE`. PostgreSQL only — its driver is the one that pools — so the chart refuses to render it for another engine rather than accepting a setting nothing reads. |
 | database.port | int | `0` | Database port. `0` uses the engine's default (5432 for PostgreSQL, 3306 for MariaDB). |
-| database.sslMode | string | `""` | TLS mode for the connection. Empty uses the engine default, which is `prefer` for PostgreSQL and `PREFERRED` for MariaDB — both of which fall back to plaintext without telling anyone. Set `require` (PostgreSQL) or `REQUIRED` (MariaDB) for a database outside the cluster. |
+| database.sslMode | string | `""` | TLS mode for the connection. Empty uses the engine default, which is `prefer` for PostgreSQL and `PREFERRED` for MariaDB — both of which fall back to plaintext without telling anyone. Set `require` (PostgreSQL) or `REQUIRED` (MariaDB) for a database outside the cluster.  Rendered into `PAPERLESS_DB_OPTIONS` as `sslmode` for PostgreSQL and `ssl_mode` for MariaDB. The dedicated `PAPERLESS_DBSSLMODE` variable this used to emit is deprecated upstream and is removed in 3.2; it still works today and logs a startup warning, which is why the chart no longer emits it. Ignored for SQLite, which has no connection to secure. |
 | database.user | string | `"paperless"` | Database user. Also the role the bundled PostgreSQL creates on first start. |
 | existingConfigMap | string | `""` | Name of an existing ConfigMap holding the `PAPERLESS_*` settings. When set, the chart creates none of its own and every value under `paperless` below is ignored — the ConfigMap is mounted with `envFrom` exactly as the generated one would be. For a deployment that manages the application's configuration outside this chart; the credentials still come from `existingSecret`. |
 | existingSecret | string | `""` | Name of an existing Secret holding every credential this chart consumes: the Django secret key, the admin password, and the database, broker and SMTP passwords. When set, the chart creates no Secret of its own and the plaintext fields below are ignored — which keeps them out of `values.yaml` and out of the Helm release object. The key names it looks for are the `existingSecretKey` fields beside each credential. |
@@ -743,6 +1035,22 @@ earlier `image.tag` after a major upgrade is not supported by the application. E
 | resources.requests.cpu | string | `"250m"` | Minimum CPU requested. OCR is CPU-bound and bursty; this reserves enough to keep the web UI responsive while a document is being processed. |
 | resources.requests.memory | string | `"512Mi"` | Minimum guaranteed memory allocation. |
 | resourcesPreset | string | `""` | Named resource sizing for the paperless-ngx container. Ignored when `resources` is set, which it is by default — no preset is large enough for OCR. |
+| restore | object | `{"batchSize":500,"enabled":false,"existingSecretKey":"import-passphrase","markerFile":".helm-restore-complete","passphrase":"","resources":{},"resourcesPreset":"medium","runMigrations":true,"source":{"checksum":"","existingClaim":"","subPath":"","url":"","urlExistingSecretKey":"restore-url","useExportVolume":false}}` | Importing an export produced by `document_exporter`, whether from a backup of this instance or from a different paperless-ngx altogether.  This is deliberately not a Job. `document_importer` needs the media and data directories to itself and has to finish before anything else touches them, which no separately-scheduled pod can promise — so the import runs as an `initContainer` on the application pod, ahead of the webserver, the consumer and the scheduler. That gives it exclusive access without a second copy of the volumes, works under `ReadWriteOnce`, and fails the pod rather than starting a half-imported archive.  It runs once, guarded by a marker file on the data volume, and is a no-op on every start after that — so these values can be left in place instead of being removed in a follow-up upgrade.  Importing a `.zip` export extracts it in full to the scratch directory first, so `persistence.scratchSizeLimit` has to be at least the archive's uncompressed size or the pod is evicted part-way through the import. A directory export carries no such requirement. |
+| restore.batchSize | int | `500` | `--batch-size`: database records inserted per batch. Lower it when the import container is OOM-killed part-way through a large archive. |
+| restore.enabled | bool | `false` | Run the import on the next start of the application pod.  **The target must be an empty installation.** The importer refuses to run against a database that already holds users or documents, so this belongs on a fresh release rather than on one that has been serving for a while. To restore over an existing instance, delete the media and data volumes first, so there is nothing left to refuse.  **The image version must match the one that produced the export.** An export carries an exact image of the database, and the schema changes between releases; the importer warns about a mismatch and then keeps going, which is the failure mode that costs an archive. Pin `image.tag` to the source instance's version, import, then upgrade. |
+| restore.existingSecretKey | string | `"import-passphrase"` | Key inside `existingSecret` that holds the import passphrase. |
+| restore.markerFile | string | `".helm-restore-complete"` | Name of the marker file written to the data volume once the import succeeds. Its presence is what makes the import run exactly once; deleting it re-arms the import on the next restart, which then fails against the now non-empty installation unless the volumes were cleared too. |
+| restore.passphrase | string | `""` | Passphrase the export was encrypted with, matching `backup.passphrase` on the instance that produced it. Ignored when `existingSecret` is set. Passed through the environment rather than on the command line. |
+| restore.resources | object | `{}` | Explicit resource requests and limits for the import container. |
+| restore.resourcesPreset | string | `"medium"` | Named resource sizing for the import container. Ignored when `restore.resources` is set. |
+| restore.runMigrations | bool | `true` | Run `manage.py migrate` before importing. Required and on by default: `document_importer` inserts rows and does not create the schema, so against a genuinely empty database it fails on the first table. Turn it off only when something else has already migrated. |
+| restore.source | object | `{"checksum":"","existingClaim":"","subPath":"","url":"","urlExistingSecretKey":"restore-url","useExportVolume":false}` | Where the export to import lives. |
+| restore.source.checksum | string | `""` | SHA-256 of the archive at `restore.source.url`, as the bare hex digest. Verified before the import and after a resumed download, so a truncated or substituted archive fails the pod instead of importing as far as it can and stopping.  Not a credential: it is a checksum, and it goes in the ConfigMap alongside the other settings. Empty skips verification, which is the wrong default for anything fetched over a network you do not own. |
+| restore.source.existingClaim | string | `""` | Name of an existing PersistentVolumeClaim holding the export. Required unless `restore.source.useExportVolume` is set — the chart cannot import from a volume that does not exist. |
+| restore.source.subPath | string | `""` | Path within the source volume holding the export — the directory that contains `manifest.json`, or a `.zip` file produced by `backup.mode: zip`. Empty imports from the root of the volume. Not used with `restore.source.url`, which names the archive itself. |
+| restore.source.url | string | `""` | URL of a `.zip` export to download and import, instead of reading one from a volume. For the case where the export is already off-cluster — object storage, another cluster's backup bucket, a release asset — and staging it into a PersistentVolume by hand first is the only step in the way.  It is fetched into the export volume before the import, which is why `persistence.export.enabled` is required: it needs somewhere with room for the whole archive, and a download that survives a retry rather than starting over. Written to a temporary name and moved into place only once complete, so an interrupted transfer is never mistaken for a finished one.  **Treated as a credential and stored in the Secret, not the ConfigMap.** The URLs that make this useful are presigned ones — S3, GCS, an Azure SAS link — and the signature in the query string *is* the authorisation. Ignored when `existingSecret` is set; put it there under `restore.source.urlExistingSecretKey` instead.  Only `https://` and `http://` are accepted. With a NetworkPolicy in force the download is subject to the application's own egress rules, so an internet-hosted archive needs `networkPolicy.egress.https`. |
+| restore.source.urlExistingSecretKey | string | `"restore-url"` | Key inside `existingSecret` that holds the download URL. |
+| restore.source.useExportVolume | bool | `false` | Import from this release's own export volume instead of a separate claim, for the case where `backup` wrote it and the instance is being rebuilt in place. |
 | revisionHistoryLimit | int | `3` | Number of old ReplicaSets retained for rollback. |
 | securityContext | object | `{"readOnlyRootFilesystem":false}` | Container security context, merged over the preset. `readOnlyRootFilesystem` is deliberately turned back off: the image boots under s6-overlay, which refuses to start unless `/run` is writable and either owned by the UID it runs as or world-writable. An `emptyDir` is always created owned by uid 0, `fsGroup` moves only its group, and `emptyDir` has no `defaultMode` — so no volume can satisfy it, and a read-only root filesystem leaves it nothing else to write to. The rest of the baseline still applies: non-root, all capabilities dropped, no privilege escalation, `seccompProfile: RuntimeDefault`. Setting this back to `true` fails the render with an explanation rather than producing a crash loop. |
 | securityContext.readOnlyRootFilesystem | bool | `false` | Whether the container's root filesystem is immutable. Must stay `false`; see above. |

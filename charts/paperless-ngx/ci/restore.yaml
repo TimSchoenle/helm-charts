@@ -1,0 +1,31 @@
+# Importing an export into a fresh instance, which is what a migration from another cluster looks
+# like from this chart's side.
+#
+# Named without the `-values` suffix, so `ct install` skips it while the render, kubeconform and
+# policy jobs still cover it. It cannot install: `restore.source.existingClaim` names a claim
+# holding an export that nobody created, so the pod would sit unschedulable and then, if it were
+# bound to an empty volume, fail its import container by design. That failure is the correct
+# behaviour and not something to prove on a CI cluster.
+#
+# What rendering does cover is the part that is easy to get wrong: the import is an initContainer
+# on the application pod rather than a Job, it precedes the container that runs the consumer and
+# the scheduler, it mounts the source claim read-only, and its passphrase is an environment
+# variable rather than an argument on a command line the whole cluster can read.
+#
+# Note the pinned `image.tag`. An export carries an exact image of the database, and the importer
+# warns about a version mismatch and then keeps going — so a restore is the one operation where
+# the image has to match the instance that produced the export rather than being the newest one.
+paperless:
+  secretKey: ci-secret-key-not-a-real-one
+
+restore:
+  enabled: true
+  source:
+    existingClaim: paperless-export-from-the-old-cluster
+    subPath: paperless-export-2026-01-01T000000Z.zip
+  passphrase: ci-import-passphrase-not-a-real-one
+  batchSize: 250
+  runMigrations: true
+
+networkPolicy:
+  enabled: true

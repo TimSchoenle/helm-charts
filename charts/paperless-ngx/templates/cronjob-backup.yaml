@@ -1,0 +1,89 @@
+{{- if .Values.backup.enabled }}
+{{- include "paperless-ngx.validateValues" . }}
+{{- $scoped := include "paperless-ngx.backup.context" . | fromYaml }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "paperless-ngx.backup.name" . }}
+  namespace: {{ include "common.namespace" . }}
+  labels:
+    {{- include "common.labels" . | nindent 4 }}
+    app.kubernetes.io/component: backup
+  annotations:
+    {{- /*
+      Same deviation, same reason as the application Deployment: the container is the paperless
+      image, and this chart cannot give it a read-only root filesystem. The exporter itself does
+      not need s6-overlay — but `securityContext` is a single chart-wide value, and forking it per
+      workload would mean the two containers no longer prove they run identically configured.
+    */}}
+    ignore-check.kube-linter.io/no-read-only-root-fs: >-
+      shares the application's container security context, which keeps the root filesystem
+      writable for s6-overlay; every other part of the restricted baseline still applies.
+    {{- with (include "common.annotations" .) }}
+    {{- . | nindent 4 }}
+    {{- end }}
+spec:
+  schedule: {{ .Values.backup.schedule | quote }}
+  {{- /*
+    `spec.timeZone` went GA in 1.27. On anything older the field is not just ignored — the API
+    server rejects the object outright, so it is omitted rather than sent and left to fail at
+    install time.
+  */}}
+  {{- if and .Values.backup.timeZone (semverCompare ">=1.27-0" (include "common.capabilities.kubeVersion" .)) }}
+  timeZone: {{ .Values.backup.timeZone | quote }}
+  {{- end }}
+  concurrencyPolicy: {{ .Values.backup.concurrencyPolicy }}
+  {{- with .Values.backup.startingDeadlineSeconds }}
+  startingDeadlineSeconds: {{ . }}
+  {{- end }}
+  suspend: {{ .Values.backup.suspend }}
+  successfulJobsHistoryLimit: {{ .Values.backup.successfulJobsHistoryLimit }}
+  failedJobsHistoryLimit: {{ .Values.backup.failedJobsHistoryLimit }}
+  jobTemplate:
+    metadata:
+      labels:
+        {{- include "common.labels" . | nindent 8 }}
+        app.kubernetes.io/component: backup
+    spec:
+      backoffLimit: {{ .Values.backup.backoffLimit }}
+      activeDeadlineSeconds: {{ .Values.backup.activeDeadlineSeconds }}
+      {{- with .Values.backup.ttlSecondsAfterFinished }}
+      ttlSecondsAfterFinished: {{ . }}
+      {{- end }}
+      template:
+        metadata:
+          {{- with (include "paperless-ngx.backup.podAnnotations" .) }}
+          annotations:
+            {{- . | nindent 12 }}
+          {{- end }}
+          labels:
+            {{- include "common.podLabels" $scoped | nindent 12 }}
+            app.kubernetes.io/component: backup
+        spec:
+          {{- /*
+            `Never`, not `OnFailure`: a retry has to be a new pod. `OnFailure` restarts the
+            container in place, which re-enters an export directory left mid-write by the attempt
+            that just died, and `backoffLimit` — the thing that is supposed to bound this — does
+            not count in-place restarts.
+          */}}
+          restartPolicy: Never
+          {{- include "common.podSpec.common" $scoped | nindent 10 }}
+          {{- if .Values.backup.upload.enabled }}
+          {{- /*
+            With an uploader configured the exporter becomes an initContainer, which is what
+            sequences the two: init containers run to completion before the pod's containers
+            start, so the upload cannot begin until the export has succeeded, and a failed export
+            never reaches it at all. No sleeping, no shared flag file, no ordering written in
+            bash.
+          */}}
+          initContainers:
+            {{- include "paperless-ngx.backup.container" (dict "ctx" $ "scoped" $scoped) | nindent 12 }}
+          containers:
+            {{- include "paperless-ngx.backup.uploadContainer" (dict "ctx" $ "scoped" $scoped) | nindent 12 }}
+          {{- else }}
+          containers:
+            {{- include "paperless-ngx.backup.container" (dict "ctx" $ "scoped" $scoped) | nindent 12 }}
+          {{- end }}
+          volumes:
+            {{- include "common.volumes" (dict "ctx" $scoped "volumes" (include "paperless-ngx.backup.volumes" . | fromYamlArray)) | nindent 12 }}
+{{- end }}

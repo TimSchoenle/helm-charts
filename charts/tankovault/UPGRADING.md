@@ -7,6 +7,7 @@ Some of them require a manual step that nothing will remind you about:
 
 | Version | Applies to | Step |
 |---|---|---|
+| [5.0.0](#500) | releases that set any `resourcesPreset` | replace it with the `resources` block it stood for |
 | [4.0.0](#400) | **every release** | replace `internal.token`; the services refuse to boot on it |
 | [4.0.0](#400) | releases using `existingSecret` | remove `internal__token`, add the per-caller keys |
 | [3.2.0](#320) | releases that set `metadata.priority` under `services.sync.config` | move it to the top-level `config` |
@@ -17,6 +18,60 @@ Some of them require a manual step that nothing will remind you about:
 
 The values contract is enforced by `values.schema.json`, so a key a new major removed or
 renamed fails the render with the offending path named, rather than being silently ignored.
+
+## 5.0.0
+
+**Resource t-shirt sizes are gone. Every workload states its requests and limits outright.**
+
+`resourcesPreset` is removed from `defaults`, from every entry under `services`, from
+`bootstrap`, from `postgresql`, `valkey`, `nats` and from `metrics.natsExporter`. `resources` is
+the only knob left, and it now ships with the numbers each preset used to expand to — so a
+release that never overrode a preset gets byte-identical pods and needs no change at all.
+
+A preset was a word that meant something different in every chart, and reading the library was
+the only way to find out what `medium` actually reserved. The values file now says it.
+
+### What to change
+
+Only a release that set a preset explicitly. Substitute the block it stood for:
+
+| Preset | requests | limits |
+|---|---|---|
+| `nano` | `cpu: 10m`, `memory: 32Mi` | `memory: 64Mi` |
+| `micro` | `cpu: 25m`, `memory: 64Mi` | `memory: 128Mi` |
+| `small` | `cpu: 50m`, `memory: 128Mi` | `memory: 256Mi` |
+| `medium` | `cpu: 100m`, `memory: 256Mi` | `memory: 512Mi` |
+| `large` | `cpu: 250m`, `memory: 512Mi` | `memory: 1Gi` |
+
+```yaml
+# Before
+services:
+  api:
+    resourcesPreset: large
+
+# After
+services:
+  api:
+    resources:
+      requests:
+        cpu: 250m
+        memory: 512Mi
+      limits:
+        memory: 1Gi
+```
+
+No preset ever set a CPU limit, and the defaults still do not: a CPU limit cannot protect the
+node the way a memory limit does — it only throttles the workload that owns it once it is hit.
+Set `resources.limits.cpu` if you want one.
+
+`services.<name>.resources` is merged over `defaults.resources`, so a service that differs in one
+number states only that number.
+
+**`networkPolicy.cilium.enableDefaultDeny` is new**, defaulting to `true` — which is what the
+policies already stated unconditionally, so this changes nothing unless you set it to `false`.
+`networkPolicy.extraIngress` and `networkPolicy.extraEgress` now render through the chart's
+template renderer, so `{{ ... }}` inside them is evaluated rather than emitted literally. Rules
+that contained no Go template syntax are unaffected.
 
 ## 4.0.0
 

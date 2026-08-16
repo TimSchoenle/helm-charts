@@ -1,6 +1,6 @@
 # common
 
-![Version: 1.5.0](https://img.shields.io/badge/Version-1.5.0-informational?style=flat-square) ![Type: library](https://img.shields.io/badge/Type-library-informational?style=flat-square)
+![Version: 2.0.0](https://img.shields.io/badge/Version-2.0.0-informational?style=flat-square) ![Type: library](https://img.shields.io/badge/Type-library-informational?style=flat-square)
 
 Shared template partials for the TimSchoenle Helm charts
 
@@ -75,7 +75,7 @@ spec:
 | `common.container` | The application container, as a YAML list item |
 | `common.volumes` / `common.volumeMounts` | Chart volumes plus the `/tmp` scratch volume a read-only root filesystem requires |
 | `common.probes` / `common.probe` | Startup, liveness and readiness probes |
-| `common.resources` | Explicit `resources`, else a named `resourcesPreset` |
+| `common.resources` | The chart's `resources` block, emitted verbatim |
 | `common.podSecurityContext` / `common.containerSecurityContext` | Restricted Pod Security Standard baseline, merged with chart values |
 | `common.image` / `common.imagePullPolicy` / `common.imagePullSecrets` | Image reference as `registry/repository:tag@digest` |
 | `common.affinity` | Explicit `affinity`, else the `podAntiAffinity` shorthand |
@@ -156,6 +156,33 @@ helm unittest .github/testdata/common-fixture
 
 Bumping this chart's `version` requires bumping the pinned dependency version in every
 consuming `Chart.yaml`.
+
+## Upgrading
+
+### 1.x to 2.0
+
+`resourcesPreset` and the five t-shirt sizes behind it are gone. `common.resources` now emits
+`resources` verbatim and nothing else, so a consuming chart states the requests and limits it
+wants instead of naming a size whose meaning lived here.
+
+A preset was a word that meant something different in every chart, and reading this library was
+the only way to find out what `medium` actually reserved. The sizes it expanded to, for a chart
+migrating a values file:
+
+| Preset | requests | limits |
+|---|---|---|
+| `nano` | `cpu: 10m`, `memory: 32Mi` | `memory: 64Mi` |
+| `micro` | `cpu: 25m`, `memory: 64Mi` | `memory: 128Mi` |
+| `small` | `cpu: 50m`, `memory: 128Mi` | `memory: 256Mi` |
+| `medium` | `cpu: 100m`, `memory: 256Mi` | `memory: 512Mi` |
+| `large` | `cpu: 250m`, `memory: 512Mi` | `memory: 1Gi` |
+
+No preset ever set a CPU limit, and the convention has not changed: a CPU limit cannot protect
+the node the way a memory limit does — it only throttles the workload that owns it once it is
+hit. A chart that wants one sets `resources.limits.cpu`.
+
+`common.resources` renders nothing at all when `resources` is empty, so the `resources:` key is
+omitted from the container rather than written out empty.
 
 ## Values
 
@@ -300,8 +327,7 @@ and act as the reference shape for consuming charts.
 | prometheusRule.scope.placeholder | string | `""` | The literal placeholder written into the rule files, e.g. `myapp_scope=~".*"`. Empty disables the substitution and the files install exactly as vendored. |
 | readinessProbe | object | `{"enabled":false}` | Readiness probe. See `startupProbe` for the accepted shape. |
 | readinessProbe.enabled | bool | `false` | Enable the readiness probe. |
-| resources | object | `{}` | Explicit resource requests and limits. Wins over `resourcesPreset`. |
-| resourcesPreset | string | `""` | Named resource sizing. Ignored when `resources` is set. Presets set a memory limit and CPU/memory requests but no CPU limit: a CPU limit does not protect the node the way a memory limit does, it only throttles this workload. |
+| resources | object | `{}` | Resource requests and limits for the container, emitted verbatim. The convention these charts follow is a memory limit plus CPU and memory requests and no CPU limit: a CPU limit does not protect the node the way a memory limit does, it only throttles this workload once it is hit. |
 | revisionHistoryLimit | int | `3` | Number of old ReplicaSets to retain for rollback. |
 | securityContext | object | `{}` | Container security context, merged over the preset. |
 | securityContextPreset | string | `"restricted"` | Baseline for the container security context. `restricted` drops all capabilities and forbids privilege escalation, a writable root filesystem and running as root. |

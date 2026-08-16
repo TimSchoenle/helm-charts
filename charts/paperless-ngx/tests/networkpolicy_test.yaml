@@ -165,7 +165,7 @@ tests:
 
   - it: appends operator rules to the application's policy
     set:
-      networkPolicy.ingress.extraRules:
+      networkPolicy.extraIngress:
         - from:
             - podSelector:
                 matchLabels:
@@ -245,9 +245,9 @@ tests:
     set:
       networkPolicy.engine: cilium
       networkPolicy.egress.smtp: true
-      networkPolicy.cilium.toFQDNs:
+      networkPolicy.cilium.egress.toFQDNs:
         - matchName: smtp.example.com
-      networkPolicy.cilium.dnsMatchPatterns:
+      networkPolicy.cilium.egress.dnsMatchPatterns:
         - matchPattern: "*.example.com"
     capabilities:
       apiVersions:
@@ -266,21 +266,97 @@ tests:
           path: spec.egress[2].toPorts[0].ports[0].port
           value: "587"
 
-  # An FQDN rule is matched against what Cilium's DNS proxy saw returned, so with no DNS rule
-  # observing the lookup every destination it names is silently denied.
-  - it: refuses named destinations the DNS proxy would never observe
+  # An FQDN rule is matched against what Cilium's DNS proxy saw returned, so a `toFQDNs` entry is
+  # only enforceable because the L7 DNS rule beside it observed the lookup. That rule is
+  # unconditional here and defaults to `*`, so naming a destination is enough on its own.
+  - it: observes the lookups an FQDN rule is matched against without further configuration
     set:
       networkPolicy.engine: cilium
-      networkPolicy.cilium.toFQDNs:
+      networkPolicy.egress.https: true
+      networkPolicy.cilium.egress.toFQDNs:
         - matchName: smtp.example.com
-      networkPolicy.cilium.dnsMatchPatterns: []
     capabilities:
       apiVersions:
         - cilium.io/v2
+    template: ciliumnetworkpolicy.yaml
+    documentIndex: 1
     asserts:
-      - template: ciliumnetworkpolicy.yaml
-        failedTemplate:
-          errorPattern: dnsMatchPatterns is empty
+      - equal:
+          path: spec.egress[0].toPorts[0].rules.dns
+          value:
+            - matchPattern: "*"
+      - equal:
+          path: spec.egress[2].toFQDNs[0].matchName
+          value: smtp.example.com
+
+  # The Cilium-only additions land on the application's own pair and nowhere else, exactly where
+  # `networkPolicy.extraIngress` and `networkPolicy.extraEgress` land in the portable rendering.
+  # Widening a bundled datastore's policy alongside would be a surprise, not a convenience.
+  - it: appends Cilium-only rules to the application's policies only
+    set:
+      networkPolicy.engine: cilium
+      networkPolicy.cilium.ingress.fromEntities:
+        - cluster
+      networkPolicy.cilium.egress.toEntities:
+        - kube-apiserver
+      networkPolicy.cilium.extraIngress:
+        - fromEndpoints:
+            - matchLabels:
+                app: scanner
+      networkPolicy.cilium.extraEgress:
+        - toEntities:
+            - host
+    capabilities:
+      apiVersions:
+        - cilium.io/v2
+    template: ciliumnetworkpolicy.yaml
+    asserts:
+      - equal:
+          path: spec.ingress[0].fromEntities[0]
+          value: cluster
+        documentIndex: 0
+      - equal:
+          path: spec.ingress[1].fromEndpoints[0].matchLabels.app
+          value: scanner
+        documentIndex: 0
+      - equal:
+          path: spec.egress[2].toEntities[0]
+          value: kube-apiserver
+        documentIndex: 1
+      - equal:
+          path: spec.egress[3].toEntities[0]
+          value: host
+        documentIndex: 1
+      # The bundled broker keeps the policy the chart derived: one ingress rule from the
+      # application, and DNS out.
+      - lengthEqual:
+          path: spec.ingress
+          count: 1
+        documentIndex: 2
+      - lengthEqual:
+          path: spec.egress
+          count: 1
+        documentIndex: 3
+
+  # A policy carrying only a Cilium-only rule is not empty, so the default-deny placeholder must
+  # not be emitted beside it — that would read as "admit nobody" next to "admit this entity".
+  - it: drops the default-deny placeholder once a Cilium-only ingress rule is present
+    set:
+      networkPolicy.engine: cilium
+      networkPolicy.cilium.ingress.fromEntities:
+        - cluster
+    capabilities:
+      apiVersions:
+        - cilium.io/v2
+    template: ciliumnetworkpolicy.yaml
+    documentIndex: 0
+    asserts:
+      - lengthEqual:
+          path: spec.ingress
+          count: 1
+      - equal:
+          path: spec.ingress[0].fromEntities[0]
+          value: cluster
 
   - it: emits both dialects during a CNI migration
     set:

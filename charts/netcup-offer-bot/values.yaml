@@ -401,6 +401,22 @@ networkPolicy:
       # -- Namespace where monitoring tools are running
       namespace: monitoring
 
+      # @schema
+      # type: object
+      # additionalProperties: true
+      # @schema
+      # -- Namespace selector matching the monitoring namespace, replacing `namespace` when set.
+      # For a Prometheus labelled rather than named, or one of several namespaces that scrape.
+      namespaceSelector: {}
+
+      # @schema
+      # type: array
+      # items:
+      #   $ref: https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyPort
+      # @schema
+      # -- Restrict the rule to specific ports. Empty means all ports.
+      ports: []
+
     # @schema
     # additionalProperties: true
     # @schema
@@ -425,6 +441,14 @@ networkPolicy:
       # -- Pod selector for Ingress Controller (default: Traefik label)
       selector:
         app.kubernetes.io/name: traefik
+
+      # @schema
+      # type: array
+      # items:
+      #   $ref: https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyPort
+      # @schema
+      # -- Restrict the rule to specific ports. Empty means all ports.
+      ports: []
 
     # @schema
     # type: array
@@ -518,6 +542,22 @@ networkPolicy:
     # @schema
     # -- Custom egress rules
     customRules: []
+
+  # @schema
+  # type: array
+  # items:
+  #   $ref: https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyIngressRule
+  # @schema
+  # -- Extra ingress rules appended regardless of `ingress.enabled`.
+  extraIngress: []
+
+  # @schema
+  # type: array
+  # items:
+  #   $ref: https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyEgressRule
+  # @schema
+  # -- Extra egress rules appended regardless of `egress.enabled`.
+  extraEgress: []
 
   # @schema
   # additionalProperties: true
@@ -683,12 +723,6 @@ commonLabels: {}
 # @schema
 # -- Annotations added to every object this chart creates.
 commonAnnotations: {}
-
-# @schema
-# enum: ["", nano, micro, small, medium, large]
-# @schema
-# -- Named resource sizing. Ignored when `resources` is set.
-resourcesPreset: ""
 
 # @schema
 # enum: ["", soft, hard]

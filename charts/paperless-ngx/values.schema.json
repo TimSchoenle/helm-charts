@@ -194,20 +194,6 @@
           "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.ResourceRequirements",
           "required": []
         },
-        "resourcesPreset": {
-          "default": "small",
-          "description": "Named resource sizing for the backup container. Ignored when `backup.resources` is set. The\nexporter copies files and serialises database rows; it does not run OCR, so it needs a\nfraction of what the application does.",
-          "enum": [
-            "",
-            "nano",
-            "micro",
-            "small",
-            "medium",
-            "large"
-          ],
-          "required": [],
-          "title": "resourcesPreset"
-        },
         "schedule": {
           "default": "0 3 * * *",
           "description": "Cron schedule. The default is nightly at 03:00, which is the quiet hour this wants.",
@@ -1486,20 +1472,6 @@
           "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.ResourceRequirements",
           "required": []
         },
-        "resourcesPreset": {
-          "default": "",
-          "description": "Named resource sizing. Ignored when `resources` is set.\nPresets set a memory limit and CPU/memory requests but no CPU limit: a CPU limit does not\nprotect the node the way a memory limit does, it only throttles this workload.",
-          "enum": [
-            "",
-            "nano",
-            "micro",
-            "small",
-            "medium",
-            "large"
-          ],
-          "required": [],
-          "title": "resourcesPreset"
-        },
         "revisionHistoryLimit": {
           "default": 3,
           "description": "Number of old ReplicaSets to retain for rollback.",
@@ -2249,7 +2221,7 @@
       "properties": {
         "cilium": {
           "additionalProperties": true,
-          "description": "Cilium-only additions, used when `engine` is `cilium` or `both`. Every rule above is\ntranslated automatically; these are the ones the portable API cannot express.",
+          "description": "Cilium-only additions, used when `engine` is `cilium` or `both`. Every rule above is\ntranslated automatically; these are the ones the portable API cannot express.\n\nNote that `extraIngress` and `extraEgress` above are *not* carried over: those are verbatim\n`networking.k8s.io/v1` rule objects and are not valid CNP. The fields below are their\ncounterparts, and the whole tree mirrors the `common` library's so a chart and the library\nare configured the same way.",
           "properties": {
             "description": {
               "default": "",
@@ -2258,14 +2230,70 @@
               "title": "description",
               "type": "string"
             },
-            "dnsMatchPatterns": {
-              "description": "What the DNS proxy may resolve, e.g. `- matchPattern: \"*.example.com\"`. Defaults to\neverything. An FQDN rule is enforced against the addresses Cilium's DNS proxy saw\nreturned, so without a DNS rule observing the lookup every `toFQDNs` entry matches\nnothing.",
-              "items": {
-                "required": []
+            "egress": {
+              "additionalProperties": true,
+              "description": "Cilium-only egress rules, added to the application's policy.",
+              "properties": {
+                "dnsMatchPatterns": {
+                  "description": "What the DNS proxy may resolve, e.g. `- matchPattern: \"*.example.com\"`. Defaults to\neverything, which permits the lookup only — an answer is still reachable only if some\nrule allows the address. An FQDN rule is enforced against the addresses the proxy saw\nreturned, so narrowing this below what `toFQDNs` names denies those destinations.",
+                  "items": {
+                    "required": []
+                  },
+                  "required": [],
+                  "title": "dnsMatchPatterns",
+                  "type": "array"
+                },
+                "entityPorts": {
+                  "description": "Restrict the `toEntities` rule to specific ports. Empty means all ports.",
+                  "items": {
+                    "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyPort",
+                    "required": []
+                  },
+                  "required": [],
+                  "title": "entityPorts",
+                  "type": "array"
+                },
+                "fqdnPorts": {
+                  "description": "Ports the `toFQDNs` rule allows. Empty keeps the ports the replaced CIDR rules\ncarried — 443 for `egress.https`, 587 and 465 for `egress.smtp` — so naming a\ndestination does not silently widen what it may be reached on. Set this for a relay on\na port this chart does not model.",
+                  "items": {
+                    "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyPort",
+                    "required": []
+                  },
+                  "required": [],
+                  "title": "fqdnPorts",
+                  "type": "array"
+                },
+                "httpRules": {
+                  "description": "L7 HTTP rules layered onto the `toFQDNs` rule, e.g. `- method: GET` / `path: \"/v1/.*\"`.\nCosts a proxy hop per connection.",
+                  "items": {
+                    "required": []
+                  },
+                  "required": [],
+                  "title": "httpRules",
+                  "type": "array"
+                },
+                "toEntities": {
+                  "description": "Named destination sets added to the application's policy, e.g. `kube-apiserver`.",
+                  "items": {
+                    "required": [],
+                    "type": "string"
+                  },
+                  "required": [],
+                  "title": "toEntities",
+                  "type": "array"
+                },
+                "toFQDNs": {
+                  "description": "Egress destinations by DNS name, replacing the internet-wide CIDR rules for\n`egress.https` and `egress.smtp` — e.g. `- matchName: smtp.example.com`. Ships empty, so\nan unconfigured install keeps the portable CIDR form.\n\nEmitting both would leave the broad rule in place and make this one decorative, so it is\na substitution rather than an addition.",
+                  "items": {
+                    "required": []
+                  },
+                  "required": [],
+                  "title": "toFQDNs",
+                  "type": "array"
+                }
               },
               "required": [],
-              "title": "dnsMatchPatterns",
-              "type": "array"
+              "title": "egress"
             },
             "enableDefaultDeny": {
               "default": true,
@@ -2274,14 +2302,41 @@
               "title": "enableDefaultDeny",
               "type": "boolean"
             },
-            "toFQDNs": {
-              "description": "Egress destinations by DNS name, replacing the internet-wide CIDR rules for\n`egress.https` and `egress.smtp` — e.g. `- matchName: smtp.example.com`. Ships empty, so\nan unconfigured install keeps the portable CIDR form.",
+            "extraEgress": {
+              "description": "Extra egress rules in CiliumNetworkPolicy form, appended to the application's policy.",
               "items": {
                 "required": []
               },
               "required": [],
-              "title": "toFQDNs",
+              "title": "extraEgress",
               "type": "array"
+            },
+            "extraIngress": {
+              "description": "Extra ingress rules in CiliumNetworkPolicy form, appended to the application's policy.",
+              "items": {
+                "required": []
+              },
+              "required": [],
+              "title": "extraIngress",
+              "type": "array"
+            },
+            "ingress": {
+              "additionalProperties": true,
+              "description": "Cilium-only ingress rules, added to the application's policy.",
+              "properties": {
+                "fromEntities": {
+                  "description": "Named source sets, e.g. `cluster`, `host`, `remote-node`, `kube-apiserver`. Stay\ncorrect when the cluster is renumbered, unlike a hand-maintained CIDR list.",
+                  "items": {
+                    "required": [],
+                    "type": "string"
+                  },
+                  "required": [],
+                  "title": "fromEntities",
+                  "type": "array"
+                }
+              },
+              "required": [],
+              "title": "ingress"
             }
           },
           "required": [],
@@ -2337,16 +2392,6 @@
               "required": [],
               "title": "external"
             },
-            "extraRules": {
-              "description": "Egress rules appended verbatim to the application's policy.",
-              "items": {
-                "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyEgressRule",
-                "required": []
-              },
-              "required": [],
-              "title": "extraRules",
-              "type": "array"
-            },
             "https": {
               "default": false,
               "description": "Allow outbound HTTPS to the public internet, minus RFC1918 space and the cloud metadata\nendpoint. Needed only for features that leave the cluster: outgoing mail over an external\nrelay, webhooks, mail fetching, or a remote OCR endpoint.",
@@ -2382,6 +2427,26 @@
           ],
           "required": [],
           "title": "engine"
+        },
+        "extraEgress": {
+          "description": "Egress rules appended verbatim to the application's policy. Scoped as `extraIngress` is.",
+          "items": {
+            "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyEgressRule",
+            "required": []
+          },
+          "required": [],
+          "title": "extraEgress",
+          "type": "array"
+        },
+        "extraIngress": {
+          "description": "Ingress rules appended verbatim to the application's policy, for peers this chart does\nnot model — a backup job reaching the API, or a second namespace's scanner sidecar. Only the\napplication's policy: the bundled datastores and the backup pod have policies this chart\nderives in full, and widening those alongside would be a surprise rather than a convenience.",
+          "items": {
+            "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyIngressRule",
+            "required": []
+          },
+          "required": [],
+          "title": "extraIngress",
+          "type": "array"
         },
         "ingress": {
           "additionalProperties": true,
@@ -2425,16 +2490,6 @@
               },
               "required": [],
               "title": "controller"
-            },
-            "extraRules": {
-              "description": "Ingress rules appended verbatim to the application's policy, for peers this chart does\nnot model — a backup job reaching the API, or a second namespace's scanner sidecar.",
-              "items": {
-                "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyIngressRule",
-                "required": []
-              },
-              "required": [],
-              "title": "extraRules",
-              "type": "array"
             },
             "gateway": {
               "additionalProperties": true,
@@ -3334,20 +3389,6 @@
         "resources": {
           "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.ResourceRequirements",
           "required": []
-        },
-        "resourcesPreset": {
-          "default": "medium",
-          "description": "Named resource sizing for the database container. Ignored when\n`postgresql.resources` is set.",
-          "enum": [
-            "",
-            "nano",
-            "micro",
-            "small",
-            "medium",
-            "large"
-          ],
-          "required": [],
-          "title": "resourcesPreset"
         }
       },
       "required": [],
@@ -3505,20 +3546,6 @@
       "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.ResourceRequirements",
       "required": []
     },
-    "resourcesPreset": {
-      "default": "",
-      "description": "Named resource sizing for the paperless-ngx container. Ignored when `resources` is set,\nwhich it is by default — no preset is large enough for OCR.",
-      "enum": [
-        "",
-        "nano",
-        "micro",
-        "small",
-        "medium",
-        "large"
-      ],
-      "required": [],
-      "title": "resourcesPreset"
-    },
     "restore": {
       "additionalProperties": true,
       "description": "Importing an export produced by `document_exporter`, whether from a backup of this instance or\nfrom a different paperless-ngx altogether.\n\nThis is deliberately not a Job. `document_importer` needs the media and data directories to\nitself and has to finish before anything else touches them, which no separately-scheduled pod can\npromise — so the import runs as an `initContainer` on the application pod, ahead of the\nwebserver, the consumer and the scheduler. That gives it exclusive access without a second copy\nof the volumes, works under `ReadWriteOnce`, and fails the pod rather than starting a\nhalf-imported archive.\n\nIt runs once, guarded by a marker file on the data volume, and is a no-op on every start after\nthat — so these values can be left in place instead of being removed in a follow-up upgrade.\n\nImporting a `.zip` export extracts it in full to the scratch directory first, so\n`persistence.scratchSizeLimit` has to be at least the archive's uncompressed size or the pod is\nevicted part-way through the import. A directory export carries no such requirement.",
@@ -3562,20 +3589,6 @@
         "resources": {
           "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.ResourceRequirements",
           "required": []
-        },
-        "resourcesPreset": {
-          "default": "medium",
-          "description": "Named resource sizing for the import container. Ignored when `restore.resources` is set.",
-          "enum": [
-            "",
-            "nano",
-            "micro",
-            "small",
-            "medium",
-            "large"
-          ],
-          "required": [],
-          "title": "resourcesPreset"
         },
         "runMigrations": {
           "default": true,
@@ -3939,20 +3952,6 @@
             "resources": {
               "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.ResourceRequirements",
               "required": []
-            },
-            "resourcesPreset": {
-              "default": "large",
-              "description": "Named resource sizing. Ignored when `tika.gotenberg.resources` is set. LibreOffice and\nChromium are both memory-hungry; below `medium` conversions start failing rather than\nslowing down.",
-              "enum": [
-                "",
-                "nano",
-                "micro",
-                "small",
-                "medium",
-                "large"
-              ],
-              "required": [],
-              "title": "resourcesPreset"
             }
           },
           "required": [],
@@ -4019,20 +4018,6 @@
             "resources": {
               "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.ResourceRequirements",
               "required": []
-            },
-            "resourcesPreset": {
-              "default": "large",
-              "description": "Named resource sizing. Ignored when `tika.server.resources` is set. The JVM sizes its\nheap from the memory limit, so shrinking this shrinks the largest document Tika can parse.",
-              "enum": [
-                "",
-                "nano",
-                "micro",
-                "small",
-                "medium",
-                "large"
-              ],
-              "required": [],
-              "title": "resourcesPreset"
             }
           },
           "required": [],
@@ -4152,20 +4137,6 @@
         "resources": {
           "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.ResourceRequirements",
           "required": []
-        },
-        "resourcesPreset": {
-          "default": "small",
-          "description": "Named resource sizing for the broker container. Ignored when `valkey.resources` is set.",
-          "enum": [
-            "",
-            "nano",
-            "micro",
-            "small",
-            "medium",
-            "large"
-          ],
-          "required": [],
-          "title": "resourcesPreset"
         }
       },
       "required": [],

@@ -64,8 +64,6 @@ Args: the root context.
 {{- $backup := $root.Values.backup -}}
 {{- $values := mergeOverwrite (deepCopy $root.Values) (dict
       "nameOverride" (include "common.name" $root)
-      "resourcesPreset" $backup.resourcesPreset
-      "resources" (deepCopy $backup.resources)
       "startupProbe" (dict "enabled" false)
       "livenessProbe" (dict "enabled" false)
       "readinessProbe" (dict "enabled" false)
@@ -76,13 +74,14 @@ Args: the root context.
 {{- /*
   Forced rather than merged: `mergeOverwrite` leaves a populated list in place when the override
   is empty, so the application's own scheduling constraints would survive an explicit empty one
-  here — and `resources` has to be replaced wholesale for `resourcesPreset` to have any effect at
-  all, since `common.resources` prefers an explicit block.
+  here.
 */ -}}
 {{- $_ := set $values "topologySpreadConstraints" list -}}
-{{- if not $backup.resources -}}
-{{- $_ := set $values "resources" dict -}}
-{{- end -}}
+{{- /*
+  Replaced wholesale rather than merged, so an operator who drops a key from `backup.resources`
+  gets a backup container without it and not the application's OCR-sized value showing through.
+*/ -}}
+{{- $_ := set $values "resources" (deepCopy $backup.resources) -}}
 {{- with $backup.nodeSelector }}{{- $_ := set $values "nodeSelector" (deepCopy .) -}}{{- end -}}
 {{- with $backup.tolerations }}{{- $_ := set $values "tolerations" (deepCopy .) -}}{{- end -}}
 {{- toYaml $values -}}
@@ -704,7 +703,6 @@ Args: ctx (root).
 {{- define "paperless-ngx.restore.container" -}}
 {{- $root := .ctx -}}
 {{- $values := include "paperless-ngx.backup.values" $root | fromYaml -}}
-{{- $_ := set $values "resourcesPreset" $root.Values.restore.resourcesPreset -}}
 {{- $_ := set $values "resources" (deepCopy $root.Values.restore.resources) -}}
 {{- /*
   Cleared so the initContainer inherits the application pod's own placement, which is not

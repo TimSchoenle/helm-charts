@@ -129,13 +129,34 @@ tests:
             - name: regcred-short
             - name: regcred-long
 
-  - it: rejects an unknown resources preset
-    template: deployment.yaml
+  - it: emits the resources block verbatim
+    documentSelector:
+      path: kind
+      value: Deployment
     set:
-      resourcesPreset: enormous
+      resources:
+        requests:
+          cpu: 50m
+          memory: 128Mi
+        limits:
+          memory: 256Mi
     asserts:
-      - failedTemplate:
-          errorMessage: 'resourcesPreset "enormous" is not one of: large, medium, micro, nano, small'
+      - equal:
+          path: spec.template.spec.containers[0].resources
+          value:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 256Mi
+
+  - it: omits resources entirely when none are set
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - notExists:
+          path: spec.template.spec.containers[0].resources
 
   - it: rejects an unknown podAntiAffinity shorthand
     template: deployment.yaml

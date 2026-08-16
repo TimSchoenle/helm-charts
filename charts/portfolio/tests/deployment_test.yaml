@@ -192,24 +192,15 @@ tests:
           path: spec.template.spec.containers[0].resources.requests.memory
           value: 32Mi
 
-  - it: falls back to a named resource preset
+  - it: omits resources entirely when the block is emptied
     documentSelector:
       path: kind
       value: Deployment
     set:
       resources: null
-      resourcesPreset: micro
     asserts:
-      - equal:
-          path: spec.template.spec.containers[0].resources.requests.cpu
-          value: 25m
-      # Presets set no CPU limit: it cannot protect the node the way a memory limit does,
-      # it only throttles this workload.
       - notExists:
-          path: spec.template.spec.containers[0].resources.limits.cpu
-      - equal:
-          path: spec.template.spec.containers[0].resources.limits.memory
-          value: 128Mi
+          path: spec.template.spec.containers[0].resources
 
   - it: scales to the requested replica count
     documentSelector:

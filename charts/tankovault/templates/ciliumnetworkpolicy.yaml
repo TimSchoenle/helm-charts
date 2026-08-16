@@ -42,9 +42,14 @@ spec:
   endpointSelector:
     matchLabels:
       {{- toYaml $policy.selector | nindent 6 }}
+  {{- /*
+    Both directions, unlike `common.ciliumNetworkPolicy`, which splits into an ingress object and
+    an egress object so that turning the flag on for one cannot deny the other. Every workload
+    here carries rules in both directions, so there is no half to silently cut off.
+  */}}
   enableDefaultDeny:
-    ingress: true
-    egress: true
+    ingress: {{ include "common.cilium.enableDefaultDeny" $ }}
+    egress: {{ include "common.cilium.enableDefaultDeny" $ }}
   ingress:
     {{- range $rule := $policy.ingress }}
     - fromEndpoints:

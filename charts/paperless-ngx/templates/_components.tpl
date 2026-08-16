@@ -55,8 +55,7 @@ Arguments:
   image            (required) the component's image dict
   runAsUser        (required) the UID its image was built for
   runAsGroup       (required) matching GID
-  resourcesPreset  named sizing, when `resources` is empty
-  resources        explicit resources, which win
+  resources        the component's resource requests and limits
   livenessProbe    probe value blocks, in the shape `common.probe` reads
   readinessProbe
 */}}
@@ -66,7 +65,6 @@ Arguments:
       "nameOverride" (include "common.name" $ctx)
       "image" (deepCopy .image)
       "imagePullSecrets" ($ctx.Values.imagePullSecrets | default list)
-      "resourcesPreset" (.resourcesPreset | default "")
       "resources" (.resources | default dict)
       "podSecurityContextPreset" $ctx.Values.podSecurityContextPreset
       "podSecurityContext" (dict "runAsUser" (.runAsUser | int) "runAsGroup" (.runAsGroup | int) "fsGroup" (.runAsGroup | int))

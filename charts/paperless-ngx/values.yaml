@@ -689,17 +689,38 @@ postgresql:
     size: 8Gi
 
   # @schema
-  # enum: ["", nano, micro, small, medium, large]
-  # @schema
-  # -- Named resource sizing for the database container. Ignored when
-  # `postgresql.resources` is set.
-  resourcesPreset: medium
-
-  # @schema
   # $ref: https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.ResourceRequirements
   # @schema
-  # -- Explicit resource requests and limits for the database container.
-  resources: {}
+  # -- Resource requests and limits for the database container.
+  resources:
+    # @schema
+    # additionalProperties: true
+    # @schema
+    # -- Resource limits.
+    limits:
+      # @schema
+      # type: string
+      # @schema
+      # -- Maximum allowed memory usage. No CPU limit is set on purpose: a CPU limit does not
+      # protect the node the way a memory limit does, it only throttles this container.
+      memory: 512Mi
+
+    # @schema
+    # additionalProperties: true
+    # @schema
+    # -- Resource requests.
+    requests:
+      # @schema
+      # type: string
+      # @schema
+      # -- Minimum CPU requested.
+      cpu: 100m
+
+      # @schema
+      # type: string
+      # @schema
+      # -- Minimum guaranteed memory allocation.
+      memory: 256Mi
 
 # @schema
 # additionalProperties: true
@@ -848,16 +869,38 @@ valkey:
     size: 1Gi
 
   # @schema
-  # enum: ["", nano, micro, small, medium, large]
-  # @schema
-  # -- Named resource sizing for the broker container. Ignored when `valkey.resources` is set.
-  resourcesPreset: small
-
-  # @schema
   # $ref: https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.ResourceRequirements
   # @schema
-  # -- Explicit resource requests and limits for the broker container.
-  resources: {}
+  # -- Resource requests and limits for the broker container. The broker holds a task queue and
+  # not a dataset, so its footprint is bounded by the backlog rather than by the library size.
+  resources:
+    # @schema
+    # additionalProperties: true
+    # @schema
+    # -- Resource limits.
+    limits:
+      # @schema
+      # type: string
+      # @schema
+      # -- Maximum allowed memory usage.
+      memory: 256Mi
+
+    # @schema
+    # additionalProperties: true
+    # @schema
+    # -- Resource requests.
+    requests:
+      # @schema
+      # type: string
+      # @schema
+      # -- Minimum CPU requested.
+      cpu: 50m
+
+      # @schema
+      # type: string
+      # @schema
+      # -- Minimum guaranteed memory allocation.
+      memory: 128Mi
 
 # @schema
 # additionalProperties: true
@@ -923,17 +966,38 @@ tika:
       pullPolicy: ""
 
     # @schema
-    # enum: ["", nano, micro, small, medium, large]
-    # @schema
-    # -- Named resource sizing. Ignored when `tika.server.resources` is set. The JVM sizes its
-    # heap from the memory limit, so shrinking this shrinks the largest document Tika can parse.
-    resourcesPreset: large
-
-    # @schema
     # $ref: https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.ResourceRequirements
     # @schema
-    # -- Explicit resource requests and limits for the Tika container.
-    resources: {}
+    # -- Resource requests and limits for the Tika container.
+    resources:
+      # @schema
+      # additionalProperties: true
+      # @schema
+      # -- Resource limits.
+      limits:
+        # @schema
+        # type: string
+        # @schema
+        # -- Maximum allowed memory usage. The JVM sizes its heap from this limit, so lowering it
+        # lowers the largest document Tika can parse.
+        memory: 1Gi
+
+      # @schema
+      # additionalProperties: true
+      # @schema
+      # -- Resource requests.
+      requests:
+        # @schema
+        # type: string
+        # @schema
+        # -- Minimum CPU requested. Text extraction is CPU-bound while a document is in flight.
+        cpu: 250m
+
+        # @schema
+        # type: string
+        # @schema
+        # -- Minimum guaranteed memory allocation.
+        memory: 512Mi
 
   # @schema
   # additionalProperties: true
@@ -1001,18 +1065,38 @@ tika:
     allowList: "file:///tmp/.*"
 
     # @schema
-    # enum: ["", nano, micro, small, medium, large]
-    # @schema
-    # -- Named resource sizing. Ignored when `tika.gotenberg.resources` is set. LibreOffice and
-    # Chromium are both memory-hungry; below `medium` conversions start failing rather than
-    # slowing down.
-    resourcesPreset: large
-
-    # @schema
     # $ref: https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.ResourceRequirements
     # @schema
-    # -- Explicit resource requests and limits for the Gotenberg container.
-    resources: {}
+    # -- Resource requests and limits for the Gotenberg container.
+    resources:
+      # @schema
+      # additionalProperties: true
+      # @schema
+      # -- Resource limits.
+      limits:
+        # @schema
+        # type: string
+        # @schema
+        # -- Maximum allowed memory usage. LibreOffice and Chromium are both memory-hungry; much
+        # below this, conversions start failing rather than slowing down.
+        memory: 1Gi
+
+      # @schema
+      # additionalProperties: true
+      # @schema
+      # -- Resource requests.
+      requests:
+        # @schema
+        # type: string
+        # @schema
+        # -- Minimum CPU requested. Rendering is CPU-bound for the length of a conversion.
+        cpu: 250m
+
+        # @schema
+        # type: string
+        # @schema
+        # -- Minimum guaranteed memory allocation.
+        memory: 512Mi
 
 # @schema
 # additionalProperties: true
@@ -1538,18 +1622,39 @@ backup:
   failedJobsHistoryLimit: 3
 
   # @schema
-  # enum: ["", nano, micro, small, medium, large]
-  # @schema
-  # -- Named resource sizing for the backup container. Ignored when `backup.resources` is set. The
-  # exporter copies files and serialises database rows; it does not run OCR, so it needs a
-  # fraction of what the application does.
-  resourcesPreset: small
-
-  # @schema
   # $ref: https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.ResourceRequirements
   # @schema
-  # -- Explicit resource requests and limits for the backup container.
-  resources: {}
+  # -- Resource requests and limits for the backup container. The exporter copies files and
+  # serialises database rows; it does not run OCR, so it needs a fraction of what the
+  # application does.
+  resources:
+    # @schema
+    # additionalProperties: true
+    # @schema
+    # -- Resource limits.
+    limits:
+      # @schema
+      # type: string
+      # @schema
+      # -- Maximum allowed memory usage.
+      memory: 256Mi
+
+    # @schema
+    # additionalProperties: true
+    # @schema
+    # -- Resource requests.
+    requests:
+      # @schema
+      # type: string
+      # @schema
+      # -- Minimum CPU requested.
+      cpu: 50m
+
+      # @schema
+      # type: string
+      # @schema
+      # -- Minimum guaranteed memory allocation.
+      memory: 128Mi
 
   # @schema
   # $ref: https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.Affinity
@@ -1747,16 +1852,38 @@ restore:
   markerFile: .helm-restore-complete
 
   # @schema
-  # enum: ["", nano, micro, small, medium, large]
-  # @schema
-  # -- Named resource sizing for the import container. Ignored when `restore.resources` is set.
-  resourcesPreset: medium
-
-  # @schema
   # $ref: https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.ResourceRequirements
   # @schema
-  # -- Explicit resource requests and limits for the import container.
-  resources: {}
+  # -- Resource requests and limits for the import container. The importer unpacks an export and
+  # replays it, so it is IO-bound rather than CPU-bound.
+  resources:
+    # @schema
+    # additionalProperties: true
+    # @schema
+    # -- Resource limits.
+    limits:
+      # @schema
+      # type: string
+      # @schema
+      # -- Maximum allowed memory usage.
+      memory: 512Mi
+
+    # @schema
+    # additionalProperties: true
+    # @schema
+    # -- Resource requests.
+    requests:
+      # @schema
+      # type: string
+      # @schema
+      # -- Minimum CPU requested.
+      cpu: 100m
+
+      # @schema
+      # type: string
+      # @schema
+      # -- Minimum guaranteed memory allocation.
+      memory: 256Mi
 
 # @schema
 # additionalProperties: true
@@ -2192,15 +2319,6 @@ networkPolicy:
       # `gateway.networking.k8s.io/gateway-name` label every implementation sets.
       podSelector: {}
 
-    # @schema
-    # type: array
-    # items:
-    #   $ref: https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyIngressRule
-    # @schema
-    # -- Ingress rules appended verbatim to the application's policy, for peers this chart does
-    # not model — a backup job reaching the API, or a second namespace's scanner sidecar.
-    extraRules: []
-
   # @schema
   # additionalProperties: true
   # @schema
@@ -2267,19 +2385,35 @@ networkPolicy:
       - 192.168.0.0/16
       - 169.254.0.0/16
 
-    # @schema
-    # type: array
-    # items:
-    #   $ref: https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyEgressRule
-    # @schema
-    # -- Egress rules appended verbatim to the application's policy.
-    extraRules: []
+  # @schema
+  # type: array
+  # items:
+  #   $ref: https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyIngressRule
+  # @schema
+  # -- Ingress rules appended verbatim to the application's policy, for peers this chart does
+  # not model — a backup job reaching the API, or a second namespace's scanner sidecar. Only the
+  # application's policy: the bundled datastores and the backup pod have policies this chart
+  # derives in full, and widening those alongside would be a surprise rather than a convenience.
+  extraIngress: []
+
+  # @schema
+  # type: array
+  # items:
+  #   $ref: https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyEgressRule
+  # @schema
+  # -- Egress rules appended verbatim to the application's policy. Scoped as `extraIngress` is.
+  extraEgress: []
 
   # @schema
   # additionalProperties: true
   # @schema
   # -- Cilium-only additions, used when `engine` is `cilium` or `both`. Every rule above is
   # translated automatically; these are the ones the portable API cannot express.
+  #
+  # Note that `extraIngress` and `extraEgress` above are *not* carried over: those are verbatim
+  # `networking.k8s.io/v1` rule objects and are not valid CNP. The fields below are their
+  # counterparts, and the whole tree mirrors the `common` library's so a chart and the library
+  # are configured the same way.
   cilium:
     # @schema
     # type: string
@@ -2297,21 +2431,89 @@ networkPolicy:
     enableDefaultDeny: true
 
     # @schema
-    # type: array
+    # additionalProperties: true
     # @schema
-    # -- Egress destinations by DNS name, replacing the internet-wide CIDR rules for
-    # `egress.https` and `egress.smtp` — e.g. `- matchName: smtp.example.com`. Ships empty, so
-    # an unconfigured install keeps the portable CIDR form.
-    toFQDNs: []
+    # -- Cilium-only ingress rules, added to the application's policy.
+    ingress:
+      # @schema
+      # type: array
+      # items:
+      #   type: string
+      # @schema
+      # -- Named source sets, e.g. `cluster`, `host`, `remote-node`, `kube-apiserver`. Stay
+      # correct when the cluster is renumbered, unlike a hand-maintained CIDR list.
+      fromEntities: []
+
+    # @schema
+    # additionalProperties: true
+    # @schema
+    # -- Cilium-only egress rules, added to the application's policy.
+    egress:
+      # @schema
+      # type: array
+      # @schema
+      # -- Egress destinations by DNS name, replacing the internet-wide CIDR rules for
+      # `egress.https` and `egress.smtp` — e.g. `- matchName: smtp.example.com`. Ships empty, so
+      # an unconfigured install keeps the portable CIDR form.
+      #
+      # Emitting both would leave the broad rule in place and make this one decorative, so it is
+      # a substitution rather than an addition.
+      toFQDNs: []
+
+      # @schema
+      # type: array
+      # items:
+      #   $ref: https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyPort
+      # @schema
+      # -- Ports the `toFQDNs` rule allows. Empty keeps the ports the replaced CIDR rules
+      # carried — 443 for `egress.https`, 587 and 465 for `egress.smtp` — so naming a
+      # destination does not silently widen what it may be reached on. Set this for a relay on
+      # a port this chart does not model.
+      fqdnPorts: []
+
+      # @schema
+      # type: array
+      # @schema
+      # -- L7 HTTP rules layered onto the `toFQDNs` rule, e.g. `- method: GET` / `path: "/v1/.*"`.
+      # Costs a proxy hop per connection.
+      httpRules: []
+
+      # @schema
+      # type: array
+      # items:
+      #   type: string
+      # @schema
+      # -- Named destination sets added to the application's policy, e.g. `kube-apiserver`.
+      toEntities: []
+
+      # @schema
+      # type: array
+      # items:
+      #   $ref: https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyPort
+      # @schema
+      # -- Restrict the `toEntities` rule to specific ports. Empty means all ports.
+      entityPorts: []
+
+      # @schema
+      # type: array
+      # @schema
+      # -- What the DNS proxy may resolve, e.g. `- matchPattern: "*.example.com"`. Defaults to
+      # everything, which permits the lookup only — an answer is still reachable only if some
+      # rule allows the address. An FQDN rule is enforced against the addresses the proxy saw
+      # returned, so narrowing this below what `toFQDNs` names denies those destinations.
+      dnsMatchPatterns: []
 
     # @schema
     # type: array
     # @schema
-    # -- What the DNS proxy may resolve, e.g. `- matchPattern: "*.example.com"`. Defaults to
-    # everything. An FQDN rule is enforced against the addresses Cilium's DNS proxy saw
-    # returned, so without a DNS rule observing the lookup every `toFQDNs` entry matches
-    # nothing.
-    dnsMatchPatterns: []
+    # -- Extra ingress rules in CiliumNetworkPolicy form, appended to the application's policy.
+    extraIngress: []
+
+    # @schema
+    # type: array
+    # @schema
+    # -- Extra egress rules in CiliumNetworkPolicy form, appended to the application's policy.
+    extraEgress: []
 
 # @schema
 # additionalProperties: true
@@ -2588,13 +2790,6 @@ resources:
     # @schema
     # -- Minimum guaranteed memory allocation.
     memory: 512Mi
-
-# @schema
-# enum: ["", nano, micro, small, medium, large]
-# @schema
-# -- Named resource sizing for the paperless-ngx container. Ignored when `resources` is set,
-# which it is by default — no preset is large enough for OCR.
-resourcesPreset: ""
 
 # @schema
 # type: integer

@@ -4,13 +4,23 @@ The same plan, said in Cilium's dialect.
 Two things make the switch worth having. Cilium states default-deny explicitly rather than
 inferring it from the presence of rules, so a policy whose rule list is empty actually denies —
 and it enforces at the identity level with a DNS proxy, so the internet-facing egress rules can
-name their destinations (`networkPolicy.cilium.toFQDNs`) instead of being written as "the whole
-public internet minus RFC1918 on port 443", which is what the portable API forces.
+name their destinations (`networkPolicy.cilium.egress.toFQDNs`) instead of being written as "the
+whole public internet minus RFC1918 on port 443", which is what the portable API forces.
 
 Every rule the portable engine understands is translated here, so `engine: cilium` is a drop-in
-for an existing configuration. `networkPolicy.ingress.extraRules` and
-`networkPolicy.egress.extraRules` are the exception and are deliberately not carried over: they
-are verbatim `networking.k8s.io/v1` rule objects and are not valid CiliumNetworkPolicy.
+for an existing configuration. `networkPolicy.{extraIngress,extraEgress}` are the exception and
+are deliberately not carried over: they are verbatim `networking.k8s.io/v1` rule objects and are
+not valid CiliumNetworkPolicy. `networkPolicy.cilium.{extraIngress,extraEgress}` are their
+counterparts, and the value tree under `networkPolicy.cilium` mirrors the library's own so a
+chart and the library are configured the same way.
+
+Where the Cilium-only additions land
+------------------------------------
+On the application's own pair, and nowhere else — exactly where `networkPolicy.extraIngress` and
+`networkPolicy.extraEgress` land in the portable rendering. The bundled datastores and the backup
+pod have policies this chart derives in full; an operator adding a rule is adding it to the
+workload they deployed, and silently widening PostgreSQL's policy alongside it would be a
+surprise rather than a convenience.
 
 One object per direction, mirroring the portable pair, because `enableDefaultDeny` is per
 direction: a single object with both directions set and only ingress rules would deny all egress
@@ -33,20 +43,18 @@ from a workload whose egress policy nobody asked for — including DNS.
 {{- if .Values.networkPolicy.enabled }}
 {{- if has (.Values.networkPolicy.engine | default "kubernetes") (list "cilium" "both") }}
 {{- $cilium := .Values.networkPolicy.cilium }}
-{{- if and $cilium.toFQDNs (not $cilium.dnsMatchPatterns) }}
-{{- /*
-  An FQDN rule is enforced against the addresses Cilium's DNS proxy saw returned for that name.
-  With no L7 DNS rule to observe the lookup there is nothing to match against, so every
-  destination named above would be denied — silently, and only for the traffic that matters.
-  The DNS rule below defaults to `*`, so this only fires if it was deliberately emptied.
-*/}}
-{{- fail (printf "\n\nNETWORK POLICY CONFIGURATION INVALID for chart %q:\n\n  - networkPolicy.cilium.toFQDNs names destinations but networkPolicy.cilium.dnsMatchPatterns is empty, so Cilium's DNS proxy never observes the lookups those rules are matched against and every one of them is denied.\n" .Chart.Name) }}
-{{- end }}
+{{- $ciliumIngress := $cilium.ingress | default dict }}
+{{- $ciliumEgress := $cilium.egress | default dict }}
 {{- $defaultDeny := "true" }}
 {{- if hasKey $cilium "enableDefaultDeny" }}
 {{- $defaultDeny = $cilium.enableDefaultDeny | toString }}
 {{- end }}
 {{- range $policy := include "paperless-ngx.netpol.plan" . | fromYamlArray }}
+{{- /*
+  The application's own policies, and only those, carry the Cilium-only additions — see the
+  header. Held in a variable rather than repeated, so the two directions cannot disagree.
+*/}}
+{{- $app := eq $policy.component "server" }}
 ---
 apiVersion: {{ include "common.capabilities.cilium.apiVersion" $ }}
 kind: CiliumNetworkPolicy
@@ -80,9 +88,14 @@ spec:
     not satisfy that check — it is applied after it (cilium/cilium#35558). A one-element list
     holding an empty rule passes, and an ingress rule naming no peer admits nobody, which is the
     posture wanted here.
+
+    The Cilium-only additions count towards "empty": a policy carrying only `fromEntities` is a
+    real rule list, and emitting the placeholder beside it would admit nobody *and* everything
+    that entity covers, which reads as a contradiction.
   */}}
   ingress:
-    {{- if not $policy.ingress }}
+    {{- $extraIngress := ternary (concat ($ciliumIngress.fromEntities | default list) ($cilium.extraIngress | default list)) list $app }}
+    {{- if not (or $policy.ingress $extraIngress) }}
     - {}
     {{- end }}
     {{- range $rule := $policy.ingress }}
@@ -91,6 +104,15 @@ spec:
       toPorts:
         - ports:
             {{- include "common.cilium.ports" $rule.ports | nindent 12 }}
+    {{- end }}
+    {{- if $app }}
+    {{- with $ciliumIngress.fromEntities }}
+    - fromEntities:
+        {{- toYaml . | nindent 8 }}
+    {{- end }}
+    {{- with $cilium.extraIngress }}
+    {{- include "common.tplvalues.render" (dict "value" . "context" $) | nindent 4 }}
+    {{- end }}
     {{- end }}
 ---
 apiVersion: {{ include "common.capabilities.cilium.apiVersion" $ }}
@@ -116,7 +138,8 @@ spec:
     ingress: false
     egress: {{ $defaultDeny }}
   egress:
-    {{- if not $policy.egress }}
+    {{- $extraEgress := ternary (concat ($ciliumEgress.toEntities | default list) ($cilium.extraEgress | default list)) list $app }}
+    {{- if not (or $policy.egress $extraEgress) }}
     - {}
     {{- end }}
     {{- range $rule := $policy.egress }}
@@ -131,20 +154,35 @@ spec:
               protocol: UDP
             - port: "53"
               protocol: TCP
+          {{- /*
+            An FQDN rule is enforced against the addresses Cilium's DNS proxy saw returned for
+            that name, so the L7 DNS rule is what makes every `toFQDNs` entry below match
+            anything at all. It defaults to `*`, which permits the lookup only — an answer is
+            still reachable only if some rule allows the address.
+          */}}
           rules:
             dns:
-              {{- toYaml ($cilium.dnsMatchPatterns | default (list (dict "matchPattern" "*"))) | nindent 14 }}
+              {{- toYaml ($ciliumEgress.dnsMatchPatterns | default (list (dict "matchPattern" "*"))) | nindent 14 }}
     {{- else if $rule.internet }}
-    {{- if $cilium.toFQDNs }}
+    {{- if $ciliumEgress.toFQDNs }}
     {{- /*
       The rule the portable API cannot state. It *replaces* the CIDR form rather than adding to
       it: emitting both would leave the broad rule in place and make the narrow one decorative.
+
+      The ports come from the plan — 443 for `egress.https`, 587 and 465 for `egress.smtp` — so
+      naming a destination does not silently widen the ports it may be reached on.
+      `fqdnPorts` overrides them for a relay on a port this chart does not model.
     */}}
     - toFQDNs:
-        {{- toYaml $cilium.toFQDNs | nindent 8 }}
+        {{- toYaml $ciliumEgress.toFQDNs | nindent 8 }}
       toPorts:
         - ports:
-            {{- include "common.cilium.ports" $rule.ports | nindent 12 }}
+            {{- include "common.cilium.ports" ($ciliumEgress.fqdnPorts | default $rule.ports) | nindent 12 }}
+          {{- with $ciliumEgress.httpRules }}
+          rules:
+            http:
+              {{- toYaml . | nindent 14 }}
+          {{- end }}
     {{- else }}
     - toCIDRSet:
         - cidr: {{ $.Values.networkPolicy.egress.cidr | quote }}
@@ -162,6 +200,20 @@ spec:
       toPorts:
         - ports:
             {{- include "common.cilium.ports" $rule.ports | nindent 12 }}
+    {{- end }}
+    {{- end }}
+    {{- if $app }}
+    {{- with $ciliumEgress.toEntities }}
+    - toEntities:
+        {{- toYaml . | nindent 8 }}
+      {{- with $ciliumEgress.entityPorts }}
+      toPorts:
+        - ports:
+            {{- include "common.cilium.ports" . | nindent 12 }}
+      {{- end }}
+    {{- end }}
+    {{- with $cilium.extraEgress }}
+    {{- include "common.tplvalues.render" (dict "value" . "context" $) | nindent 4 }}
     {{- end }}
     {{- end }}
 {{- end }}

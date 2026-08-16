@@ -54,7 +54,22 @@ tests:
           value: [/usr/bin/bash, -c]
       - matchRegex:
           path: spec.template.spec.initContainers[0].args[0]
-          pattern: 'document_importer "\$\{RESTORE_SOURCE\}"'
+          pattern: 'python3 manage\.py document_importer "\$\{RESTORE_SOURCE\}"'
+
+  # /usr/local/bin/document_importer is the obvious thing to call and cannot be: its `with-contenv`
+  # shebang execs `s6-envdir /run/s6/container_environment`, a directory only the image's init step
+  # creates, so the wrapper dies before reaching Python. manage.py is all the wrapper runs anyway.
+  - it: calls the management command rather than the image's s6 wrapper
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      restore.enabled: true
+      restore.source.existingClaim: old-export
+    asserts:
+      - notMatchRegex:
+          path: spec.template.spec.initContainers[0].args[0]
+          pattern: '(?m)^document_importer'
 
   # document_importer inserts rows and does not create the schema, so against the empty database it
   # insists on it would fail on the first table.
@@ -120,7 +135,7 @@ tests:
           pattern: 'set -euo pipefail'
       - matchRegex:
           path: spec.template.spec.initContainers[0].args[0]
-          pattern: 'document_importer "\$\{RESTORE_SOURCE\}" "\$\{args\[@\]\}"\n\ndate -u'
+          pattern: 'python3 manage\.py document_importer "\$\{RESTORE_SOURCE\}" "\$\{args\[@\]\}"\n\ndate -u'
 
   - it: mounts the source claim read-only and imports from its root
     documentSelector:
@@ -227,7 +242,10 @@ tests:
           path: spec.template.spec.initContainers[0].args[0]
           pattern: '--passphrase "\$\{RESTORE_PASSPHRASE\}"'
 
-  - it: supplies the environment the image's own wrapper scripts expect
+  # Written by the image's s6 init step into /run/s6/container_environment, which a container
+  # overriding `command` never runs. Without them the script cds into an empty path and Django
+  # writes its dotfiles into kubelet's /root default, which uid 1000 cannot create.
+  - it: supplies the environment the image's init step would otherwise write
     documentSelector:
       path: kind
       value: Deployment
@@ -243,8 +261,8 @@ tests:
       - contains:
           path: spec.template.spec.initContainers[0].env
           content:
-            name: USER_IS_NON_ROOT
-            value: "true"
+            name: HOME
+            value: /usr/src/paperless
 
   - it: reads the same configuration the application will start with
     documentSelector:
@@ -343,7 +361,7 @@ tests:
           pattern: 'curl --fail --location --show-error --silent'
       - matchRegex:
           path: spec.template.spec.initContainers[0].args[0]
-          pattern: 'document_importer "\$\{RESTORE_SOURCE\}"'
+          pattern: 'python3 manage\.py document_importer "\$\{RESTORE_SOURCE\}"'
 
   # A presigned URL's query string is the authorisation, so it belongs beside the passphrases and
   # not in a ConfigMap that `kubectl describe` hands to the whole namespace.

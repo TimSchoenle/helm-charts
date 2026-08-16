@@ -542,7 +542,11 @@ matches the committed snapshot for a release that backs itself up and was restor
 
                       echo "exporting to ${BACKUP_TARGET}/${zip_name}.zip"
 
-                      document_exporter "${BACKUP_TARGET}" "${args[@]}"
+                      # `manage.py` and not `/usr/local/bin/document_exporter`: that wrapper's `with-contenv` shebang
+                      # needs an `/run/s6/container_environment` only the image's init step creates, and this container
+                      # does not run it. The `cd` is the wrapper's, kept in a subshell so the retention pass below still
+                      # resolves `BACKUP_TARGET` against the directory it was created in.
+                      (cd -- "${PAPERLESS_SRC_DIR}" && python3 manage.py document_exporter "${BACKUP_TARGET}" "${args[@]}")
 
                       # Retention runs only because the export above succeeded — `set -e` would have left before here
                       # otherwise. Pruning on a failed run would trade a good archive for a broken one.
@@ -575,8 +579,6 @@ matches the committed snapshot for a release that backs itself up and was restor
                           name: RELEASE-NAME-paperless-ngx
                     - name: PAPERLESS_SRC_DIR
                       value: /usr/src/paperless/src
-                    - name: USER_IS_NON_ROOT
-                      value: "true"
                     - name: HOME
                       value: /usr/src/paperless
                     - name: BACKUP_TARGET
@@ -785,7 +787,10 @@ matches the committed snapshot for a release that backs itself up and was restor
                   args+=(--passphrase "${RESTORE_PASSPHRASE}")
 
                   echo "importing from ${RESTORE_SOURCE}"
-                  document_importer "${RESTORE_SOURCE}" "${args[@]}"
+                  # `manage.py` and not `/usr/local/bin/document_importer`: that wrapper's `with-contenv` shebang
+                  # needs an `/run/s6/container_environment` only the image's init step creates, and this container
+                  # does not run it. The wrapper's own `cd` has already happened above.
+                  python3 manage.py document_importer "${RESTORE_SOURCE}" "${args[@]}"
 
                   date -u +%Y-%m-%dT%H:%M:%SZ > "${RESTORE_MARKER}"
                   echo "import complete; API tokens are not part of an export and have to be re-issued"
@@ -807,8 +812,6 @@ matches the committed snapshot for a release that backs itself up and was restor
                       name: RELEASE-NAME-paperless-ngx
                 - name: PAPERLESS_SRC_DIR
                   value: /usr/src/paperless/src
-                - name: USER_IS_NON_ROOT
-                  value: "true"
                 - name: HOME
                   value: /usr/src/paperless
                 - name: RESTORE_SOURCE

@@ -29,7 +29,7 @@ renamed fails the render with the offending path named, rather than being silent
 carve-outs are chosen per address family instead of coming from one shared list.
 
 A handful of provider origins answer an IPv4 client with a bare nginx `404` on every route and
-serve the same request normally over IPv6. TankoVault 7.2.3 resolves IPv6-first in response, which
+serve the same request normally over IPv6. TankoVault 7.3.0 resolves IPv6-first in response, which
 only helps if the pods have a v6 address *and* the egress policy permits it — otherwise the fetch
 is denied by policy, and a policy drop surfaces as a connect timeout that names nothing.
 
@@ -67,7 +67,7 @@ chart. Without it the stack runs exactly as before.
 
 ### Also in this release: `sirenscans` is retired
 
-TankoVault 7.2.3 drops the `sirenscans` preset — its origin answers a bare nginx `404` on every
+TankoVault 7.3.0 drops the `sirenscans` preset — its origin answers a bare nginx `404` on every
 route through a fully solved real browser, while a sibling install answers normally, which is a
 dead origin rather than a block. `witchscans` moved platform and keeps its slug, so nothing has to
 be done for that one.

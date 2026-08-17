@@ -65,6 +65,64 @@ tests:
           path: spec.egress[?(@.to[0].ipBlock)].to[0].ipBlock.except
           content: 169.254.0.0/16
 
+  - it: gives them that egress over IPv6 too, with the same doors closed
+    # Several provider origins answer an IPv4 client with a bare nginx 404 on every route and
+    # serve the same request normally over IPv6, which is why TankoVault resolves IPv6-first. A
+    # v4-only ipBlock denies exactly those fetches on a dual-stack cluster, as a policy drop that
+    # surfaces as a connect timeout naming nothing.
+    #
+    # Asserted as the whole rule rather than as two `contains`, because the failure worth
+    # catching is a v4 range appearing under `::/0`: the API rejects an `except` outside its own
+    # `cidr`, so that renders a policy the cluster refuses in full — every rule on the object
+    # lost, not just this one.
+    template: networkpolicy.yaml
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-worker
+    asserts:
+      - contains:
+          path: spec.egress
+          content:
+            to:
+              - ipBlock:
+                  cidr: 0.0.0.0/0
+                  except:
+                    - 10.0.0.0/8
+                    - 172.16.0.0/12
+                    - 192.168.0.0/16
+                    - 169.254.0.0/16
+              - ipBlock:
+                  cidr: ::/0
+                  except:
+                    # Unique-local covers every IPv6 pod and service CIDR in practice, and
+                    # fd00:ec2::254 with it; the last five are the two ways IPv6 has of naming an
+                    # IPv4 address, so 169.254.169.254 stays unreachable by either spelling.
+                    - fc00::/7
+                    - fe80::/10
+                    - ::ffff:0:0/96
+                    - 64:ff9b::a00:0/104
+                    - 64:ff9b::ac10:0/108
+                    - 64:ff9b::c0a8:0/112
+                    - 64:ff9b::a9fe:0/112
+
+  - it: keeps a single-stack operator's override to one family
+    # The dual-stack default is a default, not a fixture: an operator who overrides it gets
+    # exactly what they asked for, and the carve-outs follow the family they wrote.
+    template: networkpolicy.yaml
+    set:
+      networkPolicy.internetCidrs:
+        - 0.0.0.0/0
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-worker
+    asserts:
+      - lengthEqual:
+          path: spec.egress[?(@.to[0].ipBlock)].to
+          count: 1
+      - notContains:
+          path: spec.egress[?(@.to[0].ipBlock)].to[0].ipBlock.except
+          content: fc00::/7
+
   - it: lets the challenge solver reach the bundled TRAWL
     template: networkpolicy.yaml
     documentSelector:

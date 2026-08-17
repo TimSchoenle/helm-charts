@@ -7,6 +7,8 @@ Some of them require a manual step that nothing will remind you about:
 
 | Version | Applies to | Step |
 |---|---|---|
+| [5.1.0](#510) | releases that installed the provider presets | pause or delete the `sirenscans` provider row by hand |
+| [5.1.0](#510) | releases that override `networkPolicy.internetCidrs` | add `::/0`, or accept that some providers stay unreachable |
 | [5.0.0](#500) | releases that set any `resourcesPreset` | replace it with the `resources` block it stood for |
 | [4.0.0](#400) | **every release** | replace `internal.token`; the services refuse to boot on it |
 | [4.0.0](#400) | releases using `existingSecret` | remove `internal__token`, add the per-caller keys |
@@ -18,6 +20,62 @@ Some of them require a manual step that nothing will remind you about:
 
 The values contract is enforced by `values.schema.json`, so a key a new major removed or
 renamed fails the render with the offending path named, rather than being silently ignored.
+
+## 5.1.0
+
+**Internet egress is dual-stack, because some provider origins only answer over IPv6.**
+
+`networkPolicy.internetCidrs` now defaults to `["0.0.0.0/0", "::/0"]`, and the private-range
+carve-outs are chosen per address family instead of coming from one shared list.
+
+A handful of provider origins answer an IPv4 client with a bare nginx `404` on every route and
+serve the same request normally over IPv6. TankoVault 7.3.0 resolves IPv6-first in response, which
+only helps if the pods have a v6 address *and* the egress policy permits it — otherwise the fetch
+is denied by policy, and a policy drop surfaces as a connect timeout that names nothing.
+
+The v6 carve-outs are `fc00::/7`, `fe80::/10`, `::ffff:0:0/96` and the four NAT64 well-known-prefix
+images of the v4 private ranges. The last five exist because `::ffff:169.254.169.254` and
+`64:ff9b::a9fe:a9fe` are both the cloud metadata endpoint, and the v4 excepts do not cover either.
+Public IPv4 over NAT64 is unaffected.
+
+### What to change
+
+Nothing, on a default release: the new rule permits egress the pods could not previously make, and
+it matches no traffic at all on a single-stack cluster.
+
+Two cases need attention:
+
+- **You override `networkPolicy.internetCidrs`.** Your value is taken as written, so a v4-only
+  list keeps those providers failing. Add `::/0`:
+
+  ```yaml
+  networkPolicy:
+    internetCidrs:
+      - 0.0.0.0/0
+      - ::/0
+  ```
+
+  Omit it deliberately if you do not want IPv6 egress. Nothing else breaks.
+
+- **You audit egress policy.** The worker, sync, notifier, render and the bundled TRAWL each gain
+  an `::/0` `ipBlock` (or `toCIDRSet` entry under Cilium). `networkPolicy.cilium.egress.toFQDNs`
+  is unchanged and still replaces the CIDR rule outright — it covers both families already, since
+  Cilium enforces an FQDN rule against the addresses its DNS proxy saw returned, AAAA included.
+
+Getting an IPv6 address onto the pods is the cluster's dual-stack configuration and outside this
+chart. Without it the stack runs exactly as before.
+
+### Also in this release: `sirenscans` is retired
+
+TankoVault 7.3.0 drops the `sirenscans` preset — its origin answers a bare nginx `404` on every
+route through a fully solved real browser, while a sibling install answers normally, which is a
+dead origin rather than a block. `witchscans` moved platform and keeps its slug, so nothing has to
+be done for that one.
+
+Retiring a preset deliberately leaves any *installed* provider row alone, so on a release that ran
+with `bootstrap.seedProviders.enabled=true` the row survives the upgrade and keeps being
+scheduled. **Pause or delete it by hand in the admin console.** Nothing will remind you, and its
+tasks will keep failing until you do.
 
 ## 5.0.0
 

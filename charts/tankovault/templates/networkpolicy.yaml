@@ -47,16 +47,18 @@ including the cloud metadata endpoint at 169.254.169.254.
 fetches provider sites, sync talks to AniList and the notifier reaches SMTP and webhooks, so these
 tiers genuinely need egress — but a scraping tier that can also reach 169.254.169.254 is an SSRF
 away from the node's instance credentials.
+
+One rule per entry in `internetCidrs`, which is dual-stack by default: the worker prefers IPv6 and
+some provider origins serve nothing else usefully, so a v4-only rule denies those fetches outright
+on a dual-stack cluster. The carve-outs come from `tankovault.netpol.internetExcept`, which picks
+them per family because the API rejects an `except` outside its own `cidr`.
 */ -}}
 {{- define "tankovault.netpol.internetPeers" -}}
 {{- range $cidr := .Values.networkPolicy.internetCidrs }}
 - ipBlock:
     cidr: {{ $cidr }}
     except:
-      - 10.0.0.0/8
-      - 172.16.0.0/12
-      - 192.168.0.0/16
-      - 169.254.0.0/16
+      {{- include "tankovault.netpol.internetExcept" $cidr | trim | nindent 6 }}
 {{- end }}
 {{- end -}}
 

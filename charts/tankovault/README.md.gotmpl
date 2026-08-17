@@ -57,6 +57,9 @@ the optional headless `render` tier, plus the one-shot `bootstrap` migration and
 - An ingress controller, if `ingress.enabled=true`
 - The Gateway API CRDs and a `Gateway` to attach to, if `gateway.enabled=true`
 - Cilium 1.16+, if `networkPolicy.engine` is `cilium` or `both`
+- A dual-stack pod network, to scrape every provider. Not a hard requirement — the stack installs
+  and runs IPv4-only — but a handful of provider origins are reachable over IPv6 and nothing else.
+  See [The worker needs IPv6 to reach some providers](#the-worker-needs-ipv6-to-reach-some-providers)
 
 ## Quick start
 
@@ -1012,6 +1015,45 @@ identity under `networkPolicy` would be a second place to edit on a rename, and 
 the wrong Gateway looks correct and blocks everything. `networkPolicy.gateway` overrides either
 half for an implementation that labels its pods differently.
 
+## The worker needs IPv6 to reach some providers
+
+A handful of provider origins answer an IPv4 client with a bare nginx `404` on **every** route,
+`/` included, and serve the same request normally over IPv6. It is reproducible rather than a
+flap: same second, same CDN edge, `curl -4` against several addresses versus `curl -6`. Sibling
+sites on the same platform answer both, which is what made it look like a per-site problem.
+
+That failure is unusually quiet, because a `404` is not a bot-management signal. Nothing escalates
+it to the challenge solver, the circuit breaker does not read it as challenged, and in the scan
+log it reads as "the site removed that page". The providers simply never register a series.
+TankoVault 7.3.0 fixes the resolver half — it orders resolved addresses IPv6-first, the way a
+browser does, and falls back to IPv4 as before. The cluster has to supply the other half.
+
+Two things have to be true, and only the second is this chart's:
+
+1. **The pods need an IPv6 address.** That is the cluster's dual-stack configuration —
+   `--node-cidr-mask-size-ipv6` on the controller manager and a CNI handing out v6 pod addresses
+   — and nothing a chart can set. On a single-stack cluster the worker keeps working and those
+   providers keep failing.
+2. **The egress policy has to permit IPv6.** `networkPolicy.internetCidrs` defaults to
+   `["0.0.0.0/0", "::/0"]` for exactly this. A v4-only list on a dual-stack cluster denies the
+   fetches the resolver has just started preferring, and denies them as a policy drop — a connect
+   timeout that names nothing, on the one path that was supposed to be fixed.
+
+The private ranges are carved out per family, because `networking.k8s.io/v1` rejects an `except`
+that falls outside its own `cidr` and would reject the whole object. The v6 list is the longer
+one: `fc00::/7` and `fe80::/10` are the counterparts of RFC1918 and 169.254.0.0/16, and
+`::ffff:0:0/96` plus the four NAT64 well-known-prefix images close the two ways IPv6 has of
+spelling an IPv4 address — `::ffff:169.254.169.254` is the metadata endpoint, and the v4 excepts
+do not see it. NAT64 still reaches public IPv4; only the images of the private ranges are removed.
+
+Keeping `::/0` on an IPv4-only cluster costs nothing: a rule for a family the pods hold no address
+in matches no traffic. Remove it to deny IPv6 egress deliberately.
+
+Under `networkPolicy.engine: cilium` the same applies to `toCIDRSet`, from the same helper — and
+if you replace the CIDR rule with `cilium.egress.toFQDNs` below, an FQDN rule is enforced against
+whatever addresses Cilium's DNS proxy saw returned for the name, AAAA records included, so naming
+the host covers both families without listing either.
+
 ## Network policies with Cilium
 
 `networkPolicy.engine` picks the dialect the twelve per-service policies are written in —
@@ -1020,8 +1062,8 @@ derived topology, so the engine changes how the rules are written and never what
 
 The internet rules are what the switch buys. `worker` scrapes provider sites, `sync` talks to
 AniList and `notifier` reaches SMTP and webhook endpoints — real egress needs that the portable
-API can only express as `0.0.0.0/0` minus RFC1918 and the metadata endpoint. That permits every
-public host that exists, held by precisely the tier you least want holding it:
+API can only express as `0.0.0.0/0` and `::/0` minus the private ranges and the metadata endpoint.
+That permits every public host that exists, held by precisely the tier you least want holding it:
 
 ```yaml
 networkPolicy:

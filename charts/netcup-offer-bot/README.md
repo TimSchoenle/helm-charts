@@ -1,6 +1,6 @@
 # netcup-offer-bot
 
-![Version: 5.0.0](https://img.shields.io/badge/Version-5.0.0-informational?style=flat-square) ![AppVersion: v2.0.0](https://img.shields.io/badge/AppVersion-v2.0.0-informational?style=flat-square)
+![Version: 5.0.1](https://img.shields.io/badge/Version-5.0.1-informational?style=flat-square) ![AppVersion: v2.0.1](https://img.shields.io/badge/AppVersion-v2.0.1-informational?style=flat-square)
 
 This chart deploys the Netcup Offer Bot, which monitors https://www.netcup-sonderangebote.de/ RSS feed and sends notifications to Discord webhooks when new offers are available.
 
@@ -232,7 +232,7 @@ policy pointing at the wrong Gateway looks correct and blocks everything.
 | image.pullPolicy | string | `""` | The image pull policy. Empty resolves automatically from the tag/digest. |
 | image.registry | string | `""` | Registry host. Empty means Docker Hub. |
 | image.repository | string | `"timmi6790/netcup-offer-bot"` | The container image repository. |
-| image.tag | string | `"v2.0.0@sha256:ca4777a39e389609910492c2668ad524295512065a41bf8ffad849004b832efb"` | The container image tag. Defaults to the chart's `appVersion` when empty. |
+| image.tag | string | `"v2.0.1@sha256:da2a92c2451007040408fa61651bedbd6eb04e759625dc65b904290c3388ddcc"` | The container image tag. Defaults to the chart's `appVersion` when empty. |
 | imagePullSecrets | list | `[]` | Optional image pull secrets for private registries |
 | kubeVersionOverride | string | `""` | Kubernetes version to target when branching on API availability. Lets `helm template` render for a specific cluster version without a live connection. |
 | metrics.enabled | bool | `false` | Enable Prometheus metrics endpoint. |

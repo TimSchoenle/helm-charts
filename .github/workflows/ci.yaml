@@ -19,7 +19,9 @@ jobs:
   # Every chart's `values.schema.json` and `README.md` are generated from `values.yaml` and
   # `README.md.gotmpl`, and the root `README.md` from `.github/templates/README.md.hbs`.
   # This job regenerates them and commits the result back to the PR branch, so contributors
-  # never have to run the toolchain locally. The other jobs deliberately do not gate on it:
+  # never have to run the toolchain locally. It also repins the Kubernetes schema references in
+  # `values.yaml` itself, which is derived from `kube_version` in the same way even though it is
+  # hand-written. The other jobs deliberately do not gate on it:
   # the follow-up push re-runs the whole workflow against the corrected tree anyway, and
   # skipping them here would drop lint, unit tests and install on exactly the runs that
   # change a chart's values.
@@ -54,6 +56,13 @@ jobs:
 
       - name: Setup toolchain
         uses: ./.github/actions/setup-toolchain
+
+      # Every chart types its Kubernetes values by URL, pinned to the release `kube_version` names.
+      # Nothing derives those URLs from it, so this repins them before the dependencies are built —
+      # `charts/common` has to carry the new version before it is packaged into its consumers, or
+      # the schema generation below would put the old one back.
+      - name: Repin Kubernetes schema references
+        run: just sync-kube-refs
 
       - name: Build Helm dependencies
         run: just deps

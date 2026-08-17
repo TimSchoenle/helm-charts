@@ -10,6 +10,7 @@
 #   deps, docs, render, test    helm (+ `just plugins`), python3 with PyYAML
 #   docs                        helm-docs, for `just chart-readmes`
 #   lint                        chart-testing (`ct`), kube-linter
+#   maintain                    python3 with PyYAML
 #   render                      kubeconform, for `just validate-manifests`
 #   test                        docker, for `just test-rules` and `just test-e2e`
 #
@@ -22,6 +23,7 @@ set windows-shell := ["bash", "-euo", "pipefail", "-c"]
 import 'just/deps.just'
 import 'just/docs.just'
 import 'just/lint.just'
+import 'just/maintain.just'
 import 'just/render.just'
 import 'just/test.just'
 
@@ -56,7 +58,9 @@ helm_schema_version := "0.18.1"
 # --------------------------------------------------------------------------------------------
 
 # Highest version in the validate-manifests matrix; also what the immutable-field check pins the
-# StatefulSet schema to.
+# StatefulSet schema to, and the release every chart's Kubernetes `$ref` names. The references are
+# not derived from this value, so `just sync-kube-refs` is what carries a change here into the
+# charts — the CI documentation job runs it, and `just check-kube-refs` reports the gap.
 kube_version := "1.34.0"
 
 # promtool comes from the official Prometheus image, so there is no binary to pin a checksum for.

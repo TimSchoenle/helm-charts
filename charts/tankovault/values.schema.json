@@ -3452,7 +3452,7 @@
           "title": "ingressController"
         },
         "internetCidrs": {
-          "description": "Egress CIDRs treated as \"the internet\". The worker scrapes provider sites, sync talks to\nAniList and the notifier reaches SMTP and webhook endpoints, so these tiers need it.\nRFC1918 ranges and the cloud metadata endpoint are excluded automatically.",
+          "description": "Egress CIDRs treated as \"the internet\". The worker scrapes provider sites, sync talks to\nAniList and the notifier reaches SMTP and webhook endpoints, so these tiers need it. The\nprivate ranges and the cloud metadata endpoint are excluded automatically, per family — see\n`tankovault.netpol.internetExcept` for what each list holds and why the v6 one is longer.\n\nDual-stack by default, and the v6 half is load-bearing rather than symmetry. Several provider\norigins answer an IPv4 client with a bare nginx `404` on every route while serving the same\nrequest normally over IPv6, so TankoVault 7.2.3 resolves IPv6-first the way a browser does.\nOn a dual-stack cluster a v4-only rule here denies exactly those fetches — and denies them as\na policy drop, which surfaces as a connect timeout rather than as anything naming a policy.\n\nHarmless on a single-stack cluster: a rule for a family the pods have no address in matches\nno traffic. Drop `::/0` only to deny IPv6 egress deliberately, and expect those providers to\nfail if you do. IPv6 egress additionally needs the pods to *have* a v6 address, which is the\ncluster's dual-stack configuration and not something this chart can set.",
           "items": {
             "required": [],
             "type": "string"

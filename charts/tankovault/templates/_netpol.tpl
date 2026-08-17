@@ -30,8 +30,56 @@ A peer is exactly one of:
   selector    matchLabels for pods in this namespace
   namespace   matchLabels for a namespace, optionally with `selector` for pods inside it
   dns         the cluster DNS service (rendered as an L7 DNS rule under Cilium)
-  internet    everything outside the cluster, minus RFC1918 and the metadata endpoint
+  internet    everything outside the cluster, minus the private ranges and the metadata endpoint
 */}}
+
+{{/*
+The carve-outs for one entry of `networkPolicy.internetCidrs`, chosen by address family.
+
+Why the split is mandatory, not tidiness
+----------------------------------------
+`networking.k8s.io/v1` validates that every `except` lies inside its `ipBlock.cidr`, so a v4
+range under `::/0` is rejected by the API server outright — one list covering both families is
+not a thing that can be written. Both renderers call this so the carve-outs cannot differ
+between the two dialects any more than the topology can.
+
+What each family excludes, and why the two lists are not translations of each other
+-----------------------------------------------------------------------------------
+v4 is the familiar set: RFC1918 plus 169.254.0.0/16, which is where the cloud metadata endpoint
+lives. A tier that fetches attacker-influenced URLs and can also reach 169.254.169.254 is one
+SSRF away from the node's instance credentials.
+
+v6 has to close the same door twice more, because IPv6 has two ways to name an IPv4 address:
+
+  fc00::/7            unique-local — every IPv6 pod and service CIDR in practice, and the ULA
+                      metadata address fd00:ec2::254 with it. The v6 counterpart of RFC1918.
+  fe80::/10           link-local, which is where IPv6 neighbours and the node itself answer.
+  ::ffff:0:0/96       IPv4-mapped. `::ffff:169.254.169.254` is the metadata endpoint written as
+                      an IPv6 literal, and the v4 excepts above do not see it.
+  64:ff9b::a00:0/104  the well-known NAT64 prefix's images of the four v4 ranges. On a cluster
+  64:ff9b::ac10:0/108 with NAT64 those are literally routes to 10/8, 172.16/12, 192.168/16 and
+  64:ff9b::c0a8:0/112 169.254/16. Only the images are excluded, so NAT64 still reaches public
+  64:ff9b::a9fe:0/112 IPv4 — which on an IPv6-only cluster is the whole point of it.
+
+Only the well-known prefix is covered: a network-specific NAT64 prefix is by definition local
+knowledge, and belongs in an `internetCidrs` override rather than guessed at here.
+*/}}
+{{- define "tankovault.netpol.internetExcept" -}}
+{{- if contains ":" . }}
+- fc00::/7
+- fe80::/10
+- ::ffff:0:0/96
+- 64:ff9b::a00:0/104
+- 64:ff9b::ac10:0/108
+- 64:ff9b::c0a8:0/112
+- 64:ff9b::a9fe:0/112
+{{- else }}
+- 10.0.0.0/8
+- 172.16.0.0/12
+- 192.168.0.0/16
+- 169.254.0.0/16
+{{- end }}
+{{- end -}}
 
 {{/*
 A peer selecting one TankoVault service by its per-service name label.

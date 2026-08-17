@@ -13,9 +13,11 @@ What Cilium adds over the portable rendering
 ---------------------------------------------
 The internet rules are the interesting case. `worker` scrapes provider sites, `sync` talks to
 AniList, `notifier` reaches SMTP and webhook endpoints — real egress needs that the portable API
-can only express as `0.0.0.0/0` minus RFC1918 and the metadata endpoint. That permits every public
-host that exists. `networkPolicy.cilium.egress.toFQDNs` replaces it with the hosts those tiers
-actually talk to, which is the rule that was meant all along.
+can only express as `0.0.0.0/0` and `::/0` minus the private ranges and the metadata endpoint.
+That permits every public host that exists. `networkPolicy.cilium.egress.toFQDNs` replaces it with
+the hosts those tiers actually talk to, which is the rule that was meant all along. It replaces
+both families at once, and needs no v6 counterpart of its own: an FQDN rule is enforced against
+the addresses Cilium's DNS proxy saw returned for that name, AAAA records included.
 
 The substitution is deliberate rather than automatic: with `toFQDNs` set, the CIDR rule is
 dropped for every service that would have carried it. Emitting both would leave the broad rule in
@@ -112,10 +114,7 @@ spec:
         {{- range $cidr := $.Values.networkPolicy.internetCidrs }}
         - cidr: {{ $cidr }}
           except:
-            - 10.0.0.0/8
-            - 172.16.0.0/12
-            - 192.168.0.0/16
-            - 169.254.0.0/16
+            {{- include "tankovault.netpol.internetExcept" $cidr | trim | nindent 12 }}
         {{- end }}
     {{- end }}
     {{- else }}

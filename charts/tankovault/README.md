@@ -1,6 +1,6 @@
 # tankovault
 
-![Version: 5.0.0](https://img.shields.io/badge/Version-5.0.0-informational?style=flat-square) ![AppVersion: 7.2.2](https://img.shields.io/badge/AppVersion-7.2.2-informational?style=flat-square)
+![Version: 5.1.0](https://img.shields.io/badge/Version-5.1.0-informational?style=flat-square) ![AppVersion: 7.2.2](https://img.shields.io/badge/AppVersion-7.2.2-informational?style=flat-square)
 
 This chart deploys the full TankoVault manga aggregator stack — frontend, api, control-plane, worker, notifier, sync, challenge-solver and render — hardened to the restricted Pod Security Standard, with file-backed configuration that reloads in place instead of restarting pods, optional bundled PostgreSQL, Valkey, NATS JetStream and TRAWL, and optional Prometheus metrics, alerting rules and Grafana dashboards.
 
@@ -55,6 +55,9 @@ the optional headless `render` tier, plus the one-shot `bootstrap` migration and
 - An ingress controller, if `ingress.enabled=true`
 - The Gateway API CRDs and a `Gateway` to attach to, if `gateway.enabled=true`
 - Cilium 1.16+, if `networkPolicy.engine` is `cilium` or `both`
+- A dual-stack pod network, to scrape every provider. Not a hard requirement — the stack installs
+  and runs IPv4-only — but a handful of provider origins are reachable over IPv6 and nothing else.
+  See [The worker needs IPv6 to reach some providers](#the-worker-needs-ipv6-to-reach-some-providers)
 
 ## Quick start
 
@@ -1009,6 +1012,45 @@ identity under `networkPolicy` would be a second place to edit on a rename, and 
 the wrong Gateway looks correct and blocks everything. `networkPolicy.gateway` overrides either
 half for an implementation that labels its pods differently.
 
+## The worker needs IPv6 to reach some providers
+
+A handful of provider origins answer an IPv4 client with a bare nginx `404` on **every** route,
+`/` included, and serve the same request normally over IPv6. It is reproducible rather than a
+flap: same second, same CDN edge, `curl -4` against several addresses versus `curl -6`. Sibling
+sites on the same platform answer both, which is what made it look like a per-site problem.
+
+That failure is unusually quiet, because a `404` is not a bot-management signal. Nothing escalates
+it to the challenge solver, the circuit breaker does not read it as challenged, and in the scan
+log it reads as "the site removed that page". The providers simply never register a series.
+TankoVault 7.2.3 fixes the resolver half — it orders resolved addresses IPv6-first, the way a
+browser does, and falls back to IPv4 as before. The cluster has to supply the other half.
+
+Two things have to be true, and only the second is this chart's:
+
+1. **The pods need an IPv6 address.** That is the cluster's dual-stack configuration —
+   `--node-cidr-mask-size-ipv6` on the controller manager and a CNI handing out v6 pod addresses
+   — and nothing a chart can set. On a single-stack cluster the worker keeps working and those
+   providers keep failing.
+2. **The egress policy has to permit IPv6.** `networkPolicy.internetCidrs` defaults to
+   `["0.0.0.0/0", "::/0"]` for exactly this. A v4-only list on a dual-stack cluster denies the
+   fetches the resolver has just started preferring, and denies them as a policy drop — a connect
+   timeout that names nothing, on the one path that was supposed to be fixed.
+
+The private ranges are carved out per family, because `networking.k8s.io/v1` rejects an `except`
+that falls outside its own `cidr` and would reject the whole object. The v6 list is the longer
+one: `fc00::/7` and `fe80::/10` are the counterparts of RFC1918 and 169.254.0.0/16, and
+`::ffff:0:0/96` plus the four NAT64 well-known-prefix images close the two ways IPv6 has of
+spelling an IPv4 address — `::ffff:169.254.169.254` is the metadata endpoint, and the v4 excepts
+do not see it. NAT64 still reaches public IPv4; only the images of the private ranges are removed.
+
+Keeping `::/0` on an IPv4-only cluster costs nothing: a rule for a family the pods hold no address
+in matches no traffic. Remove it to deny IPv6 egress deliberately.
+
+Under `networkPolicy.engine: cilium` the same applies to `toCIDRSet`, from the same helper — and
+if you replace the CIDR rule with `cilium.egress.toFQDNs` below, an FQDN rule is enforced against
+whatever addresses Cilium's DNS proxy saw returned for the name, AAAA records included, so naming
+the host covers both families without listing either.
+
 ## Network policies with Cilium
 
 `networkPolicy.engine` picks the dialect the twelve per-service policies are written in —
@@ -1017,8 +1059,8 @@ derived topology, so the engine changes how the rules are written and never what
 
 The internet rules are what the switch buys. `worker` scrapes provider sites, `sync` talks to
 AniList and `notifier` reaches SMTP and webhook endpoints — real egress needs that the portable
-API can only express as `0.0.0.0/0` minus RFC1918 and the metadata endpoint. That permits every
-public host that exists, held by precisely the tier you least want holding it:
+API can only express as `0.0.0.0/0` and `::/0` minus the private ranges and the metadata endpoint.
+That permits every public host that exists, held by precisely the tier you least want holding it:
 
 ```yaml
 networkPolicy:
@@ -1312,7 +1354,7 @@ lookup; the chart fails the render if FQDN destinations are named with the DNS r
 | nats.resources.requests | object | `{"cpu":"100m","memory":"256Mi"}` | Resource requests. |
 | nats.resources.requests.cpu | string | `"100m"` | Minimum CPU requested. |
 | nats.resources.requests.memory | string | `"256Mi"` | Minimum guaranteed memory allocation. |
-| networkPolicy | object | `{"cilium":{"description":"","egress":{"dnsMatchPatterns":[],"entityPorts":[],"fqdnPorts":[],"httpRules":[],"toEntities":[],"toFQDNs":[]},"enableDefaultDeny":true,"extraEgress":[],"extraIngress":[],"ingress":{"fromEntities":[]}},"enabled":false,"engine":"kubernetes","extraEgress":[],"extraIngress":[],"gateway":{"namespaceSelector":{},"podSelector":{}},"ingressController":{"namespaceSelector":{},"podSelector":{}},"internetCidrs":["0.0.0.0/0"],"monitoring":{"namespaceSelector":{}}}` | NetworkPolicies. Default-deny per service, then exactly the peers each one needs. Written per service rather than through the `common` builder, which cannot express pod-to-pod rules between nine workloads. |
+| networkPolicy | object | `{"cilium":{"description":"","egress":{"dnsMatchPatterns":[],"entityPorts":[],"fqdnPorts":[],"httpRules":[],"toEntities":[],"toFQDNs":[]},"enableDefaultDeny":true,"extraEgress":[],"extraIngress":[],"ingress":{"fromEntities":[]}},"enabled":false,"engine":"kubernetes","extraEgress":[],"extraIngress":[],"gateway":{"namespaceSelector":{},"podSelector":{}},"ingressController":{"namespaceSelector":{},"podSelector":{}},"internetCidrs":["0.0.0.0/0","::/0"],"monitoring":{"namespaceSelector":{}}}` | NetworkPolicies. Default-deny per service, then exactly the peers each one needs. Written per service rather than through the `common` builder, which cannot express pod-to-pod rules between nine workloads. |
 | networkPolicy.cilium | object | `{"description":"","egress":{"dnsMatchPatterns":[],"entityPorts":[],"fqdnPorts":[],"httpRules":[],"toEntities":[],"toFQDNs":[]},"enableDefaultDeny":true,"extraEgress":[],"extraIngress":[],"ingress":{"fromEntities":[]}}` | Cilium-only additions, used when `engine` is `cilium` or `both`. The whole topology above is rendered into the CiliumNetworkPolicies automatically; these are the rules the portable API has no way to express.  Note that `extraIngress` and `extraEgress` above are *not* carried over: those are verbatim `networking.k8s.io/v1` rule objects and are not valid CNP. The fields below are their counterparts. |
 | networkPolicy.cilium.description | string | `""` | `spec.description`, which Cilium surfaces in `cilium policy get` and in Hubble flow verdicts. The one place to record why a rule exists where an operator debugging a drop will actually see it. |
 | networkPolicy.cilium.egress | object | `{"dnsMatchPatterns":[],"entityPorts":[],"fqdnPorts":[],"httpRules":[],"toEntities":[],"toFQDNs":[]}` | Cilium-only egress rules. |
@@ -1336,7 +1378,7 @@ lookup; the chart fails the render if FQDN destinations are named with the DNS r
 | networkPolicy.gateway.podSelector | object | `{}` | Pod selector matching the Gateway's data plane. Empty derives it. |
 | networkPolicy.ingressController.namespaceSelector | object | `{}` | Namespace selector matching the ingress controller, allowed to reach the frontend. |
 | networkPolicy.ingressController.podSelector | object | `{}` | Pod selector matching the ingress controller. |
-| networkPolicy.internetCidrs | list | `["0.0.0.0/0"]` | Egress CIDRs treated as "the internet". The worker scrapes provider sites, sync talks to AniList and the notifier reaches SMTP and webhook endpoints, so these tiers need it. RFC1918 ranges and the cloud metadata endpoint are excluded automatically. |
+| networkPolicy.internetCidrs | list | `["0.0.0.0/0","::/0"]` | Egress CIDRs treated as "the internet". The worker scrapes provider sites, sync talks to AniList and the notifier reaches SMTP and webhook endpoints, so these tiers need it. The private ranges and the cloud metadata endpoint are excluded automatically, per family — see `tankovault.netpol.internetExcept` for what each list holds and why the v6 one is longer.  Dual-stack by default, and the v6 half is load-bearing rather than symmetry. Several provider origins answer an IPv4 client with a bare nginx `404` on every route while serving the same request normally over IPv6, so TankoVault 7.2.3 resolves IPv6-first the way a browser does. On a dual-stack cluster a v4-only rule here denies exactly those fetches — and denies them as a policy drop, which surfaces as a connect timeout rather than as anything naming a policy.  Harmless on a single-stack cluster: a rule for a family the pods have no address in matches no traffic. Drop `::/0` only to deny IPv6 egress deliberately, and expect those providers to fail if you do. IPv6 egress additionally needs the pods to *have* a v6 address, which is the cluster's dual-stack configuration and not something this chart can set. |
 | networkPolicy.monitoring.namespaceSelector | object | `{}` | Namespace selector matching Prometheus, allowed to reach the metrics port. |
 | postgresql | object | `{"auth":{"database":"tankovault","password":"","username":"tankovault"},"enabled":false,"image":{"repository":"pgvector/pgvector","tag":"pg18@sha256:691673308c99d2161ba298736f3147f1f22d79de2fb7ec93ae9b4afcab870b62"},"persistence":{"enabled":true,"existingClaim":"","size":"20Gi","storageClassName":""},"resources":{"limits":{"memory":"1Gi"},"requests":{"cpu":"250m","memory":"512Mi"}}}` | Bundled PostgreSQL. A single instance with a PVC, on the same image the upstream compose stack pins. Deliberately not an operator and not a third-party subchart, so `helm install` works on a bare cluster — but equally deliberately **not a production database**: one replica, no failover, no point-in-time recovery. Use `externalDatabase` for anything real — and give it [pgvector](https://github.com/pgvector/pgvector), which migration `0027` requires. |
 | postgresql.auth.database | string | `"tankovault"` | Database name. |

@@ -2571,6 +2571,9 @@ matches the committed snapshot for the full stack behind an Ingress:
               command:
                 - /usr/bin/tini
                 - --
+              env:
+                - name: HOME
+                  value: /home/gotenberg
               image: gotenberg/gotenberg:v0.0.0@sha256:4444444444444444444444444444444444444444444444444444444444444444
               imagePullPolicy: IfNotPresent
               livenessProbe:
@@ -2609,6 +2612,8 @@ matches the committed snapshot for the full stack behind an Ingress:
               volumeMounts:
                 - mountPath: /tmp
                   name: tmp
+                - mountPath: /home/gotenberg
+                  name: home
           securityContext:
             fsGroup: 1001
             fsGroupChangePolicy: OnRootMismatch
@@ -2621,6 +2626,8 @@ matches the committed snapshot for the full stack behind an Ingress:
           volumes:
             - emptyDir: {}
               name: tmp
+            - emptyDir: {}
+              name: home
   6: |
     apiVersion: networking.k8s.io/v1
     kind: Ingress

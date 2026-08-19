@@ -181,6 +181,32 @@ tests:
           path: spec.template.spec.containers[0].livenessProbe.httpGet.path
           value: /health
 
+  # Chromium creates its crash-reporter database under $HOME before it opens a page, and a
+  # read-only root filesystem leaves it nowhere to put it: the crashpad handler is then started
+  # without a --database, exits, and takes the browser with it. The LibreOffice routes keep
+  # working throughout, so the release looks healthy and archives e-mail as nothing.
+  - it: gives Chromium a writable home, which it needs before it renders anything
+    set:
+      tika.enabled: true
+    template: gotenberg.yaml
+    documentIndex: 1
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: HOME
+            value: /home/gotenberg
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: home
+            mountPath: /home/gotenberg
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: home
+            emptyDir: {}
+
   - it: probes Tika on the endpoint that proves it finished starting
     set:
       tika.enabled: true

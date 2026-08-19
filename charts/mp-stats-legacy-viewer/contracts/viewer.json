@@ -1,0 +1,292 @@
+{
+  "source": {
+    "image": "docker.io/timschoenle/mp-stats-legacy-viewer",
+    "digest": "sha256:f1be8964c50a8c402b8553fcad46cc96c64f976e2f990787eb1b73310404f3d4",
+    "sha256": "76bfe79fa9404f48d16dbd958e389be1501828c160a3f7128ca85b30d06e0cf6",
+    "fetched": "2026-08-19T12:22:11Z"
+  },
+  "contract": {
+    "terrace_contract": 1,
+    "app": {
+      "name": "mp-stats-legacy-viewer",
+      "version": "v0.17.2",
+      "source": "https://github.com/TimSchoenle/mp-stats-legacy-viewer"
+    },
+    "schema": {
+      "schema_version": 1,
+      "dialect": {
+        "prefix": "MP_STATS_",
+        "nesting_separator": "__",
+        "indirection_suffix": "_FILE"
+      },
+      "loader": [
+        {
+          "env": "MP_STATS_CONFIG",
+          "role": "config",
+          "docs": "Names the TOML layer: a file, or a directory whose `*.toml` files are all merged in name order.",
+          "default": "config.toml"
+        },
+        {
+          "env": "MP_STATS_SECRETS_DIR",
+          "role": "secrets_dir",
+          "docs": "Names a directory of key-named files — a mounted Kubernetes `Secret` volume. Each file supplies the key its name spells.",
+          "default": null
+        },
+        {
+          "env": "MP_STATS_EXPLAIN",
+          "role": "reserved",
+          "docs": "Read directly from the environment before the layered config exists, so no file may supply it.",
+          "default": null
+        }
+      ],
+      "keys": [
+        {
+          "path": "server.bind_addr",
+          "env": "MP_STATS_SERVER__BIND_ADDR",
+          "env_file": "MP_STATS_SERVER__BIND_ADDR_FILE",
+          "secrets_file": "server__bind_addr",
+          "docs": "Address the HTTP listener binds.\n\nDeserialised as a `SocketAddr`, so an unparseable value fails at boot rather than at\n`bind` time.",
+          "ty": "SocketAddr",
+          "values": [],
+          "constraint": {
+            "type": "string"
+          },
+          "text_form": "unknown",
+          "aliases": [],
+          "env_aliases": [],
+          "env_file_aliases": [],
+          "secrets_file_aliases": [],
+          "default": "0.0.0.0:8080",
+          "default_value": "0.0.0.0:8080",
+          "note": null,
+          "required": false,
+          "secret": false,
+          "reserved": false
+        },
+        {
+          "path": "server.dist_dir",
+          "env": "MP_STATS_SERVER__DIST_DIR",
+          "env_file": "MP_STATS_SERVER__DIST_DIR_FILE",
+          "secrets_file": "server__dist_dir",
+          "docs": "Directory holding the built frontend.\n\nIts `index.html` is both the SPA entry point and the fallback for unknown routes; the\nserver refuses to start without it.",
+          "ty": "PathBuf",
+          "values": [],
+          "constraint": {
+            "type": "string"
+          },
+          "text_form": "text",
+          "aliases": [],
+          "env_aliases": [],
+          "env_file_aliases": [],
+          "secrets_file_aliases": [],
+          "default": "dist",
+          "default_value": "dist",
+          "note": null,
+          "required": false,
+          "secret": false,
+          "reserved": false
+        },
+        {
+          "path": "server.data_dir",
+          "env": "MP_STATS_SERVER__DATA_DIR",
+          "env_file": "MP_STATS_SERVER__DATA_DIR_FILE",
+          "secrets_file": "server__data_dir",
+          "docs": "Directory holding the converter's output, mounted at `/data`.",
+          "ty": "PathBuf",
+          "values": [],
+          "constraint": {
+            "type": "string"
+          },
+          "text_form": "text",
+          "aliases": [],
+          "env_aliases": [],
+          "env_file_aliases": [],
+          "secrets_file_aliases": [],
+          "default": "data",
+          "default_value": "data",
+          "note": null,
+          "required": false,
+          "secret": false,
+          "reserved": false
+        },
+        {
+          "path": "server.csp.enabled",
+          "env": "MP_STATS_SERVER__CSP__ENABLED",
+          "env_file": "MP_STATS_SERVER__CSP__ENABLED_FILE",
+          "secrets_file": "server__csp__enabled",
+          "docs": "Send the header at all.\n\nOn by default, and the only reason to turn it off is that something in front of this\nserver already sets the header — two `Content-Security-Policy` headers on one response\nare intersected by the browser, so the effective policy becomes the strictest reading of\nboth and the page breaks in a way neither policy explains. Disabling it to make a page\nwork is fixing the symptom: the console names the directive that refused the resource,\nand the fix belongs in the shell or in the keys below.",
+          "ty": "bool",
+          "values": [],
+          "constraint": {
+            "type": "boolean"
+          },
+          "text_constraint": {
+            "pattern": "^\\s*(true|false)\\s*$",
+            "type": "string"
+          },
+          "text_form": "boolean",
+          "aliases": [],
+          "env_aliases": [],
+          "env_file_aliases": [],
+          "secrets_file_aliases": [],
+          "default": "true",
+          "default_value": true,
+          "note": null,
+          "required": false,
+          "secret": false,
+          "reserved": false
+        },
+        {
+          "path": "server.csp.cloudflare.script_nonce",
+          "env": "MP_STATS_SERVER__CSP__CLOUDFLARE__SCRIPT_NONCE",
+          "env_file": "MP_STATS_SERVER__CSP__CLOUDFLARE__SCRIPT_NONCE_FILE",
+          "secrets_file": "server__csp__cloudflare__script_nonce",
+          "docs": "Reserve a per-response nonce in `script-src`.\n\nNeeded by every Cloudflare product that injects an inline `<script>` **at the edge** —\nBot Fight Mode, JavaScript Detections, the challenge platform. That script did not exist\nwhen the shell was hashed, so `script-src` refuses it and the detection silently never\nruns: bot management appears enabled and does nothing. Cloudflare's documented answer is\nto read the nonce out of the `Content-Security-Policy` response header and copy it onto\nwhat it injects, which is why nothing has to be stamped into the shell.\n\nTwo obligations come with it, and only the first is met from inside this process:\n\n1. The shell must be served `Cache-Control: no-cache`. The server does that for every\n   document it answers with while this key is `true` — a nonce served from a cache is\n   shared by every reader of that cache entry, which admits exactly the inline script the\n   nonce exists to constrain.\n2. No Cloudflare Cache Rule may cache the shell. A \"Cache Everything\" rule overrides the\n   origin `Cache-Control`, satisfying the first obligation at the origin and violating it\n   at the edge. Nothing here can detect that; it belongs in the deployment checklist.\n\nThe concession is real but narrow: an injected script that can already run could read the\nheader back off a same-origin fetch and admit further inline script. It cannot forge a\nnonce ahead of time — 128 CSPRNG bits, minted per response — and it reaches no off-origin\nhost that the rest of the policy does not already allow.",
+          "ty": "bool",
+          "values": [],
+          "constraint": {
+            "type": "boolean"
+          },
+          "text_constraint": {
+            "pattern": "^\\s*(true|false)\\s*$",
+            "type": "string"
+          },
+          "text_form": "boolean",
+          "aliases": [],
+          "env_aliases": [],
+          "env_file_aliases": [],
+          "secrets_file_aliases": [],
+          "default": "false",
+          "default_value": false,
+          "note": null,
+          "required": false,
+          "secret": false,
+          "reserved": false
+        },
+        {
+          "path": "server.csp.cloudflare.turnstile",
+          "env": "MP_STATS_SERVER__CSP__CLOUDFLARE__TURNSTILE",
+          "env_file": "MP_STATS_SERVER__CSP__CLOUDFLARE__TURNSTILE_FILE",
+          "secrets_file": "server__csp__cloudflare__turnstile",
+          "docs": "Admit `https://challenges.cloudflare.com` in `script-src` **and** `frame-src`.\n\nFor a Turnstile widget rendered *in* a page this server serves. One origin, two\ndirectives, because Turnstile loads `api.js` and then frames the widget from the same\nhost; admitting the script without the frame renders an empty box.\n\nA managed-challenge interstitial needs nothing here — that is a Cloudflare-served\ndocument carrying its own policy.",
+          "ty": "bool",
+          "values": [],
+          "constraint": {
+            "type": "boolean"
+          },
+          "text_constraint": {
+            "pattern": "^\\s*(true|false)\\s*$",
+            "type": "string"
+          },
+          "text_form": "boolean",
+          "aliases": [],
+          "env_aliases": [],
+          "env_file_aliases": [],
+          "secrets_file_aliases": [],
+          "default": "false",
+          "default_value": false,
+          "note": null,
+          "required": false,
+          "secret": false,
+          "reserved": false
+        },
+        {
+          "path": "server.csp.cloudflare.web_analytics",
+          "env": "MP_STATS_SERVER__CSP__CLOUDFLARE__WEB_ANALYTICS",
+          "env_file": "MP_STATS_SERVER__CSP__CLOUDFLARE__WEB_ANALYTICS_FILE",
+          "secrets_file": "server__csp__cloudflare__web_analytics",
+          "docs": "Admit Cloudflare Web Analytics: the beacon script, and the endpoint it reports to.\n\nFor the manual snippet only. The automatic injection Cloudflare performs at the edge is an\ninline `<script>` this server never saw, so it needs [`script_nonce`](Self::script_nonce)\nrather than these origins.",
+          "ty": "bool",
+          "values": [],
+          "constraint": {
+            "type": "boolean"
+          },
+          "text_constraint": {
+            "pattern": "^\\s*(true|false)\\s*$",
+            "type": "string"
+          },
+          "text_form": "boolean",
+          "aliases": [],
+          "env_aliases": [],
+          "env_file_aliases": [],
+          "secrets_file_aliases": [],
+          "default": "false",
+          "default_value": false,
+          "note": null,
+          "required": false,
+          "secret": false,
+          "reserved": false
+        }
+      ]
+    },
+    "json_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "properties": {
+        "server": {
+          "additionalProperties": false,
+          "properties": {
+            "bind_addr": {
+              "default": "0.0.0.0:8080",
+              "description": "Address the HTTP listener binds.\n\nDeserialised as a `SocketAddr`, so an unparseable value fails at boot rather than at\n`bind` time.",
+              "type": "string"
+            },
+            "csp": {
+              "additionalProperties": false,
+              "properties": {
+                "cloudflare": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "script_nonce": {
+                      "default": false,
+                      "description": "Reserve a per-response nonce in `script-src`.\n\nNeeded by every Cloudflare product that injects an inline `<script>` **at the edge** —\nBot Fight Mode, JavaScript Detections, the challenge platform. That script did not exist\nwhen the shell was hashed, so `script-src` refuses it and the detection silently never\nruns: bot management appears enabled and does nothing. Cloudflare's documented answer is\nto read the nonce out of the `Content-Security-Policy` response header and copy it onto\nwhat it injects, which is why nothing has to be stamped into the shell.\n\nTwo obligations come with it, and only the first is met from inside this process:\n\n1. The shell must be served `Cache-Control: no-cache`. The server does that for every\n   document it answers with while this key is `true` — a nonce served from a cache is\n   shared by every reader of that cache entry, which admits exactly the inline script the\n   nonce exists to constrain.\n2. No Cloudflare Cache Rule may cache the shell. A \"Cache Everything\" rule overrides the\n   origin `Cache-Control`, satisfying the first obligation at the origin and violating it\n   at the edge. Nothing here can detect that; it belongs in the deployment checklist.\n\nThe concession is real but narrow: an injected script that can already run could read the\nheader back off a same-origin fetch and admit further inline script. It cannot forge a\nnonce ahead of time — 128 CSPRNG bits, minted per response — and it reaches no off-origin\nhost that the rest of the policy does not already allow.",
+                      "type": "boolean"
+                    },
+                    "turnstile": {
+                      "default": false,
+                      "description": "Admit `https://challenges.cloudflare.com` in `script-src` **and** `frame-src`.\n\nFor a Turnstile widget rendered *in* a page this server serves. One origin, two\ndirectives, because Turnstile loads `api.js` and then frames the widget from the same\nhost; admitting the script without the frame renders an empty box.\n\nA managed-challenge interstitial needs nothing here — that is a Cloudflare-served\ndocument carrying its own policy.",
+                      "type": "boolean"
+                    },
+                    "web_analytics": {
+                      "default": false,
+                      "description": "Admit Cloudflare Web Analytics: the beacon script, and the endpoint it reports to.\n\nFor the manual snippet only. The automatic injection Cloudflare performs at the edge is an\ninline `<script>` this server never saw, so it needs [`script_nonce`](Self::script_nonce)\nrather than these origins.",
+                      "type": "boolean"
+                    }
+                  },
+                  "type": "object"
+                },
+                "enabled": {
+                  "default": true,
+                  "description": "Send the header at all.\n\nOn by default, and the only reason to turn it off is that something in front of this\nserver already sets the header — two `Content-Security-Policy` headers on one response\nare intersected by the browser, so the effective policy becomes the strictest reading of\nboth and the page breaks in a way neither policy explains. Disabling it to make a page\nwork is fixing the symptom: the console names the directive that refused the resource,\nand the fix belongs in the shell or in the keys below.",
+                  "type": "boolean"
+                }
+              },
+              "type": "object"
+            },
+            "data_dir": {
+              "default": "data",
+              "description": "Directory holding the converter's output, mounted at `/data`.",
+              "type": "string"
+            },
+            "dist_dir": {
+              "default": "dist",
+              "description": "Directory holding the built frontend.\n\nIts `index.html` is both the SPA entry point and the fallback for unknown routes; the\nserver refuses to start without it.",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "title": "mp-stats-legacy-viewer configuration",
+      "type": "object"
+    },
+    "external": {
+      "env": [],
+      "ignore": [
+        "KUBERNETES_*",
+        "HOSTNAME"
+      ],
+      "unknown": "reject"
+    }
+  }
+}

@@ -2,13 +2,36 @@
 
 # What this chart's rendered configuration must satisfy, and which images decide that.
 #
-# This chart pins a first-party image and opts out, which `just check-contract-coverage` permits
-# only with a written reason — an unexplained absence is indistinguishable from an oversight, and
-# the whole point of the coverage gate is that the pipeline cannot be escaped by forgetting.
-reason: >-
-  The image does not publish a configuration contract yet. Nothing in this repository can
-  validate what it reads until it does, and declaring a document with no contract to check it
-  against would fail the interlock on every run rather than checking anything. Delete this
-  file and declare the document once the image ships one.
+# Per-chart and self-describing, so adding a chart never edits a central file — the same
+# principle `just chart-index` already follows. `just check-config` reads this, unions the
+# contracts of every image listed, and validates the rendered ConfigMap, the container
+# environment and the mounted secret file names against the result.
+documents:
+  - name: viewer
 
-documents: []
+    # Where the rendered document is, in the output of `helm template`.
+    #
+    # Matched by label rather than by rendered name, and by `app.kubernetes.io/instance`: that
+    # label is `.Release.Name`, the one identifier neither `nameOverride` nor `fullnameOverride`
+    # can move — `app.kubernetes.io/name` follows the first and every object's name follows the
+    # second. `just render` names the release after the chart, so the value below is what every
+    # rendered pair carries. A selector matching zero or several objects is reported rather than
+    # resolved, so a stale one fails loudly instead of becoming a skipped check.
+    source:
+      kind: ConfigMap
+      selector: { app.kubernetes.io/instance: mp-stats-legacy-viewer }
+      key: config.toml
+      format: toml
+
+    # Every binary that reads this document. One image here, so the union is the identity.
+    images:
+      - values: image
+        contract: contracts/viewer.json
+
+    # The pods that mount it, for the environment and secret-file gates.
+    consumers:
+      - workload: { kind: Deployment, selector: { app.kubernetes.io/instance: mp-stats-legacy-viewer } }
+        containers: [mp-stats-legacy-viewer]
+
+    # Pairs this document is not fully checked for, each with a reason.
+    exempt: []

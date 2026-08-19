@@ -107,16 +107,20 @@ check-config out='rendered':
     just render '{{ out }}'
     "$python" {{ scripts }}/check-config.py '{{ out }}' --charts {{ charts }}
 
-# Fail on a chart that pins a first-party image and declares no contract.
+# Report which charts a configuration contract covers, and which it does not.
 #
-# The explicit opt-out — a `config-contract.yaml` with `documents: []` and a written `reason` — is
-# the only way out, which is what stops the whole pipeline from being escaped by forgetting. A chart
-# that does declare documents must also account for every first-party image it pins, so a new
-# service added to a multi-image chart cannot be covered by nothing while the chart still looks
-# covered.
+# Adopting a contract is opt-in: a chart carrying a `config-contract.yaml` is covered, and one
+# without is reported rather than failed. The images here adopt the format on their own release
+# schedules, so a gate that failed every chart whose image had not caught up would be red for
+# reasons nobody in this repository can fix — and would end up disabled, which is worse than
+# absent.
+#
+# What still fails is a chart contradicting itself: one that declares documents and leaves one of
+# its own first-party images unaccounted for, so a new service added to a multi-image chart cannot
+# be covered by nothing while the chart still looks covered.
 #
 # Needs no render, so it is cheap enough to sit in `just check` beside the gates that do.
-[doc("Fail on a chart that pins a first-party image and declares no contract")]
+[doc("Report which charts a configuration contract covers, and which it does not")]
 [group('contracts')]
 check-contract-coverage:
     #!/usr/bin/env bash

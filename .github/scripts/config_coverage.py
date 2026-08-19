@@ -1,15 +1,24 @@
 #!/usr/bin/env python3
-"""The coverage gate — a chart that pins a first-party image and declares no contract.
+"""The coverage report — which charts are covered by a configuration contract, and which are not.
 
-The explicit opt-out, a `config-contract.yaml` with `documents: []` and a `reason`, is the only
-way out. That is what stops the whole pipeline from being escaped by forgetting: a new chart, or
-a new service inside an existing one, is otherwise covered by nothing while the repository still
-looks covered.
+**Adopting a contract is opt-in.** A chart is covered when it carries a `config-contract.yaml`,
+and a chart without one is simply not covered: this reports it and does not fail. The images in
+this repository adopt the contract format on their own release schedules, and a gate that failed
+every chart whose image had not caught up yet would be a gate that is red for reasons nobody in
+this repository can fix — so it would end up disabled, which is worse than absent.
 
-A chart that *does* declare documents must account for every first-party image it pins, either by
-listing it under a document's `images` or by naming it under `unconfigured`. The second exists
-because "reads no contract-described configuration" is a real answer for a bootstrap job or a
-one-shot migration — it just has to be written down rather than left as an omission.
+Two things are still hard errors, because both are a chart contradicting *itself* rather than
+waiting on someone else:
+
+- a chart that declares documents but leaves one of its own first-party images unaccounted for.
+  A new service added to a multi-image chart would otherwise be validated by nothing while the
+  chart still looked covered — the failure this file exists to prevent, and the one case where
+  the chart's author has everything they need to fix it.
+- a `config-contract.yaml` that cannot be read as one, which `load_declaration` refuses.
+
+An explicit `documents: []` with a written `reason` remains supported and is worth writing when
+the decision not to adopt is deliberate rather than pending — it is the difference between a
+choice and an oversight, for a reader who cannot tell them apart from silence.
 
 Runs without a render, so `just check-contract-coverage` is cheap enough to sit in `just check`
 next to the gates that need one.
@@ -24,7 +33,7 @@ import yaml
 
 import config_contract as cc
 from config_declaration import DECLARATION, DeclarationError, load_declaration
-from config_report import Report
+from config_report import Report, warning
 
 
 def first_party_patterns(path: Path) -> list[str]:
@@ -44,7 +53,7 @@ def pinned_images(values: Any, path: str = "") -> list[tuple[str, str]]:
 
     Discovered by shape rather than by a list of known paths: anything with a `repository` is an
     image block, which is what `common.image` itself assumes. A chart that grows a new service is
-    therefore covered the moment its values are added, with nothing here to update.
+    therefore seen the moment its values are added, with nothing here to update.
     """
     found: list[tuple[str, str]] = []
     if isinstance(values, dict):
@@ -61,6 +70,9 @@ def pinned_images(values: Any, path: str = "") -> list[tuple[str, str]]:
 def check_coverage(charts: Path, first_party: Path, report: Report) -> None:
     patterns = first_party_patterns(first_party)
 
+    covered: list[str] = []
+    uncovered: list[tuple[str, list[str]]] = []
+
     for chart_dir in sorted(charts.iterdir()):
         values_path = chart_dir / "values.yaml"
         if not (chart_dir / "Chart.yaml").is_file() or not values_path.is_file():
@@ -76,18 +88,15 @@ def check_coverage(charts: Path, first_party: Path, report: Report) -> None:
             continue
 
         declaration = load_declaration(chart_dir)
-        if declaration is None:
-            report.fail(
-                chart_dir.name,
-                "pins the first-party image(s) "
-                f"{', '.join(repository for _, repository in ours)} and has no {DECLARATION}; "
-                "add one, or opt out explicitly with `documents: []` and a `reason`",
-            )
+
+        if declaration is None or not declaration.documents:
+            uncovered.append((chart_dir.name, [repository for _, repository in ours]))
             continue
 
-        if not declaration.documents:
-            continue
+        covered.append(chart_dir.name)
 
+        # From here on the chart has opted in, so an image it does not account for is its own
+        # inconsistency rather than a producer that has not shipped yet.
         declared = {reference.values for doc in declaration.documents for reference in doc.images}
         declared.update(declaration.unconfigured)
         for path, repository in ours:
@@ -98,3 +107,32 @@ def check_coverage(charts: Path, first_party: Path, report: Report) -> None:
                     "document reads it; list it under a document's `images`, or under "
                     "`unconfigured` if it reads no contract-described configuration",
                 )
+
+    _report_coverage(covered, uncovered, report)
+
+
+def _report_coverage(
+    covered: list[str], uncovered: list[tuple[str, list[str]]], report: Report
+) -> None:
+    """Say what is covered and what is not, without failing on the latter.
+
+    Printed rather than silent because opt-in without visibility is just absence: the point of
+    naming the uncovered charts on every run is that adopting one becomes an obvious next step
+    rather than something nobody remembers is possible.
+    """
+    for name in covered:
+        print(f"covered: {name}")
+
+    for name, repositories in uncovered:
+        report.add(
+            name,
+            warning(
+                "pins the first-party image(s) "
+                f"{', '.join(repositories)} and declares no configuration contract, so its "
+                f"rendered configuration is checked by nothing. Add a {DECLARATION} once the "
+                "image publishes one."
+            ),
+        )
+
+    if not covered and not uncovered:
+        print("==> no chart pins a first-party image")

@@ -2,15 +2,17 @@
 
 # What this chart's rendered configuration must satisfy, and which images decide that.
 #
-# This chart pins a first-party image and opts out, which `just check-contract-coverage` permits
-# only with a written reason — an unexplained absence is indistinguishable from an oversight, and
-# the whole point of the coverage gate is that the pipeline cannot be escaped by forgetting.
+# Still opted out, but for a narrower reason than before, and `just check-contract-coverage`
+# permits the opt-out only with one written down.
 reason: >-
-  None of the nine first-party images publishes a configuration contract yet. This chart is
-  also the one the union was designed for — one rendered document under a single TANKOVAULT_
-  prefix, read by eight separate binaries whose contracts each cover only the keys they
-  consume — so it is the chart worth declaring first once the images ship contracts, and the
-  one that will exercise whether the union rules are right. Until then there is nothing to
-  union.
-
+  Only one of this chart's nine first-party images publishes a configuration contract so far.
+  `tankovault-frontend` v8.1.1 carries the `dev.terrace.config.*` labels and the embedded
+  document; the other eight services are still on v7.3.0, which publishes neither. Declaring the
+  frontend alone would leave the eight documents that carry the real configuration — the API's
+  database and auth keys, the worker's queues — checked by nothing while the chart looked
+  covered, and `unconfigured` is the wrong word for them: they read plenty of
+  contract-describable configuration, they just cannot describe it yet. Declare all nine at once
+  when the services catch up. This is also the chart worth declaring first after that, because it
+  renders nine documents rather than one and is where the per-document selector
+  (`app.kubernetes.io/component`, which it already sets) earns its keep.
 documents: []

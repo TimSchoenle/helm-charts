@@ -29,6 +29,21 @@ spec:
         {{- include "common.podLabels" . | nindent 8 }}
     spec:
       {{- include "common.podSpec.common" . | nindent 6 }}
+      {{- /*
+        Not a preference, and not a hardening nicety: a precondition of the configuration
+        contract this chart declares in `config-contract.yaml`.
+
+        Kubernetes injects `<SERVICE_NAME>_SERVICE_HOST`, `<SERVICE_NAME>_PORT` and five more per
+        Service in the namespace, and the service name is the *release* name — so a release named
+        for this chart puts seven variables inside the `S3_PERMA_LINK_` namespace the loader owns.
+        The environment layer outranks the mounted file, so one of them can *supply* a key this
+        chart wrote into `config.toml`, and the deployment silently runs on the wrong value.
+
+        Left as a literal rather than a value. The kubelet injects these at pod admission and
+        `helm template` does not, so a rendered manifest never carries one and no gate in this
+        repository could catch the regression — `just check-config` can only require the switch.
+      */}}
+      enableServiceLinks: false
       containers:
         {{- /*
           Configuration reaches the container as files, never as environment variables: the

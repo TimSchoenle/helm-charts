@@ -30,6 +30,45 @@ never log in — a failure that looks like a wrong password rather than a miscon
 {{- end -}}
 
 {{/*
+The subset of those keys `seed-admin` alone reads.
+
+Both are credentials of the account that step creates, and no other subcommand opens either:
+the pepper is the hashing parameter and the password is the plaintext being hashed. Named here
+rather than inlined below so that `tankovault.bootstrapSecretKeys` stays the one list of what
+the image reads, and what follows is visibly a subtraction from it rather than a second copy
+free to drift alongside it.
+*/}}
+{{- define "tankovault.seedAdminSecretKeys" -}}
+- auth__password_pepper
+- seed_admin_password
+{{- end -}}
+
+{{/*
+The credential keys `bootstrap migrate` reads: applying a schema needs the database URL and
+nothing else.
+
+This exists because the migration is not always a pod of its own. As an initContainer it runs
+inside a service pod, and mounting that pod's own `secrets` volume would hand it every
+credential the service reads — on `api`, eight keys against the one this command opens. Same
+pod, so not a boundary crossing; but a different binary with a different attack surface,
+running at a different point in the pod's life, has no call for the token signing key, the MFA
+sealing key, the SMTP password or an internal caller token.
+
+That the pepper is not among them is not an inference: `control-plane`, `worker`, `notifier`
+and `sync` never project it, and the migration has always run on their pods.
+
+Args: ctx (root).
+*/}}
+{{- define "tankovault.migrateSecretKeys" -}}
+{{- $seedOnly := include "tankovault.seedAdminSecretKeys" . | fromYamlArray -}}
+{{- range $key := include "tankovault.bootstrapSecretKeys" . | fromYamlArray -}}
+{{- if not (has $key $seedOnly) }}
+- {{ $key }}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
 The values tree the bootstrap workloads render against — `.Values.defaults` with the bootstrap
 image, its own resources and no probes at all: these are one-shot commands with no listener,
 and `common.container` would otherwise attach the service probes and fail them immediately.
@@ -73,11 +112,17 @@ Used both as the migration initContainer on the service pods that need the schem
 body of the seed Jobs, so the two can never drift apart.
 
 The environment always names the secrets directory: `tankovault.bootstrapVolumeMounts` mounts
-that volume unconditionally, and both pods this container runs in provide one — the bootstrap
-Job through `tankovault.bootstrapVolumes`, and a service pod because the migration is attached
-only to services whose `needsDatabase` puts `database__url` in their own projection.
+a volume there unconditionally, and both pods this container runs in provide one — the
+bootstrap Job through `tankovault.bootstrapVolumes`, and a service pod through
+`tankovault.migrateVolumes`.
 
-Args: ctx (root), command (bootstrap subcommand), name (container name).
+`secretVolume` names which of them it is, because in a service pod it must not be the volume
+the service itself mounts: `secrets` there carries every credential that service reads, and
+the migration reads `database__url`. Defaults to `secrets`, the name a bootstrap Job's own pod
+gives it.
+
+Args: ctx (root), command (bootstrap subcommand), name (container name),
+      secretVolume (optional, the pod volume holding this command's credentials).
 */}}
 {{- define "tankovault.bootstrapContainer" -}}
 {{- $root := .ctx -}}
@@ -88,16 +133,23 @@ Args: ctx (root), command (bootstrap subcommand), name (container name).
       "name" .name
       "args" (list .command)
       "env" (include "tankovault.env" (dict "ctx" $root "secrets" true) | fromYamlArray)
-      "volumeMounts" (include "tankovault.bootstrapVolumeMounts" $root | fromYamlArray)
+      "volumeMounts" (include "tankovault.bootstrapVolumeMounts" (dict
+            "ctx" $root
+            "secretVolume" (.secretVolume | default "secrets")
+          ) | fromYamlArray)
     ) -}}
 {{- end -}}
 
+{{/*
+Args: ctx (root), secretVolume (the pod volume this command's credentials are projected into).
+*/}}
 {{- define "tankovault.bootstrapVolumeMounts" -}}
+{{- $ctx := .ctx -}}
 - name: config
-  mountPath: {{ .Values.configReload.configDir | quote }}
+  mountPath: {{ $ctx.Values.configReload.configDir | quote }}
   readOnly: true
-- name: secrets
-  mountPath: {{ .Values.configReload.secretsDir | quote }}
+- name: {{ .secretVolume }}
+  mountPath: {{ $ctx.Values.configReload.secretsDir | quote }}
   readOnly: true
 {{- end -}}
 
@@ -113,6 +165,30 @@ Args: ctx (root), command (bootstrap subcommand), name (container name).
       {{- include "tankovault.secretSources" (dict
             "ctx" $ctx
             "keys" (include "tankovault.bootstrapSecretKeys" $ctx | fromYamlArray)
+          ) | nindent 6 }}
+{{- end -}}
+
+{{/*
+The extra volume a service pod carries for the migration initContainer.
+
+A second projection rather than a narrower view of the pod's `secrets` volume: a projected
+volume is mounted whole, so projecting the keys twice is the only way to give one container in
+a pod fewer of them than another. Built by `tankovault.secretSources` like every other
+projection in this chart, so the file the migration reads is byte for byte the one the service
+reads — same Secret, same path, same 0400, and the same `externalDatabase.existingSecret`
+redirection.
+
+Args: ctx (root).
+*/}}
+{{- define "tankovault.migrateVolumes" -}}
+{{- $ctx := . -}}
+- name: migrate-secrets
+  projected:
+    defaultMode: 0400
+    sources:
+      {{- include "tankovault.secretSources" (dict
+            "ctx" $ctx
+            "keys" (include "tankovault.migrateSecretKeys" $ctx | fromYamlArray)
           ) | nindent 6 }}
 {{- end -}}
 

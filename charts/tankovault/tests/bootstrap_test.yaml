@@ -73,9 +73,8 @@ tests:
           value: [migrate]
 
   - it: leaves pods that never touch the database without a migration initContainer
-    # A pod projects only its own `secretKeys`. `frontend` has none, so the shared bootstrap
-    # volumeMounts would name a `secrets` volume the pod does not define and the API server
-    # rejects the whole Deployment.
+    # `frontend` reads no credential at all and has no database to migrate, so it gets neither
+    # the initContainer nor a projection for it.
     template: deployment.yaml
     set:
       postgresql.enabled: true
@@ -92,6 +91,116 @@ tests:
           any: true
           content:
             name: secrets
+      - notContains:
+          path: spec.template.spec.volumes
+          any: true
+          content:
+            name: migrate-secrets
+
+  - it: gives the migration initContainer a projection of its own rather than the service's
+    # The service container and the initContainer are different binaries with different attack
+    # surfaces, and a projected volume is mounted whole — so the only way to give the migration
+    # fewer keys than the pod it runs in is to project them twice. On `api` that is one key
+    # against eight: the token signing key, the MFA sealing key, the SMTP credentials and the
+    # internal caller token are all read by the service and none of them by `bootstrap migrate`.
+    template: deployment.yaml
+    set:
+      postgresql.enabled: true
+      postgresql.auth.password: test-password
+      externalDatabase.url: ""
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-api
+    asserts:
+      - contains:
+          path: spec.template.spec.initContainers[0].volumeMounts
+          content:
+            name: migrate-secrets
+            mountPath: /etc/tankovault/secrets
+            readOnly: true
+      - notContains:
+          path: spec.template.spec.initContainers[0].volumeMounts
+          any: true
+          content:
+            name: secrets
+      - equal:
+          path: spec.template.spec.volumes[?(@.name=="migrate-secrets")].projected.sources[0].secret.items
+          value:
+            - key: database__url
+              path: database__url
+      # The service itself keeps every key it had.
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: secrets
+            mountPath: /etc/tankovault/secrets
+            readOnly: true
+
+  - it: keeps the seed credentials out of the migration's projection
+    # `tankovault.bootstrapSecretKeys` carries `auth__password_pepper` and `seed_admin_password`
+    # for `seed-admin`, which hashes the initial password. Applying a schema reads neither, and
+    # `worker`, `notifier`, `sync` and `control-plane` have always run the migration on pods
+    # that project no pepper at all.
+    template: deployment.yaml
+    set:
+      postgresql.enabled: true
+      postgresql.auth.password: test-password
+      externalDatabase.url: ""
+      bootstrap.seedAdmin.enabled: true
+      bootstrap.seedAdmin.password: seed-password
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-api
+    asserts:
+      - notContains:
+          path: spec.template.spec.volumes[?(@.name=="migrate-secrets")].projected.sources[0].secret.items
+          content:
+            key: auth__password_pepper
+            path: auth__password_pepper
+      - notContains:
+          path: spec.template.spec.volumes[?(@.name=="migrate-secrets")].projected.sources[0].secret.items
+          content:
+            key: seed_admin_password
+            path: seed_admin_password
+
+  - it: follows an external database Secret into the migration's projection
+    # `tankovault.secretSources` builds it like every other projection in the chart, so
+    # `externalDatabase.existingSecret` redirects the one key the migration reads and the
+    # release-owned Secret drops out of the volume entirely.
+    template: deployment.yaml
+    set:
+      postgresql.enabled: false
+      bootstrap.migrate.mode: initContainer
+      externalDatabase.url: ""
+      externalDatabase.existingSecret: db-credentials
+      externalDatabase.urlKey: dsn
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-api
+    asserts:
+      - equal:
+          path: spec.template.spec.volumes[?(@.name=="migrate-secrets")].projected.sources
+          value:
+            - secret:
+                name: db-credentials
+                items:
+                  - key: dsn
+                    path: database__url
+
+  - it: leaves the bootstrap Jobs projecting every key their steps read
+    # The Job form is a pod of its own running nothing else, so narrowing it buys nothing — and
+    # the same three Jobs run `seed-admin`, which needs all three keys.
+    template: job-migrate.yaml
+    asserts:
+      - equal:
+          path: spec.template.spec.volumes[?(@.name=="secrets")].projected.sources[0].secret.items
+          value:
+            - key: database__url
+              path: database__url
+            - key: auth__password_pepper
+              path: auth__password_pepper
+            - key: seed_admin_password
+              path: seed_admin_password
 
   - it: backs the bootstrap container's /tmp mount with a volume of its own
     # `common.container` adds the /tmp mount whenever the root filesystem is read-only, and only

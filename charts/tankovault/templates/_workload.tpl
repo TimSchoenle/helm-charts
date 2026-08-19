@@ -128,12 +128,12 @@ affinity and the pod spec all come from the same helpers every other chart in th
 uses — just resolved per service instead of per chart.
 
 In `initContainer` migrate mode the migration is attached only to the pods of services that
-use the database. Those are exactly the pods that carry `database__url`: a pod projects only
-its own `secretKeys`, so on `frontend` — which has none — the shared bootstrap volumeMounts
-would name a `secrets` volume the pod does not define and the API server rejects the
-Deployment outright, while on `render` and `challenge-solver` the volume exists but holds no
-database URL and the migration could only fail. Migrating from the pods that actually need the
-schema also keeps the ordering guarantee intact.
+use the database, and it brings its own `migrate-secrets` projection rather than mounting the
+service's — see `tankovault.migrateSecretKeys`. `needsDatabase` gates both: on `frontend`,
+`render` and `challenge-solver` the migration would run against no database URL at all and
+could only fail, and a projection carrying the one credential they have no business holding is
+not worth adding to pods that will never use it. Migrating from the pods that actually need
+the schema also keeps the ordering guarantee intact.
 */}}
 {{- define "tankovault.deployment" -}}
 {{- $root := .ctx -}}
@@ -143,6 +143,10 @@ schema also keeps the ordering guarantee intact.
 {{- $ctx := dict "Values" $values "Chart" $root.Chart "Release" $root.Release "Capabilities" $root.Capabilities "Template" $root.Template "Files" $root.Files -}}
 {{- $volumes := include "tankovault.volumes" (dict "ctx" $root "service" $service) | fromYamlArray -}}
 {{- $mounts := include "tankovault.volumeMounts" (dict "ctx" $root "service" $service) | fromYamlArray -}}
+{{- $migrates := and (eq (include "tankovault.migrateMode" $root) "initContainer") $spec.needsDatabase -}}
+{{- if $migrates -}}
+{{- $volumes = concat $volumes (include "tankovault.migrateVolumes" $root | fromYamlArray) -}}
+{{- end -}}
 {{- if eq $service "render" -}}
 {{- $volumes = concat $volumes (include "tankovault.renderVolumes" $root | fromYamlArray) -}}
 {{- $mounts = concat $mounts (include "tankovault.renderVolumeMounts" $root | fromYamlArray) -}}
@@ -206,9 +210,13 @@ spec:
         `just check-config` can only require the switch.
       */}}
       enableServiceLinks: false
-      {{- if and (eq (include "tankovault.migrateMode" $root) "initContainer") $spec.needsDatabase }}
+      {{- if $migrates }}
       initContainers:
-        {{- include "tankovault.bootstrapContainer" (dict "ctx" $root "command" "migrate" "name" "migrate") | nindent 8 }}
+        {{- include "tankovault.bootstrapContainer" (dict
+              "ctx" $root
+              "command" "migrate"
+              "name" "migrate"
+              "secretVolume" "migrate-secrets") | nindent 8 }}
       {{- end }}
       containers:
         {{- include "common.container" (dict

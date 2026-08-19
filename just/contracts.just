@@ -148,3 +148,46 @@ test-contract-union:
     set -euo pipefail
     {{ resolve_python }}
     "$python" -m unittest discover -s {{ scripts }}/tests -p 'test_contract_*.py' -v
+
+# --------------------------------------------------------------------------------------------
+# Reading a contract, rather than checking against one
+# --------------------------------------------------------------------------------------------
+
+# Explain what a chart's pinned images read: every setting, its spellings, and which image reads it.
+#
+# Every other recipe in this group is a gate — it holds a rendered manifest against a contract and
+# reports the difference. None of them ever shows a contributor what the contract *says*, and the
+# vendored file is the only place in this repository that states, per setting, what the binary
+# calls it, what values it accepts, whether it is required, whether a file may supply it and what
+# happens when nothing sets it. Answering "what can I put in `config.toml`, and why is the value I
+# set being ignored?" out of a 400 KB JSON document is the job.
+#
+# The reader attribution is the part worth having. `tankovault` pins nine images across nine
+# documents, and which of them reads a given setting is stated nowhere else: not in the chart, not
+# in `config-contract.yaml`, not in the README. It is derived from the contracts the declaration
+# binds, so it cannot go stale against them — a bump that moves a setting from one service to
+# another moves this output with it — and it is how an operator tells a local change from a
+# fleet-wide one before making it.
+#
+# Offline and read-only, like every recipe here but the refresh, and honouring the same staleness
+# interlock the gates do: a contract that is not for the digest the chart pins describes some
+# other build, and a confident wrong answer is worse here than in a gate, because nothing
+# downstream re-checks what a person was told.
+#
+# Deliberately NOT in `just check`. It asserts nothing — it prints — and a recipe that cannot fail
+# has no business in an aggregate whose whole output is a pass or a fail.
+#
+# `just explain` alone lists the charts that have a contract. A second argument selects by
+# substring, or by glob when it carries one, over the setting's path and prints the full entry for
+# each match; `--full` does that without a pattern and `--json` emits the same selection for
+# something other than a person. A pattern matching nothing exits non-zero, which is `grep`'s
+# convention and the reason is in the script's docstring: an answer indistinguishable from a typo
+# in the pattern is not an answer.
+[doc("Explain what a chart's pinned images read: settings, spellings, and which image reads which")]
+[group('contracts')]
+explain chart='' pattern='' *flags:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    {{ resolve_python }}
+    "$python" {{ scripts }}/explain-config.py '{{ chart }}' '{{ pattern }}' \
+      --charts {{ charts }} {{ flags }}

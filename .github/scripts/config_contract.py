@@ -292,6 +292,32 @@ class Union:
                 return key
         return None
 
+    def container_of(self, spelling: str, name: str) -> dict[str, Any] | None:
+        """The dynamic-map key that `name` addresses a leaf inside, if any.
+
+        A `BTreeMap<String, T>` is a key whose *sub*-keys are chosen by the deployment, not by the
+        program — `internal.peers` in `tankovault` is keyed by caller name — so no contract
+        generated at build time can enumerate them. What the producer can say is that the key is
+        `structured`, and the loader builds it from nested spellings: a secrets file called
+        `internal__peers__api__token` supplies `internal.peers.api.token`.
+
+        So a name that extends a structured key's spelling by the nesting separator is addressing
+        a leaf of that map. It is legitimate, and nothing further about it can be checked — the
+        contract describes the container, not its contents. Reporting it as "spells no key" is
+        what a first implementation did, and it fails a chart that is entirely correct.
+
+        Only `structured` keys qualify. A name extending a scalar key's spelling is still a
+        mistake, and still reported.
+        """
+        separator = self.dialect.get("nesting_separator", "__")
+        for key in self.keys.values():
+            spelt = key.get(spelling)
+            if not spelt or key.get("text_form") != "structured":
+                continue
+            if name.startswith(spelt + separator) and len(name) > len(spelt) + len(separator):
+                return key
+        return None
+
 
 def union_contracts(items: Sequence[tuple[str, dict[str, Any]]]) -> Union:
     """Merge the contracts of every image that reads one document.

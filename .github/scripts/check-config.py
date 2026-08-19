@@ -77,7 +77,7 @@ from config_manifests import (  # noqa: E402
     pod_spec,
     select,
 )
-from config_report import Report  # noqa: E402
+from config_report import Report, warning  # noqa: E402
 
 CHARTS_DIR = Path("charts")
 FIRST_PARTY = Path(".github/configs/first-party-images.txt")
@@ -119,32 +119,101 @@ class Runner:
             if binding is None:
                 continue
 
-            for rendered in sorted(self.rendered.glob(f"{declaration.chart}--*.yaml")):
-                self.check_pair(rendered, document, binding)
+            pairs = sorted(self.rendered.glob(f"{declaration.chart}--*.yaml"))
+            rendered_anywhere = False
+            containers_seen: set[str] = set()
+            for rendered in pairs:
+                present, found = self.check_pair(rendered, document, binding)
+                rendered_anywhere = rendered_anywhere or present
+                containers_seen |= found
 
-    def check_pair(self, rendered: Path, document: Document, binding: Binding) -> None:
+            # A chart may switch a whole component off in one values file — `minimal-values.yaml`
+            # deploys three of tankovault's nine services — and a document that is not rendered
+            # cannot be validated. Skipping it silently would also skip a component whose label
+            # was renamed, so the two are told apart by scope: absent from *this* pair is normal,
+            # absent from *every* pair means the declaration describes something the chart no
+            # longer produces.
+            if pairs and not rendered_anywhere:
+                self.report.fail(
+                    where,
+                    f"the selector {json.dumps(document.source.selector)} matches no "
+                    f"{document.source.kind} in any of the {len(pairs)} rendered values files, so "
+                    "this document is declared but never produced; correct the selector, or drop "
+                    "the document if the component is gone",
+                )
+
+            # Same reasoning one level down. `tankovault`'s seed Jobs render only when seeding is
+            # switched on, so a container missing from one values file is a fixture that disables
+            # it; a container missing from *every* one is a name the chart no longer produces.
+            declared = {name for consumer in document.consumers for name in consumer.containers}
+            if pairs and rendered_anywhere:
+                for name in sorted(declared - containers_seen):
+                    self.report.fail(
+                        where,
+                        f"the container {name!r} is declared as a consumer of this document but "
+                        f"appears in none of the {len(pairs)} rendered values files; correct the "
+                        "name, or drop it if the workload is gone",
+                    )
+
+    def check_pair(
+        self, rendered: Path, document: Document, binding: Binding
+    ) -> tuple[bool, set[str]]:
+        """Check one values file. Returns whether the document was there, and which containers."""
         where = f"{rendered.name}: {document.name}"
         relaxed = document.relaxed(rendered.name.split("--", 1)[1])
         manifests = load_manifests(rendered)
 
-        self.report.extend(
-            where, self.document_gate.check(manifests, document.source, binding.union, relaxed)
-        )
+        findings = self.document_gate.check(manifests, document.source, binding.union, relaxed)
+        present = findings is not None
+        self.report.extend(where, findings or [])
+        seen: set[str] = set()
 
         for consumer in document.consumers:
             matched = select(manifests, consumer.kind, consumer.selector)
-            if len(matched) != 1:
-                self.report.fail(
+            if not matched:
+                # The component is switched off in this values file, which the caller confirms by
+                # seeing the document absent too. A consumer present while its document is not —
+                # or the reverse — still lands on the mismatched branch below.
+                if not present:
+                    continue
+                # Deliberately a warning, where the reverse below is an error. A document with no
+                # reader is a ConfigMap nobody mounts — waste, and worth saying, but it breaks no
+                # deployment. A reader with no document is a pod that mounts something which does
+                # not exist, which does.
+                self.report.add(
                     where,
-                    f"the consumer selector {json.dumps(consumer.selector)} matches "
-                    f"{len(matched)} {consumer.kind}s, and a consumer must name exactly one",
+                    warning(
+                        f"the consumer selector {json.dumps(consumer.selector)} matches no "
+                        f"{consumer.kind}, but the {document.source.kind} it reads was rendered; "
+                        "nothing in this values file consumes that configuration"
+                    ),
                 )
                 continue
+            if not present:
+                self.report.fail(
+                    where,
+                    f"the consumer selector {json.dumps(consumer.selector)} matches a "
+                    f"{consumer.kind}, but the {document.source.kind} it reads was not rendered; "
+                    "the workload would mount configuration that does not exist",
+                )
+                continue
+            # Several workloads may read one document, and in `tankovault` three do: the
+            # migration Job and two seed Jobs all mount the bootstrap ConfigMap. So the selector
+            # is allowed to match more than one, and what must hold instead is that every
+            # container the declaration names is found in one of them — which is the property
+            # that actually catches a renamed container.
+            found: set[str] = set()
+            for workload in matched:
+                spec = pod_spec(workload)
+                if "env" not in relaxed:
+                    self.report.extend(where, self.service_links.check(spec, binding.union))
+                found |= self.check_containers(
+                    where, manifests, spec, consumer, binding, relaxed
+                )
 
-            spec = pod_spec(matched[0])
-            if "env" not in relaxed:
-                self.report.extend(where, self.service_links.check(spec, binding.union))
-            self.check_containers(where, manifests, spec, consumer, binding, relaxed)
+            seen |= found
+
+        return present, seen
 
     def check_containers(
         self,
@@ -154,17 +223,17 @@ class Runner:
         consumer: Consumer,
         binding: Binding,
         relaxed: set[str],
-    ) -> None:
+    ) -> set[str]:
+        """Check the declared containers this workload runs. Returns the ones it had."""
         present = containers_of(spec)
+        checked: set[str] = set()
         for name in consumer.containers:
             container = present.get(name)
             if container is None:
-                self.report.fail(
-                    where,
-                    f"the {consumer.kind} has no container {name!r} "
-                    f"(it has {', '.join(sorted(present)) or 'none'})",
-                )
+                # Not an error here: another workload matching the same selector may run it, and
+                # the caller fails on the containers no workload turned out to have.
                 continue
+            checked.add(name)
 
             # The container's own image decides which contract gates 2 and 3 read, so a values
             # file that overrode the image would otherwise have them validated against a contract
@@ -180,6 +249,8 @@ class Runner:
                 continue
 
             self.report.extend(where, check_container(manifests, spec, container, mine, relaxed))
+
+        return checked
 
 
 def _read_yaml(path: Path) -> dict[str, Any]:

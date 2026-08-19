@@ -191,6 +191,21 @@ spec:
       {{- end }}
     spec:
       {{- include "common.podSpec.common" $ctx | nindent 6 }}
+      {{- /*
+        Not a preference, and not a hardening nicety: a precondition of the configuration
+        contracts this chart declares in `config-contract.yaml`.
+
+        Kubernetes injects `<SERVICE_NAME>_SERVICE_HOST`, `<SERVICE_NAME>_PORT` and five more per
+        Service in the namespace, and this chart creates one Service per component — so a release
+        named `tankovault` puts dozens of variables inside the `TANKOVAULT_` namespace the loader
+        owns. The environment layer outranks the mounted file, so one of them can *supply* a key
+        a service's `config.toml` already set, and the deployment silently runs on the wrong value.
+
+        The kubelet injects these at pod admission and `helm template` does not, so a rendered
+        manifest never carries one and no gate here could catch the regression —
+        `just check-config` can only require the switch.
+      */}}
+      enableServiceLinks: false
       {{- if and (eq (include "tankovault.migrateMode" $root) "initContainer") $spec.needsDatabase }}
       initContainers:
         {{- include "tankovault.bootstrapContainer" (dict "ctx" $root "command" "migrate" "name" "migrate") | nindent 8 }}

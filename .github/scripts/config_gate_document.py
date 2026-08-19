@@ -40,6 +40,12 @@ JV_ADDITIONAL = re.compile(r"additional propert(?:y|ies) (.+) not allowed")
 JV_QUOTED = re.compile(r"'([^']*)'")
 
 
+# Returned when the selector matched nothing at all. Distinct from "no findings": a chart can
+# switch a whole component off in one values file and on in another, and the two cases need
+# different answers.
+ABSENT = None
+
+
 class DocumentGate:
     """Validate one rendered configuration document against the union of its contracts."""
 
@@ -52,18 +58,21 @@ class DocumentGate:
         source: Source,
         union: cc.Union,
         relaxed: set[str],
-    ) -> list[Finding]:
+    ) -> list[Finding] | None:
         if "document" in relaxed:
             return []
 
         matched = select(manifests, source.kind, source.selector)
+        if not matched:
+            # Absent rather than wrong — the caller decides which, because it can see whether the
+            # consumers are absent too and whether any other values file rendered this document.
+            return ABSENT
         if len(matched) != 1:
             found = names_of(matched)
             return [
                 error(
                     f"the selector {json.dumps(source.selector)} matches {len(matched)} "
-                    f"{source.kind}s{f' ({found})' if found else ''}, and a document must name "
-                    "exactly one"
+                    f"{source.kind}s ({found}), and a document must name exactly one"
                 )
             ]
 

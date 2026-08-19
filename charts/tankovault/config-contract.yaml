@@ -2,17 +2,198 @@
 
 # What this chart's rendered configuration must satisfy, and which images decide that.
 #
-# Still opted out, but for a narrower reason than before, and `just check-contract-coverage`
-# permits the opt-out only with one written down.
-reason: >-
-  Only one of this chart's nine first-party images publishes a configuration contract so far.
-  `tankovault-frontend` v8.1.1 carries the `dev.terrace.config.*` labels and the embedded
-  document; the other eight services are still on v7.3.0, which publishes neither. Declaring the
-  frontend alone would leave the eight documents that carry the real configuration — the API's
-  database and auth keys, the worker's queues — checked by nothing while the chart looked
-  covered, and `unconfigured` is the wrong word for them: they read plenty of
-  contract-describable configuration, they just cannot describe it yet. Declare all nine at once
-  when the services catch up. This is also the chart worth declaring first after that, because it
-  renders nine documents rather than one and is where the per-document selector
-  (`app.kubernetes.io/component`, which it already sets) earns its keep.
-documents: []
+# Nine documents, not one. Every service renders its own `config.toml` into its own ConfigMap —
+# the chart merges the root `config` with each service's own block at render time — so each
+# document has exactly one reader and the union is the identity for all nine. That is worth
+# stating because the design this pipeline was built to expects the opposite shape: one document
+# read by eight binaries, which is where unioning contracts would have earned its keep. It does
+# not arise here.
+#
+# Selected by `app.kubernetes.io/component`, which is the only label that distinguishes these
+# objects from one another: every one of them shares the release's `name` and `instance` labels,
+# and `fullnameOverride` moves every object's name at once. The chart sets the component itself,
+# so the selector is reading a fact the chart already asserts rather than a naming convention.
+#
+# A selector matching zero or several objects is reported rather than resolved, so a component
+# that is renamed or dropped fails loudly instead of becoming a skipped check.
+documents:
+  - name: frontend
+
+    source:
+      kind: ConfigMap
+      selector: { app.kubernetes.io/component: frontend }
+      key: config.toml
+      format: toml
+
+    images:
+      - values: services.frontend.image
+        contract: contracts/frontend.json
+
+    consumers:
+      - workload: { kind: Deployment, selector: { app.kubernetes.io/component: frontend } }
+        containers: [frontend]
+
+    exempt: []
+
+  - name: api
+
+    source:
+      kind: ConfigMap
+      selector: { app.kubernetes.io/component: api }
+      key: config.toml
+      format: toml
+
+    images:
+      - values: services.api.image
+        contract: contracts/api.json
+
+    consumers:
+      - workload: { kind: Deployment, selector: { app.kubernetes.io/component: api } }
+        containers: [api]
+
+    exempt: []
+
+  - name: control-plane
+
+    source:
+      kind: ConfigMap
+      selector: { app.kubernetes.io/component: control-plane }
+      key: config.toml
+      format: toml
+
+    images:
+      - values: services.controlPlane.image
+        contract: contracts/control-plane.json
+
+    consumers:
+      - workload: { kind: Deployment, selector: { app.kubernetes.io/component: control-plane } }
+        containers: [control-plane]
+
+    exempt: []
+
+  - name: worker
+
+    source:
+      kind: ConfigMap
+      selector: { app.kubernetes.io/component: worker }
+      key: config.toml
+      format: toml
+
+    images:
+      - values: services.worker.image
+        contract: contracts/worker.json
+
+    consumers:
+      - workload: { kind: Deployment, selector: { app.kubernetes.io/component: worker } }
+        containers: [worker]
+
+    exempt: []
+
+  - name: notifier
+
+    source:
+      kind: ConfigMap
+      selector: { app.kubernetes.io/component: notifier }
+      key: config.toml
+      format: toml
+
+    images:
+      - values: services.notifier.image
+        contract: contracts/notifier.json
+
+    consumers:
+      - workload: { kind: Deployment, selector: { app.kubernetes.io/component: notifier } }
+        containers: [notifier]
+
+    exempt: []
+
+  - name: sync
+
+    source:
+      kind: ConfigMap
+      selector: { app.kubernetes.io/component: sync }
+      key: config.toml
+      format: toml
+
+    images:
+      - values: services.sync.image
+        contract: contracts/sync.json
+
+    consumers:
+      - workload: { kind: Deployment, selector: { app.kubernetes.io/component: sync } }
+        containers: [sync]
+
+    exempt: []
+
+  - name: challenge-solver
+
+    source:
+      kind: ConfigMap
+      selector: { app.kubernetes.io/component: challenge-solver }
+      key: config.toml
+      format: toml
+
+    images:
+      - values: services.challengeSolver.image
+        contract: contracts/challenge-solver.json
+
+    consumers:
+      - workload: { kind: Deployment, selector: { app.kubernetes.io/component: challenge-solver } }
+        containers: [challenge-solver]
+
+    exempt: []
+
+  - name: render
+
+    source:
+      kind: ConfigMap
+      selector: { app.kubernetes.io/component: render }
+      key: config.toml
+      format: toml
+
+    images:
+      - values: services.render.image
+        contract: contracts/render.json
+
+    consumers:
+      - workload: { kind: Deployment, selector: { app.kubernetes.io/component: render } }
+        containers: [render]
+
+    exempt: []
+
+  # The migration Job rather than a Deployment. It reads the same configuration the long-running
+  # services do — the database URL it migrates against is the one the API will use — so leaving it
+  # out would exempt the one workload whose failure is hardest to see: a Job that exits non-zero
+  # once, at install time, on a key nothing else validated.
+  - name: bootstrap
+
+    source:
+      kind: ConfigMap
+      selector: { app.kubernetes.io/component: bootstrap }
+      key: config.toml
+      format: toml
+
+    images:
+      - values: bootstrap.image
+        contract: contracts/bootstrap.json
+
+    # Three Jobs read this one document: the migration step and the two seed steps. They are one
+    # consumer entry rather than three, because the only label distinguishing them is the
+    # component they share, and the migration Job's name carries a content hash.
+    consumers:
+      - workload: { kind: Job, selector: { app.kubernetes.io/component: bootstrap } }
+        containers: [migrate, seed-admin, seed-providers]
+
+    exempt:
+      - values: "*"
+        gates: [closed]
+        reason: >-
+          The chart writes `telemetry.service_name` into this document — its own comment says the
+          key is "required of every binary" — and the contract `tankovault-bootstrap` v8.1.0
+          publishes declares no `telemetry` key at all. One of the two is wrong and this gate
+          cannot tell which: either the chart is writing configuration the bootstrap binary never
+          reads, which is harmless today but silently ignores anything an operator sets there, or
+          the binary does read it and its `Describe` implementation is missing the key, in which
+          case the contract is under-reporting its own surface. Only `closed` is relaxed, so every
+          key the contract *does* describe is still type-checked here. Remove this exemption once
+          the producer settles it.

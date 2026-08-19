@@ -91,10 +91,16 @@ class Document:
     exempt: list[Exemption]
 
     def relaxed(self, values_file: str) -> set[str]:
-        """The gates exempted for one `ci/` values file."""
+        """The gates exempted for one `ci/` values file.
+
+        `values: "*"` covers every one of them. That is for a gap in the *contract* rather than in
+        one fixture — a key the chart renders and the image's document does not describe — which
+        is a property of the pair and not of any particular values file. Naming all fourteen
+        would say the same thing fourteen times and grow silently stale as fixtures are added.
+        """
         relaxed: set[str] = set()
         for exemption in self.exempt:
-            if Path(exemption.values).name == Path(values_file).name:
+            if exemption.values == "*" or Path(exemption.values).name == Path(values_file).name:
                 relaxed.update(exemption.gates)
         return relaxed
 

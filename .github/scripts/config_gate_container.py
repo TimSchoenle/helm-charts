@@ -153,13 +153,21 @@ class EnvironmentGate:
                 suppliers.add(entry["path"], f"the file named by {variable}")
 
             elif decision.kind == cc.PREFIXED and "env" not in relaxed:
-                spellings = [key["env"] for key in union.keys.values() if key.get("env")]
-                findings.append(
-                    error(
-                        f"env: {variable} set by container {view.name!r} matches no key in the "
-                        "contract" + cc.suggest(variable, spellings)
+                # A variable can address a leaf of a dynamic map the same way a file can, and for
+                # the same reason the contract cannot name it. Checked here rather than inside
+                # `classify`, whose step order is normative and copied from the crate — this is an
+                # implementation necessity found against a real chart, not a new step.
+                container = union.container_of("env", variable)
+                if container is not None:
+                    suppliers.add(container["path"], ENVIRONMENT_LAYER)
+                else:
+                    spellings = [key["env"] for key in union.keys.values() if key.get("env")]
+                    findings.append(
+                        error(
+                            f"env: {variable} set by container {view.name!r} matches no key in "
+                            "the contract" + cc.suggest(variable, spellings)
+                        )
                     )
-                )
 
             elif decision.kind == cc.EXTERNAL:
                 if "env" not in relaxed and view.visible(variable):
@@ -292,6 +300,13 @@ class FileGate:
 
                 if is_secrets_dir:
                     if key is None:
+                        # Before calling it a misspelling: it may be addressing a leaf inside a
+                        # dynamic map, whose sub-keys the deployment chooses and no build-time
+                        # contract can enumerate. See `Union.container_of`.
+                        container = union.container_of("secrets_file", file_name)
+                        if container is not None:
+                            suppliers.add(container["path"], SECRETS_LAYER)
+                            continue
                         findings.append(
                             error(
                                 f"files: the secrets directory mounts {file_name!r}, which spells "

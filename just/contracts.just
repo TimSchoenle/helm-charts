@@ -191,3 +191,70 @@ explain chart='' pattern='' *flags:
     {{ resolve_python }}
     "$python" {{ scripts }}/explain-config.py '{{ chart }}' '{{ pattern }}' \
       --charts {{ charts }} {{ flags }}
+
+# --------------------------------------------------------------------------------------------
+# The credential surface
+# --------------------------------------------------------------------------------------------
+
+# List every credential the images in this repository declare secret, and how each one is spelt.
+#
+# Forty-seven key declarations across the tree carry `secret: true`, and until this recipe existed
+# no document anywhere said what they are. Somebody writing a values file has to know which
+# credentials a chart needs, what to name the keys of the Secret that carries them, which
+# environment spelling and which `_FILE` spelling address the same value, and — for a chart whose
+# services run different binaries — which of them actually reads each one. Every part of that
+# answer was already published by the images and readable only by opening nine JSON documents by
+# hand.
+#
+# Reads the committed contracts and nothing else: no render, no cluster, no network. Cheap enough
+# to run while writing the values file it exists to help with, which is the only time it is
+# wanted.
+#
+# Deliberately skips the staleness interlock the gates apply. A Renovate digest bump produces one
+# run in which the pinned digest and the vendored contract disagree, and withholding the inventory
+# then would remove the document at exactly the moment a reviewer is reading a credential change.
+# Whether the vendored copy is current is `just check-contracts`' question, and it answers it in
+# one line rather than by refusing to describe anything.
+#
+# `--json` for a machine; the table is the answer for a person.
+[doc("List every credential the images declare secret, and how each one is spelt")]
+[group('contracts')]
+config-secrets *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    {{ resolve_python }}
+    "$python" {{ scripts }}/config-secrets.py --charts {{ charts }} {{ args }}
+
+# Report what the charts deliver against the credentials the images declare. Report only.
+#
+# The gates in `check-config` are structurally unable to ask this. Gate 3 checks that every secret
+# file a pod is *given* is a name the contract knows, so it refuses a name nothing declares and is
+# blind by construction to the opposite defect: a credential the image declares and no channel
+# supplies. That one renders cleanly, passes every gate, starts, reports healthy, and fails at the
+# first request that needs it. Gate 3 is also scoped to the containers a `config-contract.yaml`
+# names as consumers, so an init container or a sidecar sharing the pod is a container no gate
+# opens — and several Deployments here run one that mounts the whole per-service credential set
+# while running a different image entirely.
+#
+# Reuses `just render`, so the manifests read here are the ones every other gate reads: one
+# render, one set of facts. Reconciled against every `ci/` values file each chart ships, because a
+# credential delivered under one fixture is delivered — the chart has a channel for it — while
+# over-projection is a property of the fixture that produced it and is reported naming that file.
+#
+# **Exits 0 whatever it finds, and that is the point of the first pass.** Its three questions are
+# new, and a report over an established repository is where they earn their triage: a finding that
+# turns out to be a considered design decision belongs in a document, not in a red pipeline on a
+# pull request that changed nothing. A follow-up promotes it once these findings are triaged, and
+# the promotion is one line of `config-secrets.py` — the findings are already `Finding`s at the
+# level each has earned, so nothing else moves.
+#
+# Deliberately not in `just check` for the same reason: an aggregate a contributor is expected to
+# run before pushing must not be a place where advisory output accumulates.
+[doc("Report what the charts deliver against the credentials the images declare (report only)")]
+[group('contracts')]
+check-config-secrets out='rendered' *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    {{ resolve_python }}
+    just render '{{ out }}'
+    "$python" {{ scripts }}/config-secrets.py --reconcile '{{ out }}' --charts {{ charts }} {{ args }}

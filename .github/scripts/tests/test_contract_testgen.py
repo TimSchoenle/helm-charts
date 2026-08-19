@@ -10,13 +10,23 @@ anything. So they are asserted here, key by key, alongside the refusals: a probe
 invented for a secret, for a `structured` key or for an `unknown` one, and the generated file has
 to say which of the three applied.
 
-A third way of losing the property arrived with render prerequisites, and it is the quietest of
-the three. A prerequisite is carried by every case and dropped from none — a case that does not
-render proves nothing — so one written into the configuration tree would supply the value a case
-exists to prove the chart delivered, and every case it touched would pass on the enrolment file's
-own contents. That is asserted twice below, once against the loader that reads the enrolment and
-once against the model, because the guarantee is worth nothing if it holds only for the callers
-that went through the loader.
+Two more ways of losing it are just as quiet and belong to the shape of the chart rather than to
+the key. A selector that matches several documents fails loudly, but one that matches the *wrong*
+single document asserts a key against a file that was never meant to carry it — so the selector
+is asserted to narrow exactly as far as the declaration gives it grounds to and no further. And a
+probe written into a values layer the chart overwrites produces a case that fails on a chart
+behaving perfectly, which is worse than no case at all: the probe root is therefore asserted to
+be the one the enrolment names, and the baseline to be read under that same root, since the check
+that stops a baseline from supplying a probed value compares the two paths as strings.
+
+A last way arrived with render prerequisites, and it is the quietest of them all. A prerequisite
+is carried by every case and dropped from none — a case that does not render proves nothing — so
+one written into the tree the cases probe would supply the value a case exists to prove the chart
+delivered, and every case it touched would pass on the enrolment file's own contents. That is
+asserted twice below, once against the loader that reads the enrolment and once against the
+model, because the guarantee is worth nothing if it holds only for the callers that went through
+the loader — and asserted again against a moved probe root, because the tree to stay out of is
+the one the probes are written to and not the one that happens to be the default.
 
 The rest is determinism. The staleness gate is a comparison of bytes, so a generator that sorted
 by dictionary order or wrote a timestamp into the header would fail a pull request that changed
@@ -46,7 +56,13 @@ sys.path.insert(0, str(SCRIPTS))
 
 import config_contract as cc  # noqa: E402
 import config_testgen as tg  # noqa: E402
-from config_declaration import DeclarationError  # noqa: E402
+from config_declaration import (  # noqa: E402
+    Declaration,
+    DeclarationError,
+    Document,
+    ImageRef,
+    Source,
+)
 
 
 def load_entry_point():
@@ -83,6 +99,28 @@ def key(path: str, **overrides: Any) -> dict[str, Any]:
     }
     entry.update(overrides)
     return entry
+
+
+def declaration(*documents: tuple[str, str, dict[str, str]]) -> Declaration:
+    """One chart's declaration, as `(document name, source key, source selector)` triples."""
+    return Declaration(
+        chart="chart",
+        path=Path("charts/chart/config-contract.yaml"),
+        documents=[
+            Document(
+                name=name,
+                source=Source(
+                    kind="ConfigMap", selector=selector, key=source_key, format="toml"
+                ),
+                images=[ImageRef(values="image", contract="contracts/one.json")],
+                consumers=[],
+                exempt=[],
+            )
+            for name, source_key, selector in documents
+        ],
+        reason=None,
+        unconfigured=[],
+    )
 
 
 class TestProbeSynthesis(unittest.TestCase):
@@ -284,6 +322,65 @@ class TestAssertionSpelling(unittest.TestCase):
         self.assertFalse(re.search(pattern, '[isr]\nlevel = "info"\n'))
 
 
+class TestDocumentSelection(unittest.TestCase):
+    """Which document a case reads, for a chart whose documents do not differ by their key."""
+
+    def test_a_key_that_identifies_its_document_selects_on_the_key_alone(self):
+        self.assertEqual(tg.selector_path("config.toml", ()), 'data["config.toml"]')
+
+    def test_a_shared_key_is_narrowed_by_the_labels_the_declaration_selects_on(self):
+        self.assertEqual(
+            tg.selector_path("config.toml", (("app.kubernetes.io/component", "api"),)),
+            '$[?(@.metadata.labels["app.kubernetes.io/component"]=="api")].data["config.toml"]',
+        )
+
+    def test_several_labels_become_one_filter(self):
+        """helm-unittest's `documentSelector` carries one `path` and one `value`, and no more."""
+        self.assertEqual(
+            tg.selector_path("config.toml", (("a", "1"), ("b", "2"))),
+            '$[?(@.metadata.labels["a"]=="1" && @.metadata.labels["b"]=="2")]'
+            '.data["config.toml"]',
+        )
+
+    def test_a_label_no_string_literal_can_carry_is_refused_rather_than_escaped(self):
+        for offender in ('quo"te', "back\\slash"):
+            with self.subTest(offender=offender):
+                with self.assertRaises(tg.TestGenError):
+                    tg.selector_path("config.toml", (("app.kubernetes.io/component", offender),))
+
+    def test_the_key_is_derived_to_be_enough_when_no_sibling_shares_it(self):
+        declared = declaration(
+            ("server", "config.toml", {"app.kubernetes.io/instance": "portfolio"}),
+            ("agent", "agent.toml", {"app.kubernetes.io/instance": "portfolio"}),
+        )
+        for document in declared.documents:
+            with self.subTest(document=document.name):
+                self.assertEqual(generator.discriminator_for(declared, document), ())
+
+    def test_a_shared_key_derives_the_labels_from_the_declaration(self):
+        declared = declaration(
+            ("api", "config.toml", {"app.kubernetes.io/component": "api"}),
+            ("worker", "config.toml", {"app.kubernetes.io/component": "worker"}),
+        )
+        self.assertEqual(
+            generator.discriminator_for(declared, declared.documents[0]),
+            (("app.kubernetes.io/component", "api"),),
+        )
+
+    def test_a_shared_key_with_no_selector_is_refused(self):
+        declared = declaration(("api", "config.toml", {}), ("worker", "config.toml", {}))
+        with self.assertRaises(DeclarationError) as raised:
+            generator.discriminator_for(declared, declared.documents[0])
+        self.assertIn("tells the documents apart", str(raised.exception))
+
+    def test_a_shared_key_and_a_shared_selector_are_refused(self):
+        """Deriving them anyway would emit a selector that matches both and fails at run time."""
+        shared = {"app.kubernetes.io/instance": "chart"}
+        declared = declaration(("api", "config.toml", shared), ("worker", "config.toml", shared))
+        with self.assertRaises(DeclarationError):
+            generator.discriminator_for(declared, declared.documents[0])
+
+
 class TestPlanning(unittest.TestCase):
     KEYS = [
         key("isr.ttl_secs", text_form="integer", constraint={"type": "integer", "minimum": 0},
@@ -316,6 +413,38 @@ class TestPlanning(unittest.TestCase):
         self.assertEqual(case.set_values[0][1], tg.DISTINCTIVE_INTEGER)
 
 
+class TestProbeTarget(unittest.TestCase):
+    """Where a probe is written, when a chart's derived wiring outranks its configuration tree."""
+
+    ROOT = "services.api.config"
+
+    def test_a_case_writes_its_key_under_the_root_the_enrolment_names(self):
+        plan = tg.plan(TestPlanning.KEYS, [], root=self.ROOT)
+        case = next(case for case in plan.cases if case.path == "isr.ttl_secs")
+        self.assertEqual(
+            case.set_values[-1], (f"{self.ROOT}.isr.ttl_secs", tg.DISTINCTIVE_INTEGER)
+        )
+
+    def test_the_baseline_collision_is_still_caught_under_a_moved_root(self):
+        """A baseline one layer off the probes would silently supply the value under test."""
+        probed = tg.values_path("isr.ttl_secs", self.ROOT)
+        plan = tg.plan(TestPlanning.KEYS, [(probed, 99)], root=self.ROOT)
+        case = next(case for case in plan.cases if case.path == "isr.ttl_secs")
+        self.assertEqual([name for name, _ in case.set_values], [probed])
+
+    def test_the_default_root_is_the_configuration_tree(self):
+        self.assertEqual(tg.values_path("isr.ttl_secs"), "config.isr.ttl_secs")
+
+    def test_a_probe_path_the_chart_does_not_expose_is_refused(self):
+        with tempfile.TemporaryDirectory() as directory:
+            values = {"config": {}, "services": {"api": {"config": {}}}}
+            generator.probe_tree(Path(directory), values, "api", self.ROOT)
+            for missing in ("services.worker.config", "nothing"):
+                with self.subTest(probe=missing):
+                    with self.assertRaises(DeclarationError):
+                        generator.probe_tree(Path(directory), values, "api", missing)
+
+
 class TestSuiteRendering(unittest.TestCase):
     TARGET = tg.Target(
         chart="portfolio",
@@ -327,8 +456,28 @@ class TestSuiteRendering(unittest.TestCase):
         contracts=("charts/portfolio/contracts/server.json",),
     )
 
+    # The other shape a chart can have: nine documents sharing one key, probed through the layer
+    # that outranks the configuration tree rather than through the tree itself.
+    SHARED = tg.Target(
+        chart="tankovault",
+        name="api",
+        kind="ConfigMap",
+        selector={"app.kubernetes.io/component": "api"},
+        key="config.toml",
+        declaration="charts/tankovault/config-contract.yaml",
+        contracts=("charts/tankovault/contracts/api.json",),
+        discriminator=(("app.kubernetes.io/component", "api"),),
+        root="services.api.config",
+    )
+
     def render(self, keys, baseline=(), reason=None) -> str:
         return tg.render_suite(self.TARGET, tg.plan(keys, baseline), baseline, reason)
+
+    def render_shared(self, keys, baseline=(), reason="because") -> str:
+        root = self.SHARED.root
+        return tg.render_suite(
+            self.SHARED, tg.plan(keys, baseline, root=root), baseline, reason
+        )
 
     def test_the_suite_is_valid_yaml_shaped_like_a_helm_unittest_suite(self):
         suite = yaml.safe_load(self.render(TestPlanning.KEYS))
@@ -367,11 +516,49 @@ class TestSuiteRendering(unittest.TestCase):
         self.assertNotIn("sha256", rendered)
         self.assertNotRegex(rendered, r"\d{4}-\d{2}-\d{2}T")
 
+    def test_every_case_of_a_shared_key_selects_through_the_same_filter(self):
+        """A case reading a sibling's document would assert a key against the wrong file."""
+        suite = yaml.safe_load(self.render_shared(TestPlanning.KEYS))
+        expected = tg.selector_path(self.SHARED.key, self.SHARED.discriminator)
+        for test in suite["tests"]:
+            with self.subTest(case=test["it"]):
+                self.assertEqual(test["documentSelector"], {"path": expected})
+
+    def test_a_shared_key_still_asserts_its_document_against_the_declaration(self):
+        suite = yaml.safe_load(self.render_shared(TestPlanning.KEYS))
+        self.assertEqual(
+            suite["tests"][0]["asserts"],
+            [
+                {"isKind": {"of": "ConfigMap"}},
+                {
+                    "equal": {
+                        "path": 'metadata.labels["app.kubernetes.io/component"]',
+                        "value": "api",
+                    }
+                },
+            ],
+        )
+
+    def test_a_moved_probe_root_reaches_the_header_the_set_paths_and_the_note(self):
+        rendered = self.render_shared(TestPlanning.KEYS, reason="the derived wiring outranks it")
+        self.assertIn("writes one setting into `services.api.config`", rendered)
+        self.assertIn("services.api.config.isr.ttl_secs:", rendered)
+        self.assertIn("rather than into `config`", rendered)
+        self.assertIn("the derived wiring outranks it", rendered)
+
+    def test_a_document_with_neither_a_baseline_nor_a_moved_root_carries_no_note(self):
+        """The reason belongs to what the enrolment changed; with nothing changed it is noise."""
+        self.assertNotIn("Every case below also carries", self.render(TestPlanning.KEYS))
+        self.assertNotIn("rather than into", self.render(TestPlanning.KEYS))
+
 
 class TestRenderPrerequisites(unittest.TestCase):
     """Values that make the chart render at all, and the rule that keeps them out of the proof."""
 
     PREREQUISITES = [("bucket.entries", {"link": {"bucket": "b", "object": "o"}})]
+
+    # A probe root off the default, which is what the last four cases below turn on.
+    ROOT = "services.api.config"
 
     def test_every_case_carries_the_prerequisites(self):
         plan = tg.plan(TestPlanning.KEYS, [], self.PREREQUISITES)
@@ -398,6 +585,56 @@ class TestRenderPrerequisites(unittest.TestCase):
     def test_a_values_path_that_merely_starts_with_the_tree_s_name_is_allowed(self):
         """The refusal is on the tree, not on the six letters: `configMount` is another value."""
         self.assertIsNone(tg.prerequisite_conflict("configMount.rolloutOnChange"))
+
+    def test_the_refusal_follows_the_probe_root_rather_than_the_default_tree(self):
+        """The one place the two enrolment fields actually meet.
+
+        On a chart probing `services.api.config`, `config` is the *lowest*-precedence layer and
+        a prerequisite there cannot reach a probed key; the layer that can is the probe root.
+        A rule spelled against the default would refuse the harmless path and admit the
+        dangerous one, which is exactly backwards.
+        """
+        self.assertIsNone(tg.prerequisite_conflict(tg.VALUES_ROOT, self.ROOT))
+        self.assertIsNone(tg.prerequisite_conflict(f"{tg.VALUES_ROOT}.isr.ttl_secs", self.ROOT))
+        self.assertIsNotNone(tg.prerequisite_conflict(self.ROOT, self.ROOT))
+        self.assertIsNotNone(tg.prerequisite_conflict(f"{self.ROOT}.isr.ttl_secs", self.ROOT))
+
+    def test_a_prerequisite_the_probe_root_nests_inside_is_refused(self):
+        """Two entries of one `set` mapping, one enclosing the other, and no order between."""
+        conflict = tg.prerequisite_conflict("services.api", self.ROOT)
+        self.assertIsNotNone(conflict)
+        self.assertIn("no order", conflict)
+        self.assertIsNone(tg.prerequisite_conflict("services.worker.replicaCount", self.ROOT))
+
+    def test_the_model_refuses_a_moved_root_s_own_tree(self):
+        """`plan` raises on it, so a caller reaching past the loader reaches past nothing."""
+        with self.assertRaises(tg.TestGenError) as raised:
+            tg.plan(
+                TestPlanning.KEYS, [], [(f"{self.ROOT}.isr.ttl_secs", 1)], root=self.ROOT
+            )
+        self.assertIn(self.ROOT, str(raised.exception))
+        tg.plan(TestPlanning.KEYS, [], [(tg.VALUES_ROOT, {})], root=self.ROOT)
+
+    def test_a_prerequisite_and_a_moved_probe_root_compose_in_one_suite(self):
+        """Prerequisites on every case including the identity one, probes under the moved root."""
+        target = TestSuiteRendering.SHARED
+        suite = yaml.safe_load(
+            tg.render_suite(
+                target,
+                tg.plan(TestPlanning.KEYS, [], self.PREREQUISITES, target.root),
+                [],
+                "the derived wiring outranks it",
+                self.PREREQUISITES,
+                "because the guard insists",
+            )
+        )
+        for test in suite["tests"]:
+            with self.subTest(case=test["it"]):
+                self.assertEqual(test["set"]["bucket.entries"], self.PREREQUISITES[0][1])
+        probe = next(
+            test for test in suite["tests"] if "isr.ttl_secs" in test["it"]
+        )
+        self.assertIn(f"{target.root}.isr.ttl_secs", probe["set"])
 
     def test_an_empty_prerequisite_path_is_refused(self):
         self.assertIsNotNone(tg.prerequisite_conflict(""))
@@ -497,6 +734,52 @@ class TestEnrolment(unittest.TestCase):
                 "    reason: because\n"
             )
 
+    def test_a_document_with_no_probe_is_probed_through_the_configuration_tree(self):
+        enrolled = self.enrolment("documents:\n  - name: server\n")
+        self.assertEqual(enrolled["server"].probe, tg.VALUES_ROOT)
+
+    def test_a_probe_path_is_read_as_the_root_every_case_writes_under(self):
+        enrolled = self.enrolment(
+            "documents:\n  - name: api\n    probe: services.api.config\n    reason: because\n"
+        )
+        self.assertEqual(enrolled["api"].probe, "services.api.config")
+
+    def test_a_probe_that_is_not_a_dotted_values_path_is_refused(self):
+        for offender in ('services["api"].config', "services..config", ".config", "", 7):
+            with self.subTest(probe=offender):
+                with self.assertRaises(DeclarationError):
+                    self.enrolment(
+                        f"documents:\n  - name: api\n    probe: {offender!r}\n"
+                        "    reason: because\n"
+                    )
+
+    def test_a_probe_without_a_reason_is_refused(self):
+        """It narrows the suite to one layer, which is the same hole a baseline opens."""
+        with self.assertRaises(DeclarationError) as raised:
+            self.enrolment("documents:\n  - name: api\n    probe: services.api.config\n")
+        self.assertIn("reason", str(raised.exception))
+
+    def test_a_baseline_is_read_under_the_probe_root_rather_than_under_the_default(self):
+        enrolled = self.enrolment(
+            "documents:\n"
+            "  - name: api\n"
+            "    probe: services.api.config\n"
+            "    baseline:\n"
+            "      services.api.config.a: false\n"
+            "    reason: because\n"
+        )
+        self.assertEqual(enrolled["api"].baseline.values, [("services.api.config.a", False)])
+
+        with self.assertRaises(DeclarationError):
+            self.enrolment(
+                "documents:\n"
+                "  - name: api\n"
+                "    probe: services.api.config\n"
+                "    baseline:\n"
+                "      config.a: false\n"
+                "    reason: because\n"
+            )
+
     def test_an_unknown_key_is_refused_rather_than_ignored(self):
         with self.assertRaises(DeclarationError):
             self.enrolment("documents: []\nreason: stray")
@@ -571,6 +854,35 @@ class TestEnrolment(unittest.TestCase):
                 "documents:\n  - name: server\n    prerequisites:\n      value: {a: 1}\n"
                 "      reason: because\n"
             )
+
+    def test_a_moved_probe_root_moves_which_prerequisite_the_loader_refuses(self):
+        """The loader reads the root first, so its refusal is the model's under a moved root."""
+        enrolled = self.enrolment(
+            "documents:\n"
+            "  - name: api\n"
+            "    probe: services.api.config\n"
+            "    reason: the derived wiring outranks it\n"
+            "    prerequisites:\n"
+            "      values:\n"
+            "        config.profile: development\n"
+            "      reason: because the guard insists\n"
+        )
+        self.assertEqual(
+            enrolled["api"].prerequisites.values, [("config.profile", "development")]
+        )
+
+        with self.assertRaises(DeclarationError) as raised:
+            self.enrolment(
+                "documents:\n"
+                "  - name: api\n"
+                "    probe: services.api.config\n"
+                "    reason: the derived wiring outranks it\n"
+                "    prerequisites:\n"
+                "      values:\n"
+                "        services.api.config.profile: development\n"
+                "      reason: because the guard insists\n"
+            )
+        self.assertIn("services.api.config", str(raised.exception))
 
     def test_a_document_may_carry_a_baseline_and_prerequisites_at_once(self):
         enrolments = self.enrolment(

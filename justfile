@@ -153,9 +153,19 @@ default:
 # jobs, so the order is free here, and putting the helm-only gates ahead of the ones that want
 # `ct` and `kube-linter` means a shell without those still gets everything else checked before it
 # stops.
+#
+# `check-contract-tests` is here and its siblings `check-contracts` and `check-kube-refs` are not,
+# and the difference is who repairs the drift. Those two are repaired by the Documentation job,
+# which refreshes and commits on the pull request itself, so failing `check` on them would fail a
+# contributor for something the automation is about to fix. Nothing regenerates the contract
+# suites — deliberately, because a generated *test* that lands without its author having read it
+# is a test nobody has read — so a contract that gained a key would otherwise leave its suite
+# silently short of it, which is precisely the drift the suites exist to remove. It reads two
+# committed files and writes nothing, so it costs the aggregate nothing to carry. If the
+# Documentation job ever adopts `just contract-tests`, this belongs back out beside the other two.
 [doc("Every gate CI runs that does not need a Kubernetes cluster")]
 [group('meta')]
-check: deps test validate-manifests check-immutable check-config check-contract-coverage test-contract-union lint lint-policy
+check: deps test validate-manifests check-immutable check-config check-contract-coverage check-contract-tests test-contract-union lint lint-policy
 
 # Install the pinned Helm plugins. The CI composite action calls this recipe too, so the versions
 # above are the only place they are declared.

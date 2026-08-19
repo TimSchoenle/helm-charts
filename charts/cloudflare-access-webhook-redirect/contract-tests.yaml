@@ -1,0 +1,46 @@
+# vim: set ft=yaml:
+
+# Enrols this chart in the generated configuration round-trip suites, and states the chart values
+# every generated case has to carry before this chart will render at all.
+#
+# `just check-config` proves the rendered `config.toml` satisfies the image's contract. It cannot
+# prove the round trip: that a setting written into `config` arrives in that document, at the path
+# the image reads it from, carrying the value that was asked for. A document missing a setting
+# entirely satisfies the contract perfectly — every key it does contain is legal — so a typo in a
+# template helper passes every gate and the proxy runs on a compiled default nobody chose.
+#
+# `just contract-tests` reads this file and `config-contract.yaml`, and writes one suite per
+# declared document under `tests/`. The presence of this file is the enrolment.
+documents:
+  - name: redirect
+
+    # The chart values every generated case carries, the identity case among them: this chart's
+    # `validateValues` fails the template before a ConfigMap exists for any case to assert
+    # against, so there is no case here that can do without them.
+    #
+    # Flat dotted paths, exactly as the helm-unittest `set` block they become spells them, and a
+    # leaf is free to be a structure — `webhook.paths` is a map and splitting it into one path
+    # per method list would read worse than the map it stands for. Nothing here may name a path
+    # under `config`: a prerequisite is never dropped for the case it collides with, the way a
+    # baseline is, so one written into the tree the cases probe could supply the very value a
+    # case exists to prove the chart delivered. The generator refuses one outright.
+    prerequisites:
+      values:
+        webhook.paths:
+          "/render-prerequisite/.*": [ALL]
+        webhook.targetBase: https://render-prerequisite.invalid
+
+      reason: >-
+        `cloudflare-access-webhook-redirect.validateValues` refuses a render whose effective
+        configuration carries neither `webhook.target_base` nor `webhook.paths` — a proxy with no
+        target and no allowed path forwards nothing — and it runs from `configmap.yaml`, so
+        without both there is no document for any case to assert against. Supplied as the chart's
+        own first-class values although the guard reads the effective tree and would accept them
+        through `config` too: `config` is where every probe is written, and a prerequisite there
+        is refused for that reason. Neither key is one this suite covers in any case —
+        `webhook.target_base` is `unknown` in the contract and `webhook.paths` is `structured`,
+        so both are refused a probe and named in the generated file's skip list. `.invalid` is
+        reserved by RFC 2606 and can never resolve, which keeps a value that looks like a
+        deployment's real target from being mistaken for one. The chart merges `.Values.config`
+        over everything it derives from these values, so a probe still wins wherever the two
+        would meet.

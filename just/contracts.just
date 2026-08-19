@@ -330,19 +330,22 @@ check-config-secrets out='rendered' *args:
 # of the tree rather than a list somebody has to remember to edit, and a chart states there which
 # values every generated case has to carry before it will render at all.
 #
-# Only `portfolio` is enrolled today, and that is deliberate. The mechanism is new, the probe it
-# writes into a chart's values is chosen from the contract rather than by a person, and the way
-# to find out whether that holds against a real image is one chart in production rather than six
-# at once on the strength of one review. What the remaining five need was measured rather than
-# assumed, by enrolling each of them and running the result:
+# Five of the six charts with a contract are enrolled, and the sixth is held back rather than
+# forgotten. The rollout stayed one chart at a time because the probe written into a chart's
+# values is chosen from the contract rather than by a person, and what that is worth against a
+# real image is answered by running it and not by reviewing it. What each chart needed was
+# measured the same way, by enrolling it and reading the failure:
 #
+#   portfolio               a `baseline`: its own guard refuses the pair its two probes walk into.
 #   mp-stats-legacy-viewer  nothing. Six of its seven keys pass today; enrolling it is one file.
-#   cloudflare-access-…     a render prerequisite. The chart refuses to render without
-#   netcup-offer-bot        `webhook.targetBase`, `discord.webhookUrl` or `bucket.entries`, which
-#   s3-bucket-perma-link    are chart values rather than configuration — a different field from
-#                           the enrolment's `baseline`, and one to design against a chart being
-#                           enrolled rather than in advance of one.
-#   tankovault              the same prerequisite, an order of magnitude larger, plus two of its
+#   cloudflare-access-…     `prerequisites`: chart values the guard refuses to render without —
+#   netcup-offer-bot        a target base and an allowed path, a webhook URL, one bucket entry.
+#   s3-bucket-perma-link    Not configuration, so not a `baseline`: a baseline writes into the
+#                           document the cases assert against, and it is dropped from the case
+#                           probing the key it sets, where a prerequisite is dropped from
+#                           nothing — a case without it never renders. Being undroppable is why
+#                           a prerequisite naming a path under `config` is refused outright.
+#   tankovault              the same prerequisites, an order of magnitude larger, plus two of its
 #                           own: nine documents all keyed `config.toml`, which the single-match
 #                           document selector cannot tell apart, and `.Values.config` as the
 #                           *lowest*-precedence layer there, so a probe written into it is

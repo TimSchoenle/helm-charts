@@ -1,0 +1,47 @@
+# vim: set ft=yaml:
+
+# Enrols this chart in the generated configuration round-trip suites, and states the chart values
+# every generated case has to carry before this chart will render at all.
+#
+# `just check-config` proves the rendered `config.toml` satisfies the image's contract. It cannot
+# prove the round trip: that a setting written into `config` arrives in that document, at the path
+# the image reads it from, carrying the value that was asked for. A document missing a setting
+# entirely satisfies the contract perfectly — every key it does contain is legal — so a typo in a
+# template helper passes every gate and the server runs on a compiled default nobody chose.
+#
+# `just contract-tests` reads this file and `config-contract.yaml`, and writes one suite per
+# declared document under `tests/`. The presence of this file is the enrolment.
+documents:
+  - name: server
+
+    # The chart values every generated case carries, the identity case among them: this chart's
+    # `validateValues` fails the template before a ConfigMap exists for any case to assert
+    # against, so there is no case here that can do without them.
+    #
+    # Flat dotted paths, exactly as the helm-unittest `set` block they become spells them, and a
+    # leaf is free to be a structure. This chart is why: `bucket.entries` is a map of maps keyed
+    # by the request path each link is served at, and spelling one entry as three dotted paths
+    # would put the request path — a `/`-bearing key — inside the dotted path itself. Nothing
+    # here may name a path under `config`: a prerequisite is never dropped for the case it
+    # collides with, the way a baseline is, so one written into the tree the cases probe could
+    # supply the very value a case exists to prove the chart delivered. The generator refuses one
+    # outright.
+    prerequisites:
+      values:
+        bucket.entries:
+          render-prerequisite:
+            bucket: render-prerequisite
+            object: render-prerequisite
+
+      reason: >-
+        `s3-bucket-perma-link.validateValues` refuses a render with no `bucket.entries` — a
+        server with no entry serves nothing — and refuses an entry missing either its `bucket` or
+        its `object`, so the smallest thing that renders is one complete entry rather than an
+        empty map. The guard runs from `configmap.yaml`, so without it there is no document for
+        any case to assert against. Supplied as the chart's own first-class value although the
+        guard reads the effective tree and would accept it through `config` too: `config` is
+        where every probe is written, and a prerequisite there is refused for that reason.
+        `bucket.entries` is `structured` in the contract and carries no case of its own — the
+        keys beneath it are the operator's own names — so nothing this suite proves is being
+        covered up by the entry above. The chart merges `.Values.config` over everything it
+        derives from its values, so a probe still wins wherever the two would meet.

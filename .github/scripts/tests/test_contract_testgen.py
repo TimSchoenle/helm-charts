@@ -10,6 +10,14 @@ anything. So they are asserted here, key by key, alongside the refusals: a probe
 invented for a secret, for a `structured` key or for an `unknown` one, and the generated file has
 to say which of the three applied.
 
+A third way of losing the property arrived with render prerequisites, and it is the quietest of
+the three. A prerequisite is carried by every case and dropped from none — a case that does not
+render proves nothing — so one written into the configuration tree would supply the value a case
+exists to prove the chart delivered, and every case it touched would pass on the enrolment file's
+own contents. That is asserted twice below, once against the loader that reads the enrolment and
+once against the model, because the guarantee is worth nothing if it holds only for the callers
+that went through the loader.
+
 The rest is determinism. The staleness gate is a comparison of bytes, so a generator that sorted
 by dictionary order or wrote a timestamp into the header would fail a pull request that changed
 nothing — which is the fastest way to have the gate disabled.
@@ -360,6 +368,84 @@ class TestSuiteRendering(unittest.TestCase):
         self.assertNotRegex(rendered, r"\d{4}-\d{2}-\d{2}T")
 
 
+class TestRenderPrerequisites(unittest.TestCase):
+    """Values that make the chart render at all, and the rule that keeps them out of the proof."""
+
+    PREREQUISITES = [("bucket.entries", {"link": {"bucket": "b", "object": "o"}})]
+
+    def test_every_case_carries_the_prerequisites(self):
+        plan = tg.plan(TestPlanning.KEYS, [], self.PREREQUISITES)
+        for case in plan.cases:
+            with self.subTest(case=case.path):
+                self.assertEqual(case.set_values[0], self.PREREQUISITES[0])
+
+    def test_a_prerequisite_is_dropped_from_no_case_at_all(self):
+        """Unlike a baseline: a case missing what the chart's guard insists on does not render."""
+        collides = [(tg.values_path("isr.ttl_secs"), 99)]
+        plan = tg.plan(TestPlanning.KEYS, collides, [("server.replicas", 2)])
+        for case in plan.cases:
+            with self.subTest(case=case.path):
+                self.assertIn(("server.replicas", 2), case.set_values)
+
+    def test_a_prerequisite_under_the_configuration_tree_is_refused_by_the_model(self):
+        """The guarantee, asserted where it cannot be reached past — see the module header."""
+        for path in (tg.VALUES_ROOT, f"{tg.VALUES_ROOT}.isr.ttl_secs"):
+            with self.subTest(path=path):
+                with self.assertRaises(tg.TestGenError) as raised:
+                    tg.plan(TestPlanning.KEYS, [], [(path, 1)])
+                self.assertIn(tg.VALUES_ROOT, str(raised.exception))
+
+    def test_a_values_path_that_merely_starts_with_the_tree_s_name_is_allowed(self):
+        """The refusal is on the tree, not on the six letters: `configMount` is another value."""
+        self.assertIsNone(tg.prerequisite_conflict("configMount.rolloutOnChange"))
+
+    def test_an_empty_prerequisite_path_is_refused(self):
+        self.assertIsNotNone(tg.prerequisite_conflict(""))
+
+    def test_a_structured_prerequisite_survives_the_suite_as_the_value_it_was(self):
+        """`bucket.entries` is a map of maps, and a flattened one would set the wrong thing."""
+        suite = yaml.safe_load(
+            tg.render_suite(
+                TestSuiteRendering.TARGET,
+                tg.plan(TestPlanning.KEYS, [], self.PREREQUISITES),
+                [],
+                None,
+                self.PREREQUISITES,
+                "because the guard insists",
+            )
+        )
+        for test in suite["tests"]:
+            with self.subTest(case=test["it"]):
+                self.assertEqual(test["set"]["bucket.entries"], self.PREREQUISITES[0][1])
+
+    def test_the_identity_case_carries_them_too(self):
+        """It asserts on a document the guard would otherwise have refused to produce."""
+        suite = yaml.safe_load(
+            tg.render_suite(
+                TestSuiteRendering.TARGET,
+                tg.plan([], [], self.PREREQUISITES),
+                [],
+                None,
+                self.PREREQUISITES,
+                "because the guard insists",
+            )
+        )
+        self.assertEqual(len(suite["tests"]), 1)
+        self.assertIn("bucket.entries", suite["tests"][0]["set"])
+
+    def test_the_reason_reaches_the_generated_file(self):
+        rendered = tg.render_suite(
+            TestSuiteRendering.TARGET,
+            tg.plan(TestPlanning.KEYS, [], self.PREREQUISITES),
+            [],
+            None,
+            self.PREREQUISITES,
+            "because the guard insists",
+        )
+        self.assertIn("because the guard insists", rendered)
+        self.assertIn("render prerequisites", rendered)
+
+
 class TestEnrolment(unittest.TestCase):
     """The file that enrols a chart, and the mistakes it must not be read past."""
 
@@ -385,7 +471,9 @@ class TestEnrolment(unittest.TestCase):
             "      config.a: false\n"
             "    reason: because\n"
         )
-        self.assertEqual(baselines["server"].values, [("config.a", False), ("config.b", 1)])
+        self.assertEqual(
+            baselines["server"].baseline.values, [("config.a", False), ("config.b", 1)]
+        )
 
     def test_a_baseline_without_a_reason_is_refused(self):
         with self.assertRaises(DeclarationError) as raised:
@@ -416,6 +504,91 @@ class TestEnrolment(unittest.TestCase):
     def test_a_document_declared_twice_is_refused(self):
         with self.assertRaises(DeclarationError):
             self.enrolment("documents:\n  - name: server\n  - name: server\n")
+
+    PREREQUISITES = (
+        "documents:\n"
+        "  - name: server\n"
+        "    prerequisites:\n"
+        "      values:\n"
+        "{values}"
+        "      reason: because the guard insists\n"
+    )
+
+    def prerequisites(self, values: str):
+        return self.enrolment(self.PREREQUISITES.format(values=values))
+
+    def test_prerequisites_are_read_as_sorted_pairs_with_their_shapes_intact(self):
+        enrolments = self.prerequisites(
+            "        webhook.targetBase: https://example.invalid\n"
+            "        bucket.entries:\n"
+            "          link: {bucket: b, object: o}\n"
+        )
+        self.assertEqual(
+            enrolments["server"].prerequisites.values,
+            [
+                ("bucket.entries", {"link": {"bucket": "b", "object": "o"}}),
+                ("webhook.targetBase", "https://example.invalid"),
+            ],
+        )
+        self.assertEqual(enrolments["server"].prerequisites.reason, "because the guard insists")
+
+    def test_a_prerequisite_under_the_configuration_tree_is_refused_with_the_file_named(self):
+        """The guarantee, at the loader: the model refuses it again for a caller that skips this."""
+        with self.assertRaises(DeclarationError) as raised:
+            self.prerequisites("        config.isr.ttl_secs: 99\n")
+        self.assertIn(generator.ENROLMENT, str(raised.exception))
+        self.assertIn(tg.VALUES_ROOT, str(raised.exception))
+
+    def test_the_configuration_tree_itself_is_refused_as_a_prerequisite(self):
+        with self.assertRaises(DeclarationError):
+            self.prerequisites("        config: {isr: {ttl_secs: 99}}\n")
+
+    def test_prerequisites_without_a_reason_are_refused(self):
+        with self.assertRaises(DeclarationError) as raised:
+            self.enrolment(
+                "documents:\n  - name: server\n    prerequisites:\n      values:\n"
+                "        webhook.targetBase: https://example.invalid\n"
+            )
+        self.assertIn("reason", str(raised.exception))
+
+    def test_a_prerequisite_block_setting_nothing_is_refused(self):
+        with self.assertRaises(DeclarationError):
+            self.enrolment(
+                "documents:\n  - name: server\n    prerequisites:\n      reason: because\n"
+            )
+
+    def test_overlapping_prerequisites_are_refused(self):
+        """A `set` mapping has no order, so which of the two survives is stated nowhere."""
+        with self.assertRaises(DeclarationError) as raised:
+            self.prerequisites(
+                "        bucket: {}\n        bucket.entries:\n          link: {bucket: b}\n"
+            )
+        self.assertIn("overlap", str(raised.exception))
+
+    def test_an_unknown_key_inside_the_prerequisite_block_is_refused(self):
+        with self.assertRaises(DeclarationError):
+            self.enrolment(
+                "documents:\n  - name: server\n    prerequisites:\n      value: {a: 1}\n"
+                "      reason: because\n"
+            )
+
+    def test_a_document_may_carry_a_baseline_and_prerequisites_at_once(self):
+        enrolments = self.enrolment(
+            "documents:\n"
+            "  - name: server\n"
+            "    baseline:\n"
+            "      config.a: false\n"
+            "    reason: the chart's own guard\n"
+            "    prerequisites:\n"
+            "      values:\n"
+            "        webhook.targetBase: https://example.invalid\n"
+            "      reason: the other guard\n"
+        )
+        self.assertEqual(enrolments["server"].baseline.values, [("config.a", False)])
+        self.assertEqual(
+            enrolments["server"].prerequisites.values,
+            [("webhook.targetBase", "https://example.invalid")],
+        )
 
 
 class TestOrphanedSuites(unittest.TestCase):

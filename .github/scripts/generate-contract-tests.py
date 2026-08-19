@@ -19,6 +19,16 @@ choosing a probe, refusing to invent one, and spelling the assertion — lives i
 a constant somebody has to remember to edit, and it is also where a chart says which values every
 generated case has to carry before it will render at all.
 
+**A baseline and a render prerequisite are two different fields because they are two different
+things.** A `baseline` states configuration — flat dotted paths under `config` — and is dropped
+from the one case probing the key it sets, because a baseline supplying the probed value would
+make that case pass whether or not the chart delivered anything. A `prerequisites` block states
+the chart's own first-class values, the ones a `validateValues` guard refuses to render without,
+and is carried by every case including the identity one, because a case that does not render
+proves nothing either. Being undroppable is exactly why it may not name a path under `config`:
+that is refused here with the file's name on it, and refused again by `config_testgen.plan`, so
+the guarantee does not depend on this loader having been the caller.
+
 **The vendored contracts are read directly rather than through `config_declaration.bind`.** The
 binding exists to refuse validating a document against a contract for some other digest, and it
 is right for a gate. It is wrong here: the suite is a function of the contract's *keys* and of
@@ -63,7 +73,8 @@ from config_declaration import (  # noqa: E402
 # and for the same reason.
 ENROLMENT = "contract-tests.yaml"
 ENROLMENT_KEYS = {"documents"}
-ENROLMENT_DOCUMENT_KEYS = {"name", "baseline", "reason"}
+ENROLMENT_DOCUMENT_KEYS = {"name", "baseline", "reason", "prerequisites"}
+ENROLMENT_PREREQUISITE_KEYS = {"values", "reason"}
 
 # Where a generated suite goes, and the name that identifies one. The prefix is what lets the
 # generator own the removal of a suite whose document is gone: any file matching it under a
@@ -97,20 +108,59 @@ class Baseline:
     same cause `config-contract.yaml` demands one for an exemption: an unexplained hole is
     indistinguishable from an oversight.
 
-    Deliberately confined to paths under the configuration tree, and that is what the rest of
-    this repository's charts run into: `cloudflare-access-webhook-redirect`, `netcup-offer-bot`,
-    `s3-bucket-perma-link` and `tankovault` all refuse to render on their default values, so
-    enrolling them needs chart values — a target base, a webhook URL, a bucket entry — which is a
-    render prerequisite rather than a configuration baseline. The two are different things and
-    the second one wants its own field, shaped like `rules-tests/render-values.yaml`, designed
-    against a chart that is actually being enrolled rather than in advance of one.
+    Deliberately confined to paths under the configuration tree. What a chart needs *outside* it
+    is a render prerequisite, which is `Prerequisites` below and not this.
     """
 
     values: list[tuple[str, Any]] = field(default_factory=list)
     reason: str | None = None
 
 
-def load_enrolment(chart_dir: Path) -> dict[str, Baseline] | None:
+@dataclass(frozen=True)
+class Prerequisites:
+    """Chart values every case for one document carries before the chart will render, and why.
+
+    `cloudflare-access-webhook-redirect`, `netcup-offer-bot`, `s3-bucket-perma-link` and
+    `tankovault` all refuse their own default render: no target base, no webhook URL, no bucket
+    entry, and the guard fails the template before a document exists to assert anything about.
+    What unblocks them is the chart's own first-class values, which is a different kind of thing
+    from a `Baseline` — that one writes into the configuration document the cases assert against,
+    and this one writes into the chart's values.
+
+    Held as flat dotted paths with whatever shape the leaf has, rather than as a nested block, for
+    three reasons. A helm-unittest `set` mapping *is* flat dotted paths, so what the enrolment
+    states is what the generated file carries and there is no translation between the two to go
+    wrong in silence. The refusal that keeps a prerequisite out of the configuration tree is then
+    a prefix test on one string — the same rule `Baseline` is read under, checkable by eye —
+    where a nested block would spell it as a walk over two trees. And the leaves are free to be
+    structures because `bucket.entries` is a map of maps keyed by request path: splitting it into
+    `bucket.entries.docs/handbook.bucket` would put a `/` inside a dotted path and read worse than
+    the map it stands for.
+
+    That is also where `rules-tests/render-values.yaml` stops being the right shape to copy. It is
+    nested because `just test-rules` hands it to `helm template -f`, which takes a values file;
+    here the consumer is a helm-unittest `set` block, which takes paths. The principle it
+    establishes — how to render *this* chart is the chart's own business, stated beside the suite
+    that needs it rather than in the harness — is followed exactly.
+
+    A prerequisite carries a mandatory `reason` for the cause a baseline does, and one more: the
+    reason is where a chart states that its `.Values.config` layer still wins over anything these
+    values derive, which is the half of the guarantee no path comparison can make.
+    """
+
+    values: list[tuple[str, Any]] = field(default_factory=list)
+    reason: str | None = None
+
+
+@dataclass(frozen=True)
+class Enrolment:
+    """What one chart's `contract-tests.yaml` says about one of its documents."""
+
+    baseline: Baseline = field(default_factory=Baseline)
+    prerequisites: Prerequisites = field(default_factory=Prerequisites)
+
+
+def load_enrolment(chart_dir: Path) -> dict[str, Enrolment] | None:
     """Read one chart's enrolment; `None` when the chart is not enrolled."""
     path = chart_dir / ENROLMENT
     if not path.is_file():
@@ -125,7 +175,7 @@ def load_enrolment(chart_dir: Path) -> dict[str, Baseline] | None:
     if not isinstance(entries, list):
         raise DeclarationError(f"{path}: `documents` is not a list")
 
-    baselines: dict[str, Baseline] = {}
+    enrolments: dict[str, Enrolment] = {}
     for entry in entries:
         if not isinstance(entry, dict):
             raise DeclarationError(f"{path}: every entry of `documents` must be a mapping")
@@ -134,21 +184,26 @@ def load_enrolment(chart_dir: Path) -> dict[str, Baseline] | None:
         name = entry.get("name")
         if not isinstance(name, str) or not name:
             raise DeclarationError(f"{path}: an entry of `documents` has no `name`")
-        if name in baselines:
+        if name in enrolments:
             raise DeclarationError(f"{path}: `{name}` is declared twice")
 
-        baselines[name] = Baseline(
+        baseline = Baseline(
             values=_load_baseline(path, name, entry.get("baseline") or {}),
             reason=entry.get("reason"),
         )
-        if baselines[name].values and not baselines[name].reason:
+        if baseline.values and not baseline.reason:
             raise DeclarationError(
                 f"{path}: the baseline for `{name}` has no `reason`; it narrows what every "
                 "generated case proves, and an unexplained hole in a gate is indistinguishable "
                 "from an oversight"
             )
 
-    return baselines
+        enrolments[name] = Enrolment(
+            baseline=baseline,
+            prerequisites=_load_prerequisites(path, name, entry.get("prerequisites")),
+        )
+
+    return enrolments
 
 
 def _load_baseline(path: Path, name: str, baseline: Any) -> list[tuple[str, Any]]:
@@ -175,6 +230,69 @@ def _load_baseline(path: Path, name: str, baseline: Any) -> list[tuple[str, Any]
             )
         values.append((key, value))
     return values
+
+
+def _load_prerequisites(path: Path, name: str, block: Any) -> Prerequisites:
+    """One document's render prerequisites, as sorted `set` path / value pairs and their reason.
+
+    Every refusal below is loud rather than lenient, and the first of them is the one the whole
+    field turns on: a prerequisite under the configuration tree is undroppable *and* in the tree
+    every case probes, which is the one combination that lets a generated suite pass without
+    having proven anything. `config_testgen.prerequisite_conflict` owns the rule so the message
+    is the same one the model raises; what this adds is the name of the file to fix.
+    """
+    if block is None:
+        return Prerequisites()
+    if not isinstance(block, dict):
+        raise DeclarationError(f"{path}: {name}: `prerequisites` must be a mapping")
+    reject_unknown(path, f"documents[{name}].prerequisites", block, ENROLMENT_PREREQUISITE_KEYS)
+
+    declared = block.get("values")
+    if declared is not None and not isinstance(declared, dict):
+        raise DeclarationError(
+            f"{path}: {name}: `prerequisites.values` must be a mapping of chart values path to "
+            "the value to set"
+        )
+
+    values: list[tuple[str, Any]] = []
+    for key, value in sorted((declared or {}).items()):
+        if not isinstance(key, str):
+            raise DeclarationError(
+                f"{path}: {name}: the render prerequisite {key!r} is not a values path"
+            )
+        conflict = tg.prerequisite_conflict(key)
+        if conflict is not None:
+            raise DeclarationError(f"{path}: {name}: the render prerequisite {key!r} {conflict}")
+        values.append((key, value))
+
+    # Sorted, so a path and anything nested under it are adjacent in spirit but not always in
+    # fact — `a`, `a.b` and `ab` sort in that order, and `a` precedes both of its own extensions
+    # without being next to the later one. Compared pairwise for that reason; the count here is a
+    # handful and the alternative is a rule that holds only for the pairs that happened to be
+    # adjacent. Overlapping entries are refused because a `set` mapping has no order, so which of
+    # the two survives is stated nowhere.
+    for index, (outer, _) in enumerate(values):
+        for inner, _ in values[index + 1 :]:
+            if inner.startswith(f"{outer}."):
+                raise DeclarationError(
+                    f"{path}: {name}: the render prerequisites {outer!r} and {inner!r} overlap; "
+                    "a `set` mapping has no order, so which of the two survives is stated "
+                    "nowhere — write the one subtree that carries both"
+                )
+
+    reason = block.get("reason")
+    if not values:
+        raise DeclarationError(
+            f"{path}: {name}: `prerequisites` declares no `values`; a block that sets nothing is "
+            "a field somebody meant to fill in"
+        )
+    if not reason:
+        raise DeclarationError(
+            f"{path}: {name}: the render prerequisites have no `reason`; they are carried by "
+            "every generated case, and a value nobody explained is one nobody can tell from a "
+            "workaround somebody stopped needing"
+        )
+    return Prerequisites(values=values, reason=reason)
 
 
 # --------------------------------------------------------------------------------------------
@@ -224,10 +342,10 @@ def repository_path(chart_dir: Path, *parts: str) -> str:
     return "/".join((chart_dir.parent.name, chart_dir.name, *parts))
 
 
-def build(chart_dir: Path, declaration: Declaration, baselines: dict[str, Baseline]) -> dict:
+def build(chart_dir: Path, declaration: Declaration, enrolments: dict[str, Enrolment]) -> dict:
     """Every suite one chart owns, as a path to text mapping."""
     declared = {document.name for document in declaration.documents}
-    unknown = sorted(set(baselines) - declared)
+    unknown = sorted(set(enrolments) - declared)
     if unknown:
         raise DeclarationError(
             f"{chart_dir / ENROLMENT}: names document(s) {', '.join(unknown)}, which "
@@ -238,7 +356,7 @@ def build(chart_dir: Path, declaration: Declaration, baselines: dict[str, Baseli
 
     suites: dict[Path, str] = {}
     for document in declaration.documents:
-        baseline = baselines.get(document.name, Baseline())
+        enrolment = enrolments.get(document.name, Enrolment())
         union = union_for(chart_dir, document)
         target = tg.Target(
             chart=chart_dir.name,
@@ -251,9 +369,16 @@ def build(chart_dir: Path, declaration: Declaration, baselines: dict[str, Baseli
                 repository_path(chart_dir, reference.contract) for reference in document.images
             ),
         )
-        plan = tg.plan(union.keys.values(), baseline.values)
+        plan = tg.plan(
+            union.keys.values(), enrolment.baseline.values, enrolment.prerequisites.values
+        )
         suites[suite_path(chart_dir, document)] = tg.render_suite(
-            target, plan, baseline.values, baseline.reason
+            target,
+            plan,
+            enrolment.baseline.values,
+            enrolment.baseline.reason,
+            enrolment.prerequisites.values,
+            enrolment.prerequisites.reason,
         )
     return suites
 
@@ -345,8 +470,8 @@ def collect(charts: Path, only: str) -> tuple[dict, list[Path]]:
         if not (chart_dir / "Chart.yaml").is_file():
             continue
 
-        baselines = load_enrolment(chart_dir)
-        if baselines is None:
+        enrolments = load_enrolment(chart_dir)
+        if enrolments is None:
             print(f"==> {chart_dir.name}: not enrolled, skipping")
             stale.extend(orphans(chart_dir, {}))
             continue
@@ -359,7 +484,7 @@ def collect(charts: Path, only: str) -> tuple[dict, list[Path]]:
             )
 
         enrolled = True
-        wanted = build(chart_dir, declaration, baselines)
+        wanted = build(chart_dir, declaration, enrolments)
         suites.update(wanted)
         stale.extend(orphans(chart_dir, wanted))
 

@@ -15,7 +15,7 @@ contract says the key will accept. `check-config.py` supplies the reading half o
 `generate-contract-tests.py` supplies the walking and the writing; this is the model, and it is
 a pure function of a contract key so every rule below is testable by calling it.
 
-Four rules here are normative rather than convenient:
+Five rules here are normative rather than convenient:
 
 **A probe must differ from the key's default.** A case that sets a key to the value it already
 has passes whether or not the chart delivers anything, which is worse than no case at all: it
@@ -46,6 +46,18 @@ backslash — `re.escape` escapes `-`, `&`, `~`, `#` and the space, and Go's par
 obliged to accept every one of those. So only the characters that are metacharacters in both
 are escaped, and everything else is passed through as the literal it already is.
 
+**A render prerequisite may never be written into the configuration tree.** Several charts here
+refuse their own default render — no target base, no webhook URL, no bucket entry — so a suite
+for one of them needs values supplied before any of its cases renders at all, the case that only
+checks the document's identity included. Those are the chart's own first-class values, and a
+prerequisite is therefore carried by every case without exception rather than dropped on a
+collision the way a baseline is. That is exactly why the collision has to be made unreachable
+instead: a prerequisite writing under `config` would sit in the same tree every case probes, free
+to supply the very value a case exists to prove the chart delivered, and the suite would report a
+proof it had not earned. So the refusal lives here, in the model, and not only in the loader that
+reads the enrolment file — the rule belongs to the suite, and a caller reaching past the loader
+would otherwise reach past the rule with it.
+
 One limit is deliberate and cannot be closed from here. The probe is chosen to differ from the
 *contract's* default, which is the image's compiled-in value; a chart is free to render some
 other value when the key is unset, and if that value happens to equal the probe the case passes
@@ -53,6 +65,14 @@ without proving anything. For text the probe is a token nothing else would produ
 overlap is unreachable in practice; for a boolean there are only two values and the overlap is
 real. Closing it would mean rendering the chart, which would make generation depend on helm and
 on a values file — and the staleness gate would stop being a pure comparison of committed bytes.
+
+A second limit belongs to the rule above and is stated rather than papered over. Refusing `config`
+makes a prerequisite unable to reach a probed key *directly*; a first-class chart value that the
+chart derives a probed key from is a longer path to the same place, and no mapping from one to
+the other exists in the contract for this module to consult. What closes it is the layer order
+every chart enrolled so far shares — `.Values.config` is merged over the derived tree, so the
+probe wins whatever a prerequisite set — and that is a property of the chart rather than of the
+generator. The enrolment's mandatory `reason` is where a chart says so.
 """
 
 from __future__ import annotations
@@ -117,6 +137,17 @@ SECRET_REASON = (
     "`secret: true`: the probe would be committed to this repository, and a credential-shaped "
     "value in a test file is a credential"
 )
+
+# Why a render prerequisite naming this path may not be written. Stated as a constant because two
+# callers refuse it — the loader that reads the enrolment file, which can name the file, and the
+# model below, which cannot but must refuse it anyway. See the module header.
+PREREQUISITE_IN_CONFIG = (
+    f"writes under `{VALUES_ROOT}`, which is the tree every case probes: a prerequisite there "
+    f"could supply the value a case exists to prove the chart delivered. A render prerequisite "
+    f"states the chart's own values, and nothing under `{VALUES_ROOT}` is one"
+)
+
+PREREQUISITE_EMPTY = "is empty, so it names no value at all"
 
 
 class TestGenError(Exception):
@@ -436,7 +467,26 @@ def values_path(path: str) -> str:
     return f"{VALUES_ROOT}.{path}"
 
 
-def plan(keys: Iterable[dict[str, Any]], baseline: Sequence[tuple[str, Any]]) -> Plan:
+def prerequisite_conflict(path: str) -> str | None:
+    """Why one render prerequisite may not be written, or `None` when it may be.
+
+    The whole of the guarantee named in the module header, in one comparison of one string, so
+    that a reader checks it by eye rather than by reasoning about how two trees merge. A caller
+    that reports the conflict wraps this in whatever names the file it came from; `plan` below
+    raises on it, because a suite built past this rule is a suite that proves less than it says.
+    """
+    if not path:
+        return PREREQUISITE_EMPTY
+    if path == VALUES_ROOT or path.startswith(f"{VALUES_ROOT}."):
+        return PREREQUISITE_IN_CONFIG
+    return None
+
+
+def plan(
+    keys: Iterable[dict[str, Any]],
+    baseline: Sequence[tuple[str, Any]],
+    prerequisites: Sequence[tuple[str, Any]] = (),
+) -> Plan:
     """Turn a union's keys into the cases and the skips of one suite.
 
     `baseline` is carried by every case except the one probing the key it sets. A chart may
@@ -445,7 +495,19 @@ def plan(keys: Iterable[dict[str, Any]], baseline: Sequence[tuple[str, Any]]) ->
     and a probe that walked into such a pair would fail for a reason that has nothing to do with
     the round trip. Dropping the entry that collides with the probe is what stops the baseline
     from supplying the very value the case is meant to prove the chart delivered.
+
+    `prerequisites` is carried by every case with no exception at all, because it is what makes
+    the chart render in the first place: a chart whose `validateValues` refuses its own defaults
+    has no case that can do without one. So the collision the baseline is protected from by being
+    dropped is instead made unreachable — a prerequisite path under the configuration tree is
+    refused here rather than accommodated. The two fields are different things and this is the
+    line between them.
     """
+    for name, _ in prerequisites:
+        conflict = prerequisite_conflict(name)
+        if conflict is not None:
+            raise TestGenError(f"the render prerequisite {name!r} {conflict}")
+
     cases: list[Case] = []
     skipped: list[Skipped] = []
 
@@ -457,7 +519,8 @@ def plan(keys: Iterable[dict[str, Any]], baseline: Sequence[tuple[str, Any]]) ->
             continue
 
         target = values_path(path)
-        set_values = [(name, value) for name, value in baseline if name != target]
+        set_values = list(prerequisites)
+        set_values.extend((name, value) for name, value in baseline if name != target)
         set_values.append((target, probe.value))
         cases.append(
             Case(path=path, set_values=set_values, pattern=document_pattern(path, probe.text))
@@ -497,6 +560,21 @@ def yaml_scalar(value: Any) -> str:
     return text if PLAIN_SCALAR.match(text) else yaml_quoted(text)
 
 
+def yaml_value(value: Any) -> str:
+    """One value on the right of a `set` entry, whatever its shape, on a single line.
+
+    A render prerequisite may be a whole subtree — `bucket.entries` is a map of maps keyed by
+    request path — and `json.dumps` produces a YAML flow collection as readily as a JSON one, so
+    the conversion that already spells a TOML scalar spells a structure here too. Kept to one line
+    and sorted, for the two reasons everything in this module is: a `set` block that stays a flat
+    list of paths is one a reader scans, and a gate comparing bytes cannot survive a mapping whose
+    order is whatever Python's happened to be.
+    """
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, sort_keys=True, ensure_ascii=False)
+    return yaml_scalar(value)
+
+
 def yaml_quoted(text: str) -> str:
     """A single-quoted YAML scalar, which is the one form that keeps a backslash literal.
 
@@ -528,6 +606,8 @@ def render_suite(
     plan: Plan,
     baseline: Sequence[tuple[str, Any]],
     baseline_reason: str | None,
+    prerequisites: Sequence[tuple[str, Any]] = (),
+    prerequisite_reason: str | None = None,
 ) -> str:
     """The complete helm-unittest suite for one document, as the text to write.
 
@@ -545,8 +625,10 @@ def render_suite(
     lines.append("release:")
     lines.append(f"  name: {yaml_scalar(target.chart)}")
     lines.append("")
+    if prerequisites:
+        lines.extend(comment(_prerequisite_note(prerequisite_reason)))
     lines.append("tests:")
-    lines.extend(_identity_case(target))
+    lines.extend(_identity_case(target, prerequisites))
 
     if baseline:
         lines.append("")
@@ -602,7 +684,7 @@ def _release_note() -> list[str]:
     )
 
 
-def _identity_case(target: Target) -> list[str]:
+def _identity_case(target: Target, prerequisites: Sequence[tuple[str, Any]]) -> list[str]:
     lines = [
         *comment(
             _wrap(
@@ -617,6 +699,10 @@ def _identity_case(target: Target) -> list[str]:
         ),
         f"  - it: renders {target.key} on the {target.kind} the declaration selects",
         *_selector(target.key),
+        # This case sets nothing of its own, and still carries the prerequisites: without them
+        # the chart's guard refuses the render, and a case asserting on a document that was never
+        # produced fails for a reason that has nothing to do with what it checks.
+        *_set_block(prerequisites),
         "    asserts:",
         "      - isKind:",
         f"          of: {yaml_scalar(target.kind)}",
@@ -637,6 +723,16 @@ def _selector(key: str) -> list[str]:
     return ["    documentSelector:", f'      path: data["{key}"]']
 
 
+def _set_block(values: Sequence[tuple[str, Any]]) -> list[str]:
+    """One case's `set` mapping, or nothing at all when it has no values to write."""
+    if not values:
+        return []
+    lines = ["    set:"]
+    for name, value in values:
+        lines.append(f"      {yaml_scalar(name)}: {yaml_value(value)}")
+    return lines
+
+
 def _baseline_note(reason: str | None) -> list[str]:
     lines = _wrap(
         "Every case below also carries the chart's baseline values, minus whichever of them the "
@@ -652,14 +748,29 @@ def _baseline_note(reason: str | None) -> list[str]:
     return lines
 
 
+def _prerequisite_note(reason: str | None) -> list[str]:
+    lines = _wrap(
+        "Every case below carries this chart's render prerequisites, the identity case included: "
+        "chart values its own `validateValues` insists on before it will render anything at all. "
+        "They are first-class chart values rather than configuration, and none of them may be "
+        f"written under `{VALUES_ROOT}` — a prerequisite there would sit in the tree every case "
+        "probes, free to supply the value the case exists to prove the chart delivered. Unlike a "
+        "baseline, a prerequisite is never dropped for the case it would collide with, because a "
+        "case without it does not render at all; the refusal is what takes that dropping's place.",
+        COMMENT_WIDTH - 2,
+    )
+    if reason:
+        lines.append("")
+        lines.extend(_wrap(reason.strip(), COMMENT_WIDTH - 2))
+    return lines
+
+
 def _probe_case(case: Case, key: str) -> list[str]:
     lines = [
         f"  - it: delivers {case.path} into {key}",
         *_selector(key),
-        "    set:",
+        *_set_block(case.set_values),
     ]
-    for name, value in case.set_values:
-        lines.append(f"      {yaml_scalar(name)}: {yaml_scalar(value)}")
     lines.extend(
         [
             "    asserts:",

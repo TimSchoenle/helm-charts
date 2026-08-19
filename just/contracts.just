@@ -190,4 +190,47 @@ explain chart='' pattern='' *flags:
     set -euo pipefail
     {{ resolve_python }}
     "$python" {{ scripts }}/explain-config.py '{{ chart }}' '{{ pattern }}' \
+
+# --------------------------------------------------------------------------------------------
+# The review aid — offline
+# --------------------------------------------------------------------------------------------
+
+# Report how a chart's vendored contracts changed against another revision, and what that costs.
+#
+# `contracts` runs inside the Renovate pull request that repins the digest, which is the design's
+# whole point and is also why the reviewer is looking at several hundred lines of reordered JSON.
+# The question they have is not in those lines: did the image gain a setting the chart has to
+# write, drop one the chart still writes, or move a default out from under it — and, given the
+# answer, what should this chart's own version be. This recipe is that answer.
+#
+# Severity is graded by what the loader does at boot rather than by the shape of the diff, which
+# is why a removed key and a changed dialect are the two most severe things here. Both rename
+# every spelling the chart emits while nothing in the rendered manifests looks different, and
+# `external.unknown` is `reject` across every contract in this repository — so the old spelling is
+# a container that will not start, not a key quietly ignored.
+#
+# The suggestion is shown with the findings that produced it and never written anywhere. Nothing
+# here edits `Chart.yaml`: the mapping from finding to bump is a defensible default, and only the
+# reviewer knows whether the chart actually writes the key that moved. A recipe that bumped the
+# version would be asserting it knows that, and would be wrong the first time a removed key was
+# one no template ever emitted.
+#
+# Reads no network — the other side comes from `git show`, exactly as every gate above reads the
+# committed file. Deliberately not part of `just check`: differences are the normal outcome of a
+# bump, so a gate that failed on them would be red on every pull request it exists to explain.
+# For a caller that needs the distinction as a status rather than as output, `--exit-code` gives
+# three: 0 identical, 1 error, 2 differences -- on top of which `just` prints its own "failed
+# with exit code 2", which is simply what any non-zero recipe looks like to it.
+#
+#   just contract-diff                            every chart, against origin/main
+#   just contract-diff tankovault                 one chart
+#   just contract-diff portfolio HEAD~1           against another revision
+#   just contract-diff '' origin/main --json      the machine-readable report
+[doc("Report how a chart's vendored contracts changed against another revision, and what it costs")]
+[group('contracts')]
+contract-diff chart='' ref='origin/main' *flags='':
+    #!/usr/bin/env bash
+    set -euo pipefail
+    {{ resolve_python }}
+    "$python" {{ scripts }}/contract-diff.py {{ chart }} --ref '{{ ref }}' \
       --charts {{ charts }} {{ flags }}

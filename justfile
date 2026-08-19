@@ -79,10 +79,17 @@ cosign_version := "v3.1.3"
 # first-party images share one release pipeline; the workflow path and the ref do not, because
 # those are what make this a constraint rather than "signed by anyone with a GitHub account".
 #
-# Signing on a branch rather than a tag is weaker than the document assumed: any push to `main`
-# of the producing repository can mint a signature this accepts. Tightening it is the producer's
-# change to make, not this repository's to work around.
-contract_signer := "https://github.com/TimSchoenle/[^/]+/.github/workflows/release-please.yaml@refs/heads/main"
+# Both default-branch spellings, because the repositories genuinely differ: `portfolio` and
+# `mp-stats-legacy-viewer` release from `main`, while `netcup-offer-bot`,
+# `s3-bucket-perma-link` and `cloudflare-access-webhook-redirect` release from `master`. Measured
+# against every first-party image this repository pins, not guessed — leaving it at `main` would
+# have failed three of the five with a signature error the day someone declared a contract for
+# them, which reads nothing like the actual cause.
+#
+# Signing on a branch rather than a tag is weaker than the design document assumed: any push to
+# the default branch of a producing repository can mint a signature this accepts. Tightening it
+# is the producer's change to make, not this repository's to work around.
+contract_signer := "https://github.com/TimSchoenle/[^/]+/.github/workflows/release-please.yaml@refs/heads/(main|master)"
 
 # --------------------------------------------------------------------------------------------
 # Defaults for the parameters CI overrides from a matrix

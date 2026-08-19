@@ -123,6 +123,7 @@ auth:
 # indistinguishable.
 internal:
   # @schema
+  # # @config projection internal.identity
   # enum: [mtls, token]
   # @schema
   # -- Identification mode. `mtls` identifies a caller by the DNS SAN on its verified client
@@ -286,6 +287,7 @@ internal:
       name: tankovault-ca
 
       # @schema
+      # # @config composed internal.tls.ca
       # type: string
       # @schema
       # -- Key holding the PEM bundle, in whichever object `source` selects.
@@ -327,6 +329,9 @@ internal:
         namespaceSelector: {}
 
     # @schema
+    # # @config composed internal.tls.cert
+    # # @config composed internal.tls.key
+    # # @config composed internal.tls.ca
     # type: string
     # @schema
     # -- Directory the keypair is mounted at, as `tls.crt` and `tls.key`. With
@@ -334,6 +339,7 @@ internal:
     certDir: /etc/tankovault/tls
 
     # @schema
+    # # @config composed internal.tls.ca
     # type: string
     # @schema
     # -- Directory the CA bundle is mounted at, when it comes from an object of its own. Kept
@@ -418,6 +424,7 @@ anilist:
   tokenEncryptionKey: ""
 
   # @schema
+  # # @config projection sync:anilist.redirect_uri optional
   # type: string
   # @schema
   # -- OAuth redirect URI. Left empty it is derived from the ingress as
@@ -434,12 +441,14 @@ anilist:
 # configuration falls back to a no-op mailer that logs and drops.
 email:
   # @schema
+  # # @config projection email.host optional
   # type: string
   # @schema
   # -- SMTP host. Empty disables outbound email entirely.
   host: ""
 
   # @schema
+  # # @config projection email.port
   # type: integer
   # minimum: 1
   # maximum: 65535
@@ -448,6 +457,7 @@ email:
   port: 587
 
   # @schema
+  # # @config projection email.security
   # enum: [starttls, tls, none]
   # @schema
   # -- Transport security for the relay connection.
@@ -466,12 +476,14 @@ email:
   password: ""
 
   # @schema
+  # # @config projection email.from optional
   # type: string
   # @schema
   # -- `From` header, e.g. `TankoVault <no-reply@example.com>`. Required for any mail to be sent.
   from: ""
 
   # @schema
+  # # @config projection email.base_url optional
   # type: string
   # @schema
   # -- Public base URL used to build links in outgoing mail. Left empty it is derived from the
@@ -484,6 +496,7 @@ email:
 # -- Notification fan-out targets read by the `notifier` service.
 channels:
   # @schema
+  # # @config structured notifier:channels.email_to optional
   # type: array
   # items:
   #   type: string
@@ -2103,12 +2116,14 @@ bootstrap:
     enabled: false
 
     # @schema
+    # # @config projection bootstrap:seed_admin_username optional
     # type: string
     # @schema
     # -- Administrator username.
     username: admin
 
     # @schema
+    # # @config projection bootstrap:seed_admin_email optional
     # type: string
     # @schema
     # -- Administrator email address.
@@ -2355,6 +2370,7 @@ valkey:
 # `valkey.enabled` is false.
 externalRedis:
   # @schema
+  # # @config composed redis.url
   # type: string
   # @schema
   # -- Connection URL, e.g. `redis://host:6379`. Empty leaves Redis unconfigured, which is
@@ -2476,6 +2492,7 @@ nats:
 # -- Point TankoVault at a NATS you already run. Used whenever `nats.enabled` is false.
 externalNats:
   # @schema
+  # # @config composed nats.url
   # type: string
   # @schema
   # -- Connection URL, e.g. `nats://host:4222`. Required by control-plane, worker and notifier;
@@ -2587,6 +2604,7 @@ trawl:
 # -- Point the challenge solver at a TRAWL you already run.
 externalTrawl:
   # @schema
+  # # @config composed challenge-solver:solver.trawl_endpoint
   # type: string
   # @schema
   # -- Endpoint URL, e.g. `http://trawl:8191`.
@@ -2618,6 +2636,7 @@ ingress:
   host: ""
 
   # @schema
+  # # @config composed api:auth.webauthn_origin
   # type: string
   # @schema
   # -- Override the derived external URL used for `anilist.redirect_uri`, `email.base_url` and
@@ -2735,6 +2754,7 @@ gateway:
   host: ""
 
   # @schema
+  # # @config composed api:auth.webauthn_origin
   # type: string
   # @schema
   # -- Override the derived external URL used for `anilist.redirect_uri`, `email.base_url` and
@@ -2928,6 +2948,7 @@ gateway:
 # cover them. These are the only two things `'self'` can never reach.
 cloudflare:
   # @schema
+  # # @config projection frontend:frontend.cloudflare.script_nonce optional
   # type: boolean
   # @schema
   # -- Send a freshly minted `'nonce-…'` in `script-src` on every response. Set this when the zone
@@ -2945,6 +2966,7 @@ cloudflare:
   scriptNonce: false
 
   # @schema
+  # # @config projection frontend:frontend.cloudflare.turnstile optional
   # type: boolean
   # @schema
   # -- Admit `https://challenges.cloudflare.com` in `script-src` and `frame-src`, for a Turnstile
@@ -2973,6 +2995,7 @@ cloudflare:
 # TankoVault; a normal install fills in none of it.
 branding:
   # @schema
+  # # @config projection api,frontend:branding.name optional
   # type: string
   # @schema
   # -- The product name, in prose. Substituted for `{brand}` in every translated message that names
@@ -2990,6 +3013,7 @@ branding:
   # -- The two-tone lockup drawn in the SPA's rail and footer.
   wordmark:
     # @schema
+    # # @config projection api:branding.wordmark.lead optional
     # type: string
     # @schema
     # -- The half drawn in the body colour. Setting this is what opts into a two-tone lockup:
@@ -2999,6 +3023,7 @@ branding:
     lead: ""
 
     # @schema
+    # # @config projection api:branding.wordmark.accent optional
     # type: string
     # @schema
     # -- The half drawn in the accent colour. Empty draws `lead` alone. Meaningless without
@@ -3006,6 +3031,7 @@ branding:
     accent: ""
 
   # @schema
+  # # @config projection api,frontend:branding.tagline optional
   # type: string
   # @schema
   # -- One line under the wordmark. Empty keeps the shipped tagline, which is **translated**;
@@ -3019,6 +3045,7 @@ branding:
   # -- The footer's copyright line.
   copyright:
     # @schema
+    # # @config projection api:branding.copyright.holder optional
     # type: string
     # @schema
     # -- Who holds it. Empty keeps `Tim Schönle`, which is upstream's — set it on any deployment
@@ -3026,6 +3053,7 @@ branding:
     holder: ""
 
     # @schema
+    # # @config projection api:branding.copyright.year optional
     # type: string
     # @schema
     # -- A year or a range (`2024–2026`). Empty resolves per response to the current year, so a
@@ -3034,6 +3062,7 @@ branding:
     year: ""
 
     # @schema
+    # # @config projection api:branding.copyright.notice optional
     # type: string
     # @schema
     # -- The whole notice, verbatim, for when `© {year} {holder}` does not fit. Wins over `holder`
@@ -3049,12 +3078,14 @@ branding:
   # code, which is governed by the licence the source ships under.
   licence:
     # @schema
+    # # @config projection api:branding.licence.name optional
     # type: string
     # @schema
     # -- What the footer prints. Empty keeps `PolyForm Noncommercial 1.0.0`.
     name: ""
 
     # @schema
+    # # @config projection api:branding.licence.url optional
     # type: string
     # @schema
     # -- Absolute `http(s)` URL the label links to. Empty renders it as plain text, which is what
@@ -3062,6 +3093,7 @@ branding:
     url: ""
 
   # @schema
+  # # @config projection api:branding.project_url optional
   # type: string
   # @schema
   # -- Absolute `http(s)` URL for the footer's source link and the desktop client's About tab.
@@ -3069,6 +3101,7 @@ branding:
   projectUrl: ""
 
   # @schema
+  # # @config projection api:branding.releases_url optional
   # type: string
   # @schema
   # -- Absolute `http(s)` URL where a reader downloads the native client. Advertised by the web
@@ -3076,6 +3109,7 @@ branding:
   releasesUrl: ""
 
   # @schema
+  # # @config projection worker:branding.bot_user_agent optional
   # type: string
   # @schema
   # -- The identifiable crawler user-agent the `worker` sends, applied to any provider still
@@ -3096,6 +3130,7 @@ branding:
 # links that 404.
 legal:
   # @schema
+  # # @config projection api:legal.dir optional
   # type: string
   # @schema
   # -- Directory relative `sources` paths resolve against, and where the chart mounts any
@@ -3103,6 +3138,7 @@ legal:
   dir: /etc/tankovault/legal
 
   # @schema
+  # # @config structured api:legal.documents optional
   # type: object
   # additionalProperties: true
   # @schema
@@ -3154,12 +3190,14 @@ legal:
 # request-facing listener and outside its own HTTP metrics middleware.
 metrics:
   # @schema
+  # # @config projection metrics.enabled
   # type: boolean
   # @schema
   # -- Expose the metrics port on each Service.
   enabled: true
 
   # @schema
+  # # @config composed metrics.listen
   # type: integer
   # minimum: 1
   # maximum: 65535

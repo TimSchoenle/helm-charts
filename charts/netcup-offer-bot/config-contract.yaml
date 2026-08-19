@@ -6,6 +6,37 @@
 # principle `just chart-index` already follows. `just check-config` reads this, unions the
 # contracts of every image listed, and validates the rendered ConfigMap, the container
 # environment and the mounted secret file names against the result.
+
+# Whether `just check-config-bindings` holds this chart's values against the keys below.
+#
+# Declared rather than inferred from the chart carrying markers: a chart that loses them — a
+# botched edit, a spelling the parser does not recognise — would otherwise drop out of that gate's
+# report without a word. With the switch here, markers without it and it without markers are both
+# errors.
+bindings: true
+
+# Contract keys no chart value binds, each group with the reason it does not.
+#
+# Chart-level: a key nothing surfaces is unsurfaced in every document that declares it, and this
+# chart declares one. `documents:` narrows an entry where that is untrue.
+#
+# Secret keys are not exempt by default, and this chart is why the rule was refused:
+# `telemetry.sentry_dsn` is `secret: true` in the same contract *and* is projected into
+# `config.toml` by `telemetry.sentryDsn`. A blanket "credentials need no marker" would have
+# written off a key this chart binds, and the gate would then stop noticing if that projection
+# were dropped. Each key is written out.
+unbound:
+  - keys:
+      - discord.webhook_url
+    reason: >-
+      Delivered as a file in the secrets directory — from the Secret this chart renders, or
+      from `existingSecret` under the file name `discord__webhook_url` — and never written
+      into `config.toml`, because a bearer credential in a ConfigMap is readable by anything
+      that can read the namespace. `discord.webhookUrl` is the value that carries it, so the
+      binding does exist; it simply does not run through the configuration document the
+      markers describe. `just check-config-secrets` is what reconciles that channel, and it
+      does it from the rendered manifests rather than from a comment.
+
 documents:
   - name: bot
 

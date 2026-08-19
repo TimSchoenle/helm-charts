@@ -35,12 +35,13 @@ GATES = {
 
 # Keys each level may carry. Anything else is a typo that would otherwise be ignored in silence,
 # which for a file whose whole job is to be exhaustive is the worst possible failure mode.
-DECLARATION_KEYS = {"documents", "reason", "unconfigured"}
+DECLARATION_KEYS = {"documents", "reason", "unconfigured", "bindings", "unbound"}
 DOCUMENT_KEYS = {"name", "source", "images", "consumers", "exempt"}
 SOURCE_KEYS = {"kind", "selector", "key", "format"}
 IMAGE_KEYS = {"values", "contract"}
 CONSUMER_KEYS = {"workload", "containers"}
 EXEMPT_KEYS = {"values", "gates", "reason"}
+UNBOUND_KEYS = {"keys", "reason", "documents"}
 
 FORMATS = ("toml", "json", "yaml")
 
@@ -83,6 +84,38 @@ class Exemption:
 
 
 @dataclass(frozen=True)
+class Unbound:
+    """Contract keys this chart deliberately surfaces no value for, and why.
+
+    A different axis from `Exemption` above, and the two are not interchangeable. An exemption is
+    per `ci/` values file and per gate: it says one rendered *fixture* is not held to one of the
+    four checks. This says a set of *keys* has no chart value binding it, which is a property of
+    the chart and of every fixture at once, and it relaxes no gate — `check-config` still validates
+    whatever those keys' rendered values turn out to be.
+
+    **Several keys to one reason, and the keys still listed one by one.** The first draft was one
+    entry per key, which reads well for the two keys `s3-bucket-perma-link` writes off and does not
+    survive `tankovault`: 127 of its key paths are surfaced by nothing, and per-document entries
+    made that 345 of them, all repeating a handful of sentences. A shared reason is what those keys
+    actually have in common. What is *not* offered is a pattern or a prefix: every key is written
+    out, so an image release that adds one turns the gate red until somebody puts it in a list on
+    purpose, which is the whole reason this file exists.
+
+    `documents` scopes the write-off the way a marker's scope does — absent means every document
+    whose contract declares the key. Naming documents says the key is surfaced in some of them and
+    not others.
+
+    The `reason` is mandatory for the reason an exemption's is: a key no value reaches is either a
+    considered decision or the exact oversight `check-config-bindings` exists to catch, and nothing
+    but a sentence tells the two apart.
+    """
+
+    keys: tuple[str, ...]
+    reason: str
+    documents: tuple[str, ...] | None
+
+
+@dataclass(frozen=True)
 class Document:
     name: str
     source: Source
@@ -107,11 +140,24 @@ class Document:
 
 @dataclass(frozen=True)
 class Declaration:
+    """One chart's `config-contract.yaml`.
+
+    `bindings` is the chart's enrolment in `check-config-bindings`, and it is a declared fact
+    rather than an inferred one on purpose. Enrolment used to be "the chart carries at least one
+    marker", which reads well until a chart *stops* carrying them: a botched edit, a rewritten
+    `values.yaml`, a marker spelt in a way the parser does not recognise, and the chart drops out
+    of the report without a word — measured, not imagined. With the switch in the declaration the
+    two disagreements are both errors: markers without `bindings: true`, and `bindings: true`
+    without markers.
+    """
+
     chart: str
     path: Path
     documents: list[Document]
     reason: str | None
     unconfigured: list[str]
+    bindings: bool
+    unbound: list[Unbound]
 
 
 def load_declaration(chart_dir: Path) -> Declaration | None:
@@ -135,12 +181,26 @@ def load_declaration(chart_dir: Path) -> Declaration | None:
             f"{path}: `documents` is empty, which is an explicit opt-out and needs a `reason`"
         )
 
+    bindings = document.get("bindings", False)
+    if not isinstance(bindings, bool):
+        raise DeclarationError(
+            f"{path}: `bindings` is the chart's enrolment in check-config-bindings and must be "
+            f"true or false, not {bindings!r}"
+        )
+
+    # Named apart from `document`, the parsed mapping this function is reading, so the two are
+    # never mistaken for each other while the file is being edited.
+    declared = [_load_document(path, entry) for entry in raw_documents]
+    names = {entry.name for entry in declared}
+
     return Declaration(
         chart=chart_dir.name,
         path=path,
-        documents=[_load_document(path, entry) for entry in raw_documents],
+        documents=declared,
         reason=reason,
         unconfigured=list(document.get("unconfigured") or []),
+        bindings=bindings,
+        unbound=_load_unbound(path, document.get("unbound") or [], names),
     )
 
 
@@ -252,6 +312,79 @@ def _load_exemptions(path: Path, name: str, exemptions: Iterable[Any]) -> list[E
                 values=str(exemption.get("values") or ""),
                 gates=[str(gate) for gate in gates],
                 reason=str(exemption["reason"]),
+            )
+        )
+    return loaded
+
+
+def _load_unbound(path: Path, entries: Iterable[Any], documents: set[str]) -> list[Unbound]:
+    """The contract keys this chart binds no value to, each group with a written reason.
+
+    Read here rather than in `config_bindings.py` for the reason everything else about this file
+    is: `config-contract.yaml` has one reader, and a second parser of the same document would be
+    free to disagree with this one about what an unknown key means. A marker states a fact about a
+    value and belongs beside the value; the decision not to surface a key is a decision about the
+    key, and belongs beside the contract that declares it.
+
+    Chart-level rather than per document, because that is what the fact is: a key nothing surfaces
+    is unsurfaced everywhere it is declared. `documents` narrows it where that is untrue.
+    """
+    loaded = []
+    seen: dict[tuple[str, str | None], int] = {}
+
+    for position, entry in enumerate(entries):
+        where = f"unbound[{position}]"
+        if not isinstance(entry, dict):
+            raise DeclarationError(f"{path}: every entry of `unbound` must be a mapping")
+        reject_unknown(path, where, entry, UNBOUND_KEYS)
+
+        keys = entry.get("keys")
+        if not isinstance(keys, list) or not keys:
+            raise DeclarationError(
+                f"{path}: {where}: `keys` is missing or empty; an entry writes off at least one "
+                "key, listed by name — there is no pattern form, so a key an image release adds "
+                "cannot be written off by something somebody typed before it existed"
+            )
+        for key in keys:
+            if not isinstance(key, str) or not key:
+                raise DeclarationError(f"{path}: {where}: every entry of `keys` must be a name")
+
+        if not entry.get("reason"):
+            raise DeclarationError(
+                f"{path}: {where}: no `reason`; a key nothing surfaces is either a decision or "
+                "the oversight this gate exists to catch, and silence cannot say which"
+            )
+
+        scope = entry.get("documents")
+        if scope is not None:
+            if not isinstance(scope, list) or not scope:
+                raise DeclarationError(
+                    f"{path}: {where}: `documents` scopes the write-off and must be a non-empty "
+                    "list; leave it out to write the keys off wherever they are declared"
+                )
+            unknown = sorted({str(name) for name in scope} - documents)
+            if unknown:
+                raise DeclarationError(
+                    f"{path}: {where}: `documents` names {', '.join(repr(n) for n in unknown)}, "
+                    f"which this chart does not declare (declared: {', '.join(sorted(documents))})"
+                )
+            scope = tuple(str(name) for name in scope)
+
+        for key in keys:
+            for name in scope or (None,):
+                if (key, name) in seen:
+                    raise DeclarationError(
+                        f"{path}: {where}: {key!r} is already written off by "
+                        f"unbound[{seen[(key, name)]}]; two reasons for one key means one of them "
+                        "is not the reason"
+                    )
+                seen[(key, name)] = position
+
+        loaded.append(
+            Unbound(
+                keys=tuple(str(key) for key in keys),
+                reason=str(entry["reason"]),
+                documents=scope,
             )
         )
     return loaded

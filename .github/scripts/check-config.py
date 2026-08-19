@@ -21,12 +21,18 @@ next to it, one concern per module, so each piece is testable by calling it:
   config_coverage.py         the chart-level check that nothing opted out by forgetting
   config_report.py           collecting findings and rendering them
 
-**The scopes of the gates differ, and the difference is the point.** Gate 1 validates a file
-every binary reads, so it runs against the union of their contracts — a key belonging to one
-would otherwise be "unknown" to the schema of another, and a correct deployment rejected. Gates 2
-and 3 are about one container, which runs exactly one image, so they run against that image's own
-contract. A variable set on a sidecar that only the main image reads passes against the union and
-is exactly the defect gate 2 exists to catch.
+**The scopes of the gates differ, and the difference is the point.** Gate 1 validates a document,
+which the format lets any number of images read, so it runs against the union of their contracts:
+a key belonging to one would otherwise be "unknown" to the schema of another, and a correct
+deployment rejected. Gates 2 and 3 are about one container, which runs exactly one image, so they
+run against that image's own contract. A variable set on a sidecar that only the main image reads
+passes against the union and is exactly the defect gate 2 exists to catch.
+
+Every document declared in this repository binds exactly one image today — `tankovault` is nine
+services with nine per-component documents, and every other chart is a single binary — so that
+union is currently the identity and the two scopes coincide in practice. They are still not the
+same question: gate 1 asks what a file may contain, gates 2 and 3 what one process may be handed,
+and a document that gained a second reader would have to re-derive the distinction.
 
 Which contract belongs to which container is derived, not declared: every declared image resolves
 to a digest, every rendered container names one, and the two are matched. A hand-written mapping

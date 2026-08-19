@@ -7,10 +7,12 @@ a wrong type, a missing required key, a value outside an enum, and a table where
 — the whole class of defect that renders cleanly, passes `values.schema.json`, passes kubeconform
 and then boots on a compiled default nobody chose.
 
-The union, not one image's contract: `tankovault` renders one `config.toml` read by eight
-binaries, each of whose contracts covers only the keys it consumes, so validating against one
-with `additionalProperties: false` would call the other seven binaries' keys unknown. Gates 2 and
-3 are the opposite case and live in `config_gate_container.py`.
+The union, not one image's contract, because a document may be read by several binaries: each of
+their contracts covers only the keys its own binary consumes, so validating against one with
+`additionalProperties: false` would call every other binary's keys unknown. No chart declares
+such a document — every one binds a single image, `tankovault` included, which renders one
+document per component — so the union is the identity here for now. Gates 2 and 3 are the
+opposite case and live in `config_gate_container.py`.
 
 Pure JSON Schema is delegated to a pinned binary rather than reimplemented. `jv` is a single Go
 binary installed exactly the way `kubeconform` already is, which keeps the scripts in this

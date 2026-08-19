@@ -9,7 +9,7 @@ attached to the image digest as an OCI referrer and embedded in the image; this 
 vendors a copy per chart under `charts/<chart>/contracts/`.
 
 This module is the half of the pipeline worth testing without a registry, a cluster or a render:
-parsing the envelope, unioning the contracts of several images that read one document, and
+parsing the envelope, merging the contracts of every image that reads one document, and
 classifying a single environment variable. `check-config.py` supplies the manifests and the
 reporting; `refresh-contracts.py` supplies the network.
 
@@ -261,11 +261,15 @@ def check_envelope(contract: dict[str, Any], origin: str) -> None:
 class Union:
     """The contracts of every image that reads one document, merged into one description.
 
-    `tankovault` renders a single `config.toml` read by eight separate binaries under one prefix.
-    Each binary's contract covers only the keys it consumes, so validating that document against
-    one binary's schema with `additionalProperties: false` would reject a perfectly correct
-    deployment: every key belonging to the other seven would be "unknown". The object to validate
-    against is the union.
+    A document several binaries read is the case the format is built for. Each binary's contract
+    covers only the keys it consumes, so validating that document against one of them with
+    `additionalProperties: false` would reject a perfectly correct deployment: every key belonging
+    to the others would be "unknown". The object to validate against is the union.
+
+    No chart here declares such a document. `tankovault` is nine services, and each has its own
+    per-component ConfigMap and its own single contract; every other chart is one binary. So the
+    union is the identity everywhere in this repository, and what this type earns today is the
+    shape a second reader can be added to without a gate changing — not anything it merges.
     """
 
     sources: list[str] = field(default_factory=list)
@@ -432,9 +436,9 @@ def _merge_schema(
     """Structurally merge two JSON Schema subtrees, closing every object as it goes.
 
     The first contract merged is merged into nothing, and takes the same path as every one after
-    it rather than being copied wholesale: a document read by a single image must come out just
-    as closed as one read by eight, or a producer that left a level open would leave the gate
-    open there too.
+    it rather than being copied wholesale: a document read by a single image — which every one
+    declared here is — must come out just as closed as one read by several, or a producer that
+    left a level open would leave the gate open there too.
     """
     merged = dict(into or {})
     for keyword, value in other.items():

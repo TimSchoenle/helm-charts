@@ -3,7 +3,19 @@
 {{- /*
   Gotenberg renders office documents and e-mail to PDF with LibreOffice and Chromium. Both write
   their working files under /tmp, which the library already provisions as an emptyDir for a
-  read-only root filesystem, so nothing else has to be writable.
+  read-only root filesystem.
+
+  Chromium needs a second writable path, and it is not obvious from its logs which. Before it
+  opens a page it creates a crash-reporter database under $HOME/.config/chromium; on a read-only
+  root filesystem that fails, the crashpad handler is started without a --database, exits, and
+  takes the browser down with it. Every /forms/chromium/... request then answers 500 with
+  "chrome_crashpad_handler: --database is required" while the LibreOffice routes keep working -
+  Gotenberg gives those a temporary UserInstallation of their own - so a release looks healthy
+  and archives e-mail as nothing. The emptyDir on the image's home directory is what that costs.
+
+  HOME is set beside it rather than left to the image, which declares none: its value would
+  otherwise depend on the container runtime resolving UID 1001 in /etc/passwd, which is not
+  something to rely on when the failure it produces is this quiet.
 
   The two Chromium flags are the reason this is worth configuring rather than running stock. An
   `.eml` file is untrusted input, and a headless browser that executes its JavaScript and follows
@@ -20,6 +32,8 @@
       "livenessProbe" (merge (dict "periodSeconds" 30 "timeoutSeconds" 10 "failureThreshold" 5) (deepCopy $probe))
       "readinessProbe" (merge (dict "periodSeconds" 15 "timeoutSeconds" 5 "failureThreshold" 3) (deepCopy $probe))
     ) | fromYaml }}
+{{- /* The image's WORKDIR: where Chromium and fontconfig write, and what HOME points at. */}}
+{{- $homeDir := "/home/gotenberg" }}
 {{- $args := list "gotenberg" }}
 {{- if $gotenberg.disableJavaScript }}
 {{- $args = append $args "--chromium-disable-javascript=true" }}
@@ -57,8 +71,10 @@ spec:
               "command" (list "/usr/bin/tini" "--")
               "args" $args
               "ports" (list (dict "name" "gotenberg" "containerPort" 3000 "protocol" "TCP"))
+              "env" (list (dict "name" "HOME" "value" $homeDir))
+              "volumeMounts" (list (dict "name" "home" "mountPath" $homeDir))
             ) | nindent 8 }}
-      {{- with (include "common.volumes" (dict "ctx" $ctx)) }}
+      {{- with (include "common.volumes" (dict "ctx" $ctx "volumes" (list (dict "name" "home" "emptyDir" (dict))))) }}
       volumes:
         {{- . | nindent 8 }}
       {{- end }}

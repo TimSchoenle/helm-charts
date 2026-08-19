@@ -1,0 +1,173 @@
+{
+  "terrace_contract": 1,
+  "app": {
+    "name": "worker",
+    "version": "1.0.0"
+  },
+  "schema": {
+    "schema_version": 1,
+    "dialect": {
+      "prefix": "FIXTURE_",
+      "nesting_separator": "__",
+      "indirection_suffix": "_FILE"
+    },
+    "loader": [
+      {
+        "env": "FIXTURE_CONFIG",
+        "role": "config",
+        "docs": "Names the TOML layer.",
+        "default": "config.toml"
+      },
+      {
+        "env": "FIXTURE_SECRETS_DIR",
+        "role": "secrets_dir",
+        "docs": "Names a directory of key-named files.",
+        "default": null
+      }
+    ],
+    "keys": [
+      {
+        "path": "database.url",
+        "env": "FIXTURE_DATABASE__URL",
+        "env_file": "FIXTURE_DATABASE__URL_FILE",
+        "secrets_file": "database__url",
+        "docs": "The database.url setting.",
+        "ty": "String",
+        "text_form": "text",
+        "values": [],
+        "constraint": {
+          "type": "string"
+        },
+        "text_constraint": null,
+        "aliases": [],
+        "default": null,
+        "default_value": null,
+        "note": null,
+        "required": true,
+        "secret": true,
+        "reserved": false
+      },
+      {
+        "path": "worker.concurrency",
+        "env": "FIXTURE_WORKER__CONCURRENCY",
+        "env_file": "FIXTURE_WORKER__CONCURRENCY_FILE",
+        "secrets_file": "worker__concurrency",
+        "docs": "The worker.concurrency setting.",
+        "ty": "u16",
+        "text_form": "integer",
+        "values": [],
+        "constraint": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535
+        },
+        "text_constraint": {
+          "type": "string",
+          "pattern": "^\\s*\\+?[0-9]+\\s*$"
+        },
+        "aliases": [],
+        "default": null,
+        "default_value": null,
+        "note": null,
+        "required": false,
+        "secret": false,
+        "reserved": false
+      },
+      {
+        "path": "tuning.ratio",
+        "env": "FIXTURE_TUNING__RATIO",
+        "env_file": "FIXTURE_TUNING__RATIO_FILE",
+        "secrets_file": "tuning__ratio",
+        "docs": "The tuning.ratio setting.",
+        "ty": "MyRatio",
+        "text_form": "unknown",
+        "values": [],
+        "constraint": null,
+        "text_constraint": null,
+        "aliases": [],
+        "default": null,
+        "default_value": null,
+        "note": null,
+        "required": false,
+        "secret": false,
+        "reserved": false
+      },
+      {
+        "path": "worker.debug",
+        "env": "FIXTURE_WORKER__DEBUG",
+        "env_file": "FIXTURE_WORKER__DEBUG_FILE",
+        "secrets_file": "worker__debug",
+        "docs": "The worker.debug setting.",
+        "ty": "bool",
+        "text_form": "boolean",
+        "values": [],
+        "constraint": {
+          "type": "boolean"
+        },
+        "text_constraint": {
+          "type": "string",
+          "enum": [
+            "true",
+            "false"
+          ]
+        },
+        "aliases": [],
+        "default": null,
+        "default_value": null,
+        "note": null,
+        "required": false,
+        "secret": false,
+        "reserved": false
+      }
+    ]
+  },
+  "json_schema": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "fixture configuration",
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "database": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "url"
+        ],
+        "properties": {
+          "url": {
+            "type": "string"
+          }
+        }
+      },
+      "worker": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "concurrency": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 65535
+          },
+          "debug": {
+            "type": "boolean"
+          }
+        }
+      },
+      "tuning": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "ratio": {}
+        }
+      }
+    }
+  },
+  "external": {
+    "env": [],
+    "ignore": [
+      "KUBERNETES_*",
+      "HOSTNAME"
+    ],
+    "unknown": "warn"
+  }
+}

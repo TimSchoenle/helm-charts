@@ -212,3 +212,18 @@ tests:
       - equal:
           path: spec.replicas
           value: 3
+
+  # Not a hardening preference: a precondition of the configuration contract this chart declares
+  # in `config-contract.yaml`. With service links on, a release named for this chart gets seven
+  # kubelet-injected variables inside the `PORTFOLIO_` namespace the loader owns, and the
+  # environment layer outranks the mounted file — so one of them can supply a key `config.toml`
+  # already set. The kubelet injects them at admission and `helm template` does not, so no gate
+  # in this repository can see the regression; this assertion is what catches it.
+  - it: disables service links, so no injected variable can shadow a configuration key
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.template.spec.enableServiceLinks
+          value: false

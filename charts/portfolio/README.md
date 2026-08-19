@@ -1,6 +1,6 @@
 # portfolio
 
-![Version: 5.0.2](https://img.shields.io/badge/Version-5.0.2-informational?style=flat-square) ![AppVersion: v2.5.0](https://img.shields.io/badge/AppVersion-v2.5.0-informational?style=flat-square)
+![Version: 5.1.0](https://img.shields.io/badge/Version-5.1.0-informational?style=flat-square) ![AppVersion: v2.6.0](https://img.shields.io/badge/AppVersion-v2.6.0-informational?style=flat-square)
 
 Personal portfolio built with Rust (Yew frontend, Axum server).
 
@@ -106,6 +106,27 @@ express.
 The server does not reload its configuration — only the loader half of the library is used — so
 the chart keeps the conventional `checksum/config` pod annotation: a configuration change rolls
 the Deployment, which is the only way it takes effect.
+
+### What checks that the configuration is one the image accepts
+
+Nothing about the paragraphs above is enforced by Helm. `values.schema.json` describes this
+chart's *values*, not the application's settings, and a ConfigMap holding a `config.toml` full of
+keys the server stopped reading is a valid ConfigMap to every other gate in this repository —
+`serde` ignores an unknown key, so the pod starts, reports healthy, and runs on a compiled
+default nobody chose.
+
+`config-contract.yaml` closes that. It names the rendered document, the images that read it and
+the containers that mount it; `contracts/server.json` vendors the contract the image publishes,
+listing every key it actually reads with its type, its environment spelling and its secret-file
+spelling. `just check-config` validates the rendered `config.toml` against it, classifies every
+`PORTFOLIO_` variable the chart emits, and refuses a secret file whose name spells no key. A
+renamed key fails the pull request that renames it, next to the diff that removed it.
+
+The pod sets `enableServiceLinks: false` for the same reason. Kubernetes injects seven variables
+per Service in the namespace named after the release, so a release called `portfolio` would land
+them inside the `PORTFOLIO_` namespace the loader owns — where the environment layer outranks the
+mounted file and one of them could supply a key `config.toml` had already set. The kubelet injects
+them at admission, so no gate can see them; the switch is what stops them existing.
 
 ## Content-Security-Policy
 
@@ -431,7 +452,7 @@ policy pointing at the wrong Gateway looks correct and blocks everything.
 | image.pullPolicy | string | `""` | Kubernetes image pull policy. Empty resolves automatically from the tag/digest. |
 | image.registry | string | `""` | Registry host. Empty means Docker Hub. |
 | image.repository | string | `"timschoenle/portfolio"` | Container image repository where the Portfolio application image is stored. |
-| image.tag | string | `"v2.5.0@sha256:48e259cbde977b079e36bed698943057ee789f6055a57c4aa8abcbbe23256d44"` | Container image tag to deploy, pinned by digest (`vX.Y.Z@sha256:...`). The digest pins the pull, while the tag stays on as the readable version marker. Defaults to the chart's `appVersion` when empty. |
+| image.tag | string | `"v2.6.0@sha256:d5e13123d46373f400a4c0336384bcda7b5cdf6f898bdcbd98c2d6b889828d6d"` | Container image tag to deploy, pinned by digest (`vX.Y.Z@sha256:...`). The digest pins the pull, while the tag stays on as the readable version marker. Defaults to the chart's `appVersion` when empty. |
 | imagePullSecrets | list | `[]` | Optional image pull secrets for private registries. |
 | ingress.annotations | object | `{}` | Custom annotations for the Ingress resource. Example: ```yaml annotations:   cert-manager.io/cluster-issuer: "letsencrypt-prod"   nginx.ingress.kubernetes.io/ssl-redirect: "true" ``` |
 | ingress.enabled | bool | `false` | Enable or disable Kubernetes Ingress resource creation. |

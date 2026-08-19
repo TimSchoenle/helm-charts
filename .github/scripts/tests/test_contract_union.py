@@ -1,12 +1,17 @@
 #!/usr/bin/env python3
 """The union of several images' contracts, over fixtures rather than over a registry.
 
-`tankovault` renders one `config.toml` read by eight separate binaries under one prefix. Each
-binary's contract covers only the keys it consumes, so validating that document against one
-binary's schema with `additionalProperties: false` would reject a perfectly correct deployment:
-every key belonging to the other seven would be "unknown". The union is what makes the gate
-usable there, and it is the piece most worth testing — deterministic, offline, and the one place
-where getting it wrong turns a correct chart red.
+A document read by several binaries is the case the union exists for. Each contract covers only
+the keys its own binary consumes, so validating that document against one of them with
+`additionalProperties: false` would reject a perfectly correct deployment: every key belonging to
+the others would be "unknown".
+
+No chart declares one. Every document in this repository binds exactly one image — `tankovault`
+declares nine, one per service, each with its own ConfigMap and its own contract — so the merge
+is the identity in production and these fixtures are the only place its rules run at all. That is
+a reason to keep them rather than a reason to drop them: a document that gained a second reader
+lands straight on those rules, and this is the one place where getting them wrong turns a correct
+chart red.
 
 The fixtures in `.github/testdata/contracts/` are two contracts that share a key (`api`,
 `worker`), one that describes a shared key differently (`conflicting`), one under a foreign

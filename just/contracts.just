@@ -15,6 +15,11 @@
 #   the environment  every variable on every declared container, against that container's image
 #   the file names   the secrets directory's contents and every `_FILE` target
 #
+# Every document declared here binds exactly one image today — `tankovault`'s nine services each
+# render their own per-component ConfigMap — so that first union is the identity. The scope is
+# still the document rather than the image, because that is the boundary the format draws and the
+# one a document with a second reader would arrive on.
+#
 # Exactly one recipe here touches a network — `contracts`, the refresh. Everything else reads the
 # committed file, so a registry outage cannot fail a pull request that changes no image, and
 # re-running CI on an old commit validates against what was true then rather than what the registry
@@ -130,11 +135,12 @@ check-contract-coverage:
 
 # Unit tests for the contract model, over fixtures rather than over a registry.
 #
-# The union is the piece most worth testing: `tankovault` renders one document read by eight
-# binaries, and the rules for merging their contracts are what decide whether this scales past one
-# chart. Beside it are the classification order, the two-step value check and the file-supplyable
-# rule — every one of them normative, and every one of them a place where a plausible-looking
-# implementation quietly under-checks.
+# The union is tested here and nowhere else: every document in the repository binds a single image,
+# so the merge is the identity in production and these fixtures are the only place its rules run.
+# They are worth keeping — a document read by several binaries is what the format is for, and the
+# merge is what such a document would land on. Beside it are the classification order, the two-step
+# value check and the file-supplyable rule — every one of them normative, and every one of them a
+# place where a plausible-looking implementation quietly under-checks.
 [doc("Unit tests for the contract model, over fixtures rather than over a registry")]
 [group('contracts')]
 test-contract-union:

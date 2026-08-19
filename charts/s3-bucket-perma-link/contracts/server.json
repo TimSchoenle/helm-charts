@@ -1,0 +1,426 @@
+{
+  "source": {
+    "image": "docker.io/timmi6790/s3-bucket-perma-link",
+    "digest": "sha256:0f3fb15ccda6fe17400186d16d8a4a4bb249b0d7e6c169f7d5bbb950c6337a76",
+    "sha256": "90c2889892aa32fbae0d5da12be979acc5193bbfb66ac187caf484af10aa9d8a",
+    "fetched": "2026-08-19T12:22:59Z"
+  },
+  "contract": {
+    "terrace_contract": 1,
+    "app": {
+      "name": "s3-bucket-perma-link",
+      "version": "v1.1.1",
+      "source": "https://github.com/TimSchoenle/s3-bucket-perma-link"
+    },
+    "schema": {
+      "schema_version": 1,
+      "dialect": {
+        "prefix": "S3_PERMA_LINK_",
+        "nesting_separator": "__",
+        "indirection_suffix": "_FILE"
+      },
+      "loader": [
+        {
+          "env": "S3_PERMA_LINK_CONFIG",
+          "role": "config",
+          "docs": "Names the TOML layer: a file, or a directory whose `*.toml` files are all merged in name order.",
+          "default": "config.toml"
+        },
+        {
+          "env": "S3_PERMA_LINK_SECRETS_DIR",
+          "role": "secrets_dir",
+          "docs": "Names a directory of key-named files — a mounted Kubernetes `Secret` volume. Each file supplies the key its name spells.",
+          "default": null
+        }
+      ],
+      "keys": [
+        {
+          "path": "server.host",
+          "env": "S3_PERMA_LINK_SERVER__HOST",
+          "env_file": "S3_PERMA_LINK_SERVER__HOST_FILE",
+          "secrets_file": "server__host",
+          "docs": "Address to listen on. `0.0.0.0` in a container, which is the deployment this ships as.",
+          "ty": "String",
+          "values": [],
+          "constraint": {
+            "type": "string"
+          },
+          "text_form": "text",
+          "aliases": [],
+          "env_aliases": [],
+          "env_file_aliases": [],
+          "secrets_file_aliases": [],
+          "default": "0.0.0.0",
+          "default_value": "0.0.0.0",
+          "note": null,
+          "required": false,
+          "secret": false,
+          "reserved": false
+        },
+        {
+          "path": "server.port",
+          "env": "S3_PERMA_LINK_SERVER__PORT",
+          "env_file": "S3_PERMA_LINK_SERVER__PORT_FILE",
+          "secrets_file": "server__port",
+          "docs": "Port to listen on.",
+          "ty": "u16",
+          "values": [],
+          "constraint": {
+            "maximum": 65535,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "text_constraint": {
+            "pattern": "^\\s*\\+?[0-9]+\\s*$",
+            "type": "string"
+          },
+          "text_form": "integer",
+          "aliases": [],
+          "env_aliases": [],
+          "env_file_aliases": [],
+          "secrets_file_aliases": [],
+          "default": "8080",
+          "default_value": 8080,
+          "note": null,
+          "required": false,
+          "secret": false,
+          "reserved": false
+        },
+        {
+          "path": "s3.access_key",
+          "env": "S3_PERMA_LINK_S3__ACCESS_KEY",
+          "env_file": "S3_PERMA_LINK_S3__ACCESS_KEY_FILE",
+          "secrets_file": "s3__access_key",
+          "docs": "S3 access key. Mount it rather than setting it in a file that is committed.\n\nA [`SecretString`]: this struct is nested inside a [`Config`] that the reload supervisor\nlogs, and a credential must not be one `{:?}` away from the log stream. `SecretString`\nrefuses to implement [`Serialize`] for the same reason, which is why the field is skipped\non the way out — `#[config(secret)]` renders `<redacted>` in its place anyway.",
+          "ty": "SecretString",
+          "values": [],
+          "constraint": {
+            "type": "string"
+          },
+          "text_form": "text",
+          "aliases": [],
+          "env_aliases": [],
+          "env_file_aliases": [],
+          "secrets_file_aliases": [],
+          "default": null,
+          "default_value": null,
+          "note": null,
+          "required": true,
+          "secret": true,
+          "reserved": false
+        },
+        {
+          "path": "s3.secret_key",
+          "env": "S3_PERMA_LINK_S3__SECRET_KEY",
+          "env_file": "S3_PERMA_LINK_S3__SECRET_KEY_FILE",
+          "secrets_file": "s3__secret_key",
+          "docs": "S3 secret key. Mount it rather than setting it in a file that is committed.",
+          "ty": "SecretString",
+          "values": [],
+          "constraint": {
+            "type": "string"
+          },
+          "text_form": "text",
+          "aliases": [],
+          "env_aliases": [],
+          "env_file_aliases": [],
+          "secrets_file_aliases": [],
+          "default": null,
+          "default_value": null,
+          "note": null,
+          "required": true,
+          "secret": true,
+          "reserved": false
+        },
+        {
+          "path": "s3.host",
+          "env": "S3_PERMA_LINK_S3__HOST",
+          "env_file": "S3_PERMA_LINK_S3__HOST_FILE",
+          "secrets_file": "s3__host",
+          "docs": "The endpoint, e.g. `s3.eu-central-1.amazonaws.com`.",
+          "ty": "String",
+          "values": [],
+          "constraint": {
+            "type": "string"
+          },
+          "text_form": "text",
+          "aliases": [],
+          "env_aliases": [],
+          "env_file_aliases": [],
+          "secrets_file_aliases": [],
+          "default": null,
+          "default_value": null,
+          "note": null,
+          "required": true,
+          "secret": false,
+          "reserved": false
+        },
+        {
+          "path": "s3.region",
+          "env": "S3_PERMA_LINK_S3__REGION",
+          "env_file": "S3_PERMA_LINK_S3__REGION_FILE",
+          "secrets_file": "s3__region",
+          "docs": "The region the endpoint serves, e.g. `eu-central-1`.",
+          "ty": "String",
+          "values": [],
+          "constraint": {
+            "type": "string"
+          },
+          "text_form": "text",
+          "aliases": [],
+          "env_aliases": [],
+          "env_file_aliases": [],
+          "secrets_file_aliases": [],
+          "default": null,
+          "default_value": null,
+          "note": null,
+          "required": true,
+          "secret": false,
+          "reserved": false
+        },
+        {
+          "path": "bucket.entries",
+          "env": "S3_PERMA_LINK_BUCKET__ENTRIES",
+          "env_file": "S3_PERMA_LINK_BUCKET__ENTRIES_FILE",
+          "secrets_file": "bucket__entries",
+          "docs": "One `[bucket.entries.<request path>]` block per permanent link, each carrying a `bucket`\nand an `object`.\n\nA leaf rather than `#[config(nested)]`, because the key paths under it are the operator's\nroute names and no type knows them ahead of time — see [`BucketEntry`] for the two fields\neach block takes. A table rather than the delimiter-separated string this used to be: the\nstring existed only because an environment variable cannot carry a map, and the TOML layer\ncan.",
+          "ty": "HashMap<String, BucketEntry>",
+          "values": [],
+          "constraint": {
+            "type": "object"
+          },
+          "text_constraint": {
+            "pattern": "^\\s*[\\[\\{][\\s\\S]*[\\]\\}]\\s*$",
+            "type": "string"
+          },
+          "text_form": "structured",
+          "aliases": [],
+          "env_aliases": [],
+          "env_file_aliases": [],
+          "secrets_file_aliases": [],
+          "default": null,
+          "default_value": null,
+          "note": null,
+          "required": true,
+          "secret": false,
+          "reserved": false
+        },
+        {
+          "path": "telemetry.log_level",
+          "env": "S3_PERMA_LINK_TELEMETRY__LOG_LEVEL",
+          "env_file": "S3_PERMA_LINK_TELEMETRY__LOG_LEVEL_FILE",
+          "secrets_file": "telemetry__log_level",
+          "docs": "How much the service says: `trace`, `debug`, `info`, `warn` or `error`.\n\nParsed by [`Self::level`].",
+          "ty": "String",
+          "values": [],
+          "constraint": {
+            "type": "string"
+          },
+          "text_form": "text",
+          "aliases": [],
+          "env_aliases": [],
+          "env_file_aliases": [],
+          "secrets_file_aliases": [],
+          "default": "info",
+          "default_value": "info",
+          "note": null,
+          "required": false,
+          "secret": false,
+          "reserved": false
+        },
+        {
+          "path": "telemetry.sentry_dsn",
+          "env": "S3_PERMA_LINK_TELEMETRY__SENTRY_DSN",
+          "env_file": "S3_PERMA_LINK_TELEMETRY__SENTRY_DSN_FILE",
+          "secrets_file": "telemetry__sentry_dsn",
+          "docs": "Sentry DSN. Absent disables Sentry entirely.\n\nA [`SecretString`]: a DSN is a write credential for the project it names — and, like the\nS3 credentials, one serde must not be able to write back out.",
+          "ty": "SecretString",
+          "values": [],
+          "constraint": {
+            "type": "string"
+          },
+          "text_form": "text",
+          "aliases": [],
+          "env_aliases": [],
+          "env_file_aliases": [],
+          "secrets_file_aliases": [],
+          "default": null,
+          "default_value": null,
+          "note": null,
+          "required": false,
+          "secret": true,
+          "reserved": false
+        }
+      ]
+    },
+    "json_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "properties": {
+        "bucket": {
+          "additionalProperties": false,
+          "properties": {
+            "entries": {
+              "description": "One `[bucket.entries.<request path>]` block per permanent link, each carrying a `bucket`\nand an `object`.\n\nA leaf rather than `#[config(nested)]`, because the key paths under it are the operator's\nroute names and no type knows them ahead of time — see [`BucketEntry`] for the two fields\neach block takes. A table rather than the delimiter-separated string this used to be: the\nstring existed only because an environment variable cannot carry a map, and the TOML layer\ncan.",
+              "type": "object"
+            }
+          },
+          "type": "object"
+        },
+        "s3": {
+          "additionalProperties": false,
+          "properties": {
+            "access_key": {
+              "description": "S3 access key. Mount it rather than setting it in a file that is committed.\n\nA [`SecretString`]: this struct is nested inside a [`Config`] that the reload supervisor\nlogs, and a credential must not be one `{:?}` away from the log stream. `SecretString`\nrefuses to implement [`Serialize`] for the same reason, which is why the field is skipped\non the way out — `#[config(secret)]` renders `<redacted>` in its place anyway.",
+              "type": "string",
+              "writeOnly": true
+            },
+            "host": {
+              "description": "The endpoint, e.g. `s3.eu-central-1.amazonaws.com`.",
+              "type": "string"
+            },
+            "region": {
+              "description": "The region the endpoint serves, e.g. `eu-central-1`.",
+              "type": "string"
+            },
+            "secret_key": {
+              "description": "S3 secret key. Mount it rather than setting it in a file that is committed.",
+              "type": "string",
+              "writeOnly": true
+            }
+          },
+          "type": "object"
+        },
+        "server": {
+          "additionalProperties": false,
+          "properties": {
+            "host": {
+              "default": "0.0.0.0",
+              "description": "Address to listen on. `0.0.0.0` in a container, which is the deployment this ships as.",
+              "type": "string"
+            },
+            "port": {
+              "default": 8080,
+              "description": "Port to listen on.",
+              "maximum": 65535,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "telemetry": {
+          "additionalProperties": false,
+          "properties": {
+            "log_level": {
+              "default": "info",
+              "description": "How much the service says: `trace`, `debug`, `info`, `warn` or `error`.\n\nParsed by [`Self::level`].",
+              "type": "string"
+            },
+            "sentry_dsn": {
+              "description": "Sentry DSN. Absent disables Sentry entirely.\n\nA [`SecretString`]: a DSN is a write credential for the project it names — and, like the\nS3 credentials, one serde must not be able to write back out.",
+              "type": "string",
+              "writeOnly": true
+            }
+          },
+          "type": "object"
+        }
+      },
+      "title": "s3-bucket-perma-link configuration",
+      "type": "object"
+    },
+    "external": {
+      "env": [
+        {
+          "name": "SENTRY_ENVIRONMENT",
+          "owner": "sentry",
+          "docs": "Environment tag on reported events. Read by `sentry::init`, not by this loader.",
+          "ty": "String",
+          "values": [],
+          "constraint": {
+            "type": "string"
+          },
+          "text_form": "text",
+          "default": "production",
+          "required": false,
+          "secret": false
+        },
+        {
+          "name": "HTTP_PROXY",
+          "owner": "sentry",
+          "docs": "Proxy for Sentry's transport. Read by `sentry::init`; `http_proxy` is also accepted.",
+          "ty": "String",
+          "values": [],
+          "constraint": {
+            "type": "string"
+          },
+          "text_form": "text",
+          "required": false,
+          "secret": false
+        },
+        {
+          "name": "HTTPS_PROXY",
+          "owner": "sentry",
+          "docs": "As `HTTP_PROXY`, for TLS. Falls back to `HTTP_PROXY`; `https_proxy` is also accepted.",
+          "ty": "String",
+          "values": [],
+          "constraint": {
+            "type": "string"
+          },
+          "text_form": "text",
+          "required": false,
+          "secret": false
+        },
+        {
+          "name": "SSL_VERIFY",
+          "owner": "sentry",
+          "docs": "Whether Sentry's transport validates certificates. `false` accepts invalid ones.",
+          "ty": "bool",
+          "values": [],
+          "constraint": {
+            "type": "boolean"
+          },
+          "text_constraint": {
+            "pattern": "^\\s*(true|false)\\s*$",
+            "type": "string"
+          },
+          "text_form": "boolean",
+          "default": "true",
+          "required": false,
+          "secret": false
+        },
+        {
+          "name": "http_proxy",
+          "owner": "sentry",
+          "docs": "Lowercase spelling of `HTTP_PROXY`, read when the uppercase one is unset.",
+          "ty": "String",
+          "values": [],
+          "constraint": {
+            "type": "string"
+          },
+          "text_form": "text",
+          "required": false,
+          "secret": false
+        },
+        {
+          "name": "https_proxy",
+          "owner": "sentry",
+          "docs": "Lowercase spelling of `HTTPS_PROXY`, read when the uppercase one is unset.",
+          "ty": "String",
+          "values": [],
+          "constraint": {
+            "type": "string"
+          },
+          "text_form": "text",
+          "required": false,
+          "secret": false
+        }
+      ],
+      "ignore": [
+        "KUBERNETES_*",
+        "HOSTNAME"
+      ],
+      "unknown": "reject"
+    }
+  }
+}

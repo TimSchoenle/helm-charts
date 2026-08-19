@@ -1,0 +1,37 @@
+# vim: set ft=yaml:
+
+# What this chart's rendered configuration must satisfy, and which images decide that.
+#
+# Per-chart and self-describing, so adding a chart never edits a central file — the same
+# principle `just chart-index` already follows. `just check-config` reads this, unions the
+# contracts of every image listed, and validates the rendered ConfigMap, the container
+# environment and the mounted secret file names against the result.
+documents:
+  - name: viewer
+
+    # Where the rendered document is, in the output of `helm template`.
+    #
+    # Matched by label rather than by rendered name, and by `app.kubernetes.io/instance`: that
+    # label is `.Release.Name`, the one identifier neither `nameOverride` nor `fullnameOverride`
+    # can move — `app.kubernetes.io/name` follows the first and every object's name follows the
+    # second. `just render` names the release after the chart, so the value below is what every
+    # rendered pair carries. A selector matching zero or several objects is reported rather than
+    # resolved, so a stale one fails loudly instead of becoming a skipped check.
+    source:
+      kind: ConfigMap
+      selector: { app.kubernetes.io/instance: mp-stats-legacy-viewer }
+      key: config.toml
+      format: toml
+
+    # Every binary that reads this document. One image here, so the union is the identity.
+    images:
+      - values: image
+        contract: contracts/viewer.json
+
+    # The pods that mount it, for the environment and secret-file gates.
+    consumers:
+      - workload: { kind: Deployment, selector: { app.kubernetes.io/instance: mp-stats-legacy-viewer } }
+        containers: [mp-stats-legacy-viewer]
+
+    # Pairs this document is not fully checked for, each with a reason.
+    exempt: []

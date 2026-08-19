@@ -7,6 +7,9 @@
 #
 # Prerequisites, per group:
 #
+#   contracts                   python3 with PyYAML; jv, for `just check-config`
+#   contracts                   oras and cosign, for `just contracts` alone — the one networked
+#                               recipe in the repository, and not part of `just check`
 #   deps, docs, render, test    helm (+ `just plugins`), python3 with PyYAML
 #   docs                        helm-docs, for `just chart-readmes`
 #   lint                        chart-testing (`ct`), kube-linter
@@ -20,6 +23,7 @@
 set shell := ["bash", "-euo", "pipefail", "-c"]
 set windows-shell := ["bash", "-euo", "pipefail", "-c"]
 
+import 'just/contracts.just'
 import 'just/deps.just'
 import 'just/docs.just'
 import 'just/lint.just'
@@ -52,6 +56,40 @@ api_versions := configs / "render-api-versions.txt"
 # a single edit here rather than one per workflow.
 helm_unittest_version := "1.1.2"
 helm_schema_version := "0.18.1"
+
+# JSON Schema engine for `just check-config`. A pinned single binary installed by release URL,
+# exactly as `kubeconform` already is, rather than a `pip install` inside a recipe: the scripts in
+# `.github/scripts` are stdlib + PyYAML, and on the Git Bash shell this repository is developed
+# from, a pip install is the difference between a gate that runs locally and one that does not.
+jv_version := "v6.0.3"
+
+# Registry client and signature verifier for `just contracts`. Only the contract refresh needs
+# these — every gate that reads a contract reads the committed file — which is why they are absent
+# from the `check` aggregate and from every job but the Documentation one.
+oras_version := "1.3.3"
+cosign_version := "v3.1.3"
+
+# The workflow identity a contract must be signed by before it will be vendored. Anything else is
+# refused: a contract that cannot be proven to belong to the pinned digest is worse than none,
+# because every gate downstream would trust it.
+#
+# Measured against a real signature rather than assumed — the design document's guess was
+# `release.yml@refs/tags/.*`, and what `timschoenle/portfolio` is actually signed by is
+# release-please's workflow running on `main`. The repository name stays a wildcard because the
+# first-party images share one release pipeline; the workflow path and the ref do not, because
+# those are what make this a constraint rather than "signed by anyone with a GitHub account".
+#
+# Both default-branch spellings, because the repositories genuinely differ: `portfolio` and
+# `mp-stats-legacy-viewer` release from `main`, while `netcup-offer-bot`,
+# `s3-bucket-perma-link` and `cloudflare-access-webhook-redirect` release from `master`. Measured
+# against every first-party image this repository pins, not guessed — leaving it at `main` would
+# have failed three of the five with a signature error the day someone declared a contract for
+# them, which reads nothing like the actual cause.
+#
+# Signing on a branch rather than a tag is weaker than the design document assumed: any push to
+# the default branch of a producing repository can mint a signature this accepts. Tightening it
+# is the producer's change to make, not this repository's to work around.
+contract_signer := "https://github.com/TimSchoenle/[^/]+/.github/workflows/release-please.yaml@refs/heads/(main|master)"
 
 # --------------------------------------------------------------------------------------------
 # Defaults for the parameters CI overrides from a matrix
@@ -117,7 +155,7 @@ default:
 # stops.
 [doc("Every gate CI runs that does not need a Kubernetes cluster")]
 [group('meta')]
-check: deps test validate-manifests check-immutable lint lint-policy
+check: deps test validate-manifests check-immutable check-config check-contract-coverage test-contract-union lint lint-policy
 
 # Install the pinned Helm plugins. The CI composite action calls this recipe too, so the versions
 # above are the only place they are declared.

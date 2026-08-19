@@ -1,0 +1,346 @@
+{
+  "source": {
+    "image": "docker.io/timschoenle/portfolio",
+    "digest": "sha256:d5e13123d46373f400a4c0336384bcda7b5cdf6f898bdcbd98c2d6b889828d6d",
+    "sha256": "06515bda3579712b08416767edcc039dac1aca9584401eadb44f8b6e3036a1d0",
+    "fetched": "2026-08-19T04:18:56Z"
+  },
+  "contract": {
+    "terrace_contract": 1,
+    "app": {
+      "name": "portfolio",
+      "version": "v2.6.0",
+      "source": "https://github.com/TimSchoenle/Portfolio"
+    },
+    "schema": {
+      "schema_version": 1,
+      "dialect": {
+        "prefix": "PORTFOLIO_",
+        "nesting_separator": "__",
+        "indirection_suffix": "_FILE"
+      },
+      "loader": [
+        {
+          "env": "PORTFOLIO_CONFIG",
+          "role": "config",
+          "docs": "Names the TOML layer: a file, or a directory whose `*.toml` files are all merged in name order.",
+          "default": "config.toml"
+        },
+        {
+          "env": "PORTFOLIO_SECRETS_DIR",
+          "role": "secrets_dir",
+          "docs": "Names a directory of key-named files — a mounted Kubernetes `Secret` volume. Each file supplies the key its name spells.",
+          "default": null
+        }
+      ],
+      "keys": [
+        {
+          "path": "assets.dist_dir",
+          "env": "PORTFOLIO_ASSETS__DIST_DIR",
+          "env_file": "PORTFOLIO_ASSETS__DIST_DIR_FILE",
+          "secrets_file": "assets__dist_dir",
+          "docs": "Directory holding the `dx bundle` output, relative to the working directory.\n\nThe image runs from `/app`, next to `public/`, so the default resolves without anything\nbeing set.",
+          "ty": "PathBuf",
+          "values": [],
+          "constraint": {
+            "type": "string"
+          },
+          "text_form": "text",
+          "aliases": [],
+          "env_aliases": [],
+          "env_file_aliases": [],
+          "secrets_file_aliases": [],
+          "default": "public",
+          "default_value": "public",
+          "note": null,
+          "required": false,
+          "secret": false,
+          "reserved": false
+        },
+        {
+          "path": "csp.hash_inline_scripts",
+          "env": "PORTFOLIO_CSP__HASH_INLINE_SCRIPTS",
+          "env_file": "PORTFOLIO_CSP__HASH_INLINE_SCRIPTS_FILE",
+          "secrets_file": "csp__hash_inline_scripts",
+          "docs": "Hash every inline `<script>` in the document being served instead of admitting all inline\nscript with `'unsafe-inline'`.\n\nOn — the default — the server hashes the response body it is about to send, so the only\ninline scripts that run are the ones it rendered itself. That is the whole point of the\nexercise: `'unsafe-inline'` admits an injected `<script>` just as readily as the Dioxus\nhydration bootstrap.\n\nOff is the escape hatch, and it exists because the failure mode is silent: an inline\nscript the scanner does not see is refused by the browser, and the evidence is a blank\npage and a console message nobody is watching. Turning it off restores `'unsafe-inline'`\nthrough an environment variable and a restart rather than a redeploy. Known cases: a\ndevelopment server that injects its own live-reload script downstream of this process,\nand any future renderer change that emits script this server never sees.\n\nThe two settings are mutually exclusive in the browser, not merely different: a policy\ncarrying any hash or nonce makes `'unsafe-inline'` inert, which is why there is one switch\nhere rather than two independent ones.",
+          "ty": "bool",
+          "values": [],
+          "constraint": {
+            "type": "boolean"
+          },
+          "text_constraint": {
+            "pattern": "^\\s*(true|false)\\s*$",
+            "type": "string"
+          },
+          "text_form": "boolean",
+          "aliases": [],
+          "env_aliases": [],
+          "env_file_aliases": [],
+          "secrets_file_aliases": [],
+          "default": "true",
+          "default_value": true,
+          "note": null,
+          "required": false,
+          "secret": false,
+          "reserved": false
+        },
+        {
+          "path": "csp.cloudflare.script_nonce",
+          "env": "PORTFOLIO_CSP__CLOUDFLARE__SCRIPT_NONCE",
+          "env_file": "PORTFOLIO_CSP__CLOUDFLARE__SCRIPT_NONCE_FILE",
+          "secrets_file": "csp__cloudflare__script_nonce",
+          "docs": "Reserve a per-response nonce in `script-src` for the script Cloudflare injects at the edge.\n\nOn by default, because this site is delivered through a Cloudflare Tunnel with the bot\nproducts active — the privacy page lists `_cf_bm`, `cf_clearance` and the `cf_chl_rc_*`\nchallenge cookies, which is the observable half of the same feature. Those products inject\nan inline `<script>` into the HTML *after* it leaves this process, so no hash this server\ncomputes can cover it; `script-src` refuses it and the detection silently never runs.\nCloudflare's documented answer is to parse the `Content-Security-Policy` response header\nand copy the nonce onto what it injects, so nothing has to be stamped into the document.\n\nIt carries one obligation the server discharges (`Cache-Control: no-cache` on every\ndocument, so a nonce is never shared between readers) and one it cannot: **no Cloudflare\nCache Rule may cache the shell**. A \"Cache Everything\" rule overrides the origin's\n`Cache-Control`, satisfying the obligation here and violating it at the edge, and nothing\ninside this process can see that.",
+          "ty": "bool",
+          "values": [],
+          "constraint": {
+            "type": "boolean"
+          },
+          "text_constraint": {
+            "pattern": "^\\s*(true|false)\\s*$",
+            "type": "string"
+          },
+          "text_form": "boolean",
+          "aliases": [],
+          "env_aliases": [],
+          "env_file_aliases": [],
+          "secrets_file_aliases": [],
+          "default": "true",
+          "default_value": true,
+          "note": null,
+          "required": false,
+          "secret": false,
+          "reserved": false
+        },
+        {
+          "path": "csp.cloudflare.turnstile",
+          "env": "PORTFOLIO_CSP__CLOUDFLARE__TURNSTILE",
+          "env_file": "PORTFOLIO_CSP__CLOUDFLARE__TURNSTILE_FILE",
+          "secrets_file": "csp__cloudflare__turnstile",
+          "docs": "Admit `https://challenges.cloudflare.com` in `script-src` and `frame-src`, for a Turnstile\nwidget.\n\nOff: this site has no form behind a challenge. A managed-challenge interstitial needs\nnothing here either — that is a Cloudflare-served document carrying its own policy.",
+          "ty": "bool",
+          "values": [],
+          "constraint": {
+            "type": "boolean"
+          },
+          "text_constraint": {
+            "pattern": "^\\s*(true|false)\\s*$",
+            "type": "string"
+          },
+          "text_form": "boolean",
+          "aliases": [],
+          "env_aliases": [],
+          "env_file_aliases": [],
+          "secrets_file_aliases": [],
+          "default": "false",
+          "default_value": false,
+          "note": null,
+          "required": false,
+          "secret": false,
+          "reserved": false
+        },
+        {
+          "path": "csp.cloudflare.web_analytics",
+          "env": "PORTFOLIO_CSP__CLOUDFLARE__WEB_ANALYTICS",
+          "env_file": "PORTFOLIO_CSP__CLOUDFLARE__WEB_ANALYTICS_FILE",
+          "secrets_file": "csp__cloudflare__web_analytics",
+          "docs": "Admit the Cloudflare Web Analytics beacon and the endpoint it reports to.\n\nOff: this site measures nothing, which the privacy page states. Only for the *manual*\nsnippet — the automatic edge injection is an inline script and needs `script_nonce`\ninstead.",
+          "ty": "bool",
+          "values": [],
+          "constraint": {
+            "type": "boolean"
+          },
+          "text_constraint": {
+            "pattern": "^\\s*(true|false)\\s*$",
+            "type": "string"
+          },
+          "text_form": "boolean",
+          "aliases": [],
+          "env_aliases": [],
+          "env_file_aliases": [],
+          "secrets_file_aliases": [],
+          "default": "false",
+          "default_value": false,
+          "note": null,
+          "required": false,
+          "secret": false,
+          "reserved": false
+        },
+        {
+          "path": "isr.cache_dir",
+          "env": "PORTFOLIO_ISR__CACHE_DIR",
+          "env_file": "PORTFOLIO_ISR__CACHE_DIR_FILE",
+          "secrets_file": "isr__cache_dir",
+          "docs": "Writable directory rendered HTML is cached into. Unset or empty disables ISR.\n\nKeep it *outside* the bundled `public/` asset tree so those content-hashed assets stay\nimmutable. The image points it at a sub-directory of `/tmp`, which the deployment already\nprovides as a writable mount even under a read-only root filesystem.",
+          "ty": "PathBuf",
+          "values": [],
+          "constraint": {
+            "type": "string"
+          },
+          "text_form": "text",
+          "aliases": [],
+          "env_aliases": [],
+          "env_file_aliases": [],
+          "secrets_file_aliases": [],
+          "default": null,
+          "default_value": null,
+          "note": "ISR off; the image sets `/tmp/isr`",
+          "required": false,
+          "secret": false,
+          "reserved": false
+        },
+        {
+          "path": "isr.ttl_secs",
+          "env": "PORTFOLIO_ISR__TTL_SECS",
+          "env_file": "PORTFOLIO_ISR__TTL_SECS_FILE",
+          "secrets_file": "isr__ttl_secs",
+          "docs": "Revalidation interval in seconds. Zero means a permanent cache.\n\nEvery page renders from compile-time data, so the only thing that changes the output is a\nnew build, which starts from an empty cache anyway. A positive value opts into a finite,\ntime-based TTL, which is useful only when a *persistent* cache volume is shared across\ndeploys.",
+          "ty": "u64",
+          "values": [],
+          "constraint": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "text_constraint": {
+            "pattern": "^\\s*\\+?[0-9]+\\s*$",
+            "type": "string"
+          },
+          "text_form": "integer",
+          "aliases": [],
+          "env_aliases": [],
+          "env_file_aliases": [],
+          "secrets_file_aliases": [],
+          "default": "0",
+          "default_value": 0,
+          "note": "permanent",
+          "required": false,
+          "secret": false,
+          "reserved": false
+        }
+      ]
+    },
+    "json_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "properties": {
+        "assets": {
+          "additionalProperties": false,
+          "properties": {
+            "dist_dir": {
+              "default": "public",
+              "description": "Directory holding the `dx bundle` output, relative to the working directory.\n\nThe image runs from `/app`, next to `public/`, so the default resolves without anything\nbeing set.",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "csp": {
+          "additionalProperties": false,
+          "properties": {
+            "cloudflare": {
+              "additionalProperties": false,
+              "properties": {
+                "script_nonce": {
+                  "default": true,
+                  "description": "Reserve a per-response nonce in `script-src` for the script Cloudflare injects at the edge.\n\nOn by default, because this site is delivered through a Cloudflare Tunnel with the bot\nproducts active — the privacy page lists `_cf_bm`, `cf_clearance` and the `cf_chl_rc_*`\nchallenge cookies, which is the observable half of the same feature. Those products inject\nan inline `<script>` into the HTML *after* it leaves this process, so no hash this server\ncomputes can cover it; `script-src` refuses it and the detection silently never runs.\nCloudflare's documented answer is to parse the `Content-Security-Policy` response header\nand copy the nonce onto what it injects, so nothing has to be stamped into the document.\n\nIt carries one obligation the server discharges (`Cache-Control: no-cache` on every\ndocument, so a nonce is never shared between readers) and one it cannot: **no Cloudflare\nCache Rule may cache the shell**. A \"Cache Everything\" rule overrides the origin's\n`Cache-Control`, satisfying the obligation here and violating it at the edge, and nothing\ninside this process can see that.",
+                  "type": "boolean"
+                },
+                "turnstile": {
+                  "default": false,
+                  "description": "Admit `https://challenges.cloudflare.com` in `script-src` and `frame-src`, for a Turnstile\nwidget.\n\nOff: this site has no form behind a challenge. A managed-challenge interstitial needs\nnothing here either — that is a Cloudflare-served document carrying its own policy.",
+                  "type": "boolean"
+                },
+                "web_analytics": {
+                  "default": false,
+                  "description": "Admit the Cloudflare Web Analytics beacon and the endpoint it reports to.\n\nOff: this site measures nothing, which the privacy page states. Only for the *manual*\nsnippet — the automatic edge injection is an inline script and needs `script_nonce`\ninstead.",
+                  "type": "boolean"
+                }
+              },
+              "type": "object"
+            },
+            "hash_inline_scripts": {
+              "default": true,
+              "description": "Hash every inline `<script>` in the document being served instead of admitting all inline\nscript with `'unsafe-inline'`.\n\nOn — the default — the server hashes the response body it is about to send, so the only\ninline scripts that run are the ones it rendered itself. That is the whole point of the\nexercise: `'unsafe-inline'` admits an injected `<script>` just as readily as the Dioxus\nhydration bootstrap.\n\nOff is the escape hatch, and it exists because the failure mode is silent: an inline\nscript the scanner does not see is refused by the browser, and the evidence is a blank\npage and a console message nobody is watching. Turning it off restores `'unsafe-inline'`\nthrough an environment variable and a restart rather than a redeploy. Known cases: a\ndevelopment server that injects its own live-reload script downstream of this process,\nand any future renderer change that emits script this server never sees.\n\nThe two settings are mutually exclusive in the browser, not merely different: a policy\ncarrying any hash or nonce makes `'unsafe-inline'` inert, which is why there is one switch\nhere rather than two independent ones.",
+              "type": "boolean"
+            }
+          },
+          "type": "object"
+        },
+        "isr": {
+          "additionalProperties": false,
+          "properties": {
+            "cache_dir": {
+              "description": "Writable directory rendered HTML is cached into. Unset or empty disables ISR.\n\nKeep it *outside* the bundled `public/` asset tree so those content-hashed assets stay\nimmutable. The image points it at a sub-directory of `/tmp`, which the deployment already\nprovides as a writable mount even under a read-only root filesystem.\n\nDefault: ISR off; the image sets `/tmp/isr`.",
+              "type": "string"
+            },
+            "ttl_secs": {
+              "default": 0,
+              "description": "Revalidation interval in seconds. Zero means a permanent cache.\n\nEvery page renders from compile-time data, so the only thing that changes the output is a\nnew build, which starts from an empty cache anyway. A positive value opts into a finite,\ntime-based TTL, which is useful only when a *persistent* cache volume is shared across\ndeploys.\n\nDefault: permanent.",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "title": "portfolio configuration",
+      "type": "object"
+    },
+    "external": {
+      "env": [
+        {
+          "name": "PORT",
+          "owner": "dioxus",
+          "docs": "Bind port. Read by the Dioxus toolchain, not by this loader.",
+          "ty": "u16",
+          "values": [],
+          "constraint": {
+            "maximum": 65535,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "text_constraint": {
+            "pattern": "^\\s*\\+?[0-9]+\\s*$",
+            "type": "string"
+          },
+          "text_form": "integer",
+          "default": "8080",
+          "required": false,
+          "secret": false
+        },
+        {
+          "name": "IP",
+          "owner": "dioxus",
+          "docs": "Bind address. Read by the Dioxus toolchain, not by this loader.",
+          "ty": "IpAddr",
+          "values": [],
+          "constraint": {
+            "type": "string"
+          },
+          "text_form": "unknown",
+          "default": "0.0.0.0",
+          "required": false,
+          "secret": false
+        },
+        {
+          "name": "RUST_LOG",
+          "owner": "tracing",
+          "docs": "Verbosity, as `tracing` directives — `info`, `web=debug,info`.",
+          "ty": "String",
+          "values": [],
+          "constraint": {
+            "type": "string"
+          },
+          "text_form": "text",
+          "default": "info",
+          "required": false,
+          "secret": false
+        }
+      ],
+      "ignore": [
+        "KUBERNETES_*",
+        "HOSTNAME"
+      ],
+      "unknown": "reject"
+    }
+  }
+}

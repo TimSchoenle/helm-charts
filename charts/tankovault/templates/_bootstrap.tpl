@@ -139,6 +139,9 @@ metadata:
     app.kubernetes.io/component: bootstrap
 spec:
   restartPolicy: Never
+  # See `_workload.tpl` for why. The migration Job reads the same
+  # configuration the services do, so it needs the same guarantee.
+  enableServiceLinks: false
   serviceAccountName: {{ include "tankovault.serviceAccountName" $root }}
   automountServiceAccountToken: false
   {{- /*

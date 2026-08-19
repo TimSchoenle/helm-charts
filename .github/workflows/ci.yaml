@@ -70,6 +70,39 @@ jobs:
       - name: Generate schemas
         run: just schema
 
+      # Refreshing the vendored configuration contracts belongs here, between the schemas and
+      # helm-docs, so the existing commit step below sweeps the result up with everything else it
+      # already commits — and its message, "docs: update Helm chart documentation and schemas",
+      # already covers it.
+      #
+      # The vendored configuration contracts, refreshed from the images the charts pin. Placed
+      # between the schemas and helm-docs so the existing commit step below sweeps the result up
+      # with everything else it already commits, under a message that already covers it.
+      #
+      # This is the one networked step in the repository, and the only one depending on a service
+      # outside GitHub: `just contracts` verifies each image's signature, which queries the
+      # Sigstore transparency log, so a Sigstore outage fails this job. That is a deliberate trade
+      # rather than an oversight — there is no "fetch it unverified" path, because a contract that
+      # cannot be proven to belong to the pinned digest is worse than none: every gate downstream
+      # would trust it. No other job touches a registry, and none depends on this one.
+      #
+      # Versions come from `justfile` rather than being repeated here, so a bump stays the single
+      # edit the other pinned tools already are.
+      - name: Install oras and cosign
+        run: |
+          set -euo pipefail
+          oras_version="$(just --evaluate oras_version)"
+          cosign_version="$(just --evaluate cosign_version)"
+          curl -fsSL "https://github.com/oras-project/oras/releases/download/v${oras_version}/oras_${oras_version}_linux_amd64.tar.gz" \
+            | sudo tar -xz -C /usr/local/bin oras
+          curl -fsSL -o /tmp/cosign "https://github.com/sigstore/cosign/releases/download/${cosign_version}/cosign-linux-amd64"
+          sudo install -m 0755 /tmp/cosign /usr/local/bin/cosign
+          oras version
+          cosign version
+
+      - name: Refresh image configuration contracts
+        run: just contracts
+
       - name: Run helm-docs
         uses: losisin/helm-docs-github-action@3a4528e97c49a5e83de6b78c50c61c8ee5c9f944 # v2
         with:
@@ -409,6 +442,76 @@ jobs:
         with:
           directory: rendered
           config: .github/configs/kube-linter.yaml
+
+  # The rendered configuration is the one artifact in this repository that no other job can see
+  # into: `values.schema.json` describes the chart's values, kubeconform describes Kubernetes
+  # objects, and a ConfigMap holding a stale `config.toml` is a valid ConfigMap by both. `serde`
+  # ignores an unknown key by design, so the pod starts, reports healthy, and runs on a compiled
+  # default nobody chose. This job validates that document against the contract published by the
+  # image the chart pins — and the environment variables and secret file names beside it, which
+  # are the same contract's other half.
+  #
+  # Offline: the contracts are committed files, and the schema engine is refused any reference it
+  # would have to fetch. Mirrors `policy-scan` otherwise — same permissions, same render, one
+  # pinned binary — so it needs no new reviewer intuition.
+  #
+  # Blocking. The Documentation job refreshes the vendored contracts, so a red run here is the
+  # chart disagreeing with the image it pins rather than a contract nobody had updated.
+  #
+  # Deliberately no `needs:`. The Documentation job that refreshes the contracts does not gate
+  # anything — the follow-up push re-runs the whole workflow — and the staleness interlock is what
+  # makes that safe: `just check-config` refuses to validate at all unless the vendored contract
+  # provably belongs to the digest the chart pins, so the run that sees a bumped digest and a
+  # stale contract fails loudly rather than passing on a check it did not do.
+  config-contracts:
+    name: Configuration Contracts
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # to checkout code
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Setup toolchain
+        uses: ./.github/actions/setup-toolchain
+
+      - name: Build Helm dependencies
+        run: just deps
+
+      # A pinned single binary installed by release URL, exactly as kubeconform is above. Not
+      # `pip install jsonschema`: the scripts in `.github/scripts` are stdlib + PyYAML, and a pip
+      # install inside a recipe is the difference between a gate that reproduces locally on the
+      # Git Bash shell this repository is developed from and one that does not.
+      #
+      # The version is read from `jv_version` in justfile rather than repeated here, so a bump
+      # stays the single edit the other pinned tools already are — a copy in this file could
+      # disagree with the one a contributor reproduces the job with, which is the drift the whole
+      # recipe-based topology exists to prevent.
+      - name: Install jv
+        run: |
+          set -euo pipefail
+          version="$(just --evaluate jv_version)"
+          curl -fsSL "https://github.com/santhosh-tekuri/jsonschema/releases/download/${version}/jv-${version}-linux-amd64.tar.gz" \
+            | sudo tar -xz -C /usr/local/bin jv
+          jv --version
+
+      # PyYAML ships with the runner image's system `python3`, which is what the recipes resolve
+      # to. `actions/setup-python` is deliberately not used, for the same reason as in the docs job.
+      - name: Validate rendered configuration against image contracts
+        run: just check-config
+
+      - name: Report configuration contract coverage
+        run: just check-contract-coverage
+
+      - name: Contract model unit tests
+        run: just test-contract-union
 
   install:
     name: Install & Verify (k8s ${{ matrix.kubernetes }})

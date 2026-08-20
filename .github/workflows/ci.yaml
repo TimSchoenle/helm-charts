@@ -535,6 +535,71 @@ jobs:
       - name: Contract model unit tests
         run: just test-contract-union
 
+
+  # What changed in the images' configuration contracts, and what it costs the charts.
+  #
+  # `contract-diff` was written for exactly one reader: the person reviewing the Renovate pull
+  # request that repinned a digest, looking at several hundred lines of reordered JSON. The
+  # question they have is not in those lines — did the image gain a setting the chart has to
+  # write, drop one the chart still writes, or move a default out from under it, and what should
+  # this chart's version become. Nothing invoked the recipe, so that reader never received the
+  # answer.
+  #
+  # Advisory, and structurally so. Differences are the *normal* outcome of a bump, so this job
+  # must never fail on finding them — `contract-diff` exits 0 on differences and 1 only on an
+  # error it cannot report around, and `--exit-code` is deliberately not passed. A red run here
+  # therefore means a contract could not be read, which is worth failing on.
+  #
+  # Its own job rather than a step in `config-contracts`, for two reasons. It needs full history
+  # to `git show` the base revision, and making the blocking gate pay for that on every run would
+  # be charging every pull request for a report only bump pull requests read. And it is advisory
+  # where that job is blocking; keeping the two apart is what stops the distinction eroding.
+  #
+  # Needs no render, no cluster, no `jv` and no network — the other side comes from `git show`,
+  # exactly as every gate in the group reads the committed file.
+  contract-diff:
+    name: Contract Diff
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # to checkout code
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        with:
+          egress-policy: audit
+
+      # Full history, because the report is a comparison against the base commit and `git show`
+      # cannot reach it from a shallow clone. This is the only job in the workflow that needs it
+      # for a reason other than chart-testing's changed-file detection.
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup toolchain
+        uses: ./.github/actions/setup-toolchain
+
+      # Written to the step summary rather than printed, because that is where a reviewer of a
+      # bump looks first and it is the one surface that survives the log being collapsed. Also
+      # echoed to the log, so a failure is diagnosable from the same place as every other job's.
+      - name: Report contract changes against the base
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+
+          report="$(just contract-diff '' "${BASE_SHA}")"
+          echo "${report}"
+
+          {
+            echo '## Configuration contract changes'
+            echo
+            echo '```'
+            echo "${report}"
+            echo '```'
+          } >> "${GITHUB_STEP_SUMMARY}"
   install:
     name: Install & Verify (k8s ${{ matrix.kubernetes }})
     needs: [lint]

@@ -59,12 +59,11 @@ import sys
 from pathlib import Path
 from typing import Any
 
-
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import config_contract as cc  # noqa: E402
-from config_coverage import check_coverage  # noqa: E402
-from config_declaration import (  # noqa: E402
+import config_contract as cc
+from config_coverage import check_coverage
+from config_declaration import (
     Binding,
     Consumer,
     Declaration,
@@ -73,18 +72,17 @@ from config_declaration import (  # noqa: E402
     bind,
     declared,
 )
-from config_gate_container import ServiceLinkGate, check_container  # noqa: E402
-from config_gate_document import DocumentGate  # noqa: E402
-from config_manifests import (  # noqa: E402
+from config_gate_container import ServiceLinkGate, check_container
+from config_gate_document import DocumentGate
+from config_manifests import (
     containers_of,
     digest_of,
     load_manifests,
     pod_spec,
     select,
 )
-from config_paths import CHARTS_DIR, FIRST_PARTY, read_yaml  # noqa: E402
-from config_report import Report, warning  # noqa: E402
-
+from config_paths import CHARTS_DIR, FIRST_PARTY, read_yaml
+from config_report import Report, warning
 
 
 class Runner:

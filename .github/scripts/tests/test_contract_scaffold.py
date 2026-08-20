@@ -321,7 +321,9 @@ class PlainForm(unittest.TestCase):
     def test_no_configuration_surface_is_asserted(self):
         values = values_of(sc.plain())
         for name in ("config", "configExtraToml", "configMount", "existingSecret"):
-            self.assertNotIn(name, values, f"{name} describes a loader nothing knows this image has")
+            self.assertNotIn(
+                name, values, f"{name} describes a loader nothing knows this image has"
+            )
 
     def test_the_image_block_is_still_written(self):
         values = values_of(sc.plain())

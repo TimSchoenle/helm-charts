@@ -131,9 +131,13 @@ def main(argv: list[str]) -> int:
         help="report drifted references and exit non-zero instead of rewriting them",
     )
     parser.add_argument(
+        # The one script here that does not share `config_paths.CHARTS_DIR`, and deliberately:
+        # that module imports PyYAML, and this script is stdlib-only on purpose — `maintain.just`
+        # records that it reuses `resolve_python` "even though this script imports nothing beyond
+        # the standard library". Trading that for one shared constant is the wrong way round.
         "--charts", default="charts", type=Path, help="charts directory (default: charts)"
     )
-    args = parser.parse_args(argv[1:])
+    args = parser.parse_args(argv)
 
     if not VERSION.match(args.version):
         fail(f"{args.version!r} is not a Kubernetes release of the form MAJOR.MINOR.PATCH")
@@ -146,4 +150,4 @@ def main(argv: list[str]) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main(sys.argv))
+    raise SystemExit(main(sys.argv[1:]))

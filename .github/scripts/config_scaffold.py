@@ -91,7 +91,6 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any
 
 import config_bindings as cb
@@ -1102,7 +1101,8 @@ def render_declaration(
         "",
         "    # The pods that mount it, for the environment and secret-file gates.",
         "    consumers:",
-        f"      - workload: {{ kind: Deployment, selector: {{ app.kubernetes.io/instance: {chart} }} }}",
+        f"      - workload: {{ kind: Deployment, selector: "
+        f"{{ app.kubernetes.io/instance: {chart} }} }}",
         f"        containers: [{chart}]",
         "",
         "    # Pairs this document is not fully checked for, each with a reason.",
@@ -1331,7 +1331,7 @@ def render_unit_test(chart: str, document_key: str, plan: Plan) -> str:
         "  - configmap.yaml",
         "",
         "# Scaffolded by `just new-chart`, and yours to extend. The generated",
-        f"# `contract_roundtrip_*_test.yaml` beside it proves each contract key arrives at the",
+        "# `contract_roundtrip_*_test.yaml` beside it proves each contract key arrives at the",
         "# path the image reads it from; this file is for everything the contract cannot say —",
         "# the shape of the object, the labels, the escape hatches.",
         "tests:",

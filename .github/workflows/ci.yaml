@@ -283,6 +283,56 @@ jobs:
           CHART: ${{ matrix.chart }}
         run: just test-e2e "${CHART}"
 
+
+  # The Python behind every gate in this repository, which until now nothing checked.
+  #
+  # 11,000 lines across 24 scripts decide what a pull request here is allowed to contain, and no
+  # linter, formatter or type checker had ever run over them. That was not a decision anybody
+  # made: seven entry scripts already carried `# noqa: E402` on their imports, written for a
+  # linter that never landed.
+  #
+  # Blocking, like every other lint job. It asserts, it needs no network, no cluster and no
+  # render, and the rules it enforces are the ones a reviewer would otherwise have to check by
+  # eye — an unused import, a mutable default, an f-string with no placeholder.
+  #
+  # Its own job rather than a step in Lint Charts, because that job installs chart-testing and
+  # kube-linter to lint YAML and needs neither of them for this, and because a Python failure and
+  # a chart failure are different work for different people.
+  lint-python:
+    name: Lint Python
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # to checkout code
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Setup toolchain
+        uses: ./.github/actions/setup-toolchain
+
+      # A pinned single binary installed by release URL, exactly as `jv` and kubeconform are, and
+      # not `pip install ruff`: this repository has already decided that a pip install inside a
+      # gate is the difference between one that reproduces on a contributor's shell and one that
+      # does not. The version comes from `ruff_version` in justfile so a bump stays the single
+      # edit every other pinned tool already is.
+      - name: Install ruff
+        run: |
+          set -euo pipefail
+          version="$(just --evaluate ruff_version)"
+          curl -fsSL "https://github.com/astral-sh/ruff/releases/download/${version}/ruff-x86_64-unknown-linux-gnu.tar.gz" \
+            | tar -xz --strip-components=1 -C /tmp ruff-x86_64-unknown-linux-gnu/ruff
+          sudo install -m 0755 /tmp/ruff /usr/local/bin/ruff
+          ruff --version
+
+      - name: Lint
+        run: just lint-python
   lint:
     name: Lint Charts
     runs-on: ubuntu-latest

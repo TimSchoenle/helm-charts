@@ -12,7 +12,7 @@
 #                               recipe in the repository, and not part of `just check`
 #   deps, docs, render, test    helm (+ `just plugins`), python3 with PyYAML
 #   docs                        helm-docs, for `just chart-readmes`
-#   lint                        chart-testing (`ct`), kube-linter
+#   lint                        chart-testing (`ct`), kube-linter; ruff, for `just lint-python`
 #   maintain                    python3 with PyYAML
 #   render                      kubeconform, for `just validate-manifests`
 #   test                        docker, for `just test-rules` and `just test-e2e`
@@ -62,6 +62,17 @@ helm_schema_version := "0.18.1"
 # `.github/scripts` are stdlib + PyYAML, and on the Git Bash shell this repository is developed
 # from, a pip install is the difference between a gate that runs locally and one that does not.
 jv_version := "v6.0.3"
+
+# Linter for `.github/scripts`, which is 11,000 lines of Python holding every gate here and had
+# none until `just lint-python` landed. Pinned as a single binary by release URL for exactly the
+# reason `jv` above is: a `pip install` inside a recipe is the difference between a gate that runs
+# on the Git Bash shell this repository is developed from and one that does not. ruff ships that
+# way; mypy does not, which is why type checking is not part of the gate — see `just/lint.just`.
+#
+# Pinned rather than floating because a linter is a gate: a new release that adds a rule would
+# turn a pull request red for something its author did not write, and the fix would be a version
+# bump made under time pressure rather than a considered one.
+ruff_version := "0.16.3"
 
 # Registry client and signature verifier for `just contracts`. Only the contract refresh needs
 # these — every gate that reads a contract reads the committed file — which is why they are absent
@@ -165,7 +176,7 @@ default:
 # Documentation job ever adopts `just contract-tests`, this belongs back out beside the other two.
 [doc("Every gate CI runs that does not need a Kubernetes cluster")]
 [group('meta')]
-check: deps test validate-manifests check-immutable check-config check-contract-coverage check-config-bindings check-contract-tests test-contract-union lint lint-policy
+check: deps test validate-manifests check-immutable check-config check-contract-coverage check-config-bindings check-contract-tests test-contract-union lint-python lint lint-policy
 
 # Install the pinned Helm plugins. The CI composite action calls this recipe too, so the versions
 # above are the only place they are declared.

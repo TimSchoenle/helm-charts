@@ -79,24 +79,23 @@ import os
 import shutil
 import sys
 from pathlib import Path
-from typing import Any
 
 import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import config_contract as cc  # noqa: E402
-import config_scaffold as sc  # noqa: E402
-from config_coverage import first_party_patterns  # noqa: E402
-from config_declaration import DeclarationError, load_declaration  # noqa: E402
+import config_contract as cc
+import config_scaffold as sc
+from config_coverage import first_party_patterns
+from config_declaration import DeclarationError, load_declaration
 
-CHARTS_DIR = Path("charts")
+# `FIRST_PARTY` is the list `just check-contract-coverage` decides from, and it is imported rather
+# than spelt here for the reason the constant is shared at all: whether a chart owes a declaration
+# is that gate's rule, and a scaffold with its own opinion about it would write charts the gate
+# then rejects.
+from config_paths import CHARTS_DIR, FIRST_PARTY
+
 TEMPLATES = Path(".github/templates/chart")
-
-# The list `just check-contract-coverage` decides from. Read here for the same reason it
-# reads it there: whether a chart owes a declaration is that gate's rule, and a scaffold
-# with its own opinion about it would write charts the gate then rejects.
-FIRST_PARTY = Path(".github/configs/first-party-images.txt")
 
 # The library chart every chart here depends on. Read from its own `Chart.yaml` rather than
 # written down, so a library release is not a second edit somebody has to remember.
@@ -365,7 +364,8 @@ def generate(
         text = path.read_text(encoding="utf-8")
         text = text.replace(_shout(name) + "_", union.prefix)
         text = text.replace(f'"prefix" "{_shout(name)}"', f'"prefix" "{sc.env_prefix(union)}"')
-        text = text.replace("`__` for nesting", f"`{union.dialect['nesting_separator']}` for nesting")
+        separator = union.dialect["nesting_separator"]
+        text = text.replace("`__` for nesting", f"`{separator}` for nesting")
         _write(path, text)
 
     return surface
@@ -499,7 +499,7 @@ def next_steps(chart_dir: Path, surface: sc.Surface, out) -> None:
         steps.append(
             "Write the chart's own values, one `@schema` block each, and the templates that "
             "consume them — a ConfigMap, a Secret, a Service, whatever this image needs. "
-            f"`templates/_helpers.tpl` is where anything computed belongs."
+            "`templates/_helpers.tpl` is where anything computed belongs."
         )
         steps.append(
             "If this image ever publishes a configuration contract, re-run without "

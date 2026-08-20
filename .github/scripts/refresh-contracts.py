@@ -81,7 +81,7 @@ import shutil
 import subprocess
 import sys
 import tarfile
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -89,11 +89,11 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import config_contract as cc  # noqa: E402
+import config_contract as cc
+from config_paths import CHARTS_DIR, dig
 
 # `check-config.py` owns the declaration format; importing it by file name is not possible, so
 # the two pieces this script needs are re-derived from the same YAML rather than duplicated.
-CHARTS_DIR = Path("charts")
 DECLARATION = "config-contract.yaml"
 
 # The OIDC issuer a GitHub Actions workflow signs under. Paired with `$CONTRACT_SIGNER`, which
@@ -434,7 +434,7 @@ def write_vendored(path: Path, image: str, digest: str, payload: bytes, sha256: 
             "image": image,
             "digest": digest,
             "sha256": sha256,
-            "fetched": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "fetched": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
         },
         "contract": contract,
     }
@@ -489,15 +489,6 @@ def reference_for(image: dict[str, Any], app_version: str | None) -> tuple[str, 
     reference = f"{normalized}:{tag}" if tag else normalized
     digest = tag.split("@", 1)[1] if "@" in tag else None
     return normalized, reference, digest
-
-
-def dig(values: Any, path: str) -> Any:
-    current = values
-    for part in path.split("."):
-        if not isinstance(current, dict) or part not in current:
-            return None
-        current = current[part]
-    return current
 
 
 def refresh_chart(chart_dir: Path, client: RegistryClient, signer: str) -> list[str]:

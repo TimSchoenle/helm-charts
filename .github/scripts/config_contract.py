@@ -720,7 +720,7 @@ def assert_value(constraint: dict[str, Any], value: Any) -> str | None:
             f"{', '.join(sorted(unsupported))}"
         )
 
-    if "type" in constraint and not _is_type(value, constraint["type"]):
+    if "type" in constraint and not is_type(value, constraint["type"]):
         return f"expected {constraint['type']}, got {json.dumps(value)}"
     if "enum" in constraint and value not in constraint["enum"]:
         allowed = ", ".join(json.dumps(option) for option in constraint["enum"])
@@ -756,7 +756,14 @@ def assert_value(constraint: dict[str, Any], value: Any) -> str | None:
     return None
 
 
-def _is_type(value: Any, declared: Any) -> bool:
+def is_type(value: Any, declared: Any) -> bool:
+    """Whether a value satisfies a JSON Schema `type`, scalar or list.
+
+    Public because `config_testgen` needs the same answer when it checks a synthesised candidate
+    against the constraint it has to satisfy, and had its own table-driven copy of this until the
+    two were merged. Two implementations of "is this an integer" is one more than the number of
+    places the `bool`-is-an-`int` trap has to be remembered.
+    """
     names = declared if isinstance(declared, list) else [declared]
     for name in names:
         if name == "integer" and isinstance(value, int) and not isinstance(value, bool):

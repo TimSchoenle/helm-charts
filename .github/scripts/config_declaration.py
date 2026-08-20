@@ -15,13 +15,15 @@ has anything trustworthy to say.
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 import yaml
 
 import config_contract as cc
+from config_paths import dig
 
 DECLARATION = "config-contract.yaml"
 
@@ -155,6 +157,10 @@ class Declaration:
     path: Path
     documents: list[Document]
     reason: str | None
+    # Values paths — the same spelling a document's `images[].values` uses — at which this
+    # chart pins an image that reads no contract-described configuration. Not repository
+    # names: `config_coverage.check_unconfigured` records why the two readers disagreed,
+    # which reading won, and gates it.
     unconfigured: list[str]
     bindings: bool
     unbound: list[Unbound]
@@ -390,6 +396,47 @@ def _load_unbound(path: Path, entries: Iterable[Any], documents: set[str]) -> li
     return loaded
 
 
+# --------------------------------------------------------------------------------------------
+# Walking the tree
+# --------------------------------------------------------------------------------------------
+
+
+def chart_dirs(charts: Path) -> Iterator[Path]:
+    """Every chart directory under `charts`, in directory order.
+
+    "Is this a chart" is `Chart.yaml` and nothing else — not a name list, not an exclusion set —
+    so a chart added to the tree is picked up by every gate at once with nothing to update. That
+    was already true five times over; this is the one copy of it.
+
+    Sorted, so every report, every failure list and every generated file is ordered by the tree
+    rather than by whatever order the filesystem happened to return.
+    """
+    for chart_dir in sorted(charts.iterdir()):
+        if (chart_dir / "Chart.yaml").is_file():
+            yield chart_dir
+
+
+def declared(charts: Path, *, documents_only: bool = False) -> Iterator[tuple[Path, Declaration]]:
+    """Every chart carrying a declaration, paired with it.
+
+    `documents_only` is the distinction the five hand-written copies of this loop disagreed on,
+    and it is a real one rather than a convenience. A chart with `documents: []` has *opted out*
+    explicitly and carries a reason: `just explain` must see it, because "this chart opted out,
+    and here is why" is an answer somebody ran the command to get. `check-config` and the
+    credential inventory must not, because there is no document for them to read.
+
+    Passed as a keyword because at a call site `declared(charts, True)` says nothing about which
+    of the two it means.
+    """
+    for chart_dir in chart_dirs(charts):
+        declaration = load_declaration(chart_dir)
+        if declaration is None:
+            continue
+        if documents_only and not declaration.documents:
+            continue
+        yield chart_dir, declaration
+
+
 def reject_unknown(path: Path, where: str, mapping: dict, allowed: Iterable[str]) -> None:
     unknown = set(mapping) - set(allowed)
     if unknown:
@@ -412,16 +459,6 @@ class PinnedImage:
     reference: str
     normalized: str
     digest: str | None
-
-
-def dig(values: Any, path: str) -> Any:
-    """Follow a dotted values path, returning `None` at the first missing step."""
-    current = values
-    for part in path.split("."):
-        if not isinstance(current, dict) or part not in current:
-            return None
-        current = current[part]
-    return current
 
 
 def resolve_image(values: dict[str, Any], path: str, app_version: str | None) -> PinnedImage:
@@ -455,6 +492,65 @@ def resolve_image(values: dict[str, Any], path: str, app_version: str | None) ->
 # --------------------------------------------------------------------------------------------
 # Binding a document to the contracts that describe it
 # --------------------------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Loaded:
+    """One vendored contract, the reference that named it, and the label it is reported under.
+
+    The label is `<chart>/<path>` — `tankovault/contracts/api.json` — and it is built here rather
+    than at each call site because it is the string every message, every union source list and
+    every credential row identifies a contract by. Four callers were spelling it themselves.
+    """
+
+    reference: ImageRef
+    label: str
+    vendored: cc.Vendored
+
+
+def vendored_for(chart_dir: Path, document: Document) -> list[Loaded]:
+    """Load every contract one document binds. **Applies no staleness interlock.**
+
+    The bold part is the whole reason this function exists rather than each caller writing its own
+    three lines. Whether the vendored file is for the digest the chart *currently* pins is a
+    separate question from what the file says, and the four callers legitimately answer it four
+    different ways:
+
+    | Caller                          | Interlock | Why                                          |
+    |---------------------------------|-----------|----------------------------------------------|
+    | `bind`, for the gates           | yes       | a pass it cannot justify is worse than a fail |
+    | `check-config-bindings`         | no        | compares values.yaml against the committed    |
+    |                                 |           | copy; whether that copy is current is         |
+    |                                 |           | `check-contracts`' question                   |
+    | `config-secrets`, the inventory | no        | withholding it during a bump removes the      |
+    |                                 |           | document at the moment it is being read       |
+    | `generate-contract-tests`       | no        | would block regeneration in the window        |
+    |                                 |           | between a bump and the refresh                |
+
+    Each of those three is a considered decision with a paragraph behind it, and each was
+    previously expressed as *the absence* of code — a four-line loop that looked like a helper and
+    was in fact a deliberate bypass. A fifth consumer copying one of them would have inherited the
+    bypass without inheriting the reason. Now the absence has a name, and `bind` is the one that
+    visibly adds something.
+
+    Raises `ContractError` on a file that cannot be read or is not shaped like a contract; that is
+    not an interlock but a parse, and no caller wants to proceed past it.
+    """
+    return [
+        Loaded(
+            reference=reference,
+            label=f"{chart_dir.name}/{reference.contract}",
+            vendored=cc.load_vendored(chart_dir / reference.contract),
+        )
+        for reference in document.images
+    ]
+
+
+def union_for(chart_dir: Path, document: Document) -> cc.Union:
+    """The contracts of every image that reads one document, merged. No interlock — see above."""
+    return cc.union_contracts(
+        [(item.label, item.vendored.contract) for item in vendored_for(chart_dir, document)]
+    )
 
 
 @dataclass(frozen=True)
@@ -494,13 +590,16 @@ def bind(
     contracts: list[tuple[str, dict[str, Any]]] = []
     by_digest: dict[str, cc.Union] = {}
 
-    for reference in document.images:
-        path = chart_dir / reference.contract
-        label = f"{chart_dir.name}/{reference.contract}"
+    try:
+        loaded = vendored_for(chart_dir, document)
+    except cc.ContractError as failure:
+        return None, [str(failure)]
+
+    for item in loaded:
+        reference, label, vendored = item.reference, item.label, item.vendored
 
         try:
             pinned = resolve_image(values, reference.values, app_version)
-            vendored = cc.load_vendored(path)
         except (cc.ContractError, DeclarationError) as failure:
             return None, [str(failure)]
 

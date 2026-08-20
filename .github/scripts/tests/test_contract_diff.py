@@ -28,7 +28,7 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-import config_diff as cd  # noqa: E402
+import config_diff as cd
 
 FIXTURES = Path(__file__).resolve().parents[2] / "testdata" / "contracts"
 

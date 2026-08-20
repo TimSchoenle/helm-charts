@@ -28,7 +28,6 @@ noise nobody reads:
 from __future__ import annotations
 
 import copy
-import importlib.util
 import json
 import sys
 import tempfile
@@ -51,19 +50,12 @@ from config_secrets import (  # noqa: E402
     names_credential,
     secret_file_names,
 )
+from entry import load  # noqa: E402
 
 FIXTURES = SCRIPTS.parent / "testdata" / "contracts"
 
 
-def _load(name: str, filename: str):
-    """Import a hyphenated entry point, the way `test_contract_refresh` already does."""
-    spec = importlib.util.spec_from_file_location(name, SCRIPTS / filename)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-entry = _load("config_secrets_entry", "config-secrets.py")
+entry = load("config_secrets_entry", "config-secrets.py")
 
 
 def fixture(name: str) -> dict:

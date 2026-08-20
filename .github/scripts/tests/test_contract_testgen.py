@@ -47,7 +47,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import yaml
 
@@ -384,7 +384,7 @@ class TestDocumentSelection(unittest.TestCase):
 
 
 class TestPlanning(unittest.TestCase):
-    KEYS = [
+    KEYS: ClassVar[list] = [
         key("isr.ttl_secs", text_form="integer", constraint={"type": "integer", "minimum": 0},
             default_value=0),
         key("assets.dist_dir", default_value="public"),
@@ -484,7 +484,8 @@ class TestSuiteRendering(unittest.TestCase):
     def test_the_suite_is_valid_yaml_shaped_like_a_helm_unittest_suite(self):
         suite = yaml.safe_load(self.render(TestPlanning.KEYS))
         self.assertEqual(suite["release"]["name"], "portfolio")
-        self.assertEqual([test["it"] for test in suite["tests"]][0].split()[0], "renders")
+        first = next(test["it"] for test in suite["tests"])
+        self.assertEqual(first.split()[0], "renders")
         self.assertEqual(len(suite["tests"]), 3)
 
     def test_the_pattern_survives_yaml_with_its_backslashes_intact(self):
@@ -557,7 +558,9 @@ class TestSuiteRendering(unittest.TestCase):
 class TestRenderPrerequisites(unittest.TestCase):
     """Values that make the chart render at all, and the rule that keeps them out of the proof."""
 
-    PREREQUISITES = [("bucket.entries", {"link": {"bucket": "b", "object": "o"}})]
+    PREREQUISITES: ClassVar[list] = [
+        ("bucket.entries", {"link": {"bucket": "b", "object": "o"}})
+    ]
 
     # A probe root off the default, which is what the last four cases below turn on.
     ROOT = "services.api.config"

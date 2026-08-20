@@ -77,7 +77,7 @@ from typing import Any, Iterable
 import yaml
 
 import config_contract as cc
-from config_declaration import Binding, Declaration, Document, bind, load_declaration
+from config_declaration import Binding, Declaration, Document, bind, declared
 from config_gate_container import ContainerView
 from config_gate_document import parse_document
 from config_paths import read_yaml
@@ -152,14 +152,7 @@ class Credential:
 
 def contracted_charts(charts: Path) -> list[tuple[Path, Declaration]]:
     """Every chart that declares at least one document, in directory order."""
-    found: list[tuple[Path, Declaration]] = []
-    for chart_dir in sorted(charts.iterdir()):
-        if not (chart_dir / "Chart.yaml").is_file():
-            continue
-        declaration = load_declaration(chart_dir)
-        if declaration is not None and declaration.documents:
-            found.append((chart_dir, declaration))
-    return found
+    return list(declared(charts, documents_only=True))
 
 
 def declared_secrets(chart_dir: Path, declaration: Declaration) -> list[Declared]:

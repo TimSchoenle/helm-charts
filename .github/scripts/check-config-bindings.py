@@ -113,7 +113,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import config_bindings as cb  # noqa: E402
 import config_contract as cc  # noqa: E402
 from config_declaration import Declaration, DeclarationError, Document  # noqa: E402
-from config_declaration import load_declaration  # noqa: E402
+from config_declaration import chart_dirs, load_declaration  # noqa: E402
 from config_paths import CHARTS_DIR  # noqa: E402
 from config_report import Report  # noqa: E402
 
@@ -473,10 +473,7 @@ def run(charts: Path, report: Report) -> list[tuple[str, int, int]]:
     gate = Gate(report)
     enrolled: list[tuple[str, int, int]] = []
 
-    for chart_dir in sorted(charts.iterdir()):
-        if not (chart_dir / "Chart.yaml").is_file():
-            continue
-
+    for chart_dir in chart_dirs(charts):
         counted = gate.check_chart(chart_dir)
         if counted is None:
             continue

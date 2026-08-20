@@ -71,7 +71,7 @@ from config_declaration import (  # noqa: E402
     DeclarationError,
     Document,
     bind,
-    load_declaration,
+    declared,
 )
 from config_gate_container import ServiceLinkGate, check_container  # noqa: E402
 from config_gate_document import DocumentGate  # noqa: E402
@@ -100,12 +100,7 @@ class Runner:
     def run(self) -> int:
         """Check every chart that declares a contract; returns how many were checked."""
         checked = 0
-        for chart_dir in sorted(self.charts.iterdir()):
-            if not (chart_dir / "Chart.yaml").is_file():
-                continue
-            declaration = load_declaration(chart_dir)
-            if declaration is None or not declaration.documents:
-                continue
+        for chart_dir, declaration in declared(self.charts, documents_only=True):
             self.check_chart(chart_dir, declaration)
             checked += 1
         return checked

@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Iterable, Iterator
 
 import yaml
 
@@ -390,6 +390,47 @@ def _load_unbound(path: Path, entries: Iterable[Any], documents: set[str]) -> li
             )
         )
     return loaded
+
+
+# --------------------------------------------------------------------------------------------
+# Walking the tree
+# --------------------------------------------------------------------------------------------
+
+
+def chart_dirs(charts: Path) -> Iterator[Path]:
+    """Every chart directory under `charts`, in directory order.
+
+    "Is this a chart" is `Chart.yaml` and nothing else — not a name list, not an exclusion set —
+    so a chart added to the tree is picked up by every gate at once with nothing to update. That
+    was already true five times over; this is the one copy of it.
+
+    Sorted, so every report, every failure list and every generated file is ordered by the tree
+    rather than by whatever order the filesystem happened to return.
+    """
+    for chart_dir in sorted(charts.iterdir()):
+        if (chart_dir / "Chart.yaml").is_file():
+            yield chart_dir
+
+
+def declared(charts: Path, *, documents_only: bool = False) -> Iterator[tuple[Path, Declaration]]:
+    """Every chart carrying a declaration, paired with it.
+
+    `documents_only` is the distinction the five hand-written copies of this loop disagreed on,
+    and it is a real one rather than a convenience. A chart with `documents: []` has *opted out*
+    explicitly and carries a reason: `just explain` must see it, because "this chart opted out,
+    and here is why" is an answer somebody ran the command to get. `check-config` and the
+    credential inventory must not, because there is no document for them to read.
+
+    Passed as a keyword because at a call site `declared(charts, True)` says nothing about which
+    of the two it means.
+    """
+    for chart_dir in chart_dirs(charts):
+        declaration = load_declaration(chart_dir)
+        if declaration is None:
+            continue
+        if documents_only and not declaration.documents:
+            continue
+        yield chart_dir, declaration
 
 
 def reject_unknown(path: Path, where: str, mapping: dict, allowed: Iterable[str]) -> None:

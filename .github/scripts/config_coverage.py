@@ -32,7 +32,7 @@ from typing import Any
 import yaml
 
 import config_contract as cc
-from config_declaration import DECLARATION, DeclarationError, load_declaration
+from config_declaration import DECLARATION, DeclarationError, chart_dirs, load_declaration
 from config_report import Report, warning
 
 
@@ -73,9 +73,12 @@ def check_coverage(charts: Path, first_party: Path, report: Report) -> None:
     covered: list[str] = []
     uncovered: list[tuple[str, list[str]]] = []
 
-    for chart_dir in sorted(charts.iterdir()):
+    for chart_dir in chart_dirs(charts):
+        # A chart with no values.yaml pins no image, so there is nothing here to be covered or
+        # uncovered. Checked here rather than in the shared walk because every other caller
+        # legitimately reads a chart without one.
         values_path = chart_dir / "values.yaml"
-        if not (chart_dir / "Chart.yaml").is_file() or not values_path.is_file():
+        if not values_path.is_file():
             continue
 
         values = yaml.safe_load(values_path.read_text(encoding="utf-8")) or {}

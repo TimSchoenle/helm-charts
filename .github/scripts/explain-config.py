@@ -80,6 +80,7 @@ from config_declaration import (  # noqa: E402
     Declaration,
     DeclarationError,
     bind,
+    declared,
     load_declaration,
 )
 from config_paths import CHARTS_DIR, read_yaml  # noqa: E402
@@ -855,15 +856,12 @@ def _setting_json(setting: Setting, derive: bool = False) -> dict[str, Any]:
 
 
 def charts_with_contracts(charts: Path) -> list[tuple[str, Declaration]]:
-    """Every chart carrying a declaration, whether or not it declares any document."""
-    found = []
-    for chart_dir in sorted(charts.iterdir()):
-        if not (chart_dir / "Chart.yaml").is_file():
-            continue
-        declaration = load_declaration(chart_dir)
-        if declaration is not None:
-            found.append((chart_dir.name, declaration))
-    return found
+    """Every chart carrying a declaration, whether or not it declares any document.
+
+    Not `documents_only`: a chart that opted out explicitly carries a reason, and printing that
+    reason is one of the two things this command exists to do.
+    """
+    return [(chart_dir.name, declaration) for chart_dir, declaration in declared(charts)]
 
 
 def list_charts(charts: Path, out) -> None:

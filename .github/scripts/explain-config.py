@@ -72,7 +72,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -83,9 +82,9 @@ from config_declaration import (  # noqa: E402
     bind,
     load_declaration,
 )
+from config_paths import CHARTS_DIR, read_yaml  # noqa: E402
 from config_report import Report, warning  # noqa: E402
 
-CHARTS_DIR = Path("charts")
 
 # The contracts' prose is UTF-8 and uses it — em dashes, arrows, typographic quotes — and this
 # repository is developed from Git Bash on Windows, where Python's default console encoding is the
@@ -274,8 +273,8 @@ def collect(chart_dir: Path, declaration: Declaration, report: Report) -> Surfac
     provenance, so the contracts are re-read afterwards for the image reference and the app
     version. That is a second read of a file already proven, not a second opinion about it.
     """
-    values = _read_yaml(chart_dir / "values.yaml")
-    app_version = _read_yaml(chart_dir / "Chart.yaml").get("appVersion")
+    values = read_yaml(chart_dir / "values.yaml")
+    app_version = read_yaml(chart_dir / "Chart.yaml").get("appVersion")
 
     surface = Surface(chart=declaration.chart)
     by_contract: dict[str, list[str]] = {}
@@ -853,10 +852,6 @@ def _setting_json(setting: Setting, derive: bool = False) -> dict[str, Any]:
 # --------------------------------------------------------------------------------------------
 # Entry point
 # --------------------------------------------------------------------------------------------
-
-
-def _read_yaml(path: Path) -> dict[str, Any]:
-    return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
 
 
 def charts_with_contracts(charts: Path) -> list[tuple[str, Declaration]]:

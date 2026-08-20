@@ -21,6 +21,8 @@ from typing import Any, Iterable
 
 import yaml
 
+from config_paths import dig
+
 import config_contract as cc
 
 DECLARATION = "config-contract.yaml"
@@ -412,16 +414,6 @@ class PinnedImage:
     reference: str
     normalized: str
     digest: str | None
-
-
-def dig(values: Any, path: str) -> Any:
-    """Follow a dotted values path, returning `None` at the first missing step."""
-    current = values
-    for part in path.split("."):
-        if not isinstance(current, dict) or part not in current:
-            return None
-        current = current[part]
-    return current
 
 
 def resolve_image(values: dict[str, Any], path: str, app_version: str | None) -> PinnedImage:

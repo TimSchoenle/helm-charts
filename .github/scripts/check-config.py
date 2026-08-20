@@ -59,7 +59,6 @@ import sys
 from pathlib import Path
 from typing import Any
 
-import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -83,10 +82,9 @@ from config_manifests import (  # noqa: E402
     pod_spec,
     select,
 )
+from config_paths import CHARTS_DIR, FIRST_PARTY, read_yaml  # noqa: E402
 from config_report import Report, warning  # noqa: E402
 
-CHARTS_DIR = Path("charts")
-FIRST_PARTY = Path(".github/configs/first-party-images.txt")
 
 
 class Runner:
@@ -113,8 +111,8 @@ class Runner:
         return checked
 
     def check_chart(self, chart_dir: Path, declaration: Declaration) -> None:
-        values = _read_yaml(chart_dir / "values.yaml")
-        app_version = _read_yaml(chart_dir / "Chart.yaml").get("appVersion")
+        values = read_yaml(chart_dir / "values.yaml")
+        app_version = read_yaml(chart_dir / "Chart.yaml").get("appVersion")
 
         for document in declaration.documents:
             where = f"{declaration.chart}: {document.name}"
@@ -257,10 +255,6 @@ class Runner:
             self.report.extend(where, check_container(manifests, spec, container, mine, relaxed))
 
         return checked
-
-
-def _read_yaml(path: Path) -> dict[str, Any]:
-    return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
 
 
 def find_jv() -> str:

@@ -80,6 +80,7 @@ import config_contract as cc
 from config_declaration import Binding, Declaration, Document, bind, load_declaration
 from config_gate_container import ContainerView
 from config_gate_document import parse_document
+from config_paths import read_yaml
 from config_manifests import containers_of, digest_of, load_manifests, pod_spec, select
 
 # The four ways a value can reach the loader, named as the report prints them. The rendered
@@ -398,8 +399,8 @@ class Reconciler:
     # -- one chart ---------------------------------------------------------------------------
 
     def reconcile(self, chart_dir: Path, declaration: Declaration) -> None:
-        values = _read_yaml(chart_dir / "values.yaml")
-        app_version = _read_yaml(chart_dir / "Chart.yaml").get("appVersion")
+        values = read_yaml(chart_dir / "values.yaml")
+        app_version = read_yaml(chart_dir / "Chart.yaml").get("appVersion")
 
         bindings: dict[str, Binding] = {}
         for document in declaration.documents:
@@ -763,5 +764,3 @@ def _short(label: str) -> str:
     return Path(label).stem
 
 
-def _read_yaml(path: Path) -> dict[str, Any]:
-    return yaml.safe_load(path.read_text(encoding="utf-8")) or {}

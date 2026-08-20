@@ -90,13 +90,13 @@ import config_scaffold as sc  # noqa: E402
 from config_coverage import first_party_patterns  # noqa: E402
 from config_declaration import DeclarationError, load_declaration  # noqa: E402
 
-CHARTS_DIR = Path("charts")
-TEMPLATES = Path(".github/templates/chart")
+# `FIRST_PARTY` is the list `just check-contract-coverage` decides from, and it is imported rather
+# than spelt here for the reason the constant is shared at all: whether a chart owes a declaration
+# is that gate's rule, and a scaffold with its own opinion about it would write charts the gate
+# then rejects.
+from config_paths import CHARTS_DIR, FIRST_PARTY  # noqa: E402
 
-# The list `just check-contract-coverage` decides from. Read here for the same reason it
-# reads it there: whether a chart owes a declaration is that gate's rule, and a scaffold
-# with its own opinion about it would write charts the gate then rejects.
-FIRST_PARTY = Path(".github/configs/first-party-images.txt")
+TEMPLATES = Path(".github/templates/chart")
 
 # The library chart every chart here depends on. Read from its own `Chart.yaml` rather than
 # written down, so a library release is not a second edit somebody has to remember.

@@ -33,6 +33,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import config_contract as cc  # noqa: E402
 from config_declaration import DeclarationError  # noqa: E402
+from config_paths import CHARTS_DIR  # noqa: E402
 from config_report import Report, error, warning  # noqa: E402
 from config_secrets import (  # noqa: E402
     Credential,
@@ -44,7 +45,6 @@ from config_secrets import (  # noqa: E402
     declared_secrets,
 )
 
-CHARTS_DIR = Path("charts")
 
 
 # --------------------------------------------------------------------------------------------

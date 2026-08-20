@@ -114,9 +114,9 @@ import config_bindings as cb  # noqa: E402
 import config_contract as cc  # noqa: E402
 from config_declaration import Declaration, DeclarationError, Document  # noqa: E402
 from config_declaration import load_declaration  # noqa: E402
+from config_paths import CHARTS_DIR  # noqa: E402
 from config_report import Report  # noqa: E402
 
-CHARTS_DIR = Path("charts")
 
 
 class Bound:

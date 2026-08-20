@@ -8,6 +8,24 @@
 # environment and the mounted secret file names against the result. A chart with no such file is
 # skipped; `documents: []` plus a `reason` is the only permitted opt-out, and
 # `just check-contract-coverage` is what stops it from being escaped by forgetting.
+
+# Whether `just check-config-bindings` holds this chart's values against the keys below.
+#
+# Declared rather than inferred from the chart carrying markers: a chart that loses them — a
+# botched edit, a spelling the parser does not recognise — would otherwise drop out of that gate's
+# report without a word. With the switch here, markers without it and it without markers are both
+# errors.
+bindings: true
+
+# Contract keys no chart value binds, each group with the reason it does not.
+#
+# None: all seven keys are bound, which is what makes this chart the simplest enrolment in the
+# tree. `server.host`, `server.port` and `logLevel` carry markers too, and are not the reason this
+# list is empty — they bind `IP`, `PORT` and `RUST_LOG`, which are `external.env` variables owned
+# by the Dioxus toolchain and by `tracing`. The coverage rule is over `schema.keys` alone, so that
+# namespace neither needs an entry here nor could be satisfied by one.
+unbound: []
+
 documents:
   - name: server
 

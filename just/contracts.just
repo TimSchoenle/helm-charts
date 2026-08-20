@@ -133,6 +133,67 @@ check-contract-coverage:
     {{ resolve_python }}
     "$python" {{ scripts }}/check-config.py --coverage-only --charts {{ charts }}
 
+# Hold every configuration binding marker in a chart's values.yaml against the key it names.
+#
+# `check-contract-coverage` above is chart-level: it answers whether a chart has a contract, and
+# its `unconfigured` escape hatch lists *images*. So the failure this repository actually keeps
+# hitting is invisible to it — an image release adds a setting, the automated bump repins the
+# digest and omits everything else, and nothing notices that the new key is reached by no chart
+# value. `check-config` cannot see it either: a key nothing renders is not a key rendered wrongly.
+#
+# A `# @config` marker in values.yaml is the missing fact — one line inside the value's `@schema`
+# block, naming the contract key that value feeds and how it gets there:
+#
+#     # @schema
+#     # # @config projection telemetry.sentry_dsn optional
+#     # type: string
+#     # @schema
+#     # -- Sentry DSN (`telemetry.sentry_dsn`). Empty disables Sentry entirely.
+#     sentryDsn: ""
+#
+# It reads as a comment inside a comment because that is exactly what it is: inside the `@schema`
+# delimiters the text is the schema, parsed as YAML, so a YAML comment there is discarded by the
+# only parser that reads it. That is the one position in the file both generators ignore, and it
+# was found by measuring ten of them — see `config_bindings.py`.
+#
+# This recipe is the gate over them. The grammar, the five rules, the placement constraint the
+# two generated artefacts impose and every deliberate omission are in `config_bindings.py`'s and
+# `check-config-bindings.py`'s docstrings, which is where they belong rather than repeated here.
+#
+# **Nothing writes a marker.** They are hand-written, and a generator would have had to land in
+# the same change as the format it depends on, which is the one shape a reviewer cannot check.
+#
+# Enrolment is opt-in and declared, by `bindings: true` in `config-contract.yaml`, so a gate that
+# failed unenrolled charts is not red for work nobody has scheduled — and does not end up
+# disabled, which is worse than absent. Declared rather than inferred from the markers themselves
+# because a chart that loses them would otherwise leave the report in silence, which is drift of
+# exactly the kind this gate exists to see.
+#
+# All five charts that map values onto a contract are enrolled, `tankovault` included. That chart
+# is where four of this format's rules come from — an unscoped marker binding every document that
+# declares the key, several markers on one value, a chart-level `unbound` taking a list of keys,
+# and a lone `composed` being legitimate — because its nine documents falsified the first draft of
+# each. `check-config-bindings.py` records which measurement forced which.
+#
+# **In `just check`, unlike most of this group.** The recipes kept out of the aggregate are kept
+# out for one of two reasons: they need a network (`contracts`), or they print rather than assert
+# (`explain`, `contract-diff`, `check-config-secrets`). This one asserts, reads two committed
+# files per chart, needs neither render nor cluster nor network, and cannot go red for a chart
+# nobody enrolled. It also fails exactly where it is wanted: on the Renovate pull request that
+# repinned the digest, in the same run that shows the reviewer the contract diff.
+#
+# Deliberately without the staleness interlock the gates above apply, for the reason
+# `config-secrets` is: this compares values.yaml against the committed contract, whether that copy
+# is current is `just check-contracts`' question, and refusing to run during a bump would withdraw
+# the report from the one pull request it exists for.
+[doc("Hold every `# @config` binding marker against the contract key it names")]
+[group('contracts')]
+check-config-bindings:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    {{ resolve_python }}
+    "$python" {{ scripts }}/check-config-bindings.py --charts {{ charts }}
+
 # Unit tests for the contract model, over fixtures rather than over a registry.
 #
 # The union is tested here and nowhere else: every document in the repository binds a single image,

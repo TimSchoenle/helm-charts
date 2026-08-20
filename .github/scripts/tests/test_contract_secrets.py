@@ -107,7 +107,15 @@ def with_plain_text_key(name: str = "api") -> dict:
 
 
 def declaration(chart: str = "fixture") -> Declaration:
-    return Declaration(chart=chart, path=Path(chart), documents=[], reason=None, unconfigured=[])
+    return Declaration(
+        chart=chart,
+        path=Path(chart),
+        documents=[],
+        reason=None,
+        unconfigured=[],
+        bindings=False,
+        unbound=[],
+    )
 
 
 def container(name: str = "app", env: dict | None = None, mounts: list | None = None) -> dict:
@@ -401,7 +409,13 @@ class TestGateThreeReach(unittest.TestCase):
             exempt=[],
         )
         return Declaration(
-            chart="c", path=Path("c"), documents=[document], reason=None, unconfigured=[]
+            chart="c",
+            path=Path("c"),
+            documents=[document],
+            reason=None,
+            unconfigured=[],
+            bindings=False,
+            unbound=[],
         )
 
     def test_a_declared_container_is_within_reach(self):

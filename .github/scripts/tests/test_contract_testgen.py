@@ -120,6 +120,8 @@ def declaration(*documents: tuple[str, str, dict[str, str]]) -> Declaration:
         ],
         reason=None,
         unconfigured=[],
+        bindings=False,
+        unbound=[],
     )
 
 

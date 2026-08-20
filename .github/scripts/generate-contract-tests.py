@@ -17,17 +17,24 @@ choosing a probe, refusing to invent one, and spelling the assertion — lives i
 `charts/<chart>/contract-tests.yaml`, exactly as `config-contract.yaml` is what enrols it in
 `just check-config`. That is what makes the phased rollout a property of the tree rather than of
 a constant somebody has to remember to edit, and it is also where a chart says which values every
-generated case has to carry before it will render at all.
+generated case has to carry before it will render at all, and — where the operator-facing
+configuration tree is not the layer that wins — which values path a probe is to be written to.
 
 **A baseline and a render prerequisite are two different fields because they are two different
-things.** A `baseline` states configuration — flat dotted paths under `config` — and is dropped
-from the one case probing the key it sets, because a baseline supplying the probed value would
-make that case pass whether or not the chart delivered anything. A `prerequisites` block states
-the chart's own first-class values, the ones a `validateValues` guard refuses to render without,
-and is carried by every case including the identity one, because a case that does not render
-proves nothing either. Being undroppable is exactly why it may not name a path under `config`:
-that is refused here with the file's name on it, and refused again by `config_testgen.plan`, so
-the guarantee does not depend on this loader having been the caller.
+things.** A `baseline` states configuration — flat dotted paths under the document's probe root —
+and is dropped from the one case probing the key it sets, because a baseline supplying the probed
+value would make that case pass whether or not the chart delivered anything. A `prerequisites`
+block states the chart's own first-class values, the ones a `validateValues` guard refuses to
+render without, and is carried by every case including the identity one, because a case that does
+not render proves nothing either. Being undroppable is exactly why it may not name a path inside
+that same probe root: that is refused here with the file's name on it, and refused again by
+`config_testgen.plan`, so the guarantee does not depend on this loader having been the caller.
+
+**How a document is told from its siblings is derived, not declared.** A suite finds its document
+by the key the declaration names; a chart rendering that key into several documents needs the
+labels as well, and `config-contract.yaml` already carries them per document. Asking the
+enrolment to repeat them would let the two disagree, and the gate reading the first would then be
+validating an object the suite never selects.
 
 **The vendored contracts are read directly rather than through `config_declaration.bind`.** The
 binding exists to refuse validating a document against a contract for some other digest, and it
@@ -64,6 +71,7 @@ from config_declaration import (  # noqa: E402
     Declaration,
     DeclarationError,
     Document,
+    dig,
     load_declaration,
     reject_unknown,
 )
@@ -73,7 +81,7 @@ from config_declaration import (  # noqa: E402
 # and for the same reason.
 ENROLMENT = "contract-tests.yaml"
 ENROLMENT_KEYS = {"documents"}
-ENROLMENT_DOCUMENT_KEYS = {"name", "baseline", "reason", "prerequisites"}
+ENROLMENT_DOCUMENT_KEYS = {"name", "baseline", "probe", "reason", "prerequisites"}
 ENROLMENT_PREREQUISITE_KEYS = {"values", "reason"}
 
 # Where a generated suite goes, and the name that identifies one. The prefix is what lets the
@@ -108,8 +116,13 @@ class Baseline:
     same cause `config-contract.yaml` demands one for an exemption: an unexplained hole is
     indistinguishable from an oversight.
 
-    Deliberately confined to paths under the configuration tree. What a chart needs *outside* it
-    is a render prerequisite, which is `Prerequisites` below and not this.
+    Deliberately confined to paths under the document's probe root — the configuration tree by
+    default, and whatever higher-precedence layer the enrolment names where the chart merges its
+    derived wiring over that tree. Read under the same root the probes are, because the collision
+    check that drops a baseline entry compares the two paths as strings: a baseline one layer off
+    would never compare equal to a probe, and would quietly supply the value the case exists to
+    prove the chart delivered. What a chart needs *outside* that root altogether is a render
+    prerequisite, which is `Prerequisites` below and not this.
     """
 
     values: list[tuple[str, Any]] = field(default_factory=list)
@@ -130,8 +143,8 @@ class Prerequisites:
     Held as flat dotted paths with whatever shape the leaf has, rather than as a nested block, for
     three reasons. A helm-unittest `set` mapping *is* flat dotted paths, so what the enrolment
     states is what the generated file carries and there is no translation between the two to go
-    wrong in silence. The refusal that keeps a prerequisite out of the configuration tree is then
-    a prefix test on one string — the same rule `Baseline` is read under, checkable by eye —
+    wrong in silence. The refusal that keeps a prerequisite out of the tree the cases probe is
+    then a prefix test on one string — the same rule `Baseline` is read under, checkable by eye —
     where a nested block would spell it as a walk over two trees. And the leaves are free to be
     structures because `bucket.entries` is a map of maps keyed by request path: splitting it into
     `bucket.entries.docs/handbook.bucket` would put a `/` inside a dotted path and read worse than
@@ -144,8 +157,8 @@ class Prerequisites:
     that needs it rather than in the harness — is followed exactly.
 
     A prerequisite carries a mandatory `reason` for the cause a baseline does, and one more: the
-    reason is where a chart states that its `.Values.config` layer still wins over anything these
-    values derive, which is the half of the guarantee no path comparison can make.
+    reason is where a chart states that its probe root still wins over anything these values
+    derive, which is the half of the guarantee no path comparison can make.
     """
 
     values: list[tuple[str, Any]] = field(default_factory=list)
@@ -154,10 +167,26 @@ class Prerequisites:
 
 @dataclass(frozen=True)
 class Enrolment:
-    """What one chart's `contract-tests.yaml` says about one of its documents."""
+    """What one chart's `contract-tests.yaml` says about one of its documents.
+
+    `probe` is the values path every case for this document writes into, defaulting to the
+    operator-facing configuration tree every chart here exposes. It exists because that tree is
+    not always the layer that wins: `tankovault.configToml` merges `.Values.config`, then the
+    chart-derived wiring, then `services.<name>.config`, so a probe written into the root tree
+    for a key the chart derives is overwritten before it reaches the document. Declared rather
+    than derived — the document named `control-plane` is configured at
+    `services.controlPlane.config`, and there is nothing in the declaration that spells the
+    second from the first — and per document rather than per chart, because tankovault's own
+    `bootstrap` document has no such layer at all.
+
+    It sits here rather than on `Baseline` because it governs all three fields at once: the
+    probes are written under it, the baseline is read under it, and the prerequisites are
+    refused from it.
+    """
 
     baseline: Baseline = field(default_factory=Baseline)
     prerequisites: Prerequisites = field(default_factory=Prerequisites)
+    probe: str = tg.VALUES_ROOT
 
 
 def load_enrolment(chart_dir: Path) -> dict[str, Enrolment] | None:
@@ -187,41 +216,60 @@ def load_enrolment(chart_dir: Path) -> dict[str, Enrolment] | None:
         if name in enrolments:
             raise DeclarationError(f"{path}: `{name}` is declared twice")
 
+        probe = _load_probe(path, name, entry.get("probe"))
         baseline = Baseline(
-            values=_load_baseline(path, name, entry.get("baseline") or {}),
+            values=_load_baseline(path, name, entry.get("baseline") or {}, probe),
             reason=entry.get("reason"),
         )
-        if baseline.values and not baseline.reason:
+        if (baseline.values or probe != tg.VALUES_ROOT) and not baseline.reason:
             raise DeclarationError(
-                f"{path}: the baseline for `{name}` has no `reason`; it narrows what every "
-                "generated case proves, and an unexplained hole in a gate is indistinguishable "
-                "from an oversight"
+                f"{path}: the entry for `{name}` sets a baseline or a probe path and has no "
+                "`reason`; either narrows what every generated case proves, and an unexplained "
+                "hole in a gate is indistinguishable from an oversight"
             )
 
         enrolments[name] = Enrolment(
             baseline=baseline,
-            prerequisites=_load_prerequisites(path, name, entry.get("prerequisites")),
+            prerequisites=_load_prerequisites(path, name, entry.get("prerequisites"), probe),
+            probe=probe,
         )
 
     return enrolments
 
 
-def _load_baseline(path: Path, name: str, baseline: Any) -> list[tuple[str, Any]]:
+def _load_probe(path: Path, name: str, probe: Any) -> str:
+    """The values path this document's cases write into, defaulting to the configuration tree."""
+    if probe is None:
+        return tg.VALUES_ROOT
+    if not isinstance(probe, str) or not tg.VALUES_PATH.match(probe):
+        raise DeclarationError(
+            f"{path}: {name}: `probe` {probe!r} is not a dotted values path; it is used both as "
+            "a `set` prefix and as a walk into the chart's values, and neither reads anything "
+            "else"
+        )
+    return probe
+
+
+def _load_baseline(path: Path, name: str, baseline: Any, probe: str) -> list[tuple[str, Any]]:
     """One baseline, as sorted `set` path / value pairs.
 
     Flat dotted paths rather than a nested tree, because the generator has to be able to tell
     whether an entry collides with the key a case is probing — and comparing one string is a rule
-    a reader can check by eye, where walking two trees is not.
+    a reader can check by eye, where walking two trees is not. Read under the document's own
+    probe path for the same cause: a baseline written one layer below the probes would never
+    compare equal to one, so the collision it exists to be dropped for would go unnoticed and
+    the baseline would quietly supply the value a case is meant to prove the chart delivered.
     """
     if not isinstance(baseline, dict):
         raise DeclarationError(f"{path}: {name}: `baseline` must be a mapping")
 
     values: list[tuple[str, Any]] = []
     for key, value in sorted(baseline.items()):
-        if not isinstance(key, str) or not key.startswith(f"{tg.VALUES_ROOT}."):
+        if not isinstance(key, str) or not key.startswith(f"{probe}."):
             raise DeclarationError(
-                f"{path}: {name}: the baseline entry {key!r} is not a path under "
-                f"`{tg.VALUES_ROOT}`; a baseline states configuration, not chart values"
+                f"{path}: {name}: the baseline entry {key!r} is not a path under `{probe}`; a "
+                "baseline states configuration at the layer the probes are written to, not "
+                "chart values"
             )
         if isinstance(value, (dict, list)):
             raise DeclarationError(
@@ -232,14 +280,18 @@ def _load_baseline(path: Path, name: str, baseline: Any) -> list[tuple[str, Any]
     return values
 
 
-def _load_prerequisites(path: Path, name: str, block: Any) -> Prerequisites:
+def _load_prerequisites(path: Path, name: str, block: Any, probe: str) -> Prerequisites:
     """One document's render prerequisites, as sorted `set` path / value pairs and their reason.
 
     Every refusal below is loud rather than lenient, and the first of them is the one the whole
-    field turns on: a prerequisite under the configuration tree is undroppable *and* in the tree
-    every case probes, which is the one combination that lets a generated suite pass without
-    having proven anything. `config_testgen.prerequisite_conflict` owns the rule so the message
-    is the same one the model raises; what this adds is the name of the file to fix.
+    field turns on: a prerequisite inside the tree the cases probe is undroppable *and* able to
+    supply what they assert, which is the one combination that lets a generated suite pass
+    without having proven anything. That tree is the document's `probe` root rather than the
+    default configuration tree, which is why the root is read before this is called: on a chart
+    probing `services.api.config`, a prerequisite under `config` is harmless and one under
+    `services.api.config` is not, and a rule spelled against the default would have had it
+    exactly backwards. `config_testgen.prerequisite_conflict` owns the rule so the message is
+    the same one the model raises; what this adds is the name of the file to fix.
     """
     if block is None:
         return Prerequisites()
@@ -260,7 +312,7 @@ def _load_prerequisites(path: Path, name: str, block: Any) -> Prerequisites:
             raise DeclarationError(
                 f"{path}: {name}: the render prerequisite {key!r} is not a values path"
             )
-        conflict = tg.prerequisite_conflict(key)
+        conflict = tg.prerequisite_conflict(key, probe)
         if conflict is not None:
             raise DeclarationError(f"{path}: {name}: the render prerequisite {key!r} {conflict}")
         values.append((key, value))
@@ -300,22 +352,63 @@ def _load_prerequisites(path: Path, name: str, block: Any) -> Prerequisites:
 # --------------------------------------------------------------------------------------------
 
 
-def raw_config_tree(chart_dir: Path) -> None:
-    """Refuse a chart whose values expose no raw configuration tree.
+def probe_tree(chart_dir: Path, values: dict, name: str, probe: str) -> None:
+    """Refuse a document whose probe path is not a configuration tree in the chart's values.
 
-    Every contract key is reachable as `config.<path>` only because each of these charts merges
-    an operator-supplied tree over whatever it derives from its own first-class values. A chart
-    without one can still be probed — through whichever camelCase value happens to spell each
-    key — but not by a generator that knows nothing about it, and guessing would produce a suite
-    that silently asserts nothing.
+    Every contract key is reachable as `<probe>.<path>` only because each of these charts
+    exposes an operator-supplied tree that some layer of its render merges. A chart without one
+    can still be probed — through whichever camelCase value happens to spell each key — but not
+    by a generator that knows nothing about it, and guessing would produce a suite that silently
+    asserts nothing. The same check catches the likelier mistake by far: an enrolment naming a
+    `probe` path this chart does not have, which would otherwise generate a whole suite of cases
+    setting values nothing reads.
     """
-    path = chart_dir / "values.yaml"
-    values = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    if not isinstance(values.get(tg.VALUES_ROOT), dict):
+    if not isinstance(dig(values, probe), dict):
         raise DeclarationError(
-            f"{path}: has no `{tg.VALUES_ROOT}` mapping, so a contract key cannot be written "
-            "into this chart's values by its contract path alone"
+            f"{chart_dir / 'values.yaml'}: {name}: has no `{probe}` mapping, so a contract key "
+            "cannot be written into this chart's values by its contract path alone"
         )
+
+
+def discriminator_for(
+    declaration: Declaration, document: Document
+) -> tuple[tuple[str, str], ...]:
+    """The labels a document's selector needs beyond its key, empty where the key suffices.
+
+    A generated suite finds its document by the key the declaration names, which is what
+    `check-config.py` reads it from. That stops identifying anything the moment a chart renders
+    the same key into several documents — tankovault's nine services each write their own
+    `config.toml` — so where a key is shared the declaration's own `source.selector` is added to
+    it. Derived here rather than declared in the enrolment because the declaration already
+    states it: a second copy could disagree with the first, and the gate reading the first would
+    then be validating an object the suite never selects.
+    """
+    shared = [
+        other
+        for other in declaration.documents
+        if other.name != document.name and other.source.key == document.source.key
+    ]
+    if not shared:
+        return ()
+
+    if not document.source.selector:
+        raise DeclarationError(
+            f"{declaration.path}: `{document.name}` shares the key `{document.source.key}` "
+            f"with {', '.join(sorted(other.name for other in shared))} and carries no "
+            "`source.selector`, so nothing in this declaration tells the documents apart"
+        )
+
+    twins = sorted(
+        other.name for other in shared if other.source.selector == document.source.selector
+    )
+    if twins:
+        raise DeclarationError(
+            f"{declaration.path}: `{document.name}` shares both the key `{document.source.key}` "
+            f"and its `source.selector` with {', '.join(twins)}, so nothing in this "
+            "declaration tells the documents apart"
+        )
+
+    return tuple(sorted(document.source.selector.items()))
 
 
 def union_for(chart_dir: Path, document: Document) -> cc.Union:
@@ -352,11 +445,13 @@ def build(chart_dir: Path, declaration: Declaration, enrolments: dict[str, Enrol
             f"{declaration.path} does not declare"
         )
 
-    raw_config_tree(chart_dir)
+    values = yaml.safe_load((chart_dir / "values.yaml").read_text(encoding="utf-8")) or {}
 
     suites: dict[Path, str] = {}
     for document in declaration.documents:
         enrolment = enrolments.get(document.name, Enrolment())
+        probe_tree(chart_dir, values, document.name, enrolment.probe)
+
         union = union_for(chart_dir, document)
         target = tg.Target(
             chart=chart_dir.name,
@@ -368,9 +463,14 @@ def build(chart_dir: Path, declaration: Declaration, enrolments: dict[str, Enrol
             contracts=tuple(
                 repository_path(chart_dir, reference.contract) for reference in document.images
             ),
+            discriminator=discriminator_for(declaration, document),
+            root=enrolment.probe,
         )
         plan = tg.plan(
-            union.keys.values(), enrolment.baseline.values, enrolment.prerequisites.values
+            union.keys.values(),
+            enrolment.baseline.values,
+            enrolment.prerequisites.values,
+            enrolment.probe,
         )
         suites[suite_path(chart_dir, document)] = tg.render_suite(
             target,

@@ -29,7 +29,6 @@ and `log.level` — wrapped in the `source` envelope a vendored file carries.
 
 from __future__ import annotations
 
-import importlib.util
 import io
 import json
 import sys
@@ -37,30 +36,16 @@ import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
+from typing import ClassVar
 
 SCRIPTS = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SCRIPTS))
 
 import config_contract as cc  # noqa: E402
 from config_report import Report  # noqa: E402
+from entry import load  # noqa: E402
 
-
-def _load(name: str, filename: str):
-    """Import a hyphenated entry point, which a plain `import` cannot name.
-
-    Registered in `sys.modules` before it is executed, which the same helper in
-    `test_contract_refresh.py` does not need to do: `@dataclass` resolves its own module out of
-    `sys.modules` to decide what a `ClassVar` is, and a module that is not there yet fails at
-    the decorator rather than at anything the test wrote.
-    """
-    spec = importlib.util.spec_from_file_location(name, SCRIPTS / filename)
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-explain = _load("explain_config", "explain-config.py")
+explain = load("explain_config", "explain-config.py")
 
 FIXTURES = SCRIPTS.parent / "testdata" / "contracts"
 API_DIGEST = "sha256:" + "ab" * 32
@@ -72,7 +57,7 @@ def fixture(name: str) -> dict:
     return json.loads((FIXTURES / f"{name}.json").read_text(encoding="utf-8"))
 
 
-def setting(name: str, *occurrences: tuple[str, dict]) -> "explain.Setting":
+def setting(name: str, *occurrences: tuple[str, dict]) -> explain.Setting:
     return explain.Setting(name=name, occurrences=list(occurrences))
 
 
@@ -126,7 +111,7 @@ class ChartFixture(unittest.TestCase):
         )
         return chart
 
-    def collect(self, chart: Path) -> tuple["explain.Surface | None", Report]:
+    def collect(self, chart: Path) -> tuple[explain.Surface | None, Report]:
         from config_declaration import load_declaration
 
         report = Report()
@@ -399,9 +384,13 @@ class TestConstraintProse(unittest.TestCase):
 
 
 class TestFullEntry(unittest.TestCase):
-    DIALECT = {"prefix": "FIXTURE_", "nesting_separator": "__", "indirection_suffix": "_FILE"}
+    DIALECT: ClassVar[dict[str, str]] = {
+        "prefix": "FIXTURE_",
+        "nesting_separator": "__",
+        "indirection_suffix": "_FILE",
+    }
 
-    def entry(self, path: str) -> "explain.Setting":
+    def entry(self, path: str) -> explain.Setting:
         for item in fixture("api")["schema"]["keys"]:
             if item["path"] == path:
                 return setting(path, ("api", item))
@@ -538,7 +527,7 @@ class TestJsonOutput(ChartFixture):
     def emit(self, *argv: str) -> tuple[int, dict]:
         out = io.StringIO()
         with redirect_stdout(out), redirect_stderr(io.StringIO()):
-            status = explain.main(list(argv) + ["--json"])
+            status = explain.main([*argv, "--json"])
         return status, json.loads(out.getvalue())
 
     def setUp(self):

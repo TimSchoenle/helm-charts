@@ -52,10 +52,10 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import config_diff as cd  # noqa: E402
-from config_report import Report, error  # noqa: E402
+import config_diff as cd
+from config_paths import CHARTS_DIR
+from config_report import Report, error
 
-CHARTS_DIR = Path("charts")
 DEFAULT_REF = "origin/main"
 
 # The JSON's own version, on the same reasoning as `terrace_contract`: a consumer that does not

@@ -69,11 +69,15 @@ delete.
 
 ## Keeping this directory honest
 
-Nothing gates the chassis against the charts. It was seeded from the majority text of the eight
-existing charts and it will drift as they do — a value gains a sentence in one chart and the
-scaffold keeps the old one. That is a real gap and it is stated here rather than hidden: the fix
-is a gate that diffs the chassis against every chart that carries the block, which is worth
-writing the first time the drift bites and is not worth guessing at now.
+`just check-chassis` diffs this copy against every chart that carries the block, and reports
+rather than fails. The chassis is not the authority: it was seeded from the majority text of the
+eight existing charts, so it is right about most blocks by construction and has no claim to be
+right about any particular one. A chart that diverged on purpose is a normal thing for a chart to
+do; what the report is for is the other case, a block edited in one chart and nowhere else.
+
+It currently reports 63 of 211 shared blocks as differing, which is the measure of how much had
+already drifted before anything was watching. Reading the list and deciding, per block, whether
+the chart or the scaffold is behind is the work — the recipe only makes the list.
 
 What *is* gated is the result. A chart this scaffold produces is checked by `just check` like any
 other, so a chassis block that stops rendering fails on the next chart somebody creates — and

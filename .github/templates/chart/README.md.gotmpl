@@ -1,0 +1,71 @@
+{{ template "chart.header" . }}
+
+{{ template "chart.deprecationWarning" . }}
+
+{{ template "chart.badgesSection" . }}
+
+{{ template "chart.description" . }}
+
+<!--
+  Scaffolded by `just new-chart`. Everything below the horizontal rule is yours to write; the
+  sections above and below it are helm-docs templates and should stay as they are.
+
+  What belongs here is what the values table cannot say: what the workload is for, what an
+  operator has to have ready before installing it, and which of its settings interact. Delete
+  this comment once the sections read as prose rather than as a checklist.
+-->
+
+## Prerequisites
+
+- Kubernetes 1.19+
+- Helm 3.0+
+- The Prometheus Operator CRDs, if a PodMonitor is enabled
+- Cilium 1.16+, if `networkPolicy.engine` is `cilium` or `both`
+
+## Quick start
+
+```shell
+helm repo add timschoenle https://timschoenle.github.io/helm-charts
+helm repo update
+
+helm install [RELEASE_NAME] timschoenle/{{ template "chart.name" . }} \
+  --namespace [NAMESPACE] --create-namespace
+```
+
+Upgrade with `helm upgrade [RELEASE_NAME] timschoenle/{{ template "chart.name" . }} -n [NAMESPACE]`,
+remove with `helm uninstall [RELEASE_NAME] -n [NAMESPACE]`.
+
+## Configuration
+
+Every setting the image reads is described by the configuration contract this chart vendors, and
+the chart's own values are mapped onto it one by one. To see the mapping:
+
+```shell
+just explain {{ template "chart.name" . }}
+```
+
+The chart writes its configuration to a file rather than to the environment. That is not a style
+choice: the loader refuses a key supplied by both layers, and a value in the environment is
+readable by `kubectl describe pod` and by every child process the container starts.
+
+`config` is the escape hatch — a raw tree merged over everything the chart derives from the
+first-class values above it, so it can both extend and override them. `configExtraToml` is
+appended verbatim after that, for anything the TOML renderer cannot express.
+
+## Credentials
+
+Credentials are delivered as files in the secrets directory, one file per setting, **named after
+the configuration path** rather than freely: the loader reads the key out of the file *name*, so
+`a.b` is the file `a__b` and a dot in the name is refused rather than treated as a separator.
+
+Point `existingSecret` at a Secret you created yourself to keep the values out of the Helm release
+object entirely. `just config-secrets {{ template "chart.name" . }}` lists every key the image
+declares secret and the exact file name each one wants.
+
+{{ template "chart.valuesSection" . }}
+
+{{ template "chart.sourcesSection" . }}
+
+{{ template "chart.maintainersSection" . }}
+
+{{ template "helm-docs.versionFooter" . }}

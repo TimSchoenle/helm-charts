@@ -364,6 +364,37 @@ def probe_for(key: dict[str, Any]) -> tuple[Probe | None, str | None]:
     )
 
 
+def satisfying(key: dict[str, Any]) -> Any | None:
+    """Any value one key's `constraint` accepts, or `None` when nothing here can synthesise one.
+
+    The candidate walk without `probe_for`'s two extra demands. A probe has to *differ* from the
+    published default — otherwise the case proves the chart delivered a value it would have got
+    anyway — and it has to survive the environment spelling as well, so that what it asserts is a
+    value the deployment could actually carry both ways. Neither applies to a caller that simply
+    needs a legal value: `config_scaffold` writes one into a new chart's `values.yaml` for a
+    required key whose image publishes no default, where "differs from the default" is vacuous
+    and the environment layer is not involved at all.
+
+    Public rather than left to a caller reaching for `_candidates`: the walk knows about
+    `multipleOf`, exclusive bounds and the choice vocabulary, and a second implementation of it
+    would be wrong in exactly the places this one was fixed.
+    """
+    constraint = key.get("constraint") or {}
+    if out_of_vocabulary(constraint):
+        return None
+    try:
+        form = cc.text_form(key)
+    except cc.ContractError:
+        return None
+    if form not in PROBED_FORMS:
+        return None
+
+    for candidate in _candidates(form, str(key.get("path") or ""), key, constraint):
+        if unmet(candidate, constraint) is None:
+            return candidate
+    return None
+
+
 def _candidates(
     form: str, path: str, key: dict[str, Any], constraint: dict[str, Any]
 ) -> list[Any]:

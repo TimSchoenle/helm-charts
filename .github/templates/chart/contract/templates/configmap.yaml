@@ -1,0 +1,21 @@
+{{- include "%%CHART%%.validateValues" . }}
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: {{ include "common.fullname" . }}
+  namespace: {{ include "common.namespace" . }}
+  labels:
+    {{- include "common.labels" . | nindent 4 }}
+  {{- with (include "common.annotations" .) }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
+data:
+  {{- /*
+    One file rather than a set of fragments. The loader does merge every `*.toml` in the
+    directory, but relying on that would put the precedence of one value against another inside
+    a merge this chart does not own or test. Merging in the template instead makes the effective
+    configuration readable with `kubectl get configmap -o yaml`.
+  */}}
+  %%DOCUMENT_KEY%%: |
+    {{- include "%%CHART%%.configToml" . | nindent 4 }}

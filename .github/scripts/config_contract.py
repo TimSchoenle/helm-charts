@@ -55,9 +55,10 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterable, Sequence
+from typing import Any
 
 # --------------------------------------------------------------------------------------------
 # What the image publishes
@@ -816,7 +817,11 @@ def _levenshtein(left: str, right: str) -> int:
         current = [index]
         for position, b in enumerate(right, start=1):
             current.append(
-                min(previous[position] + 1, current[position - 1] + 1, previous[position - 1] + (a != b))
+                min(
+                    previous[position] + 1,
+                    current[position - 1] + 1,
+                    previous[position - 1] + (a != b),
+                )
             )
         previous = current
     return previous[-1]

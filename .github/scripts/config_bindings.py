@@ -22,7 +22,8 @@ Why the fact is worth writing down at all, in the order the payoffs arrive:
 
 **1. Key-level coverage — the only one this file serves today.**
 `just check-contract-coverage` is chart-level: it reports whether a chart carries a
-`config-contract.yaml`, and its `unconfigured` escape hatch lists *images*. Nothing in this
+`config-contract.yaml`, and its `unconfigured` escape hatch lists whole *image blocks*.
+Nothing in this
 repository notices when an image release adds a setting that no chart value reaches. That is the
 documented recurring failure here — an automated bump repins the digest and silently omits
 everything else — and a marker per value is what turns "the chart has a contract" into "every key

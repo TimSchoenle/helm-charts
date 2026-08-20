@@ -53,8 +53,9 @@ nothing to collapse and the pass would only ever be dead code.
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field
-from typing import Any, Iterable
+from typing import Any
 
 import config_contract as cc
 

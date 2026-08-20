@@ -1,0 +1,85 @@
+# Linting for `.github/scripts`, which is 11,000 lines of Python holding every gate in this
+# repository and, until this file, had no linter at all.
+#
+# That absence was not a decision anybody made. Seven entry scripts already carry `# noqa: E402`
+# on their imports — written for a linter that never landed — so the intent was there and the
+# tool was not.
+#
+# Configured here rather than in a `pyproject.toml` at the root, because there is no Python
+# package here to configure: `.github/scripts` is a directory of scripts a task runner invokes,
+# and a `pyproject.toml` would imply a distribution that does not exist. `.github/configs/` is
+# where every other tool's configuration already lives — `ct.yaml`, `kube-linter.yaml`,
+# `lintconf.yaml`, `render-api-versions.txt` — so this sits beside them.
+
+# The interpreter the recipes resolve to on a CI runner. Not the lowest version that would work:
+# the scripts already use `X | None` unions and `match`-free structural code, and pinning the
+# target to what actually runs them is what lets the linter flag a construct that would break
+# there rather than one that would break on a Python nobody uses.
+target-version = "py311"
+
+# Matches the width the scripts are already written to, and the width `values.yaml`'s comments
+# and the justfile's own prose use. Chosen by measuring the existing files rather than by taking
+# the tool's default of 88, which would have reported several hundred lines that are deliberate.
+line-length = 100
+
+[lint]
+# Deliberately more than the default `E4,E7,E9,F`, and deliberately not `ALL`.
+#
+#   E, W    pycodestyle: the whitespace and layout rules the files already follow
+#   F       pyflakes: unused imports and names, the single highest-value check here — this
+#           repository has already accumulated four of them, each found by hand
+#   I       import sorting, so an added import has one correct position rather than an opinion
+#   B       flake8-bugbear: mutable default arguments, `except` that swallows, loop-variable
+#           capture. Real defects rather than style
+#   UP      pyupgrade: keeps the files on one generation of syntax rather than two
+#   C4      comprehension rewrites, where the rewritten form is plainly clearer
+#   RUF     ruff's own, notably the mutable-dataclass-default check this codebase's many
+#           `@dataclass` types are exposed to
+select = ["E", "W", "F", "I", "B", "UP", "C4", "RUF"]
+
+# E402 — a module-level import after the `sys.path` bootstrap every entry script and every test
+# module needs — is deliberately *not* ignored here. Sixty-six of those imports already carry a
+# per-line `# noqa: E402`, written by hand, and each one marks the exact place the bootstrap makes
+# the import unavoidable. A blanket ignore would make all sixty-six dead comments and would also
+# stop reporting an import that landed after the bootstrap by accident. Keeping the rule on means
+# ruff validates the existing comments — an unused one is an `RUF100` — and a new entry script is
+# told once, at the line, why it needs one.
+ignore = [
+  # RUF002 flags a character in a *docstring* that could be confused with an ASCII one. The rule
+  # exists so a homoglyph cannot hide inside something that gets executed or compared, and a
+  # docstring is neither. This repository's prose is deliberately typographic — em dashes, arrows,
+  # `×8` meaning "eight of them" in `config_bindings`' marker table — and rewriting that to ASCII
+  # would make the tables worse to read in exchange for nothing.
+  #
+  # RUF001 (identifiers and string literals) and RUF003 (comments) stay on, which is where the
+  # rule's premise actually holds.
+  "RUF002",
+]
+
+[lint.isort]
+# The sibling modules are neither standard library nor third-party: they are this directory,
+# imported by name because it is on `sys.path`. Naming them keeps them in their own block rather
+# than mixed into third-party imports where a reader cannot tell them from PyYAML.
+known-first-party = [
+  "config_bindings",
+  "config_contract",
+  "config_coverage",
+  "config_declaration",
+  "config_diff",
+  "config_gate_container",
+  "config_gate_document",
+  "config_manifests",
+  "config_paths",
+  "config_report",
+  "config_scaffold",
+  "config_secrets",
+  "config_testgen",
+  "entry",
+]
+
+[format]
+# Not enabled as a gate. The files are hand-formatted to a house style the formatter disagrees
+# with in places — notably the long argument lists in `config_testgen`'s renderers, which are laid
+# out to be read as tables — and reflowing 11,000 lines to settle that is a change nobody asked
+# for. `just lint-python` lints; it does not format.
+docstring-code-format = false

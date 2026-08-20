@@ -15,7 +15,8 @@ contract says the key will accept. `check-config.py` supplies the reading half o
 `generate-contract-tests.py` supplies the walking and the writing; this is the model, and it is
 a pure function of a contract key so every rule below is testable by calling it.
 
-Four rules here are normative rather than convenient:
+Seven rules here are normative rather than convenient. The first four are about the probe, and
+the last three about the shape of the chart it is written into:
 
 **A probe must differ from the key's default.** A case that sets a key to the value it already
 has passes whether or not the chart delivers anything, which is worse than no case at all: it
@@ -46,6 +47,46 @@ backslash — `re.escape` escapes `-`, `&`, `~`, `#` and the space, and Go's par
 obliged to accept every one of those. So only the characters that are metacharacters in both
 are escaped, and everything else is passed through as the literal it already is.
 
+**A document is selected by the key it carries, and by its labels only where the key is not
+enough.** `check-config.py` reads a document out of the key its declaration names, so selecting
+on that same fact is what ties the two gates to one object — where a label selector on its own
+matches the Deployment and the Service as well, which was measured rather than assumed. A chart
+that renders the same key into several documents breaks that: TankoVault's nine services each
+write their own `config.toml`, so the key identifies all nine and none of them. There the labels
+the declaration already selects the document on are added to the key, and the two facts go into
+one JSONPath filter rather than into two matchers, because helm-unittest's `documentSelector`
+carries exactly one `path` and one `value` — measured against plugin 1.1.2, whose selector is a
+single `yamlpath` expression evaluated per rendered manifest. The narrowing is applied only where
+a key is shared, since a filter over labels that distinguish nothing would be longer without
+proving more.
+
+**Which values path a probe is written to is the chart's decision, not this module's.** Every
+chart here merges its operator-facing configuration tree *over* whatever it derives, so a probe
+written into that tree arrives in the document. One does the opposite: TankoVault merges
+`.Values.config`, then the chart-derived wiring, then `services.<name>.config`, so a probe
+written into the root tree is overwritten by the chart before it reaches the file and the case
+fails for a reason that is not a defect. The root is therefore per document and stated in the
+chart's enrolment rather than guessed at — the values key is `services.controlPlane.config` where
+the document is named `control-plane`, so there is nothing to derive it from — and a document's
+baseline is read under the same root, because the check that stops a baseline from supplying the
+very value a case is probing is a comparison of the two paths as strings.
+
+**A render prerequisite may never be written into the tree the probes are written to.** Several
+charts here refuse their own default render — no target base, no webhook URL, no bucket entry —
+so a suite for one of them needs values supplied before any of its cases renders at all, the case
+that only checks the document's identity included. Those are the chart's own first-class values,
+and a prerequisite is therefore carried by every case without exception rather than dropped on a
+collision the way a baseline is. That is exactly why the collision has to be made unreachable
+instead: a prerequisite writing under the probe root would sit in the same tree every case probes,
+free to supply the very value a case exists to prove the chart delivered, and the suite would
+report a proof it had not earned. The rule is stated against that root rather than against the
+literal `config`, because the root is what the rule above made movable, and a refusal naming the
+default would stop guarding the one chart that does not use it. A prerequisite the root nests
+*inside* is refused for the neighbouring reason: it and the probe would be two entries of one
+`set` mapping, one enclosing the other, and a `set` mapping has no order. So the refusal lives
+here, in the model, and not only in the loader that reads the enrolment file — the rule belongs to
+the suite, and a caller reaching past the loader would otherwise reach past the rule with it.
+
 One limit is deliberate and cannot be closed from here. The probe is chosen to differ from the
 *contract's* default, which is the image's compiled-in value; a chart is free to render some
 other value when the key is unset, and if that value happens to equal the probe the case passes
@@ -53,6 +94,15 @@ without proving anything. For text the probe is a token nothing else would produ
 overlap is unreachable in practice; for a boolean there are only two values and the overlap is
 real. Closing it would mean rendering the chart, which would make generation depend on helm and
 on a values file — and the staleness gate would stop being a pure comparison of committed bytes.
+
+A second limit belongs to the prerequisite rule and is stated rather than papered over. Refusing
+the probe root makes a prerequisite unable to reach a probed key *directly*; a first-class chart
+value that the chart derives a probed key from is a longer path to the same place, and no mapping
+from one to the other exists in the contract for this module to consult. What closes it is what
+the probe root is chosen to be — the layer that wins, whether that is `.Values.config` merged over
+the derived tree or the per-document layer merged over both — so the probe outranks whatever a
+prerequisite set. That is a property of the chart rather than of the generator, and the
+enrolment's mandatory `reason` is where a chart says so.
 """
 
 from __future__ import annotations
@@ -69,7 +119,15 @@ import config_contract as cc
 # chart-agnostic generator possible: every contract key is reachable as `config.<path>` whether
 # or not the chart also spells it as a camelCase value of its own. A chart without one cannot be
 # probed this way and is reported rather than guessed at.
+#
+# The default rather than the rule: a chart whose derived wiring outranks this tree names a
+# higher-precedence one per document in its enrolment. See the module header.
 VALUES_ROOT = "config"
+
+# A values path a probe may be written under: dotted, and nothing else. The path is used twice —
+# as a `set` prefix in the generated suite and as a walk into the chart's `values.yaml` — and the
+# two agree on dotted segments and on nothing beyond them.
+VALUES_PATH = re.compile(r"^[A-Za-z_][A-Za-z0-9_-]*(\.[A-Za-z_][A-Za-z0-9_-]*)*$")
 
 # Text probes are built from this stem so a value appearing in a rendered document is
 # unmistakably a test fixture and never a plausible setting somebody meant.
@@ -116,6 +174,24 @@ SKIPPED_FORMS = {
 SECRET_REASON = (
     "`secret: true`: the probe would be committed to this repository, and a credential-shaped "
     "value in a test file is a credential"
+)
+
+# Why a render prerequisite may not be written. Stated here because two callers refuse it — the
+# loader that reads the enrolment file, which can name the file, and the model below, which
+# cannot but must refuse it anyway. The two that name a tree are built from the probe root rather
+# than from `VALUES_ROOT`, because the root is what a chart's enrolment may move.
+PREREQUISITE_EMPTY = "is empty, so it names no value at all"
+
+PREREQUISITE_INSIDE_PROBES = (
+    "writes under `{root}`, which is the tree every case probes: a prerequisite there could "
+    "supply the value a case exists to prove the chart delivered. A render prerequisite states "
+    "the chart's own values, and nothing under `{root}` is one"
+)
+
+PREREQUISITE_AROUND_PROBES = (
+    "encloses `{root}`, the tree every case probes: the prerequisite and the probe would be two "
+    "entries of one `set` mapping with the second nested inside the first, and a `set` mapping "
+    "has no order, so which of them survives is stated nowhere"
 )
 
 
@@ -402,6 +478,47 @@ def document_pattern(path: str, text: str) -> str:
 
 
 # --------------------------------------------------------------------------------------------
+# Spelling the document selector
+# --------------------------------------------------------------------------------------------
+
+
+def jsonpath_string(text: str) -> str:
+    """One string literal inside a JSONPath expression, double-quoted.
+
+    Double quotes rather than single ones so the whole expression survives the single-quoted YAML
+    scalar it is written into without every quote in it being doubled. A label or a key carrying
+    a double quote or a backslash is refused instead of escaped: `yamlpath`'s lexer is not this
+    repository's to reason about, and no object in it has ever carried one — a guess here would
+    produce a selector that silently matches nothing.
+    """
+    if '"' in text or "\\" in text:
+        raise TestGenError(
+            f"{text!r} cannot be written into a document selector: a JSONPath string literal "
+            "here carries neither a double quote nor a backslash"
+        )
+    return f'"{text}"'
+
+
+def selector_path(key: str, discriminator: Sequence[tuple[str, str]]) -> str:
+    """The `documentSelector` path for one document: its key, narrowed by labels where needed.
+
+    helm-unittest evaluates this as a `yamlpath` expression against each rendered manifest and
+    selects the manifest when it resolves to anything at all, so putting the labels into a filter
+    over the document root and the key into the step after it is what makes one selector out of
+    two facts. Its `documentSelector` has room for exactly one `path` and one `value`, which is
+    why they are not spelled as two matchers.
+    """
+    if not discriminator:
+        return f"data[{jsonpath_string(key)}]"
+
+    predicate = " && ".join(
+        f"@.metadata.labels[{jsonpath_string(label)}]=={jsonpath_string(value)}"
+        for label, value in discriminator
+    )
+    return f"$[?({predicate})].data[{jsonpath_string(key)}]"
+
+
+# --------------------------------------------------------------------------------------------
 # The suite
 # --------------------------------------------------------------------------------------------
 
@@ -431,12 +548,41 @@ class Plan:
     skipped: list[Skipped]
 
 
-def values_path(path: str) -> str:
+def values_path(path: str, root: str = VALUES_ROOT) -> str:
     """Where an operator writes one contract key, as a helm-unittest `set` path."""
-    return f"{VALUES_ROOT}.{path}"
+    return f"{root}.{path}"
 
 
-def plan(keys: Iterable[dict[str, Any]], baseline: Sequence[tuple[str, Any]]) -> Plan:
+def prerequisite_conflict(path: str, root: str = VALUES_ROOT) -> str | None:
+    """Why one render prerequisite may not be written, or `None` when it may be.
+
+    The whole of the guarantee named in the module header, in two comparisons of one string, so
+    that a reader checks it by eye rather than by reasoning about how two trees merge. A caller
+    that reports the conflict wraps this in whatever names the file it came from; `plan` below
+    raises on it, because a suite built past this rule is a suite that proves less than it says.
+
+    `root` is the values path the probes are written under, which the enrolment may move off
+    `VALUES_ROOT` per document. Comparing against the root rather than against the default is the
+    whole point: the rule exists to keep a prerequisite out of the tree the cases probe, and on a
+    chart that probes `services.api.config` the tree to stay out of is that one. Both directions
+    are refused, because either nesting puts two entries of one unordered `set` mapping inside
+    each other.
+    """
+    if not path:
+        return PREREQUISITE_EMPTY
+    if path == root or path.startswith(f"{root}."):
+        return PREREQUISITE_INSIDE_PROBES.format(root=root)
+    if root.startswith(f"{path}."):
+        return PREREQUISITE_AROUND_PROBES.format(root=root)
+    return None
+
+
+def plan(
+    keys: Iterable[dict[str, Any]],
+    baseline: Sequence[tuple[str, Any]],
+    prerequisites: Sequence[tuple[str, Any]] = (),
+    root: str = VALUES_ROOT,
+) -> Plan:
     """Turn a union's keys into the cases and the skips of one suite.
 
     `baseline` is carried by every case except the one probing the key it sets. A chart may
@@ -445,7 +591,26 @@ def plan(keys: Iterable[dict[str, Any]], baseline: Sequence[tuple[str, Any]]) ->
     and a probe that walked into such a pair would fail for a reason that has nothing to do with
     the round trip. Dropping the entry that collides with the probe is what stops the baseline
     from supplying the very value the case is meant to prove the chart delivered.
+
+    `prerequisites` is carried by every case with no exception at all, because it is what makes
+    the chart render in the first place: a chart whose `validateValues` refuses its own defaults
+    has no case that can do without one. So the collision the baseline is protected from by being
+    dropped is instead made unreachable — a prerequisite path inside the probes' own tree is
+    refused here rather than accommodated. The two fields are different things and this is the
+    line between them.
+
+    `root` is the values path a probe is written under: the chart's operator-facing configuration
+    tree, or its higher-precedence per-document layer where that tree is outranked by what the
+    chart derives. It is what the baseline and the prerequisites are both read against — the
+    enrolment states the baseline under it, so the collision check stays a comparison of two
+    strings, and the prerequisite refusal is measured against it, so moving the root moves the
+    tree a prerequisite has to stay out of.
     """
+    for name, _ in prerequisites:
+        conflict = prerequisite_conflict(name, root)
+        if conflict is not None:
+            raise TestGenError(f"the render prerequisite {name!r} {conflict}")
+
     cases: list[Case] = []
     skipped: list[Skipped] = []
 
@@ -456,8 +621,9 @@ def plan(keys: Iterable[dict[str, Any]], baseline: Sequence[tuple[str, Any]]) ->
             skipped.append(Skipped(path=path, reason=reason or "no reason given"))
             continue
 
-        target = values_path(path)
-        set_values = [(name, value) for name, value in baseline if name != target]
+        target = values_path(path, root)
+        set_values = list(prerequisites)
+        set_values.extend((name, value) for name, value in baseline if name != target)
         set_values.append((target, probe.value))
         cases.append(
             Case(path=path, set_values=set_values, pattern=document_pattern(path, probe.text))
@@ -486,6 +652,11 @@ PLAIN_SCALAR = re.compile(r"^[A-Za-z_][A-Za-z0-9_./-]*$")
 # `just` files are written to.
 COMMENT_WIDTH = 96
 
+# A selector path YAML reads back unchanged as a plain scalar. `data["config.toml"]` is one by
+# YAML's block-context rules; the filter form opens with `$[?(` and carries `&&`, and quoting that
+# is cheaper than making every reader confirm none of it is an indicator.
+PLAIN_SELECTOR = re.compile(r'^[A-Za-z_][A-Za-z0-9_."\[\]/-]*$')
+
 
 def yaml_scalar(value: Any) -> str:
     """One scalar, quoted whenever bare would be ambiguous or would change its type."""
@@ -495,6 +666,21 @@ def yaml_scalar(value: Any) -> str:
         return str(value)
     text = str(value)
     return text if PLAIN_SCALAR.match(text) else yaml_quoted(text)
+
+
+def yaml_value(value: Any) -> str:
+    """One value on the right of a `set` entry, whatever its shape, on a single line.
+
+    A render prerequisite may be a whole subtree — `bucket.entries` is a map of maps keyed by
+    request path — and `json.dumps` produces a YAML flow collection as readily as a JSON one, so
+    the conversion that already spells a TOML scalar spells a structure here too. Kept to one line
+    and sorted, for the two reasons everything in this module is: a `set` block that stays a flat
+    list of paths is one a reader scans, and a gate comparing bytes cannot survive a mapping whose
+    order is whatever Python's happened to be.
+    """
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, sort_keys=True, ensure_ascii=False)
+    return yaml_scalar(value)
 
 
 def yaml_quoted(text: str) -> str:
@@ -512,7 +698,14 @@ def comment(lines: Iterable[str], indent: str = "") -> list[str]:
 
 @dataclass(frozen=True)
 class Target:
-    """The document a suite is written for, as the declaration describes it."""
+    """The document a suite is written for, as the declaration and the enrolment describe it.
+
+    The last two fields carry defaults because they are what every chart but one looks like: a
+    document whose key identifies it on its own, probed through the configuration tree the chart
+    merges over its derived wiring. Stating them as defaults rather than as required arguments is
+    also what keeps a suite for such a chart byte-identical to the one generated before either
+    field existed.
+    """
 
     chart: str
     name: str
@@ -522,12 +715,21 @@ class Target:
     declaration: str
     contracts: tuple[str, ...]
 
+    # Labels that tell this document from its siblings, empty when the key already does. See
+    # `selector_path` and the module header.
+    discriminator: tuple[tuple[str, str], ...] = ()
+
+    # The values path a probe is written under. See the module header.
+    root: str = VALUES_ROOT
+
 
 def render_suite(
     target: Target,
     plan: Plan,
     baseline: Sequence[tuple[str, Any]],
-    baseline_reason: str | None,
+    reason: str | None,
+    prerequisites: Sequence[tuple[str, Any]] = (),
+    prerequisite_reason: str | None = None,
 ) -> str:
     """The complete helm-unittest suite for one document, as the text to write.
 
@@ -536,6 +738,10 @@ def render_suite(
     version — written into the file at all. That is what lets the staleness gate be a comparison
     of bytes, and it is what keeps a Renovate digest bump that changes no key from producing a
     diff here.
+
+    `reason` is the enrolment's explanation for whatever it made non-default about this document
+    — a baseline, a probe root, or both — and is rendered once beside them. The prerequisites
+    carry their own, because they are a different field explaining a different thing.
     """
     lines = comment(_preamble(target, plan))
     lines.append("")
@@ -545,16 +751,19 @@ def render_suite(
     lines.append("release:")
     lines.append(f"  name: {yaml_scalar(target.chart)}")
     lines.append("")
+    if prerequisites:
+        lines.extend(comment(_prerequisite_note(target.root, prerequisite_reason)))
     lines.append("tests:")
-    lines.extend(_identity_case(target))
+    lines.extend(_identity_case(target, prerequisites))
 
-    if baseline:
+    notes = _case_notes(target, baseline, reason)
+    if notes:
         lines.append("")
-        lines.extend(comment(_baseline_note(baseline_reason), indent="  "))
+        lines.extend(comment(notes, indent="  "))
 
     for case in plan.cases:
         lines.append("")
-        lines.extend(_probe_case(case, target.key))
+        lines.extend(_probe_case(case, target))
 
     if plan.skipped:
         lines.append("")
@@ -570,7 +779,7 @@ def _preamble(target: Target, plan: Plan) -> list[str]:
         BANNER,
         "",
         *_wrap(
-            f"Every case below writes one setting into `{VALUES_ROOT}` and asserts that it "
+            f"Every case below writes one setting into `{target.root}` and asserts that it "
             f"arrives in `{target.key}`, under the table its contract path names. That is the "
             "round trip no other gate can see: `just check-config` proves the rendered document "
             "satisfies the contract, and a document missing a setting entirely satisfies it "
@@ -602,21 +811,15 @@ def _release_note() -> list[str]:
     )
 
 
-def _identity_case(target: Target) -> list[str]:
+def _identity_case(target: Target, prerequisites: Sequence[tuple[str, Any]]) -> list[str]:
     lines = [
-        *comment(
-            _wrap(
-                "Every case below selects its document by the key it carries, which is what "
-                "`check-config.py` reads it from — a label would match the Deployment and the "
-                "Service too. This case is what ties that selection back to the declaration: "
-                f"the object holding `{target.key}` has to be the {target.kind} the declaration "
-                "names, carrying the labels the declaration selects on.",
-                COMMENT_WIDTH - 4,
-            ),
-            indent="  ",
-        ),
+        *comment(_wrap(_selection_note(target), COMMENT_WIDTH - 4), indent="  "),
         f"  - it: renders {target.key} on the {target.kind} the declaration selects",
-        *_selector(target.key),
+        *_selector(target),
+        # This case sets nothing of its own, and still carries the prerequisites: without them
+        # the chart's guard refuses the render, and a case asserting on a document that was never
+        # produced fails for a reason that has nothing to do with what it checks.
+        *_set_block(prerequisites),
         "    asserts:",
         "      - isKind:",
         f"          of: {yaml_scalar(target.kind)}",
@@ -632,39 +835,125 @@ def _identity_case(target: Target) -> list[str]:
     return lines
 
 
-def _selector(key: str) -> list[str]:
+def _selector(target: Target) -> list[str]:
     """The document selector, matching on the key existing rather than on its contents."""
-    return ["    documentSelector:", f'      path: data["{key}"]']
+    path = selector_path(target.key, target.discriminator)
+    scalar = path if PLAIN_SELECTOR.match(path) else yaml_quoted(path)
+    return ["    documentSelector:", f"      path: {scalar}"]
 
 
-def _baseline_note(reason: str | None) -> list[str]:
-    lines = _wrap(
-        "Every case below also carries the chart's baseline values, minus whichever of them the "
-        "case is itself probing — a baseline that supplied the probed value would make the "
-        "assertion pass whether or not the chart delivered anything. The baseline exists because "
-        "a chart may refuse to render a combination the contract considers legal, and a probe "
-        "that walked into one would fail for a reason that has nothing to do with the round trip.",
-        COMMENT_WIDTH - 4,
+def _selection_note(target: Target) -> str:
+    """Why every case below selects the document it does, in whichever form actually applies."""
+    if not target.discriminator:
+        return (
+            "Every case below selects its document by the key it carries, which is what "
+            "`check-config.py` reads it from — a label would match the Deployment and the "
+            "Service too. This case is what ties that selection back to the declaration: the "
+            f"object holding `{target.key}` has to be the {target.kind} the declaration names, "
+            "carrying the labels the declaration selects on."
+        )
+
+    labels = ", ".join(f"`{label}: {value}`" for label, value in target.discriminator)
+    return (
+        f"Every case below selects its document by the key it carries and by {labels}, because "
+        f"this chart renders `{target.key}` into more than one document and the key on its own "
+        "identifies all of them at once. The labels on their own would not do it either — they "
+        "are on the workload and its Service as well — so the two are spelled as one JSONPath "
+        "filter, which is what helm-unittest's single-matcher selector has room for. This case "
+        f"is what ties that selection back to the declaration: the object holding `{target.key}` "
+        f"has to be the {target.kind} the declaration names, carrying the labels the declaration "
+        "selects on."
     )
-    if reason:
-        lines.append("")
-        lines.extend(_wrap(reason.strip(), COMMENT_WIDTH - 4))
+
+
+def _set_block(values: Sequence[tuple[str, Any]]) -> list[str]:
+    """One case's `set` mapping, or nothing at all when it has no values to write."""
+    if not values:
+        return []
+    lines = ["    set:"]
+    for name, value in values:
+        lines.append(f"      {yaml_scalar(name)}: {yaml_value(value)}")
     return lines
 
 
-def _probe_case(case: Case, key: str) -> list[str]:
+_BASELINE_NOTE = (
+    "Every case below also carries the chart's baseline values, minus whichever of them the case "
+    "is itself probing — a baseline that supplied the probed value would make the assertion pass "
+    "whether or not the chart delivered anything. The baseline exists because a chart may refuse "
+    "to render a combination the contract considers legal, and a probe that walked into one "
+    "would fail for a reason that has nothing to do with the round trip."
+)
+
+
+def _root_note(root: str) -> str:
+    return (
+        f"Every case below writes its probe into `{root}` rather than into `{VALUES_ROOT}`, "
+        "which the chart's enrolment states because this chart merges its derived wiring *over* "
+        f"`{VALUES_ROOT}` rather than under it. A probe written into `{VALUES_ROOT}` for a key "
+        "the chart derives would be overwritten before it reached the document, and the case "
+        f"would fail on a chart that is behaving correctly. What that costs is real: `{root}` is "
+        f"the layer these cases prove, and nothing here proves `{VALUES_ROOT}` still reaches a "
+        "key the chart does not derive."
+    )
+
+
+def _case_notes(
+    target: Target, baseline: Sequence[tuple[str, Any]], reason: str | None
+) -> list[str]:
+    """Whatever the enrolment made non-default about these cases, and the reason it gives.
+
+    One block carrying one reason rather than a note per field: the document entry states a
+    single `reason` for its baseline and its probe root alike, and a reader who sees the same
+    paragraph twice stops reading it. The render prerequisites are not here — they are a separate
+    field with a separate reason, and their note sits above `tests:` because the identity case
+    carries them too.
+    """
+    paragraphs: list[list[str]] = []
+    if baseline:
+        paragraphs.append(_wrap(_BASELINE_NOTE, COMMENT_WIDTH - 4))
+    if target.root != VALUES_ROOT:
+        paragraphs.append(_wrap(_root_note(target.root), COMMENT_WIDTH - 4))
+    if not paragraphs:
+        return []
+    if reason:
+        paragraphs.append(_wrap(reason.strip(), COMMENT_WIDTH - 4))
+
+    lines: list[str] = []
+    for paragraph in paragraphs:
+        if lines:
+            lines.append("")
+        lines.extend(paragraph)
+    return lines
+
+
+def _prerequisite_note(root: str, reason: str | None) -> list[str]:
+    lines = _wrap(
+        "Every case below carries this chart's render prerequisites, the identity case included: "
+        "chart values its own `validateValues` insists on before it will render anything at all. "
+        "They are first-class chart values rather than configuration, and none of them may be "
+        f"written under `{root}` — a prerequisite there would sit in the tree every case probes, "
+        "free to supply the value the case exists to prove the chart delivered. Unlike a "
+        "baseline, a prerequisite is never dropped for the case it would collide with, because a "
+        "case without it does not render at all; the refusal is what takes that dropping's place.",
+        COMMENT_WIDTH - 2,
+    )
+    if reason:
+        lines.append("")
+        lines.extend(_wrap(reason.strip(), COMMENT_WIDTH - 2))
+    return lines
+
+
+def _probe_case(case: Case, target: Target) -> list[str]:
     lines = [
-        f"  - it: delivers {case.path} into {key}",
-        *_selector(key),
-        "    set:",
+        f"  - it: delivers {case.path} into {target.key}",
+        *_selector(target),
+        *_set_block(case.set_values),
     ]
-    for name, value in case.set_values:
-        lines.append(f"      {yaml_scalar(name)}: {yaml_scalar(value)}")
     lines.extend(
         [
             "    asserts:",
             "      - matchRegex:",
-            f'          path: data["{key}"]',
+            f'          path: data["{target.key}"]',
             f"          pattern: {yaml_quoted(case.pattern)}",
         ]
     )

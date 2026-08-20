@@ -31,10 +31,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import config_contract as cc  # noqa: E402
-from config_declaration import DeclarationError  # noqa: E402
-from config_report import Report, error, warning  # noqa: E402
-from config_secrets import (  # noqa: E402
+import config_contract as cc
+from config_declaration import DeclarationError
+from config_paths import CHARTS_DIR
+from config_report import Report, error, warning
+from config_secrets import (
     Credential,
     Mount,
     Reconciler,
@@ -43,9 +44,6 @@ from config_secrets import (  # noqa: E402
     credentials,
     declared_secrets,
 )
-
-CHARTS_DIR = Path("charts")
-
 
 # --------------------------------------------------------------------------------------------
 # The inventory
@@ -198,7 +196,9 @@ def report_of(surface: Surface) -> Report:
             ),
         )
 
-    for chart, workload, container, image, files, values_files in _by_container(surface.unclaimed):
+    for chart, workload, container, _image, files, values_files in _by_container(
+        surface.unclaimed
+    ):
         report.add(
             f"unclaimed: {chart}",
             error(

@@ -72,20 +72,18 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-import yaml
-
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import config_contract as cc  # noqa: E402
-from config_declaration import (  # noqa: E402
+import config_contract as cc
+from config_declaration import (
     Declaration,
     DeclarationError,
     bind,
+    declared,
     load_declaration,
 )
-from config_report import Report, warning  # noqa: E402
-
-CHARTS_DIR = Path("charts")
+from config_paths import CHARTS_DIR, read_yaml
+from config_report import Report, warning
 
 # The contracts' prose is UTF-8 and uses it — em dashes, arrows, typographic quotes — and this
 # repository is developed from Git Bash on Windows, where Python's default console encoding is the
@@ -274,8 +272,8 @@ def collect(chart_dir: Path, declaration: Declaration, report: Report) -> Surfac
     provenance, so the contracts are re-read afterwards for the image reference and the app
     version. That is a second read of a file already proven, not a second opinion about it.
     """
-    values = _read_yaml(chart_dir / "values.yaml")
-    app_version = _read_yaml(chart_dir / "Chart.yaml").get("appVersion")
+    values = read_yaml(chart_dir / "values.yaml")
+    app_version = read_yaml(chart_dir / "Chart.yaml").get("appVersion")
 
     surface = Surface(chart=declaration.chart)
     by_contract: dict[str, list[str]] = {}
@@ -757,7 +755,10 @@ def print_surface(surface: Surface, args: argparse.Namespace, out) -> int:
         print("\n\n".join(blocks), file=out)
 
     if external:
-        print("\n==> external variables — read by the image, and nobody's configuration\n", file=out)
+        print(
+            "\n==> external variables — read by the image, and nobody's configuration\n",
+            file=out,
+        )
         print(
             "\n".join(
                 prose(
@@ -829,7 +830,9 @@ def as_json(surface: Surface, pattern: str | None) -> dict[str, Any]:
         ],
         "keys": [_setting_json(item, derive=True) for item in select(surface.keys, pattern)],
         "loader": [_setting_json(item) for item in select(surface.loader, pattern)],
-        "external": [_setting_json(item, derive=True) for item in select(surface.external, pattern)],
+        "external": [
+            _setting_json(item, derive=True) for item in select(surface.external, pattern)
+        ],
     }
 
 
@@ -855,20 +858,13 @@ def _setting_json(setting: Setting, derive: bool = False) -> dict[str, Any]:
 # --------------------------------------------------------------------------------------------
 
 
-def _read_yaml(path: Path) -> dict[str, Any]:
-    return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-
-
 def charts_with_contracts(charts: Path) -> list[tuple[str, Declaration]]:
-    """Every chart carrying a declaration, whether or not it declares any document."""
-    found = []
-    for chart_dir in sorted(charts.iterdir()):
-        if not (chart_dir / "Chart.yaml").is_file():
-            continue
-        declaration = load_declaration(chart_dir)
-        if declaration is not None:
-            found.append((chart_dir.name, declaration))
-    return found
+    """Every chart carrying a declaration, whether or not it declares any document.
+
+    Not `documents_only`: a chart that opted out explicitly carries a reason, and printing that
+    reason is one of the two things this command exists to do.
+    """
+    return [(chart_dir.name, declaration) for chart_dir, declaration in declared(charts)]
 
 
 def list_charts(charts: Path, out) -> None:
@@ -890,11 +886,17 @@ def list_charts(charts: Path, out) -> None:
 
 
 def describe_opt_out(declaration: Declaration, out) -> None:
-    print(f"==> {declaration.chart} has explicitly opted out of configuration contracts\n", file=out)
+    print(
+        f"==> {declaration.chart} has explicitly opted out of configuration contracts\n",
+        file=out,
+    )
     print("\n".join(prose(str(declaration.reason), "    ")), file=out)
     if declaration.unconfigured:
+        # Values paths, not repository names — `unconfigured` is unioned with every declared
+        # image's `values` and compared against the paths a chart pins. This line used to call
+        # them images, which is how the field came to have two readers that disagreed.
         print(
-            f"\n    images it pins that carry no contract: "
+            f"\n    values paths pinning an image that carries no contract: "
             f"{', '.join(declaration.unconfigured)}",
             file=out,
         )

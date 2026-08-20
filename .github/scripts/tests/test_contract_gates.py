@@ -17,8 +17,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-import config_contract as cc  # noqa: E402
-from config_gate_container import (  # noqa: E402
+import config_contract as cc
+from config_gate_container import (
     ContainerView,
     EnvironmentGate,
     FileGate,
@@ -27,7 +27,7 @@ from config_gate_container import (  # noqa: E402
     Suppliers,
     check_container,
 )
-from config_report import ERROR, WARNING  # noqa: E402
+from config_report import ERROR, WARNING
 
 FIXTURES = Path(__file__).resolve().parents[2] / "testdata" / "contracts"
 
@@ -300,7 +300,9 @@ class TestServiceLinks(unittest.TestCase):
         self.assertEqual(ServiceLinkGate().check({"enableServiceLinks": False}, union("api")), [])
 
     def test_setting_it_true_is_not_setting_it(self):
-        self.assertEqual(len(ServiceLinkGate().check({"enableServiceLinks": True}, union("api"))), 1)
+        self.assertEqual(
+            len(ServiceLinkGate().check({"enableServiceLinks": True}, union("api"))), 1
+        )
 
 
 if __name__ == "__main__":

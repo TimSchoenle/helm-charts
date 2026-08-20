@@ -48,3 +48,46 @@ check-kube-refs version=kube_version:
     set -euo pipefail
     {{ resolve_python }}
     "$python" {{ scripts }}/kube-schema-refs.py '{{ version }}' --charts {{ charts }} --check
+
+# --------------------------------------------------------------------------------------------
+# The chart chassis
+# --------------------------------------------------------------------------------------------
+#
+# `just new-chart` writes a new chart from `.github/templates/chart/values.chassis.yaml` — the
+# twenty-nine `values.yaml` blocks that are the same in every chart because `charts/common` owns
+# the logic and these files only name it. Nothing keeps that copy and the charts in step: a block
+# gains a sentence in one chart, the scaffold keeps the old wording, and the next chart created
+# inherits it.
+#
+# The chassis is **not** the authority. It was seeded from the majority text of the existing
+# charts, so it is right about most blocks by construction and has no claim to be right about any
+# particular one — which is why this reports and does not fail.
+
+# Report where a chart's shared values blocks have drifted from the scaffold's copy. Report only.
+#
+# Compared as text, comments included, because the comments are the interesting part: the
+# `@schema` blocks are what `values.schema.json` is generated from, and the `# --` descriptions
+# are published into every chart's README by helm-docs. Two blocks parsing to the same mapping can
+# still produce a different schema and a different README.
+#
+# Blocks a chart does not carry at all are not reported. `teamspeak` has no `extraVolumeMounts`
+# and does not need one; that is a fact about the chart rather than drift. `tankovault` shares
+# only 8 of the 29 because it is nine services and keeps its podspec under `defaults:` and
+# `services.*` — the scaffold does not model that shape, and saying so is more useful than
+# reporting 21 absences.
+#
+# Deliberately NOT in `just check`, for the reason `explain` and `check-config-secrets` are not:
+# it prints rather than asserts, and an aggregate whose whole output is a pass or a fail is not
+# where advisory output belongs.
+#
+#   just check-chassis                    every chart, with a diff per drifted block
+#   just check-chassis '' --summary       the counts alone
+#   just check-chassis portfolio          one chart
+[doc("Report where a chart's shared values blocks have drifted from the scaffold's copy")]
+[group('maintain')]
+check-chassis chart='' *flags:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    {{ resolve_python }}
+    "$python" {{ scripts }}/check-chassis.py '{{ chart }}' \
+      --charts {{ charts }} --chassis .github/templates/chart/values.chassis.yaml {{ flags }}

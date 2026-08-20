@@ -37,7 +37,6 @@ coverage it has not established:
 from __future__ import annotations
 
 import copy
-import importlib.util
 import json
 import sys
 import tempfile
@@ -50,21 +49,14 @@ sys.path.insert(0, str(SCRIPTS))
 import config_bindings as cb  # noqa: E402
 from config_declaration import DeclarationError, load_declaration  # noqa: E402
 from config_report import Report  # noqa: E402
+from entry import load  # noqa: E402
 
 FIXTURES = SCRIPTS.parent / "testdata" / "contracts"
 
 DIGEST = "sha256:" + "1" * 64
 
 
-def _load(name: str, filename: str):
-    """Import a hyphenated entry point, the way `test_contract_secrets` already does."""
-    spec = importlib.util.spec_from_file_location(name, SCRIPTS / filename)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-entry = _load("config_bindings_entry", "check-config-bindings.py")
+entry = load("config_bindings_entry", "check-config-bindings.py")
 
 
 def fixture(name: str) -> dict:

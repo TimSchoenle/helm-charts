@@ -251,6 +251,7 @@ explain chart='' pattern='' *flags:
     set -euo pipefail
     {{ resolve_python }}
     "$python" {{ scripts }}/explain-config.py '{{ chart }}' '{{ pattern }}' \
+      --charts {{ charts }} {{ flags }}
 
 # --------------------------------------------------------------------------------------------
 # The review aid — offline

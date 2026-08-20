@@ -70,18 +70,24 @@ cannot yet diverge; if that changes, it changes in `config_contract.py` first.
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterable
-
-import yaml
+from typing import Any
 
 import config_contract as cc
-from config_declaration import Binding, Declaration, Document, bind, load_declaration
+from config_declaration import (
+    Binding,
+    Declaration,
+    Document,
+    bind,
+    declared,
+    vendored_for,
+)
 from config_gate_container import ContainerView
 from config_gate_document import parse_document
-from config_paths import read_yaml
 from config_manifests import containers_of, digest_of, load_manifests, pod_spec, select
+from config_paths import read_yaml
 
 # The four ways a value can reach the loader, named as the report prints them. The rendered
 # document is among them and is not a mistake: a key written into the plaintext ConfigMap *is*
@@ -152,22 +158,15 @@ class Credential:
 
 def contracted_charts(charts: Path) -> list[tuple[Path, Declaration]]:
     """Every chart that declares at least one document, in directory order."""
-    found: list[tuple[Path, Declaration]] = []
-    for chart_dir in sorted(charts.iterdir()):
-        if not (chart_dir / "Chart.yaml").is_file():
-            continue
-        declaration = load_declaration(chart_dir)
-        if declaration is not None and declaration.documents:
-            found.append((chart_dir, declaration))
-    return found
+    return list(declared(charts, documents_only=True))
 
 
 def declared_secrets(chart_dir: Path, declaration: Declaration) -> list[Declared]:
     """Every `secret: true` key of every contract one chart vendors."""
     found: list[Declared] = []
     for document in declaration.documents:
-        for reference in document.images:
-            vendored = cc.load_vendored(chart_dir / reference.contract)
+        for item in vendored_for(chart_dir, document):
+            vendored = item.vendored
             app = (vendored.contract.get("app") or {}).get("name") or vendored.image
             for key in vendored.contract["schema"]["keys"]:
                 if not key.get("secret"):
@@ -176,7 +175,7 @@ def declared_secrets(chart_dir: Path, declaration: Declaration) -> list[Declared
                     Declared(
                         chart=declaration.chart,
                         document=document.name,
-                        contract=f"{declaration.chart}/{reference.contract}",
+                        contract=item.label,
                         image=str(app),
                         path=str(key["path"]),
                         secrets_file=str(key.get("secrets_file") or ""),
@@ -507,7 +506,7 @@ class Reconciler:
             return
         try:
             instance = parse_document(text, document.source.format)
-        except Exception:  # noqa: BLE001 — an unparseable document is gate 1's finding, not ours
+        except Exception:
             return
 
         present = document_paths(instance)

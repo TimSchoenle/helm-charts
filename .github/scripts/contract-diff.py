@@ -52,9 +52,9 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import config_diff as cd  # noqa: E402
-from config_paths import CHARTS_DIR  # noqa: E402
-from config_report import Report, error  # noqa: E402
+import config_diff as cd
+from config_paths import CHARTS_DIR
+from config_report import Report, error
 
 DEFAULT_REF = "origin/main"
 

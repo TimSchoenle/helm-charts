@@ -81,7 +81,7 @@ import shutil
 import subprocess
 import sys
 import tarfile
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -89,8 +89,8 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import config_contract as cc  # noqa: E402
-from config_paths import CHARTS_DIR, dig  # noqa: E402
+import config_contract as cc
+from config_paths import CHARTS_DIR, dig
 
 # `check-config.py` owns the declaration format; importing it by file name is not possible, so
 # the two pieces this script needs are re-derived from the same YAML rather than duplicated.
@@ -434,7 +434,7 @@ def write_vendored(path: Path, image: str, digest: str, payload: bytes, sha256: 
             "image": image,
             "digest": digest,
             "sha256": sha256,
-            "fetched": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "fetched": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
         },
         "contract": contract,
     }

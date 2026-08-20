@@ -59,32 +59,30 @@ import sys
 from pathlib import Path
 from typing import Any
 
-
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import config_contract as cc  # noqa: E402
-from config_coverage import check_coverage  # noqa: E402
-from config_declaration import (  # noqa: E402
+import config_contract as cc
+from config_coverage import check_coverage
+from config_declaration import (
     Binding,
     Consumer,
     Declaration,
     DeclarationError,
     Document,
     bind,
-    load_declaration,
+    declared,
 )
-from config_gate_container import ServiceLinkGate, check_container  # noqa: E402
-from config_gate_document import DocumentGate  # noqa: E402
-from config_manifests import (  # noqa: E402
+from config_gate_container import ServiceLinkGate, check_container
+from config_gate_document import DocumentGate
+from config_manifests import (
     containers_of,
     digest_of,
     load_manifests,
     pod_spec,
     select,
 )
-from config_paths import CHARTS_DIR, FIRST_PARTY, read_yaml  # noqa: E402
-from config_report import Report, warning  # noqa: E402
-
+from config_paths import CHARTS_DIR, FIRST_PARTY, read_yaml
+from config_report import Report, warning
 
 
 class Runner:
@@ -100,12 +98,7 @@ class Runner:
     def run(self) -> int:
         """Check every chart that declares a contract; returns how many were checked."""
         checked = 0
-        for chart_dir in sorted(self.charts.iterdir()):
-            if not (chart_dir / "Chart.yaml").is_file():
-                continue
-            declaration = load_declaration(chart_dir)
-            if declaration is None or not declaration.documents:
-                continue
+        for chart_dir, declaration in declared(self.charts, documents_only=True):
             self.check_chart(chart_dir, declaration)
             checked += 1
         return checked

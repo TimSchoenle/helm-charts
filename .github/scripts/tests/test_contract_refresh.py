@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import gzip
 import hashlib
-import importlib.util
 import io
 import json
 import sys
@@ -28,6 +27,8 @@ from pathlib import Path
 
 SCRIPTS = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SCRIPTS))
+
+from entry import load  # noqa: E402
 
 import config_contract as cc  # noqa: E402
 from config_declaration import (  # noqa: E402
@@ -42,15 +43,7 @@ DIGEST = "sha256:" + "ab" * 32
 OTHER_DIGEST = "sha256:" + "cd" * 32
 
 
-def _load(name: str, filename: str):
-    """Import a hyphenated entry point, which a plain `import` cannot name."""
-    spec = importlib.util.spec_from_file_location(name, SCRIPTS / filename)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-refresh = _load("refresh_contracts", "refresh-contracts.py")
+refresh = load("refresh_contracts", "refresh-contracts.py")
 
 
 def fixture(name: str) -> dict:

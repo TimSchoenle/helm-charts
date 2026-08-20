@@ -29,7 +29,6 @@ and `log.level` — wrapped in the `source` envelope a vendored file carries.
 
 from __future__ import annotations
 
-import importlib.util
 import io
 import json
 import sys
@@ -41,26 +40,13 @@ from pathlib import Path
 SCRIPTS = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SCRIPTS))
 
+from entry import load  # noqa: E402
+
 import config_contract as cc  # noqa: E402
 from config_report import Report  # noqa: E402
 
 
-def _load(name: str, filename: str):
-    """Import a hyphenated entry point, which a plain `import` cannot name.
-
-    Registered in `sys.modules` before it is executed, which the same helper in
-    `test_contract_refresh.py` does not need to do: `@dataclass` resolves its own module out of
-    `sys.modules` to decide what a `ClassVar` is, and a module that is not there yet fails at
-    the decorator rather than at anything the test wrote.
-    """
-    spec = importlib.util.spec_from_file_location(name, SCRIPTS / filename)
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-explain = _load("explain_config", "explain-config.py")
+explain = load("explain_config", "explain-config.py")
 
 FIXTURES = SCRIPTS.parent / "testdata" / "contracts"
 API_DIGEST = "sha256:" + "ab" * 32

@@ -516,6 +516,22 @@ jobs:
       - name: Check configuration binding markers
         run: just check-config-bindings
 
+      # The generated round-trip suites, against the contracts they were generated from.
+      #
+      # `just check` carries this recipe and its two siblings — `check-contracts` and
+      # `check-kube-refs` — do not, because those two are repaired by the Documentation job on the
+      # pull request itself. Nothing regenerates the contract suites, deliberately, so a contract
+      # that gained a key leaves its suite silently short of it unless something says so.
+      #
+      # Nothing said so here. CI runs the recipes as parallel jobs rather than running
+      # `just check`, so this gate held only for contributors who ran the aggregate locally — and
+      # the drift it exists to catch arrives on a Renovate bump, which is exactly the pull request
+      # nobody runs `just check` on by hand.
+      #
+      # Reads two committed files per chart: no render, no cluster, no `jv`.
+      - name: Check generated contract suites
+        run: just check-contract-tests
+
       - name: Contract model unit tests
         run: just test-contract-union
 

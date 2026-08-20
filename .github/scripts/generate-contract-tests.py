@@ -76,6 +76,7 @@ from config_declaration import (
     reject_unknown,
     union_for,
 )
+from config_paths import CHARTS_DIR
 
 # The file that enrols a chart, and the keys it may carry at each level. Anything else is a typo
 # that would otherwise be ignored in silence — the same rule `config-contract.yaml` is read under,
@@ -595,9 +596,12 @@ def main(argv: list[str]) -> int:
         help="report drifted suites and exit non-zero instead of writing them",
     )
     parser.add_argument(
-        "--charts", default="charts", type=Path, help="charts directory (default: charts)"
+        "--charts",
+        default=str(CHARTS_DIR),
+        type=Path,
+        help=f"charts directory (default: {CHARTS_DIR})",
     )
-    args = parser.parse_args(argv[1:])
+    args = parser.parse_args(argv)
 
     if not args.charts.is_dir():
         fail(f"{args.charts} is not a directory")
@@ -623,4 +627,4 @@ def main(argv: list[str]) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main(sys.argv))
+    raise SystemExit(main(sys.argv[1:]))

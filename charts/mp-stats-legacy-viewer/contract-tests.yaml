@@ -1,0 +1,16 @@
+# vim: set ft=yaml:
+
+# Enrols this chart in the generated configuration round-trip suites.
+#
+# `just check-config` proves the rendered `config.toml` satisfies the image's contract. It cannot
+# prove the round trip: that a setting written into `config` arrives in that document, at the path
+# the image reads it from, carrying the value that was asked for. A document missing a setting
+# entirely satisfies the contract perfectly, so a typo in a template helper passes every gate and
+# the server runs on a compiled default nobody chose.
+#
+# No `baseline` here, and that is the whole entry: this chart renders from its packaged defaults
+# with nothing supplied, so every generated case stands on its own. The charts that do need one
+# need it because a `validateValues` guard refuses the default render, which is a property of the
+# chart rather than of the contract.
+documents:
+  - name: viewer

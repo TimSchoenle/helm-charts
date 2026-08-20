@@ -1,0 +1,34 @@
+# vim: set ft=yaml:
+
+# Enrols this chart in the generated configuration round-trip suites, and states what every
+# generated case has to carry before this chart will render.
+#
+# `just check-config` proves the rendered `config.toml` satisfies the image's contract. It cannot
+# prove the round trip: that a setting written into `config` arrives in that document, at the path
+# the image reads it from, carrying the value that was asked for. A document missing a setting
+# entirely satisfies the contract perfectly — every key it does contain is legal — so a typo in a
+# template helper passes every gate and the server runs on a compiled default nobody chose.
+#
+# `just contract-tests` reads this file and `config-contract.yaml`, and writes one suite per
+# declared document under `tests/`. The presence of this file is the enrolment: portfolio is the
+# first chart on a deliberately phased rollout, and the other five follow once the mechanism has
+# been reviewed in production rather than all at once on the strength of one review.
+documents:
+  - name: server
+
+    # The values every generated case carries, minus whichever of them the case is itself
+    # probing. Expressed as flat dotted paths under `config`, so a collision between a baseline
+    # entry and the key a case probes is a string comparison a reader can check by eye.
+    baseline:
+      config.csp.cloudflare.script_nonce: false
+
+    reason: >-
+      `portfolio.validateValues` fails the render when `csp.hash_inline_scripts` is false while
+      `csp.cloudflare.script_nonce` is true — dropping the hashes restores `'unsafe-inline'`,
+      which a browser ignores as soon as the policy carries a nonce, so every document would
+      render blank. Both keys are optional booleans defaulting to true, so the probe for the
+      first is `false` and would walk straight into the pair. Turning the nonce off across the
+      suite is the combination the chart's own tests already call legitimate: a deployment with
+      no Cloudflare bot product in front of it. The entry is dropped from the case probing
+      `csp.cloudflare.script_nonce` itself, which is what keeps that case proving the chart
+      delivered the value rather than the baseline having supplied it.

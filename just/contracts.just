@@ -301,3 +301,85 @@ check-config-secrets out='rendered' *args:
     {{ resolve_python }}
     just render '{{ out }}'
     "$python" {{ scripts }}/config-secrets.py --reconcile '{{ out }}' --charts {{ charts }} {{ args }}
+
+# --------------------------------------------------------------------------------------------
+# The round trip — generated
+# --------------------------------------------------------------------------------------------
+#
+# Everything above validates the configuration a chart *renders*. None of it can see the round
+# trip: that a setting an operator writes into the chart's values arrives in the application's
+# document, at the path the image reads it from, carrying the value that was asked for. A typo in
+# a template helper produces a document that satisfies the contract perfectly — every key it does
+# contain is legal — and the setting is simply absent, so the pod starts, reports healthy, and
+# runs on the compiled default the whole pipeline exists to stop it running on.
+#
+# The two gates compose rather than overlap. `check-config` refuses a document carrying a key
+# nothing reads; the suites below refuse a document missing a key somebody asked for. Neither
+# sees the other's defect.
+#
+# 491 key declarations exist across this repository and the hand-written suites exercise a
+# handful, which is not a gap anybody closes by hand — and a suite written by hand goes stale the
+# first time an image renames a key, silently, because a case nobody wrote is a case nobody
+# misses. Generating it from the contract is what ties the two together: the contract moves, the
+# suite moves with it, and `check-contract-tests` is what says so.
+
+# Generate the helm-unittest suites that prove each chart delivers what its contract declares.
+#
+# A chart is enrolled by carrying `charts/<chart>/contract-tests.yaml`, exactly as
+# `config-contract.yaml` is what enrols it in `just check-config` — so the rollout is a property
+# of the tree rather than a list somebody has to remember to edit, and a chart states there which
+# values every generated case has to carry before it will render at all.
+#
+# Five of the six charts with a contract are enrolled, and the sixth is held back rather than
+# forgotten. The rollout stayed one chart at a time because the probe written into a chart's
+# values is chosen from the contract rather than by a person, and what that is worth against a
+# real image is answered by running it and not by reviewing it. What each chart needed was
+# measured the same way, by enrolling it and reading the failure:
+#
+#   portfolio               a `baseline`: its own guard refuses the pair its two probes walk into.
+#   mp-stats-legacy-viewer  nothing. Six of its seven keys pass today; enrolling it is one file.
+#   cloudflare-access-…     `prerequisites`: chart values the guard refuses to render without —
+#   netcup-offer-bot        a target base and an allowed path, a webhook URL, one bucket entry.
+#   s3-bucket-perma-link    Not configuration, so not a `baseline`: a baseline writes into the
+#                           document the cases assert against, and it is dropped from the case
+#                           probing the key it sets, where a prerequisite is dropped from
+#                           nothing — a case without it never renders. Being undroppable is why
+#                           a prerequisite naming a path under `config` is refused outright.
+#   tankovault              the same prerequisites, an order of magnitude larger, plus two of its
+#                           own: nine documents all keyed `config.toml`, which the single-match
+#                           document selector cannot tell apart, and `.Values.config` as the
+#                           *lowest*-precedence layer there, so a probe written into it is
+#                           overwritten by the chart's derived wiring before it reaches the file.
+#
+# Deliberately NOT run by the Documentation job, unlike `contracts` and `sync-kube-refs`. Those
+# regenerate a fact about an image or a Kubernetes release, which no reviewer has an opinion
+# about; this regenerates a test, and a test that appears on a pull request without its author
+# having seen it is a test nobody has read. `check-contract-tests` is therefore in `just check`
+# where its siblings are not — see the comment there.
+[doc("Generate the helm-unittest suites that prove each chart delivers what its contract declares")]
+[group('contracts')]
+contract-tests chart='':
+    #!/usr/bin/env bash
+    set -euo pipefail
+    {{ resolve_python }}
+    "$python" {{ scripts }}/generate-contract-tests.py {{ chart }} --charts {{ charts }}
+
+# Report generated suites that no longer match the contracts they were generated from.
+#
+# The offline half of the recipe above, and the reason the generated file is worth committing at
+# all: a suite regenerated on the fly would test whatever the contract says today, which is a
+# tautology. Committed, it is a diff a reviewer reads — the removed key, the changed default, the
+# probe that stopped being valid — landing in the same pull request as the digest bump that
+# caused it.
+#
+# Compares the bytes the generator would write against the bytes on disk, and prints the
+# difference rather than only the verdict. `check-contracts` above reaches for `git diff` because
+# what it checks is whether a *refresh* was run; here there is nothing to run first, so the
+# comparison is the script's own and works on a dirty tree and on a fresh clone alike.
+[doc("Report generated contract suites that no longer match the contracts behind them")]
+[group('contracts')]
+check-contract-tests:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    {{ resolve_python }}
+    "$python" {{ scripts }}/generate-contract-tests.py --check --charts {{ charts }}

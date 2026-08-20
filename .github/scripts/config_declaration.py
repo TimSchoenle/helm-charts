@@ -157,6 +157,10 @@ class Declaration:
     path: Path
     documents: list[Document]
     reason: str | None
+    # Values paths — the same spelling a document's `images[].values` uses — at which this
+    # chart pins an image that reads no contract-described configuration. Not repository
+    # names: `config_coverage.check_unconfigured` records why the two readers disagreed,
+    # which reading won, and gates it.
     unconfigured: list[str]
     bindings: bool
     unbound: list[Unbound]

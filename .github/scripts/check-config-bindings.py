@@ -2,7 +2,8 @@
 """Hold every `# @config` marker in a chart's values.yaml against the contract it names.
 
 `just check-contract-coverage` answers a chart-level question — does this chart carry a
-`config-contract.yaml` at all — and its `unconfigured` escape hatch lists *images*. So the
+`config-contract.yaml` at all — and its `unconfigured` escape hatch lists whole *image
+blocks*. So the
 repository's documented recurring failure is invisible to it: an image release adds a setting, the
 automated bump repins the digest and omits everything else, and no gate anywhere notices that the
 new key has no chart value. `check-config` will not catch it either, because a key nothing renders

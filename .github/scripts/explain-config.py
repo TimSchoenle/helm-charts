@@ -886,8 +886,11 @@ def describe_opt_out(declaration: Declaration, out) -> None:
     print(f"==> {declaration.chart} has explicitly opted out of configuration contracts\n", file=out)
     print("\n".join(prose(str(declaration.reason), "    ")), file=out)
     if declaration.unconfigured:
+        # Values paths, not repository names — `unconfigured` is unioned with every declared
+        # image's `values` and compared against the paths a chart pins. This line used to call
+        # them images, which is how the field came to have two readers that disagreed.
         print(
-            f"\n    images it pins that carry no contract: "
+            f"\n    values paths pinning an image that carries no contract: "
             f"{', '.join(declaration.unconfigured)}",
             file=out,
         )

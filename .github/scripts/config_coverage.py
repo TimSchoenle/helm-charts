@@ -91,6 +91,8 @@ def check_coverage(charts: Path, first_party: Path, report: Report) -> None:
             continue
 
         declaration = load_declaration(chart_dir)
+        if declaration is not None:
+            check_unconfigured(chart_dir, declaration, values, report)
 
         if declaration is None or not declaration.documents:
             uncovered.append((chart_dir.name, [repository for _, repository in ours]))
@@ -112,6 +114,42 @@ def check_coverage(charts: Path, first_party: Path, report: Report) -> None:
                 )
 
     _report_coverage(covered, uncovered, report)
+
+
+def check_unconfigured(
+    chart_dir: Path, declaration, values: Any, report: Report
+) -> None:
+    """Hold every `unconfigured` entry to being a values path that pins an image.
+
+    **`unconfigured` holds values paths, not repository names**, and that had to be settled
+    because the two readers of the field disagreed. This gate unions it with the `values` of every
+    declared image and compares the result against the paths a chart pins, so a repository name
+    there matched nothing and silently bought no coverage; `just explain` printed the same field
+    as "images it pins that carry no contract", and two module docstrings said the same. No chart
+    in the repository sets it, so nothing was wrong yet — the first one to would have picked a
+    reading at random.
+
+    The values path wins for three reasons. It is the reading the only gate that acts on the field
+    already implements. That gate's own error message offers `unconfigured` as the alternative to
+    "a document's `images`", whose entries are values paths, so the message was already consistent
+    with it. And a repository name is ambiguous where a values path is not: a chart pinning the
+    same repository at two paths could not say which of them it meant.
+
+    Enforced here rather than in `load_declaration`, because deciding this needs the chart's
+    values.yaml and the declaration loader deliberately reads nothing but its own file. This is
+    the one gate that already has both open.
+    """
+    pinned = {path for path, _ in pinned_images(values)}
+    for entry in declaration.unconfigured:
+        if entry in pinned:
+            continue
+        report.fail(
+            f"{chart_dir.name}: {DECLARATION}",
+            f"`unconfigured` names {entry!r}, which is not a values path this chart pins an image "
+            f"at. The field holds values paths — the same spelling a document's `images[].values` "
+            f"uses — and not repository names"
+            + (f"; this chart pins images at {', '.join(sorted(pinned))}" if pinned else ""),
+        )
 
 
 def _report_coverage(

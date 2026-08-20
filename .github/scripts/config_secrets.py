@@ -77,7 +77,14 @@ from typing import Any, Iterable
 import yaml
 
 import config_contract as cc
-from config_declaration import Binding, Declaration, Document, bind, declared
+from config_declaration import (
+    Binding,
+    Declaration,
+    Document,
+    bind,
+    declared,
+    vendored_for,
+)
 from config_gate_container import ContainerView
 from config_gate_document import parse_document
 from config_paths import read_yaml
@@ -159,8 +166,8 @@ def declared_secrets(chart_dir: Path, declaration: Declaration) -> list[Declared
     """Every `secret: true` key of every contract one chart vendors."""
     found: list[Declared] = []
     for document in declaration.documents:
-        for reference in document.images:
-            vendored = cc.load_vendored(chart_dir / reference.contract)
+        for item in vendored_for(chart_dir, document):
+            vendored = item.vendored
             app = (vendored.contract.get("app") or {}).get("name") or vendored.image
             for key in vendored.contract["schema"]["keys"]:
                 if not key.get("secret"):
@@ -169,7 +176,7 @@ def declared_secrets(chart_dir: Path, declaration: Declaration) -> list[Declared
                     Declared(
                         chart=declaration.chart,
                         document=document.name,
-                        contract=f"{declaration.chart}/{reference.contract}",
+                        contract=item.label,
                         image=str(app),
                         path=str(key["path"]),
                         secrets_file=str(key.get("secrets_file") or ""),

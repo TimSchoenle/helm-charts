@@ -74,6 +74,7 @@ from config_declaration import (  # noqa: E402
     dig,
     load_declaration,
     reject_unknown,
+    union_for,
 )
 
 # The file that enrols a chart, and the keys it may carry at each level. Anything else is a typo
@@ -409,15 +410,6 @@ def discriminator_for(
         )
 
     return tuple(sorted(document.source.selector.items()))
-
-
-def union_for(chart_dir: Path, document: Document) -> cc.Union:
-    """The contracts of every image that reads one document, merged."""
-    contracts = []
-    for reference in document.images:
-        vendored = cc.load_vendored(chart_dir / reference.contract)
-        contracts.append((f"{chart_dir.name}/{reference.contract}", vendored.contract))
-    return cc.union_contracts(contracts)
 
 
 def suite_path(chart_dir: Path, document: Document) -> Path:

@@ -113,7 +113,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import config_bindings as cb  # noqa: E402
 import config_contract as cc  # noqa: E402
 from config_declaration import Declaration, DeclarationError, Document  # noqa: E402
-from config_declaration import chart_dirs, load_declaration  # noqa: E402
+from config_declaration import chart_dirs, load_declaration, union_for  # noqa: E402
 from config_paths import CHARTS_DIR  # noqa: E402
 from config_report import Report  # noqa: E402
 
@@ -133,12 +133,8 @@ class Bound:
         self.unions: dict[str, cc.Union] = {}
 
         for document in declaration.documents:
-            contracts = []
-            for reference in document.images:
-                vendored = cc.load_vendored(chart_dir / reference.contract)
-                contracts.append((f"{chart_dir.name}/{reference.contract}", vendored.contract))
             self.documents[document.name] = document
-            self.unions[document.name] = cc.union_contracts(contracts)
+            self.unions[document.name] = union_for(chart_dir, document)
 
     def namespace(self, name: str, cls: str) -> dict[str, dict[str, Any]]:
         """The half of one document's contract a marker of this class may name."""

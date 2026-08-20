@@ -1,0 +1,44 @@
+# vim: set ft=yaml:
+
+# Enrols this chart in the generated configuration round-trip suites, and states the chart values
+# every generated case has to carry before this chart will render at all.
+#
+# `just check-config` proves the rendered `config.toml` satisfies the image's contract. It cannot
+# prove the round trip: that a setting written into `config` arrives in that document, at the path
+# the image reads it from, carrying the value that was asked for. A document missing a setting
+# entirely satisfies the contract perfectly — every key it does contain is legal — so a typo in a
+# template helper passes every gate and the bot runs on a compiled default nobody chose.
+#
+# `just contract-tests` reads this file and `config-contract.yaml`, and writes one suite per
+# declared document under `tests/`. The presence of this file is the enrolment.
+documents:
+  - name: bot
+
+    # The chart values every generated case carries, the identity case among them: this chart's
+    # `validateValues` fails the template before a ConfigMap exists for any case to assert
+    # against, so there is no case here that can do without them.
+    #
+    # Flat dotted paths, exactly as the helm-unittest `set` block they become spells them.
+    # Nothing here may name a path under `config`: a prerequisite is never dropped for the case
+    # it collides with, the way a baseline is, so one written into the tree the cases probe could
+    # supply the very value a case exists to prove the chart delivered. The generator refuses one
+    # outright.
+    prerequisites:
+      values:
+        discord.webhookUrl: https://render-prerequisite.invalid/api/webhooks/0/0
+
+      reason: >-
+        `netcup-offer-bot.validateValues` refuses a render that projects no
+        `discord__webhook_url` file — a bot with nowhere to post announces into nothing — and it
+        runs from `configmap.yaml`, so without a webhook there is no document for any case to
+        assert against. The guard reads the projected key list rather than the value, so
+        `existingSecret` would satisfy it as well; the first-class value is used instead because
+        it keeps the enrolment to one line and leaves the chart's Secret rendering on the path
+        every other case exercises. This is the one prerequisite in the repository that occupies
+        a `secret: true` contract key, which the generator refuses to invent a probe for on the
+        grounds that a credential-shaped value in a test file is a credential. It is written here
+        rather than synthesised, and it is not a credential: `.invalid` is reserved by RFC 2606
+        and can never resolve, and the webhook id and token are both zero, which Discord issues
+        to nobody. `discord.webhook_url` carries no case in this suite for that same `secret`
+        rule, so nothing is being covered up. The chart merges `.Values.config` over everything
+        it derives from its values, so a probe still wins wherever the two would meet.

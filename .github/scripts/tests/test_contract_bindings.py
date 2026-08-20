@@ -46,11 +46,10 @@ from pathlib import Path
 SCRIPTS = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SCRIPTS))
 
-from entry import load  # noqa: E402
-
 import config_bindings as cb  # noqa: E402
 from config_declaration import DeclarationError, load_declaration  # noqa: E402
 from config_report import Report  # noqa: E402
+from entry import load  # noqa: E402
 
 FIXTURES = SCRIPTS.parent / "testdata" / "contracts"
 

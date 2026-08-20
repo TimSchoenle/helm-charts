@@ -70,11 +70,10 @@ cannot yet diverge; if that changes, it changes in `config_contract.py` first.
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterable
-
-import yaml
+from typing import Any
 
 import config_contract as cc
 from config_declaration import (
@@ -87,8 +86,8 @@ from config_declaration import (
 )
 from config_gate_container import ContainerView
 from config_gate_document import parse_document
-from config_paths import read_yaml
 from config_manifests import containers_of, digest_of, load_manifests, pod_spec, select
+from config_paths import read_yaml
 
 # The four ways a value can reach the loader, named as the report prints them. The rendered
 # document is among them and is not a mistake: a key written into the plaintext ConfigMap *is*
@@ -507,7 +506,7 @@ class Reconciler:
             return
         try:
             instance = parse_document(text, document.source.format)
-        except Exception:  # noqa: BLE001 — an unparseable document is gate 1's finding, not ours
+        except Exception:
             return
 
         present = document_paths(instance)

@@ -38,8 +38,6 @@ from pathlib import Path
 SCRIPTS = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SCRIPTS))
 
-from entry import load  # noqa: E402
-
 import config_contract as cc  # noqa: E402
 from config_declaration import Consumer, Declaration, Document, Source  # noqa: E402
 from config_gate_container import ContainerView  # noqa: E402
@@ -52,6 +50,7 @@ from config_secrets import (  # noqa: E402
     names_credential,
     secret_file_names,
 )
+from entry import load  # noqa: E402
 
 FIXTURES = SCRIPTS.parent / "testdata" / "contracts"
 

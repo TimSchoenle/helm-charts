@@ -72,20 +72,18 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import config_contract as cc  # noqa: E402
-from config_declaration import (  # noqa: E402
+import config_contract as cc
+from config_declaration import (
     Declaration,
     DeclarationError,
     bind,
     declared,
     load_declaration,
 )
-from config_paths import CHARTS_DIR, read_yaml  # noqa: E402
-from config_report import Report, warning  # noqa: E402
-
+from config_paths import CHARTS_DIR, read_yaml
+from config_report import Report, warning
 
 # The contracts' prose is UTF-8 and uses it — em dashes, arrows, typographic quotes — and this
 # repository is developed from Git Bash on Windows, where Python's default console encoding is the
@@ -757,7 +755,10 @@ def print_surface(surface: Surface, args: argparse.Namespace, out) -> int:
         print("\n\n".join(blocks), file=out)
 
     if external:
-        print("\n==> external variables — read by the image, and nobody's configuration\n", file=out)
+        print(
+            "\n==> external variables — read by the image, and nobody's configuration\n",
+            file=out,
+        )
         print(
             "\n".join(
                 prose(
@@ -829,7 +830,9 @@ def as_json(surface: Surface, pattern: str | None) -> dict[str, Any]:
         ],
         "keys": [_setting_json(item, derive=True) for item in select(surface.keys, pattern)],
         "loader": [_setting_json(item) for item in select(surface.loader, pattern)],
-        "external": [_setting_json(item, derive=True) for item in select(surface.external, pattern)],
+        "external": [
+            _setting_json(item, derive=True) for item in select(surface.external, pattern)
+        ],
     }
 
 
@@ -883,7 +886,10 @@ def list_charts(charts: Path, out) -> None:
 
 
 def describe_opt_out(declaration: Declaration, out) -> None:
-    print(f"==> {declaration.chart} has explicitly opted out of configuration contracts\n", file=out)
+    print(
+        f"==> {declaration.chart} has explicitly opted out of configuration contracts\n",
+        file=out,
+    )
     print("\n".join(prose(str(declaration.reason), "    ")), file=out)
     if declaration.unconfigured:
         # Values paths, not repository names — `unconfigured` is unioned with every declared

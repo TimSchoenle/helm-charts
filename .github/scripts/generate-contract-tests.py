@@ -65,9 +65,9 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import config_contract as cc  # noqa: E402
-import config_testgen as tg  # noqa: E402
-from config_declaration import (  # noqa: E402
+import config_contract as cc
+import config_testgen as tg
+from config_declaration import (
     Declaration,
     DeclarationError,
     Document,

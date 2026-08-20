@@ -251,6 +251,7 @@ explain chart='' pattern='' *flags:
     set -euo pipefail
     {{ resolve_python }}
     "$python" {{ scripts }}/explain-config.py '{{ chart }}' '{{ pattern }}' \
+      --charts {{ charts }} {{ flags }}
 
 # --------------------------------------------------------------------------------------------
 # The review aid — offline
@@ -444,3 +445,78 @@ check-contract-tests:
     set -euo pipefail
     {{ resolve_python }}
     "$python" {{ scripts }}/generate-contract-tests.py --check --charts {{ charts }}
+
+# --------------------------------------------------------------------------------------------
+# Creating a chart
+# --------------------------------------------------------------------------------------------
+
+# Create a new chart: the chassis every chart here shares, and the configuration surface its
+# image's contract describes.
+#
+# Every other recipe in this group reads a chart and holds it against a contract. This one runs
+# the other way: it fetches the contract and *writes* the chart that satisfies it — the values
+# blocks, the `# @config` markers, the template helpers that project them, the declaration, the
+# round-trip enrolment and the fixtures.
+#
+# Both halves of a chart here are hand-copied from a neighbour today and both go wrong doing it.
+# The chassis drifts silently: 2,069 lines of the eight charts' values.yaml files are
+# byte-identical to another chart's and the rest of each block is not, which is what copy-editing
+# one neighbour repeatedly looks like. The configuration half goes wrong differently — it is
+# written by reading a 400 KB JSON document by hand, so a key gets missed, and a key nothing
+# surfaces is exactly the defect `check-config-bindings` exists to catch after the fact.
+#
+# **The second networked recipe in this repository, and it uses the first one to do it.** The
+# vendoring is `refresh-contracts.py` itself, called as a module rather than reimplemented, so a
+# contract this writes has been through the same signature verification, the same label agreement
+# check and the same `source` envelope as every contract `just contracts` has ever written. There
+# is no second path into `charts/*/contracts/` — one that arrived some other way would be trusted
+# by every gate downstream.
+#
+# Deliberately NOT in `just check`, for the reason `contracts` is not: `check` is the network-free
+# set. It is also not something an aggregate could run, since it creates a directory.
+#
+# The chart it writes passes `just check`. What it does not write is the prose — the chart
+# description and the README — and anything the workload needs beyond a Deployment: a Service, an
+# Ingress, a PodMonitor, a volume. None of that is in a contract, and a `server.port` key says the
+# binary can bind a port, not that anything should reach it. The recipe prints what is left as an
+# ordered list rather than leaving it to be discovered.
+#
+# **Two forms, and the second is why this is not only a contracts recipe.** With a contract the
+# chart gets the whole configuration surface. With `--no-contract` it gets the chassis and the
+# workload and asserts nothing about the image's configuration — no `config` escape hatch, no
+# `configMount`, no ConfigMap, no Secret — which is what `teamspeak` and `paperless-ngx` are, and
+# two thirds of what every other chart here is. A `config-contract.yaml` is written in that form
+# only when the image is first-party, decided from the same list `check-contract-coverage` reads,
+# because a chart pinning `paperless-ngx` owes no declaration and one that could only say "no" is
+# a file nobody should be asked to write.
+#
+#   just new-chart foo timschoenle/foo 'v1.2.3@sha256:...'
+#   just new-chart foo timschoenle/foo v1.2.3 'What foo deploys, in one sentence.'
+#   just new-chart foo library/redis 8.0 '' '' --no-contract
+#   just new-chart foo timschoenle/foo v1.2.3 '' 'No contract until 2.0.' --no-contract
+#
+# `description` and `reason` are recipe parameters rather than flags, because `*flags` reaches
+# the shell unquoted and a sentence there is word-split. Pass '' to skip one.
+#
+# Pin by digest. A tag alone works — the refresh resolves it — but the chart then carries a
+# mutable reference, and `just check-config` refuses to validate against a contract that cannot be
+# tied to a digest.
+[doc("Create a new chart: the shared chassis, plus the surface its image's contract describes")]
+[group('contracts')]
+new-chart name repository version description='' reason='' *flags:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    {{ resolve_python }}
+
+    # `description` and `reason` are recipe parameters rather than flags because `*flags` is
+    # interpolated into the command line unquoted, so `just` hands the shell a bare string and
+    # the shell word-splits it. A one-word reason survives that; a sentence does not, and one
+    # containing a `;` terminates the command. Both are prose by definition, so both get a
+    # parameter this recipe can quote.
+    args=(--charts {{ charts }} --templates .github/templates/chart)
+    if [ -n '{{ description }}' ]; then args+=(--description '{{ description }}'); fi
+    if [ -n '{{ reason }}' ]; then args+=(--reason '{{ reason }}'); fi
+
+    CONTRACT_SIGNER='{{ contract_signer }}' \
+      "$python" {{ scripts }}/new-chart.py '{{ name }}' '{{ repository }}' '{{ version }}' \
+        "${args[@]}" {{ flags }}

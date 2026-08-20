@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import gzip
 import hashlib
-import importlib.util
 import io
 import json
 import sys
@@ -36,21 +35,14 @@ from config_declaration import (  # noqa: E402
     load_declaration,
     resolve_image,
 )
+from entry import load  # noqa: E402
 
 FIXTURES = SCRIPTS.parent / "testdata" / "contracts"
 DIGEST = "sha256:" + "ab" * 32
 OTHER_DIGEST = "sha256:" + "cd" * 32
 
 
-def _load(name: str, filename: str):
-    """Import a hyphenated entry point, which a plain `import` cannot name."""
-    spec = importlib.util.spec_from_file_location(name, SCRIPTS / filename)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-refresh = _load("refresh_contracts", "refresh-contracts.py")
+refresh = load("refresh_contracts", "refresh-contracts.py")
 
 
 def fixture(name: str) -> dict:
@@ -170,7 +162,9 @@ class TestFetchVerification(unittest.TestCase):
     def test_a_contract_attached_to_a_platform_manifest_is_found(self):
         # Which of the two a producer attaches to is a real choice, and a consumer that only
         # looked at the index would report "no contract" for an image that publishes one.
-        registry = FakeRegistry(referrers=[], platform_referrers=[{"digest": "sha256:" + "ee" * 32}])
+        registry = FakeRegistry(
+            referrers=[], platform_referrers=[{"digest": "sha256:" + "ee" * 32}]
+        )
         payload, _ = self.fetch(registry)
         self.assertEqual(json.loads(payload)["schema"]["dialect"]["prefix"], "FIXTURE_")
 
@@ -189,7 +183,7 @@ class TestFetchVerification(unittest.TestCase):
         self.assertIn(cc.LABEL_VERSION, str(raised.exception))
 
     def test_an_unreadable_contract_version_is_refused(self):
-        registry = FakeRegistry(labels={cc.LABEL_VERSION: "2"})  # noqa: E501
+        registry = FakeRegistry(labels={cc.LABEL_VERSION: "2"})
         with self.assertRaises(refresh.RefreshError) as raised:
             self.fetch(registry)
         self.assertIn("version 2", str(raised.exception))
@@ -272,10 +266,14 @@ class TestFetchVerification(unittest.TestCase):
 
 class TestReferrerParsing(unittest.TestCase):
     def test_the_referrers_key(self):
-        self.assertEqual(refresh.parse_referrers('{"referrers": [{"digest": "a"}]}'), [{"digest": "a"}])
+        self.assertEqual(
+            refresh.parse_referrers('{"referrers": [{"digest": "a"}]}'), [{"digest": "a"}]
+        )
 
     def test_the_older_manifests_key(self):
-        self.assertEqual(refresh.parse_referrers('{"manifests": [{"digest": "a"}]}'), [{"digest": "a"}])
+        self.assertEqual(
+            refresh.parse_referrers('{"manifests": [{"digest": "a"}]}'), [{"digest": "a"}]
+        )
 
     def test_a_bare_list(self):
         self.assertEqual(refresh.parse_referrers('[{"digest": "a"}]'), [{"digest": "a"}])

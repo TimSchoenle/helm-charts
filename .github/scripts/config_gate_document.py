@@ -90,7 +90,7 @@ class DocumentGate:
 
         try:
             instance = parse_document(data[source.key], source.format)
-        except Exception as failure:  # noqa: BLE001 — every parser raises its own type
+        except Exception as failure:
             return [error(f"{source.key}: is not valid {source.format}: {failure}")]
 
         schema = cc.strip_internals(union.json_schema)

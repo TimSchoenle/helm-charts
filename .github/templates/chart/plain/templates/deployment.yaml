@@ -1,0 +1,45 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "common.fullname" . }}
+  namespace: {{ include "common.namespace" . }}
+  labels:
+    {{- include "common.labels" . | nindent 4 }}
+  {{- with (include "common.annotations" .) }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  revisionHistoryLimit: {{ .Values.revisionHistoryLimit }}
+  {{- with (include "common.updateStrategy" (dict "ctx" .)) }}
+  strategy:
+    {{- . | nindent 4 }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "common.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "common.podLabels" . | nindent 8 }}
+      {{- with (include "common.podAnnotations" (dict "ctx" $)) }}
+      annotations:
+        {{- . | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- include "common.podSpec.common" . | nindent 6 }}
+      {{- /*
+        Kubernetes injects `<SERVICE_NAME>_SERVICE_HOST`, `<SERVICE_NAME>_PORT` and five more per
+        Service in the namespace, and the service name is the *release* name. This image reads no
+        configuration contract, so nothing here can say whether one of those collides with a
+        variable it does read — which is the argument for switching them off rather than against.
+
+        Turn this on only if the workload needs Service discovery through the environment, and
+        say in a comment which variables it wants.
+      */}}
+      enableServiceLinks: false
+      containers:
+        {{- include "common.container" (dict "ctx" $) | nindent 8 }}
+      volumes:
+        {{- include "common.volumes" (dict "ctx" $ "volumes" (list)) | nindent 8 }}

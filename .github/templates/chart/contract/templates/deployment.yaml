@@ -1,0 +1,64 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "common.fullname" . }}
+  namespace: {{ include "common.namespace" . }}
+  labels:
+    {{- include "common.labels" . | nindent 4 }}
+  {{- with (include "common.annotations" .) }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  revisionHistoryLimit: {{ .Values.revisionHistoryLimit }}
+  {{- with (include "common.updateStrategy" (dict "ctx" .)) }}
+  strategy:
+    {{- . | nindent 4 }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "common.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with (include "common.podAnnotations" (dict "ctx" $ "templates" (list "configmap.yaml" "secret.yaml"))) }}
+      annotations:
+        {{- . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "common.podLabels" . | nindent 8 }}
+    spec:
+      {{- include "common.podSpec.common" . | nindent 6 }}
+      {{- /*
+        Not a preference, and not a hardening nicety: a precondition of the configuration
+        contract this chart declares in `config-contract.yaml`.
+
+        Kubernetes injects `<SERVICE_NAME>_SERVICE_HOST`, `<SERVICE_NAME>_PORT` and five more per
+        Service in the namespace, and the service name is the *release* name — so a release named
+        for this chart puts seven variables inside the `%%PREFIX%%` namespace the loader owns.
+        The environment layer outranks the mounted file, so one of them can *supply* a key this
+        chart wrote into the configuration document, and the deployment silently runs on the
+        wrong value.
+
+        Left as a literal rather than a value. The kubelet injects these at pod admission and
+        `helm template` does not, so a rendered manifest never carries one and no gate in this
+        repository could catch the regression — `just check-config` can only require the switch.
+      */}}
+      enableServiceLinks: false
+      containers:
+        {{- /*
+          Configuration reaches the container as files, never as environment variables: the
+          loader fails the boot on a key supplied by both, and a credential stays out of
+          `kubectl describe pod` and out of every child process's environment. The two
+          variables below decide what the file layers *are*, so they are the one thing that
+          cannot itself be file-sourced.
+        */}}
+        {{- $secretKeys := include "%%CHART%%.secretKeys" . | fromYamlArray }}
+        {{- include "common.container" (dict
+              "ctx" $
+              "env" (include "common.fileConfig.env" (dict "ctx" $ "prefix" "%%ENV_PREFIX%%" "secretKeys" $secretKeys) | fromYamlArray)
+              "volumeMounts" (include "common.fileConfig.volumeMounts" (dict "ctx" $ "secretKeys" $secretKeys) | fromYamlArray)
+            ) | nindent 8 }}
+      {{- $volumes := include "common.fileConfig.volumes" (dict "ctx" $ "secretKeys" $secretKeys) | fromYamlArray }}
+      volumes:
+        {{- include "common.volumes" (dict "ctx" $ "volumes" $volumes) | nindent 8 }}

@@ -109,8 +109,9 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from typing import Any, Iterable, Sequence
+from typing import Any
 
 import config_contract as cc
 
@@ -203,16 +204,6 @@ class TestGenError(Exception):
 # Checking a candidate against what the contract will accept
 # --------------------------------------------------------------------------------------------
 
-_TYPES: dict[str, tuple[type, ...]] = {
-    "string": (str,),
-    "integer": (int,),
-    "number": (int, float),
-    "boolean": (bool,),
-    "array": (list,),
-    "object": (dict,),
-}
-
-
 def unmet(value: Any, schema: dict[str, Any] | None) -> str | None:
     """The first assertion of a flat constraint the value fails, or `None` when it satisfies it.
 
@@ -237,8 +228,8 @@ def unmet(value: Any, schema: dict[str, Any] | None) -> str | None:
 
 def _unmet_keyword(value: Any, keyword: str, expected: Any) -> str | None:
     if keyword == "type":
-        wanted = expected if isinstance(expected, list) else [expected]
-        if not any(_is_type(value, name) for name in wanted):
+        if not cc.is_type(value, expected):
+            wanted = expected if isinstance(expected, list) else [expected]
             return f"type {'/'.join(str(name) for name in wanted)}"
         return None
 
@@ -273,19 +264,6 @@ def _unmet_keyword(value: Any, keyword: str, expected: Any) -> str | None:
         return None if satisfied else f"{keyword} {expected}"
 
     return f"the assertion {keyword!r}, which this generator does not implement"
-
-
-def _is_type(value: Any, name: str) -> bool:
-    if name == "null":
-        return value is None
-    types = _TYPES.get(name)
-    if types is None:
-        return False
-    # `True` is an `int` in Python and is not one in JSON Schema, so a boolean has to be excluded
-    # from every numeric type explicitly or `true` would satisfy a `u64` bound.
-    if name in ("integer", "number") and isinstance(value, bool):
-        return False
-    return isinstance(value, types)
 
 
 def out_of_vocabulary(schema: dict[str, Any] | None) -> list[str]:
@@ -362,6 +340,37 @@ def probe_for(key: dict[str, Any]) -> tuple[Probe | None, str | None]:
         f"no value this generator can synthesise satisfies {refused} while also differing from "
         f"the default {json.dumps(default)}"
     )
+
+
+def satisfying(key: dict[str, Any]) -> Any | None:
+    """Any value one key's `constraint` accepts, or `None` when nothing here can synthesise one.
+
+    The candidate walk without `probe_for`'s two extra demands. A probe has to *differ* from the
+    published default — otherwise the case proves the chart delivered a value it would have got
+    anyway — and it has to survive the environment spelling as well, so that what it asserts is a
+    value the deployment could actually carry both ways. Neither applies to a caller that simply
+    needs a legal value: `config_scaffold` writes one into a new chart's `values.yaml` for a
+    required key whose image publishes no default, where "differs from the default" is vacuous
+    and the environment layer is not involved at all.
+
+    Public rather than left to a caller reaching for `_candidates`: the walk knows about
+    `multipleOf`, exclusive bounds and the choice vocabulary, and a second implementation of it
+    would be wrong in exactly the places this one was fixed.
+    """
+    constraint = key.get("constraint") or {}
+    if out_of_vocabulary(constraint):
+        return None
+    try:
+        form = cc.text_form(key)
+    except cc.ContractError:
+        return None
+    if form not in PROBED_FORMS:
+        return None
+
+    for candidate in _candidates(form, str(key.get("path") or ""), key, constraint):
+        if unmet(candidate, constraint) is None:
+            return candidate
+    return None
 
 
 def _candidates(

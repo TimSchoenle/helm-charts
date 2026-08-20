@@ -185,7 +185,9 @@ def render(chart: Path, values: Path, extra: list[str] | None = None) -> list[di
     ]
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
-        raise RuntimeError(f"helm template failed for {chart.name} / {values.name}:\n{result.stderr}")
+        raise RuntimeError(
+            f"helm template failed for {chart.name} / {values.name}:\n{result.stderr}"
+        )
     return [doc for doc in yaml.safe_load_all(result.stdout) if doc]
 
 
@@ -197,7 +199,10 @@ def bumped_copy(chart: Path, destination: Path) -> Path:
     chart_yaml = target / "Chart.yaml"
     text = chart_yaml.read_text(encoding="utf-8")
     text = re.sub(r"^version: .*$", f"version: {PROBE_VERSION}", text, count=1, flags=re.MULTILINE)
-    text = re.sub(r"^appVersion: .*$", f"appVersion: {PROBE_VERSION}", text, count=1, flags=re.MULTILINE)
+    text = re.sub(
+        r"^appVersion: .*$", f"appVersion: {PROBE_VERSION}", text, count=1,
+        flags=re.MULTILINE,
+    )
     chart_yaml.write_text(text, encoding="utf-8")
     return target
 

@@ -27,7 +27,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-import config_contract as cc  # noqa: E402
+import config_contract as cc
 
 FIXTURES = Path(__file__).resolve().parents[2] / "testdata" / "contracts"
 

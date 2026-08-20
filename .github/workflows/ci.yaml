@@ -283,6 +283,56 @@ jobs:
           CHART: ${{ matrix.chart }}
         run: just test-e2e "${CHART}"
 
+
+  # The Python behind every gate in this repository, which until now nothing checked.
+  #
+  # 11,000 lines across 24 scripts decide what a pull request here is allowed to contain, and no
+  # linter, formatter or type checker had ever run over them. That was not a decision anybody
+  # made: seven entry scripts already carried `# noqa: E402` on their imports, written for a
+  # linter that never landed.
+  #
+  # Blocking, like every other lint job. It asserts, it needs no network, no cluster and no
+  # render, and the rules it enforces are the ones a reviewer would otherwise have to check by
+  # eye — an unused import, a mutable default, an f-string with no placeholder.
+  #
+  # Its own job rather than a step in Lint Charts, because that job installs chart-testing and
+  # kube-linter to lint YAML and needs neither of them for this, and because a Python failure and
+  # a chart failure are different work for different people.
+  lint-python:
+    name: Lint Python
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # to checkout code
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Setup toolchain
+        uses: ./.github/actions/setup-toolchain
+
+      # A pinned single binary installed by release URL, exactly as `jv` and kubeconform are, and
+      # not `pip install ruff`: this repository has already decided that a pip install inside a
+      # gate is the difference between one that reproduces on a contributor's shell and one that
+      # does not. The version comes from `ruff_version` in justfile so a bump stays the single
+      # edit every other pinned tool already is.
+      - name: Install ruff
+        run: |
+          set -euo pipefail
+          version="$(just --evaluate ruff_version)"
+          curl -fsSL "https://github.com/astral-sh/ruff/releases/download/${version}/ruff-x86_64-unknown-linux-gnu.tar.gz" \
+            | tar -xz --strip-components=1 -C /tmp ruff-x86_64-unknown-linux-gnu/ruff
+          sudo install -m 0755 /tmp/ruff /usr/local/bin/ruff
+          ruff --version
+
+      - name: Lint
+        run: just lint-python
   lint:
     name: Lint Charts
     runs-on: ubuntu-latest
@@ -516,9 +566,90 @@ jobs:
       - name: Check configuration binding markers
         run: just check-config-bindings
 
+      # The generated round-trip suites, against the contracts they were generated from.
+      #
+      # `just check` carries this recipe and its two siblings — `check-contracts` and
+      # `check-kube-refs` — do not, because those two are repaired by the Documentation job on the
+      # pull request itself. Nothing regenerates the contract suites, deliberately, so a contract
+      # that gained a key leaves its suite silently short of it unless something says so.
+      #
+      # Nothing said so here. CI runs the recipes as parallel jobs rather than running
+      # `just check`, so this gate held only for contributors who ran the aggregate locally — and
+      # the drift it exists to catch arrives on a Renovate bump, which is exactly the pull request
+      # nobody runs `just check` on by hand.
+      #
+      # Reads two committed files per chart: no render, no cluster, no `jv`.
+      - name: Check generated contract suites
+        run: just check-contract-tests
+
       - name: Contract model unit tests
         run: just test-contract-union
 
+
+  # What changed in the images' configuration contracts, and what it costs the charts.
+  #
+  # `contract-diff` was written for exactly one reader: the person reviewing the Renovate pull
+  # request that repinned a digest, looking at several hundred lines of reordered JSON. The
+  # question they have is not in those lines — did the image gain a setting the chart has to
+  # write, drop one the chart still writes, or move a default out from under it, and what should
+  # this chart's version become. Nothing invoked the recipe, so that reader never received the
+  # answer.
+  #
+  # Advisory, and structurally so. Differences are the *normal* outcome of a bump, so this job
+  # must never fail on finding them — `contract-diff` exits 0 on differences and 1 only on an
+  # error it cannot report around, and `--exit-code` is deliberately not passed. A red run here
+  # therefore means a contract could not be read, which is worth failing on.
+  #
+  # Its own job rather than a step in `config-contracts`, for two reasons. It needs full history
+  # to `git show` the base revision, and making the blocking gate pay for that on every run would
+  # be charging every pull request for a report only bump pull requests read. And it is advisory
+  # where that job is blocking; keeping the two apart is what stops the distinction eroding.
+  #
+  # Needs no render, no cluster, no `jv` and no network — the other side comes from `git show`,
+  # exactly as every gate in the group reads the committed file.
+  contract-diff:
+    name: Contract Diff
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # to checkout code
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        with:
+          egress-policy: audit
+
+      # Full history, because the report is a comparison against the base commit and `git show`
+      # cannot reach it from a shallow clone. This is the only job in the workflow that needs it
+      # for a reason other than chart-testing's changed-file detection.
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup toolchain
+        uses: ./.github/actions/setup-toolchain
+
+      # Written to the step summary rather than printed, because that is where a reviewer of a
+      # bump looks first and it is the one surface that survives the log being collapsed. Also
+      # echoed to the log, so a failure is diagnosable from the same place as every other job's.
+      - name: Report contract changes against the base
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+
+          report="$(just contract-diff '' "${BASE_SHA}")"
+          echo "${report}"
+
+          {
+            echo '## Configuration contract changes'
+            echo
+            echo '```'
+            echo "${report}"
+            echo '```'
+          } >> "${GITHUB_STEP_SUMMARY}"
   install:
     name: Install & Verify (k8s ${{ matrix.kubernetes }})
     needs: [lint]

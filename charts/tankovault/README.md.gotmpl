@@ -33,6 +33,7 @@ the optional headless `render` tier, plus the one-shot `bootstrap` migration and
 | wondering why a config change did not restart anything | [Configuration reloads instead of restarting](#configuration-reloads-instead-of-restarting) |
 | supplying secrets yourself | [Generated credentials](#generated-credentials), [Configuration and secrets](#configuration-and-secrets) |
 | deploying through Argo CD | [Argo CD and `bootstrap.migrate.ordering`](#argo-cd-and-bootstrapmigrateordering) |
+| running under a cluster-wide default-deny | [The bootstrap Jobs need a policy too](#the-bootstrap-jobs-need-a-policy-too) |
 | hooking up Prometheus or Grafana | [Observability](#observability) |
 | running this under your own name | [Branding](#branding) |
 | publishing terms or a privacy policy | [Legal documents](#legal-documents) |
@@ -537,6 +538,10 @@ it needs — the ServiceAccount, the credential Secret and its ConfigMap — are
 themselves, created at weight `-10` ahead of the Job at `-5`. They are deliberately not deleted
 when the hook finishes, because the release's workloads use them for as long as they run.
 
+With `networkPolicy.enabled` there is a fourth at that weight, and it *is* deleted when the event
+finishes: a copy of the bootstrap Jobs' policy, which the release's own copy replaces moments
+later. See [The bootstrap Jobs need a policy too](#the-bootstrap-jobs-need-a-policy-too).
+
 > [!NOTE]
 > Being hooks, those three do not appear in `helm get manifest`, are not reverted by
 > `helm rollback`, and **survive `helm uninstall`**. Delete the leftover `<release>` Secret,
@@ -574,6 +579,13 @@ Two things follow from the Job no longer being a hook:
 The default is unchanged, so `helm install` consumers and anyone happy with the hook are
 unaffected. Only `bootstrap.migrate.mode: job` is affected; the seed steps stay `post-install`
 because PostSync runs after Sync and their secrets already exist.
+
+One more thing rides on the wave: the bootstrap Jobs' NetworkPolicy takes `argoSyncWaveBase`
+**minus one**. Argo CD orders resources inside a wave by kind, from a fixed list that `Job` is on
+and a policy object is not — and an unlisted kind sorts last. Left in the same wave the policy
+would be applied after the pod it protects, and the migration would start into a namespace still
+denying its DNS; Cilium heals that moments later, but the Job spends retries on the race. Give
+anything the migration depends on a wave below the policy's, not just below the Job's.
 
 ## Recommendations need pgvector
 
@@ -1054,11 +1066,63 @@ if you replace the CIDR rule with `cilium.egress.toFQDNs` below, an FQDN rule is
 whatever addresses Cilium's DNS proxy saw returned for the name, AAAA records included, so naming
 the host covers both families without listing either.
 
+## The bootstrap Jobs need a policy too
+
+`bootstrap migrate`, `seed-admin` and `seed-providers` run as Jobs, not as workloads — no Service,
+no Deployment — and until 5.3.0 they were the one thing in this chart no policy selected. That is
+invisible for as long as an unselected pod is an unrestricted pod. It stops being invisible the
+moment something else default-denies the namespace, which on most clusters is a
+`CiliumClusterwideNetworkPolicy` selecting every endpoint outside `kube-system`. The Jobs then run
+with zero allow rules, and the migration fails like this:
+
+```
+error communicating with database: failed to lookup address information: Try again
+```
+
+`Try again` is `EAI_AGAIN` — a DNS timeout, not `NXDOMAIN`. Nothing in the message names a network
+policy, so the Job retries up to `bootstrap.migrate.backoffLimit` and the whole thing reads as a
+database outage. The bundled database is not exempt: PostgreSQL's own policy has always admitted
+`bootstrap` on the ingress side, which is worth nothing while the client cannot resolve the host
+it is admitted to.
+
+From 5.3.0 the chart emits `<release>-tankovault-bootstrap` whenever a bootstrap Job actually
+renders — `bootstrap.migrate.mode` resolving to `job`, or either seed step enabled. It grants DNS,
+plus the bundled PostgreSQL on 5432 when `postgresql.enabled`, and nothing else: those pods mount
+`database__url`, `auth__password_pepper` and `seed_admin_password` and no other credential, and
+`automountServiceAccountToken: false` rules out the API server too.
+
+**A database outside the cluster needs no new setting.** `networkPolicy.extraEgress` (and
+`networkPolicy.cilium.extraEgress`) is appended to every policy this chart renders, so the rule
+you already wrote to let the services reach it now reaches these Jobs as well. Emitting the policy
+at all is the whole of the fix.
+
+The policy claims the egress direction only. These Jobs listen on nothing, so `policyTypes` names
+just `Egress` — and under Cilium the object carries no `ingress:` key and states
+`enableDefaultDeny: {ingress: false}`, because in that dialect a policy claims a direction two
+ways and both have to agree. Claiming ingress here would invent a denial out of an object written
+only to let these pods out. `extraIngress` is therefore not added to it; `extraEgress` is.
+
+Getting it applied *before* the Job is a separate problem, and each ordering solves it
+differently:
+
+- **`bootstrap.migrate.ordering: helmHook`** (the default) makes the migration a
+  `pre-install,pre-upgrade` hook, and Helm applies every hook of an event before any of the
+  release's own manifests — so the plain policy does not exist yet when the Job runs. A second
+  copy of it, `<release>-tankovault-bootstrap-hook`, is rendered as the same hook at weight `-10`,
+  below the Job's `-5`, and deleted once the event succeeds. That deletion is safe rather than a
+  second race: Helm runs every hook in an event to completion before applying any
+  `hook-succeeded` deletion.
+- **`bootstrap.migrate.ordering: argoSyncWave`** gives the plain policy `argoSyncWaveBase` minus
+  one; see [Argo CD and `bootstrap.migrate.ordering`](#argo-cd-and-bootstrapmigrateordering).
+
+The seed steps need neither. They are `post-install` hooks, which run *after* the release's
+manifests, by which time the plain policy is installed.
+
 ## Network policies with Cilium
 
-`networkPolicy.engine` picks the dialect the twelve per-service policies are written in —
-`kubernetes` (default), `cilium`, or `both` for a CNI migration. Both are rendered from the same
-derived topology, so the engine changes how the rules are written and never what they are.
+`networkPolicy.engine` picks the dialect the per-service policies are written in — `kubernetes`
+(default), `cilium`, or `both` for a CNI migration. Both are rendered from the same derived
+topology, so the engine changes how the rules are written and never what they are.
 
 The internet rules are what the switch buys. `worker` scrapes provider sites, `sync` talks to
 AniList and `notifier` reaches SMTP and webhook endpoints — real egress needs that the portable

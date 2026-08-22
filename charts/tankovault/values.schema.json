@@ -102,7 +102,7 @@
           "properties": {
             "argoSyncWaveBase": {
               "default": 0,
-              "description": "Sync wave the migration Job takes under `ordering: argoSyncWave`; the workloads take\nthis plus one, which is what reproduces the `pre-upgrade` guarantee — Argo CD holds a wave\nuntil the previous one is healthy, and a Job is healthy only once it is Complete. Anything\nthe migration itself depends on — the ExternalSecret carrying `database__url`, a database\nsome operator provisions — must be given a wave strictly below this one.",
+              "description": "Sync wave the migration Job takes under `ordering: argoSyncWave`; the workloads take\nthis plus one, which is what reproduces the `pre-upgrade` guarantee — Argo CD holds a wave\nuntil the previous one is healthy, and a Job is healthy only once it is Complete. Anything\nthe migration itself depends on — the ExternalSecret carrying `database__url`, a database\nsome operator provisions — must be given a wave strictly below this one.\n\nThe bootstrap Jobs' NetworkPolicy is given this **minus one** for exactly that reason, and\nit has to be: Argo CD orders resources inside a wave by kind from a fixed list that `Job`\nis on and a policy object is not, and unlisted kinds sort last. In the same wave the policy\nwould therefore be applied after the Job it protects, and the migration would start into a\nnamespace still denying its DNS.",
               "required": [],
               "title": "argoSyncWaveBase",
               "type": "integer"
@@ -129,7 +129,7 @@
             },
             "ordering": {
               "default": "helmHook",
-              "description": "How the migration Job is ordered against the workloads. Ignored unless `mode` resolves\nto `job`, and irrelevant under plain `helm install`, which has no phases to order across.\n`helmHook` is the `pre-install,pre-upgrade` hook, which Argo CD compiles to the PreSync\nphase — and PreSync runs before **every** Sync-phase resource, with sync waves ordering\nonly within a phase. So when `database__url` arrives from an ExternalSecret, a first\ninstall deadlocks and never recovers: the Job's projected secrets volume names a Secret\nthat does not exist yet, the pod sits in ContainerCreating on FailedMount, the Job never\ncompletes, PreSync never finishes, Sync never starts, and the ExternalSecret that would\nhave created that Secret is therefore never applied. Nothing inside PreSync can break the\ncycle. `argoSyncWave` drops the hook annotations entirely and orders the Job by sync wave\ninside the Sync phase instead, where the ExternalSecret reconciles alongside it.",
+              "description": "How the migration Job is ordered against the workloads. Ignored unless `mode` resolves\nto `job`, and irrelevant under plain `helm install`, which has no phases to order across.\n`helmHook` is the `pre-install,pre-upgrade` hook, which Argo CD compiles to the PreSync\nphase — and PreSync runs before **every** Sync-phase resource, with sync waves ordering\nonly within a phase. So when `database__url` arrives from an ExternalSecret, a first\ninstall deadlocks and never recovers: the Job's projected secrets volume names a Secret\nthat does not exist yet, the pod sits in ContainerCreating on FailedMount, the Job never\ncompletes, PreSync never finishes, Sync never starts, and the ExternalSecret that would\nhave created that Secret is therefore never applied. Nothing inside PreSync can break the\ncycle. `argoSyncWave` drops the hook annotations entirely and orders the Job by sync wave\ninside the Sync phase instead, where the ExternalSecret reconciles alongside it.\n\nEither ordering puts the bootstrap Jobs' NetworkPolicy ahead of the Job, because a policy\nthat lands after the pod it protects is the same outage as no policy: under `helmHook` a\nsecond copy of it is rendered as a `pre-install,pre-upgrade` hook at weight `-10` and\ndeleted once the event succeeds, since the plain resource is not applied until every hook\nhas run; under `argoSyncWave` the plain resource takes `argoSyncWaveBase` minus one.",
               "enum": [
                 "helmHook",
                 "argoSyncWave"
@@ -3317,13 +3317,13 @@
             },
             "enableDefaultDeny": {
               "default": true,
-              "description": "State default-deny explicitly rather than relying on it being implied by the presence\nof rules. Requires Cilium 1.16+. Applies to both directions: every workload here carries\nrules in both, so there is no half a single object could silently cut off.",
+              "description": "State default-deny explicitly rather than relying on it being implied by the presence\nof rules. Requires Cilium 1.16+. Applied per direction rather than to both at once: a\npolicy claims the directions it actually has rules for, so the bootstrap Jobs' policy —\negress only, since those Jobs serve nothing — cannot deny inbound traffic it was never\nwritten to govern.",
               "required": [],
               "title": "enableDefaultDeny",
               "type": "boolean"
             },
             "extraEgress": {
-              "description": "Extra egress rules in CiliumNetworkPolicy form, appended to every service's policy.",
+              "description": "Extra egress rules in CiliumNetworkPolicy form, appended to every policy this chart\nrenders, the bootstrap Jobs' included — see `networkPolicy.extraEgress` for why that is the\nwhole of what an outside database needs.",
               "items": {
                 "required": []
               },
@@ -3332,7 +3332,7 @@
               "type": "array"
             },
             "extraIngress": {
-              "description": "Extra ingress rules in CiliumNetworkPolicy form, appended to every service's policy.",
+              "description": "Extra ingress rules in CiliumNetworkPolicy form, appended to every policy that governs\ningress. Not the bootstrap Jobs' policy, which governs none — see `networkPolicy.extraIngress`.",
               "items": {
                 "required": []
               },
@@ -3381,7 +3381,7 @@
           "title": "engine"
         },
         "extraEgress": {
-          "description": "Extra egress rules appended to every service's policy.",
+          "description": "Extra egress rules appended to every policy this chart renders, the bootstrap Jobs'\nincluded. That last part is what covers a database outside the cluster: the migration and\nseed steps have to reach it, and the chart cannot know where it is — so the rule you already\nwrote for the services is the rule those Jobs get, and there is no `bootstrap.database.*`\nknob to keep in step with it.",
           "items": {
             "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyEgressRule",
             "required": []
@@ -3391,7 +3391,7 @@
           "type": "array"
         },
         "extraIngress": {
-          "description": "Extra ingress rules appended to every service's policy.",
+          "description": "Extra ingress rules appended to every policy that governs ingress. The bootstrap Jobs'\npolicy governs none — those Jobs serve nothing, and claiming the direction would deny inbound\ntraffic on the strength of an object written only to let them out — so it is not added there.",
           "items": {
             "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyIngressRule",
             "required": []

@@ -1,6 +1,6 @@
 # tankovault
 
-![Version: 5.2.6](https://img.shields.io/badge/Version-5.2.6-informational?style=flat-square) ![AppVersion: 8.4.0](https://img.shields.io/badge/AppVersion-8.4.0-informational?style=flat-square)
+![Version: 5.3.0](https://img.shields.io/badge/Version-5.3.0-informational?style=flat-square) ![AppVersion: 8.4.0](https://img.shields.io/badge/AppVersion-8.4.0-informational?style=flat-square)
 
 This chart deploys the full TankoVault manga aggregator stack — frontend, api, control-plane, worker, notifier, sync, challenge-solver and render — hardened to the restricted Pod Security Standard, with file-backed configuration that reloads in place instead of restarting pods, optional bundled PostgreSQL, Valkey, NATS JetStream and TRAWL, and optional Prometheus metrics, alerting rules and Grafana dashboards.
 
@@ -31,6 +31,7 @@ the optional headless `render` tier, plus the one-shot `bootstrap` migration and
 | wondering why a config change did not restart anything | [Configuration reloads instead of restarting](#configuration-reloads-instead-of-restarting) |
 | supplying secrets yourself | [Generated credentials](#generated-credentials), [Configuration and secrets](#configuration-and-secrets) |
 | deploying through Argo CD | [Argo CD and `bootstrap.migrate.ordering`](#argo-cd-and-bootstrapmigrateordering) |
+| running under a cluster-wide default-deny | [The bootstrap Jobs need a policy too](#the-bootstrap-jobs-need-a-policy-too) |
 | hooking up Prometheus or Grafana | [Observability](#observability) |
 | running this under your own name | [Branding](#branding) |
 | publishing terms or a privacy policy | [Legal documents](#legal-documents) |
@@ -535,6 +536,10 @@ it needs — the ServiceAccount, the credential Secret and its ConfigMap — are
 themselves, created at weight `-10` ahead of the Job at `-5`. They are deliberately not deleted
 when the hook finishes, because the release's workloads use them for as long as they run.
 
+With `networkPolicy.enabled` there is a fourth at that weight, and it *is* deleted when the event
+finishes: a copy of the bootstrap Jobs' policy, which the release's own copy replaces moments
+later. See [The bootstrap Jobs need a policy too](#the-bootstrap-jobs-need-a-policy-too).
+
 > [!NOTE]
 > Being hooks, those three do not appear in `helm get manifest`, are not reverted by
 > `helm rollback`, and **survive `helm uninstall`**. Delete the leftover `<release>` Secret,
@@ -572,6 +577,13 @@ Two things follow from the Job no longer being a hook:
 The default is unchanged, so `helm install` consumers and anyone happy with the hook are
 unaffected. Only `bootstrap.migrate.mode: job` is affected; the seed steps stay `post-install`
 because PostSync runs after Sync and their secrets already exist.
+
+One more thing rides on the wave: the bootstrap Jobs' NetworkPolicy takes `argoSyncWaveBase`
+**minus one**. Argo CD orders resources inside a wave by kind, from a fixed list that `Job` is on
+and a policy object is not — and an unlisted kind sorts last. Left in the same wave the policy
+would be applied after the pod it protects, and the migration would start into a namespace still
+denying its DNS; Cilium heals that moments later, but the Job spends retries on the race. Give
+anything the migration depends on a wave below the policy's, not just below the Job's.
 
 ## Recommendations need pgvector
 
@@ -1051,11 +1063,63 @@ if you replace the CIDR rule with `cilium.egress.toFQDNs` below, an FQDN rule is
 whatever addresses Cilium's DNS proxy saw returned for the name, AAAA records included, so naming
 the host covers both families without listing either.
 
+## The bootstrap Jobs need a policy too
+
+`bootstrap migrate`, `seed-admin` and `seed-providers` run as Jobs, not as workloads — no Service,
+no Deployment — and until 5.3.0 they were the one thing in this chart no policy selected. That is
+invisible for as long as an unselected pod is an unrestricted pod. It stops being invisible the
+moment something else default-denies the namespace, which on most clusters is a
+`CiliumClusterwideNetworkPolicy` selecting every endpoint outside `kube-system`. The Jobs then run
+with zero allow rules, and the migration fails like this:
+
+```
+error communicating with database: failed to lookup address information: Try again
+```
+
+`Try again` is `EAI_AGAIN` — a DNS timeout, not `NXDOMAIN`. Nothing in the message names a network
+policy, so the Job retries up to `bootstrap.migrate.backoffLimit` and the whole thing reads as a
+database outage. The bundled database is not exempt: PostgreSQL's own policy has always admitted
+`bootstrap` on the ingress side, which is worth nothing while the client cannot resolve the host
+it is admitted to.
+
+From 5.3.0 the chart emits `<release>-tankovault-bootstrap` whenever a bootstrap Job actually
+renders — `bootstrap.migrate.mode` resolving to `job`, or either seed step enabled. It grants DNS,
+plus the bundled PostgreSQL on 5432 when `postgresql.enabled`, and nothing else: those pods mount
+`database__url`, `auth__password_pepper` and `seed_admin_password` and no other credential, and
+`automountServiceAccountToken: false` rules out the API server too.
+
+**A database outside the cluster needs no new setting.** `networkPolicy.extraEgress` (and
+`networkPolicy.cilium.extraEgress`) is appended to every policy this chart renders, so the rule
+you already wrote to let the services reach it now reaches these Jobs as well. Emitting the policy
+at all is the whole of the fix.
+
+The policy claims the egress direction only. These Jobs listen on nothing, so `policyTypes` names
+just `Egress` — and under Cilium the object carries no `ingress:` key and states
+`enableDefaultDeny: {ingress: false}`, because in that dialect a policy claims a direction two
+ways and both have to agree. Claiming ingress here would invent a denial out of an object written
+only to let these pods out. `extraIngress` is therefore not added to it; `extraEgress` is.
+
+Getting it applied *before* the Job is a separate problem, and each ordering solves it
+differently:
+
+- **`bootstrap.migrate.ordering: helmHook`** (the default) makes the migration a
+  `pre-install,pre-upgrade` hook, and Helm applies every hook of an event before any of the
+  release's own manifests — so the plain policy does not exist yet when the Job runs. A second
+  copy of it, `<release>-tankovault-bootstrap-hook`, is rendered as the same hook at weight `-10`,
+  below the Job's `-5`, and deleted once the event succeeds. That deletion is safe rather than a
+  second race: Helm runs every hook in an event to completion before applying any
+  `hook-succeeded` deletion.
+- **`bootstrap.migrate.ordering: argoSyncWave`** gives the plain policy `argoSyncWaveBase` minus
+  one; see [Argo CD and `bootstrap.migrate.ordering`](#argo-cd-and-bootstrapmigrateordering).
+
+The seed steps need neither. They are `post-install` hooks, which run *after* the release's
+manifests, by which time the plain policy is installed.
+
 ## Network policies with Cilium
 
-`networkPolicy.engine` picks the dialect the twelve per-service policies are written in —
-`kubernetes` (default), `cilium`, or `both` for a CNI migration. Both are rendered from the same
-derived topology, so the engine changes how the rules are written and never what they are.
+`networkPolicy.engine` picks the dialect the per-service policies are written in — `kubernetes`
+(default), `cilium`, or `both` for a CNI migration. Both are rendered from the same derived
+topology, so the engine changes how the rules are written and never what they are.
 
 The internet rules are what the switch buys. `worker` scrapes provider sites, `sync` talks to
 AniList and `notifier` reaches SMTP and webhook endpoints — real egress needs that the portable
@@ -1106,10 +1170,10 @@ lookup; the chart fails the render if FQDN destinations are named with the DNS r
 | bootstrap | object | `{"image":{"repository":"timschoenle/tankovault-bootstrap","tag":"v8.4.0@sha256:d9b193e56cb593eac587df884e4104f8111cdeed64faa4faf0440a327c4c680d"},"migrate":{"argoSyncWaveBase":0,"backoffLimit":3,"mode":"auto","ordering":"helmHook"},"resources":{"limits":{"memory":"256Mi"},"requests":{"cpu":"50m","memory":"128Mi"}},"seedAdmin":{"email":"","enabled":false,"password":"","username":"admin"},"seedProviders":{"enabled":false}}` | Schema migration and first-install seeding, all from the `bootstrap` image. Nothing published carries a destructive command; resetting the schema is not available in any image. |
 | bootstrap.image.repository | string | `"timschoenle/tankovault-bootstrap"` | Image repository. |
 | bootstrap.image.tag | string | `"v8.4.0@sha256:d9b193e56cb593eac587df884e4104f8111cdeed64faa4faf0440a327c4c680d"` | Image tag, pinned by digest. |
-| bootstrap.migrate.argoSyncWaveBase | int | `0` | Sync wave the migration Job takes under `ordering: argoSyncWave`; the workloads take this plus one, which is what reproduces the `pre-upgrade` guarantee — Argo CD holds a wave until the previous one is healthy, and a Job is healthy only once it is Complete. Anything the migration itself depends on — the ExternalSecret carrying `database__url`, a database some operator provisions — must be given a wave strictly below this one. |
+| bootstrap.migrate.argoSyncWaveBase | int | `0` | Sync wave the migration Job takes under `ordering: argoSyncWave`; the workloads take this plus one, which is what reproduces the `pre-upgrade` guarantee — Argo CD holds a wave until the previous one is healthy, and a Job is healthy only once it is Complete. Anything the migration itself depends on — the ExternalSecret carrying `database__url`, a database some operator provisions — must be given a wave strictly below this one.  The bootstrap Jobs' NetworkPolicy is given this **minus one** for exactly that reason, and it has to be: Argo CD orders resources inside a wave by kind from a fixed list that `Job` is on and a policy object is not, and unlisted kinds sort last. In the same wave the policy would therefore be applied after the Job it protects, and the migration would start into a namespace still denying its DNS. |
 | bootstrap.migrate.backoffLimit | int | `3` | Retries before the migration Job is considered failed. |
 | bootstrap.migrate.mode | string | `"auto"` | How `bootstrap migrate` runs. `job` is a `pre-install,pre-upgrade` Helm hook, correct when the database already exists. `initContainer` runs it in every service pod, which is what the bundled PostgreSQL needs — a pre-install hook would run before the StatefulSet exists and could only ever fail. Concurrent runs are safe: sqlx takes a Postgres advisory lock. `auto` picks `initContainer` when `postgresql.enabled`, otherwise `job`. |
-| bootstrap.migrate.ordering | string | `"helmHook"` | How the migration Job is ordered against the workloads. Ignored unless `mode` resolves to `job`, and irrelevant under plain `helm install`, which has no phases to order across. `helmHook` is the `pre-install,pre-upgrade` hook, which Argo CD compiles to the PreSync phase — and PreSync runs before **every** Sync-phase resource, with sync waves ordering only within a phase. So when `database__url` arrives from an ExternalSecret, a first install deadlocks and never recovers: the Job's projected secrets volume names a Secret that does not exist yet, the pod sits in ContainerCreating on FailedMount, the Job never completes, PreSync never finishes, Sync never starts, and the ExternalSecret that would have created that Secret is therefore never applied. Nothing inside PreSync can break the cycle. `argoSyncWave` drops the hook annotations entirely and orders the Job by sync wave inside the Sync phase instead, where the ExternalSecret reconciles alongside it. |
+| bootstrap.migrate.ordering | string | `"helmHook"` | How the migration Job is ordered against the workloads. Ignored unless `mode` resolves to `job`, and irrelevant under plain `helm install`, which has no phases to order across. `helmHook` is the `pre-install,pre-upgrade` hook, which Argo CD compiles to the PreSync phase — and PreSync runs before **every** Sync-phase resource, with sync waves ordering only within a phase. So when `database__url` arrives from an ExternalSecret, a first install deadlocks and never recovers: the Job's projected secrets volume names a Secret that does not exist yet, the pod sits in ContainerCreating on FailedMount, the Job never completes, PreSync never finishes, Sync never starts, and the ExternalSecret that would have created that Secret is therefore never applied. Nothing inside PreSync can break the cycle. `argoSyncWave` drops the hook annotations entirely and orders the Job by sync wave inside the Sync phase instead, where the ExternalSecret reconciles alongside it.  Either ordering puts the bootstrap Jobs' NetworkPolicy ahead of the Job, because a policy that lands after the pod it protects is the same outage as no policy: under `helmHook` a second copy of it is rendered as a `pre-install,pre-upgrade` hook at weight `-10` and deleted once the event succeeds, since the plain resource is not applied until every hook has run; under `argoSyncWave` the plain resource takes `argoSyncWaveBase` minus one. |
 | bootstrap.resources | object | `{"limits":{"memory":"256Mi"},"requests":{"cpu":"50m","memory":"128Mi"}}` | Resource requests and limits for the bootstrap containers. These are one-shot commands: they migrate the schema and seed reference data, then exit. |
 | bootstrap.resources.limits | object | `{"memory":"256Mi"}` | Resource limits. |
 | bootstrap.resources.limits.memory | string | `"256Mi"` | Maximum allowed memory usage. No CPU limit is set on purpose: a CPU limit does not protect the node the way a memory limit does, it only throttles this container. |
@@ -1364,15 +1428,15 @@ lookup; the chart fails the render if FQDN destinations are named with the DNS r
 | networkPolicy.cilium.egress.httpRules | list | `[]` | L7 HTTP rules layered onto the `toFQDNs` rule, e.g. `- method: GET` / `path: "/v1/.*"`. Costs a proxy hop per connection. |
 | networkPolicy.cilium.egress.toEntities | list | `[]` | Named destination sets added to every policy, e.g. `kube-apiserver`. |
 | networkPolicy.cilium.egress.toFQDNs | list | `[]` | The hosts the internet-facing tiers may reach, by name: `- matchName: api.anilist.co` or `- matchPattern: "*.example.com"`. Set, this *replaces* the `internetCidrs` rule for every service that carries it — `worker`, `sync`, `notifier`, `render` and the bundled TRAWL. That is the point: `0.0.0.0/0` on 443 permits every public host that exists, and a scraping tier is precisely the one you do not want holding that.  Emitting both would leave the broad rule in place and make this one decorative, so it is a substitution rather than an addition. |
-| networkPolicy.cilium.enableDefaultDeny | bool | `true` | State default-deny explicitly rather than relying on it being implied by the presence of rules. Requires Cilium 1.16+. Applies to both directions: every workload here carries rules in both, so there is no half a single object could silently cut off. |
-| networkPolicy.cilium.extraEgress | list | `[]` | Extra egress rules in CiliumNetworkPolicy form, appended to every service's policy. |
-| networkPolicy.cilium.extraIngress | list | `[]` | Extra ingress rules in CiliumNetworkPolicy form, appended to every service's policy. |
+| networkPolicy.cilium.enableDefaultDeny | bool | `true` | State default-deny explicitly rather than relying on it being implied by the presence of rules. Requires Cilium 1.16+. Applied per direction rather than to both at once: a policy claims the directions it actually has rules for, so the bootstrap Jobs' policy — egress only, since those Jobs serve nothing — cannot deny inbound traffic it was never written to govern. |
+| networkPolicy.cilium.extraEgress | list | `[]` | Extra egress rules in CiliumNetworkPolicy form, appended to every policy this chart renders, the bootstrap Jobs' included — see `networkPolicy.extraEgress` for why that is the whole of what an outside database needs. |
+| networkPolicy.cilium.extraIngress | list | `[]` | Extra ingress rules in CiliumNetworkPolicy form, appended to every policy that governs ingress. Not the bootstrap Jobs' policy, which governs none — see `networkPolicy.extraIngress`. |
 | networkPolicy.cilium.ingress | object | `{"fromEntities":[]}` | Cilium-only ingress rules, added to every service's policy. |
 | networkPolicy.cilium.ingress.fromEntities | list | `[]` | Named source sets, e.g. `cluster`, `host`, `remote-node`, `kube-apiserver`. |
 | networkPolicy.enabled | bool | `false` | Create NetworkPolicies. |
 | networkPolicy.engine | string | `"kubernetes"` | Which policy dialect to render. `kubernetes` emits the portable `networking.k8s.io/v1` objects; `cilium` emits `CiliumNetworkPolicy`, which can express FQDN destinations, named entities and L7 rules that the portable API cannot; `both` emits both, for the window in which a cluster is migrating between CNIs.  Both dialects are rendered from the same derived topology, so they cannot describe different graphs — the engine picks how the rules are written, never what they are. |
-| networkPolicy.extraEgress | list | `[]` | Extra egress rules appended to every service's policy. |
-| networkPolicy.extraIngress | list | `[]` | Extra ingress rules appended to every service's policy. |
+| networkPolicy.extraEgress | list | `[]` | Extra egress rules appended to every policy this chart renders, the bootstrap Jobs' included. That last part is what covers a database outside the cluster: the migration and seed steps have to reach it, and the chart cannot know where it is — so the rule you already wrote for the services is the rule those Jobs get, and there is no `bootstrap.database.*` knob to keep in step with it. |
+| networkPolicy.extraIngress | list | `[]` | Extra ingress rules appended to every policy that governs ingress. The bootstrap Jobs' policy governs none — those Jobs serve nothing, and claiming the direction would deny inbound traffic on the strength of an object written only to let them out — so it is not added there. |
 | networkPolicy.gateway | object | `{"namespaceSelector":{},"podSelector":{}}` | Selectors matching the Gateway API data plane, allowed to reach the frontend (and the API when `gateway.api.enabled` is set). Left empty they are derived from `gateway.parentRefs`: the namespace of the first parent, and `gateway.networking.k8s.io/gateway-name` — the label Cilium, Envoy Gateway, Istio and NGINX Gateway Fabric all put on the pods they provision.  Restating the Gateway's identity here would be a second place to edit on a rename, and a policy naming the wrong Gateway looks correct and blocks all inbound traffic. |
 | networkPolicy.gateway.namespaceSelector | object | `{}` | Namespace selector matching the Gateway's data plane. Empty derives it. |
 | networkPolicy.gateway.podSelector | object | `{}` | Pod selector matching the Gateway's data plane. Empty derives it. |

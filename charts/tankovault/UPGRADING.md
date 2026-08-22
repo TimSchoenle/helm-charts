@@ -7,6 +7,7 @@ Some of them require a manual step that nothing will remind you about:
 
 | Version | Applies to | Step |
 |---|---|---|
+| [5.3.0](#530) | releases on `argoSyncWave` that wave the migration's own dependencies | move them below `argoSyncWaveBase - 1`, not just below the base |
 | [5.1.0](#510) | releases that installed the provider presets | pause or delete the `sirenscans` provider row by hand |
 | [5.1.0](#510) | releases that override `networkPolicy.internetCidrs` | add `::/0`, or accept that some providers stay unreachable |
 | [5.0.0](#500) | releases that set any `resourcesPreset` | replace it with the `resources` block it stood for |
@@ -20,6 +21,69 @@ Some of them require a manual step that nothing will remind you about:
 
 The values contract is enforced by `values.schema.json`, so a key a new major removed or
 renamed fails the render with the offending path named, rather than being silently ignored.
+
+## 5.3.0
+
+**The bootstrap Jobs were the one thing in this chart no network policy selected, so under a
+default-deny that is not this chart's they ran with no allow rules at all.**
+
+`bootstrap migrate`, `seed-admin` and `seed-providers` are Jobs — no Service, no Deployment — and
+`tankovault.netpol.plan` emitted one policy per service and one per bundled datastore. These are
+neither. `bootstrap` appeared in the plan exactly once, as an *ingress peer* on the bundled
+PostgreSQL: admitted at the database, granted no egress of its own.
+
+That costs nothing for as long as an unselected pod is an unrestricted pod. It stops being free
+the moment something *else* covers the namespace — a `CiliumClusterwideNetworkPolicy` selecting
+every endpoint outside `kube-system` is the usual one. The Jobs then run with zero allow rules and
+the migration dies on its first lookup:
+
+```
+error communicating with database: failed to lookup address information: Try again
+```
+
+`Try again` is `EAI_AGAIN`: a DNS timeout, not `NXDOMAIN`. Nothing in it names a policy, so the
+Job burns `backoffLimit` and the failure reads as a database outage. The **bundled** database
+fails the same way, not only the external one — PostgreSQL admitting `bootstrap` on the ingress
+side is worth nothing while bootstrap cannot resolve the host it is admitted to.
+
+This release emits `<release>-tankovault-bootstrap` whenever a bootstrap Job actually renders:
+`bootstrap.migrate.mode` resolving to `job`, or either seed step enabled. It grants DNS, plus the
+bundled PostgreSQL on 5432 when `postgresql.enabled`, and nothing else.
+
+### What to change
+
+Nothing, on any release. The policy is additive: no existing object changes, and it renders only
+when `networkPolicy.enabled` is already set.
+
+- **Your database is outside the cluster.** No new value. `networkPolicy.extraEgress` (and
+  `networkPolicy.cilium.extraEgress`) is appended to every policy this chart renders, so the rule
+  you already wrote for the services now reaches these Jobs too. Emitting the policy is the whole
+  of the fix — there is deliberately no `bootstrap.database.*` knob to keep in step with it.
+- **You audit policy objects.** One new object per release, two under the default
+  `bootstrap.migrate.ordering: helmHook` — see below. Both carry
+  `app.kubernetes.io/component: bootstrap`.
+- **You use `networkPolicy.extraIngress`.** It is not added to the bootstrap policy, which claims
+  the egress direction only: those Jobs listen on nothing, and claiming ingress would invent a
+  denial out of an object written only to let them out. Under Cilium the object carries no
+  `ingress:` key and states `enableDefaultDeny: {ingress: false}`; in the portable dialect
+  `policyTypes` names just `Egress`. The service policies are unchanged and still claim both.
+
+### Getting it applied before the Job, which is a separate problem
+
+- **`ordering: helmHook`** (the default). The migration is a `pre-install,pre-upgrade` hook, and
+  Helm applies every hook of an event before any of the release's own manifests — so a plain
+  policy resource does not exist yet when the Job runs, and the fix would not apply at all in the
+  default ordering. A second copy, `<release>-tankovault-bootstrap-hook`, is rendered as the same
+  hook at weight `-10` (the Job is `-5`) and deleted once the event succeeds. Safe rather than a
+  second race: Helm runs every hook in an event to completion before applying any
+  `hook-succeeded` deletion.
+- **`ordering: argoSyncWave`.** The plain policy takes `bootstrap.migrate.argoSyncWaveBase` minus
+  one. Argo CD orders resources inside a wave by kind from a fixed list that `Job` is on and a
+  policy object is not, and unlisted kinds sort last — so the same wave would apply the policy
+  after the pod it protects. If you give anything the migration depends on an explicit wave, it
+  now needs to sit below the policy's, not just below the Job's.
+
+The seed steps need neither. They are `post-install`, which runs after the release's manifests.
 
 ## 5.1.0
 

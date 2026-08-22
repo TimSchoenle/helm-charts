@@ -275,6 +275,10 @@ tests:
             - matchPattern: "*"
 
   - it: emits both dialects during a CNI migration
+    # The count is the assertion: both renderers walk the same plan, so a policy that exists in
+    # one dialect and not the other is a graph the two engines describe differently. Twelve here
+    # is the eight services, the bundled Valkey and TRAWL, and the bootstrap Jobs' policy with
+    # its pre-install hook copy.
     templates:
       - networkpolicy.yaml
       - ciliumnetworkpolicy.yaml
@@ -282,7 +286,7 @@ tests:
       networkPolicy.engine: both
     asserts:
       - hasDocuments:
-          count: 10
+          count: 12
 
   - it: refuses a route with no Gateway to attach to
     template: serviceaccount.yaml

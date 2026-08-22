@@ -1,0 +1,304 @@
+suite: test the bootstrap Jobs' network policy
+# The three bootstrap Jobs are neither a service nor a bundled datastore, so `tankovault.netpol.plan`
+# described every workload in this chart except them. An unselected pod is an unrestricted pod only
+# until something else default-denies the namespace; after that the migration dies resolving its
+# database host, on `Try again` — EAI_AGAIN, a DNS timeout that names no policy — and burns
+# `backoffLimit` looking exactly like a database outage. These pin the policy that closes it.
+templates:
+  - networkpolicy.yaml
+  - ciliumnetworkpolicy.yaml
+  - job-migrate.yaml
+  - job-seed.yaml
+values:
+  - ../ci/ingress-networkpolicy.yaml
+tests:
+  - it: selects the bootstrap Jobs by exactly the labels their pod template carries
+    # The two halves are asserted against the same literals rather than against each other,
+    # because a selector that matches nothing is indistinguishable from a correct one in every
+    # render: the policy exists, `kubectl get` shows it, and the pods it was written for are
+    # still unrestricted.
+    asserts:
+      - equal:
+          path: spec.podSelector.matchLabels
+          value:
+            app.kubernetes.io/name: tankovault
+            app.kubernetes.io/instance: RELEASE-NAME
+            app.kubernetes.io/component: bootstrap
+        template: networkpolicy.yaml
+        documentSelector:
+          path: metadata.name
+          value: RELEASE-NAME-tankovault-bootstrap
+      - equal:
+          path: spec.template.metadata.labels["app.kubernetes.io/name"]
+          value: tankovault
+        template: job-migrate.yaml
+      - equal:
+          path: spec.template.metadata.labels["app.kubernetes.io/instance"]
+          value: RELEASE-NAME
+        template: job-migrate.yaml
+      - equal:
+          path: spec.template.metadata.labels["app.kubernetes.io/component"]
+          value: bootstrap
+        template: job-migrate.yaml
+
+  - it: labels the seed Jobs the same way, so one policy covers all three
+    template: job-seed.yaml
+    set:
+      bootstrap.seedAdmin.enabled: true
+      bootstrap.seedAdmin.password: test-admin-password
+      bootstrap.seedProviders.enabled: true
+    asserts:
+      - equal:
+          path: spec.template.metadata.labels["app.kubernetes.io/component"]
+          value: bootstrap
+        documentSelector:
+          path: metadata.name
+          value: RELEASE-NAME-tankovault-seed-admin
+      - equal:
+          path: spec.template.metadata.labels["app.kubernetes.io/component"]
+          value: bootstrap
+        documentSelector:
+          path: metadata.name
+          value: RELEASE-NAME-tankovault-seed-providers
+
+  - it: grants DNS and nothing else against an external database
+    # Everything the steps can reach is in their projected secrets volume, and that holds
+    # `database__url`, `auth__password_pepper` and `seed_admin_password` and no other credential.
+    # No Valkey, no NATS, no internet — and `automountServiceAccountToken: false` rules out the
+    # API server too. The reachable set for an outside database is therefore DNS plus whatever
+    # the operator already wrote under `extraEgress`.
+    template: networkpolicy.yaml
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-bootstrap
+    asserts:
+      - lengthEqual:
+          path: spec.egress
+          count: 1
+      - equal:
+          path: spec.egress[0].to[0].podSelector.matchLabels["k8s-app"]
+          value: kube-dns
+
+  - it: reaches the bundled PostgreSQL when the database is bundled
+    # The bundled case is not covered by the ingress rule PostgreSQL already carries for
+    # `bootstrap`: being admitted at the database is worth nothing while the client cannot
+    # resolve its host, and the seed steps run as Jobs there too.
+    template: networkpolicy.yaml
+    set:
+      postgresql.enabled: true
+      postgresql.auth.password: test-password
+      externalDatabase.url: ""
+      bootstrap.seedAdmin.enabled: true
+      bootstrap.seedAdmin.password: test-admin-password
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-bootstrap
+    asserts:
+      - lengthEqual:
+          path: spec.egress
+          count: 2
+      - equal:
+          path: spec.egress[1].to[0].podSelector.matchLabels["app.kubernetes.io/component"]
+          value: postgresql
+      - equal:
+          path: spec.egress[1].ports[0].port
+          value: 5432
+
+  - it: carries the operator's own egress rules, which is the whole fix for an outside database
+    # Consumers pointing at a database outside the cluster already describe that edge in
+    # `extraEgress`, and that list is appended to every policy this chart renders. So emitting a
+    # policy for these pods at all is what makes the rule they already wrote start reaching them
+    # — there is deliberately no `bootstrap.database.*` knob.
+    template: networkpolicy.yaml
+    set:
+      networkPolicy.extraEgress:
+        - to:
+            - ipBlock:
+                cidr: 203.0.113.10/32
+          ports:
+            - port: 5432
+              protocol: TCP
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-bootstrap
+    asserts:
+      - lengthEqual:
+          path: spec.egress
+          count: 2
+      - equal:
+          path: spec.egress[1].to[0].ipBlock.cidr
+          value: 203.0.113.10/32
+
+  - it: claims no ingress direction, because these Jobs serve nothing
+    # `policyTypes` is what a portable policy claims, and everything it claims and does not list
+    # is denied. Naming `Ingress` here would invent a denial out of an object written only to let
+    # these pods out.
+    template: networkpolicy.yaml
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-bootstrap
+    asserts:
+      - equal:
+          path: spec.policyTypes
+          value: [Egress]
+      - isNull:
+          path: spec.ingress
+
+  - it: says the same thing in Cilium's dialect, with no ingress key at all
+    # Cilium claims a direction two ways — the presence of a rule list, and `enableDefaultDeny` —
+    # so both have to say egress-only or the object silently denies inbound traffic no rule here
+    # was written to govern. The services keep both directions; only these Jobs differ.
+    template: ciliumnetworkpolicy.yaml
+    set:
+      networkPolicy.engine: cilium
+    capabilities:
+      apiVersions:
+        - cilium.io/v2
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-bootstrap
+    asserts:
+      - isNull:
+          path: spec.ingress
+      - equal:
+          path: spec.enableDefaultDeny.ingress
+          value: false
+      - equal:
+          path: spec.enableDefaultDeny.egress
+          value: true
+      - equal:
+          path: spec.egress[0].toEndpoints[0].matchLabels["k8s-app"]
+          value: kube-dns
+
+  - it: keeps both directions on the service policies
+    # The guard for the test above: `governsIngress` is a property of the bootstrap Jobs, not a
+    # change to how every policy is written.
+    template: ciliumnetworkpolicy.yaml
+    set:
+      networkPolicy.engine: cilium
+    capabilities:
+      apiVersions:
+        - cilium.io/v2
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-frontend
+    asserts:
+      - equal:
+          path: spec.enableDefaultDeny.ingress
+          value: true
+      - isNotNull:
+          path: spec.ingress
+
+  - it: renders a hook copy under the default ordering, below the Job's own weight
+    # `helmHook` makes the migration a `pre-install,pre-upgrade` hook, and Helm applies every hook
+    # of an event before any of the release's own manifests — so the plain policy does not exist
+    # yet at the moment the Job needs it, and without this copy the fix would simply not apply in
+    # the default ordering. Weight below the Job's `-5`; deleted once the event succeeds, which is
+    # safe because Helm runs every hook in an event to completion before deleting any of them.
+    template: networkpolicy.yaml
+    asserts:
+      # Ten service and datastore policies, plus the plain bootstrap policy and this copy of it.
+      # Stated as a total because `hasDocuments` counts the template, not the selection; the two
+      # tests below hold the same total against configurations that render one object fewer.
+      - hasDocuments:
+          count: 12
+      - equal:
+          path: metadata.annotations["helm.sh/hook"]
+          value: pre-install,pre-upgrade
+        documentSelector:
+          path: metadata.name
+          value: RELEASE-NAME-tankovault-bootstrap-hook
+      - equal:
+          path: metadata.annotations["helm.sh/hook-weight"]
+          value: "-10"
+        documentSelector:
+          path: metadata.name
+          value: RELEASE-NAME-tankovault-bootstrap-hook
+      - equal:
+          path: metadata.annotations["helm.sh/hook-delete-policy"]
+          value: before-hook-creation,hook-succeeded
+        documentSelector:
+          path: metadata.name
+          value: RELEASE-NAME-tankovault-bootstrap-hook
+
+  - it: orders the policy one wave below the migration Job under sync-wave ordering
+    # Argo CD orders resources inside a wave by kind, from a fixed list `Job` is on and a
+    # CiliumNetworkPolicy — an ordinary custom resource to Argo — is not; unlisted kinds sort
+    # last. Same wave would therefore mean the policy lands after the pod it protects, and the
+    # Job spends retries on a race Cilium heals moments later.
+    set:
+      bootstrap.migrate.ordering: argoSyncWave
+      bootstrap.migrate.argoSyncWaveBase: 3
+    asserts:
+      - equal:
+          path: metadata.annotations["argocd.argoproj.io/sync-wave"]
+          value: "2"
+        template: networkpolicy.yaml
+        documentSelector:
+          path: metadata.name
+          value: RELEASE-NAME-tankovault-bootstrap
+      - equal:
+          path: metadata.annotations["argocd.argoproj.io/sync-wave"]
+          value: "3"
+        template: job-migrate.yaml
+
+  - it: drops the hook copy when the Job is no longer a hook
+    # Under `argoSyncWave` the migration is an ordinary tracked resource, so the plain policy
+    # covers it. A second object carrying `helm.sh/hook` would also be classified as a hook by
+    # Argo CD and put straight back into PreSync.
+    template: networkpolicy.yaml
+    set:
+      bootstrap.migrate.ordering: argoSyncWave
+    asserts:
+      # One fewer than the test above, in the same configuration but for the ordering.
+      - hasDocuments:
+          count: 11
+      - isNull:
+          path: metadata.annotations["helm.sh/hook"]
+        documentSelector:
+          path: metadata.name
+          value: RELEASE-NAME-tankovault-bootstrap
+
+  - it: still covers the seed steps when the migration runs as an initContainer
+    # No migration Job, so no hook copy — but `seed-admin` and `seed-providers` are Jobs either
+    # way. They are `post-install`, which runs after the release's manifests, so the plain policy
+    # is in place by the time they start.
+    template: networkpolicy.yaml
+    set:
+      postgresql.enabled: true
+      postgresql.auth.password: test-password
+      externalDatabase.url: ""
+      bootstrap.seedAdmin.enabled: true
+      bootstrap.seedAdmin.password: test-admin-password
+    asserts:
+      # The ten service and datastore policies, the bundled PostgreSQL's, and one bootstrap
+      # policy with no hook copy beside it — there is no migration Job to sequence against.
+      - hasDocuments:
+          count: 12
+      - equal:
+          path: spec.podSelector.matchLabels["app.kubernetes.io/component"]
+          value: bootstrap
+        documentSelector:
+          path: metadata.name
+          value: RELEASE-NAME-tankovault-bootstrap
+
+  - it: renders no bootstrap policy when no bootstrap Job renders
+    # `initContainer` runs the migration inside the service pods, which carry policies of their
+    # own, and both seed steps are off by default. A policy selecting pods that never exist is
+    # not free: it is one more object to reason about when a drop is being traced.
+    template: networkpolicy.yaml
+    set:
+      postgresql.enabled: true
+      postgresql.auth.password: test-password
+      externalDatabase.url: ""
+    asserts:
+      # Exactly the test above minus its seed step, so the one object that disappears is the
+      # bootstrap policy it named.
+      - hasDocuments:
+          count: 11
+      - equal:
+          path: spec.podSelector.matchLabels["app.kubernetes.io/component"]
+          value: postgresql
+        documentSelector:
+          path: metadata.name
+          value: RELEASE-NAME-tankovault-postgresql

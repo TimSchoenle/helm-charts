@@ -2085,6 +2085,12 @@ bootstrap:
     # have created that Secret is therefore never applied. Nothing inside PreSync can break the
     # cycle. `argoSyncWave` drops the hook annotations entirely and orders the Job by sync wave
     # inside the Sync phase instead, where the ExternalSecret reconciles alongside it.
+    #
+    # Either ordering puts the bootstrap Jobs' NetworkPolicy ahead of the Job, because a policy
+    # that lands after the pod it protects is the same outage as no policy: under `helmHook` a
+    # second copy of it is rendered as a `pre-install,pre-upgrade` hook at weight `-10` and
+    # deleted once the event succeeds, since the plain resource is not applied until every hook
+    # has run; under `argoSyncWave` the plain resource takes `argoSyncWaveBase` minus one.
     ordering: helmHook
 
     # @schema
@@ -2095,6 +2101,12 @@ bootstrap:
     # until the previous one is healthy, and a Job is healthy only once it is Complete. Anything
     # the migration itself depends on — the ExternalSecret carrying `database__url`, a database
     # some operator provisions — must be given a wave strictly below this one.
+    #
+    # The bootstrap Jobs' NetworkPolicy is given this **minus one** for exactly that reason, and
+    # it has to be: Argo CD orders resources inside a wave by kind from a fixed list that `Job`
+    # is on and a policy object is not, and unlisted kinds sort last. In the same wave the policy
+    # would therefore be applied after the Job it protects, and the migration would start into a
+    # namespace still denying its DNS.
     argoSyncWaveBase: 0
 
     # @schema
@@ -3525,7 +3537,9 @@ networkPolicy:
   # items:
   #   $ref: https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyIngressRule
   # @schema
-  # -- Extra ingress rules appended to every service's policy.
+  # -- Extra ingress rules appended to every policy that governs ingress. The bootstrap Jobs'
+  # policy governs none — those Jobs serve nothing, and claiming the direction would deny inbound
+  # traffic on the strength of an object written only to let them out — so it is not added there.
   extraIngress: []
 
   # @schema
@@ -3533,7 +3547,11 @@ networkPolicy:
   # items:
   #   $ref: https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyEgressRule
   # @schema
-  # -- Extra egress rules appended to every service's policy.
+  # -- Extra egress rules appended to every policy this chart renders, the bootstrap Jobs'
+  # included. That last part is what covers a database outside the cluster: the migration and
+  # seed steps have to reach it, and the chart cannot know where it is — so the rule you already
+  # wrote for the services is the rule those Jobs get, and there is no `bootstrap.database.*`
+  # knob to keep in step with it.
   extraEgress: []
 
   # @schema
@@ -3559,8 +3577,10 @@ networkPolicy:
     # type: boolean
     # @schema
     # -- State default-deny explicitly rather than relying on it being implied by the presence
-    # of rules. Requires Cilium 1.16+. Applies to both directions: every workload here carries
-    # rules in both, so there is no half a single object could silently cut off.
+    # of rules. Requires Cilium 1.16+. Applied per direction rather than to both at once: a
+    # policy claims the directions it actually has rules for, so the bootstrap Jobs' policy —
+    # egress only, since those Jobs serve nothing — cannot deny inbound traffic it was never
+    # written to govern.
     enableDefaultDeny: true
 
     # @schema
@@ -3637,13 +3657,16 @@ networkPolicy:
     # @schema
     # type: array
     # @schema
-    # -- Extra ingress rules in CiliumNetworkPolicy form, appended to every service's policy.
+    # -- Extra ingress rules in CiliumNetworkPolicy form, appended to every policy that governs
+    # ingress. Not the bootstrap Jobs' policy, which governs none — see `networkPolicy.extraIngress`.
     extraIngress: []
 
     # @schema
     # type: array
     # @schema
-    # -- Extra egress rules in CiliumNetworkPolicy form, appended to every service's policy.
+    # -- Extra egress rules in CiliumNetworkPolicy form, appended to every policy this chart
+    # renders, the bootstrap Jobs' included — see `networkPolicy.extraEgress` for why that is the
+    # whole of what an outside database needs.
     extraEgress: []
 
 # @schema

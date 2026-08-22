@@ -8,7 +8,11 @@ twelve workloads whose rules are pod-to-pod and asymmetric. What the topology *i
 `networking.k8s.io/v1`. `ciliumnetworkpolicy.yaml` says the same plan in Cilium's dialect, which
 is why the two engines cannot describe different graphs.
 
-Default-deny is implicit: every policy names both policy types, so anything not listed is denied.
+Default-deny is implicit: a policy naming a policy type denies everything it does not list for
+that type. Which types are named comes from the plan's `governsIngress` rather than being fixed at
+both — the bootstrap Jobs listen on nothing, and naming `Ingress` on their policy would invent a
+denial out of an object written only to let them out. The Cilium rendering says the same thing
+with `enableDefaultDeny.ingress: false`.
 
 The central rule the egress side enforces: every rule carries a `to:` selector. A rule that lists
 only `ports:` is not a restriction — the API reads a missing `to` as "all destinations", so
@@ -74,13 +78,24 @@ metadata:
   labels:
     {{- include "common.labels" $ | nindent 4 }}
     app.kubernetes.io/component: {{ $policy.component }}
+  {{- /*
+    Only the bootstrap policies carry any: a policy applied after the pod it protects is the same
+    outage as no policy, and the plan is where that ordering is decided for both dialects at once.
+  */}}
+  {{- with $policy.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 spec:
   podSelector:
     matchLabels:
       {{- toYaml $policy.selector | nindent 6 }}
   policyTypes:
+    {{- if $policy.governsIngress }}
     - Ingress
+    {{- end }}
     - Egress
+  {{- if $policy.governsIngress }}
   ingress:
     {{- range $rule := $policy.ingress }}
     - from:
@@ -92,6 +107,7 @@ spec:
     {{- with $.Values.networkPolicy.extraIngress }}
     {{- include "common.tplvalues.render" (dict "value" . "context" $) | nindent 4 }}
     {{- end }}
+  {{- end }}
   egress:
     {{- range $rule := $policy.egress }}
     {{- if $rule.dns }}

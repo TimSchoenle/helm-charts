@@ -25,6 +25,18 @@ A YAML list, one entry per policy object:
   ingress     list of {peer, port}
   egress      list of {peer, port} — plus the two peers that are not pod selectors
 
+  governsIngress
+              whether this policy is what decides who may reach these pods. True for everything
+              with a listener. False only for the bootstrap Jobs, and the distinction is not
+              cosmetic: in both dialects a policy *claims* a direction, and a policy claiming a
+              direction it carries no rules for denies that direction outright. For pods that
+              serve nothing that would be a denial invented by a policy written only to let them
+              out. Renderers must leave the direction alone rather than emit an empty rule list.
+
+  annotations map, optional — resource annotations, and only ever ordering metadata: a policy
+              that lands after the pod it protects is the same outage as no policy at all, and
+              each of the two orderings this chart supports spells "first" differently.
+
 A peer is exactly one of:
 
   selector    matchLabels for pods in this namespace
@@ -206,6 +218,7 @@ outside this release and gets no in-cluster grant, exactly as `trawl.redis.url` 
       "selector" (dict
         "app.kubernetes.io/name" (include "tankovault.name" (dict "ctx" $ctx "service" $service))
         "app.kubernetes.io/instance" $ctx.Release.Name)
+      "governsIngress" true
       "ingress" $ingress
       "egress" $egress) -}}
 {{- end -}}
@@ -255,8 +268,101 @@ outside this release and gets no in-cluster grant, exactly as `trawl.redis.url` 
         "app.kubernetes.io/name" (include "common.name" $ctx)
         "app.kubernetes.io/instance" $ctx.Release.Name
         "app.kubernetes.io/component" $ds.component)
+      "governsIngress" true
       "ingress" $ingress
       "egress" $egress) -}}
+{{- end -}}
+{{- end -}}
+
+{{- /*
+One policy for the bootstrap Jobs — the third kind of thing this chart runs, and the one this
+plan never described.
+
+`bootstrap migrate`, `seed-admin` and `seed-providers` are Jobs: no Service, no Deployment, so
+neither a `tankovault.serviceSpecs` entry nor a bundled datastore. They appeared here exactly
+once, as an *ingress peer* on the bundled PostgreSQL above — admitted at the database while
+granted no egress of their own.
+
+That asymmetry costs nothing for exactly as long as an unselected pod is an unrestricted pod. It
+stops being free the moment something else covers the namespace with a default-deny — a
+cluster-wide CiliumClusterwideNetworkPolicy selecting every endpoint outside kube-system is the
+usual one. These pods then run with zero allow rules, and the migration dies on its first lookup:
+
+  error communicating with database: failed to lookup address information: Try again
+
+`Try again` is EAI_AGAIN, a DNS timeout rather than NXDOMAIN. Nothing in the message names a
+policy, so the Job burns `backoffLimit` looking exactly like a database outage. The *bundled*
+database fails the same way, not only the external one: PostgreSQL admitting `bootstrap` on the
+ingress side buys nothing while bootstrap cannot resolve the host it is admitted to.
+
+DNS plus the database, and deliberately nothing beyond it. The pod template projects
+`database__url`, `auth__password_pepper` and `seed_admin_password` and no other credential — no
+Valkey, no NATS, no outbound internet — and `automountServiceAccountToken: false` rules out the
+API server too. An *external* database needs no values knob of its own: the extra-rule lists are
+appended to every policy this chart renders, so the `extraEgress` entry those consumers already
+wrote starts reaching these pods the moment any policy selects them at all. Emitting the policy
+is the whole of the fix for them.
+*/ -}}
+{{- $migrateJob := eq (include "tankovault.migrateMode" $ctx) "job" -}}
+{{- if or $migrateJob $ctx.Values.bootstrap.seedAdmin.enabled $ctx.Values.bootstrap.seedProviders.enabled -}}
+{{- $bootstrapEgress := list (dict "dns" true) -}}
+{{- if $ctx.Values.postgresql.enabled -}}
+{{- $bootstrapEgress = append $bootstrapEgress (merge (dict "port" 5432) (include "tankovault.netpol.plan.componentPeer" (dict "ctx" $ctx "component" "postgresql") | fromYaml)) -}}
+{{- end -}}
+{{- /* The same peer shape the `$ds.bootstrap` branch admits at PostgreSQL, so the two halves of
+       that rule cannot select different pods. */ -}}
+{{- $bootstrapSelector := (include "tankovault.netpol.plan.componentPeer" (dict "ctx" $ctx "component" "bootstrap") | fromYaml).selector -}}
+
+{{- /*
+Under `ordering: argoSyncWave` the migration Job is an ordinary tracked resource at
+`argoSyncWaveBase`, and Argo CD orders resources *within* a wave by kind from a fixed list that
+`Job` is on and a CiliumNetworkPolicy — just another custom resource to Argo — is not; unlisted
+kinds sort last. The policy would therefore be applied after the Job it exists to protect, and
+the migrate pod would start into a namespace still denying its DNS. Cilium heals that moments
+later, but the Job spends retries on the race for no reason. One wave below the Job removes it,
+derived from the same `tankovault.migrateSyncWave` the Job and the workloads read so that the
+three cannot drift apart.
+*/ -}}
+{{- $bootstrapAnnotations := dict -}}
+{{- with include "tankovault.migrateSyncWave" (dict "ctx" $ctx "offset" -1) -}}
+{{- $_ := set $bootstrapAnnotations "argocd.argoproj.io/sync-wave" . -}}
+{{- end -}}
+
+{{- $policies = append $policies (dict
+      "name" (include "common.fullname.suffixed" (dict "ctx" $ctx "suffix" "bootstrap"))
+      "component" "bootstrap"
+      "selector" $bootstrapSelector
+      "governsIngress" false
+      "ingress" list
+      "egress" $bootstrapEgress
+      "annotations" $bootstrapAnnotations) -}}
+
+{{- /*
+`ordering: helmHook` needs a second copy of that policy, because the plain resource above does
+not exist yet at the moment it is needed: the migration is a `pre-install,pre-upgrade` hook, and
+Helm applies every hook of an event before any of the release's own manifests. Left at one copy
+the fix would simply not apply in the default ordering.
+
+Same rules, hook annotations, and a weight below the Job's `-5`. It is deleted once the event
+succeeds and that is safe rather than a second race: Helm runs every hook in an event to
+completion before applying any `hook-succeeded` deletion, so the policy outlives the Job it was
+created for.
+
+The seed steps need no copy. They are `post-install`, which runs after the release's manifests,
+by which time the plain policy above is installed and covers them.
+*/ -}}
+{{- if and $migrateJob (eq $ctx.Values.bootstrap.migrate.ordering "helmHook") -}}
+{{- $policies = append $policies (dict
+      "name" (include "common.fullname.suffixed" (dict "ctx" $ctx "suffix" "bootstrap-hook"))
+      "component" "bootstrap"
+      "selector" $bootstrapSelector
+      "governsIngress" false
+      "ingress" list
+      "egress" $bootstrapEgress
+      "annotations" (dict
+        "helm.sh/hook" "pre-install,pre-upgrade"
+        "helm.sh/hook-weight" "-10"
+        "helm.sh/hook-delete-policy" "before-hook-creation,hook-succeeded")) -}}
 {{- end -}}
 {{- end -}}
 

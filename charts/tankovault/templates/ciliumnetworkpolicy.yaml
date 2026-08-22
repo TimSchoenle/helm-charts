@@ -4,10 +4,11 @@ The same policy graph as `networkpolicy.yaml`, in Cilium's dialect.
 Both files render `tankovault.netpol.plan` and neither derives anything itself, so the two engines
 cannot describe different graphs. What differs is only what each dialect is able to say.
 
-One object per workload rather than the library's ingress/egress pair: every workload here has
-rules in both directions, so `enableDefaultDeny` is true for both and there is no risk of one
-half's policy silently denying the other half's traffic — the reason `common.ciliumNetworkPolicy`
-splits.
+One object per workload rather than the library's ingress/egress pair. What makes the library
+split is the risk of a single object denying a direction it carries no rules for; here that is
+handled by stating `enableDefaultDeny` per direction instead, from the plan's `governsIngress`.
+Every workload has egress rules, so egress is always claimed; ingress is claimed only where there
+is something listening to protect.
 
 What Cilium adds over the portable rendering
 ---------------------------------------------
@@ -37,6 +38,14 @@ metadata:
   labels:
     {{- include "common.labels" $ | nindent 4 }}
     app.kubernetes.io/component: {{ $policy.component }}
+  {{- /*
+    Only the bootstrap policies carry any: a policy applied after the pod it protects is the same
+    outage as no policy, and the plan is where that ordering is decided for both dialects at once.
+  */}}
+  {{- with $policy.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 spec:
   {{- with $cilium.description }}
   description: {{ . | quote }}
@@ -45,13 +54,21 @@ spec:
     matchLabels:
       {{- toYaml $policy.selector | nindent 6 }}
   {{- /*
-    Both directions, unlike `common.ciliumNetworkPolicy`, which splits into an ingress object and
-    an egress object so that turning the flag on for one cannot deny the other. Every workload
-    here carries rules in both directions, so there is no half to silently cut off.
+    Both directions in one object, unlike `common.ciliumNetworkPolicy`, which splits into an
+    ingress object and an egress object so that turning the flag on for one cannot deny the
+    other. What makes that safe here is that the flag is stated per direction: a policy only
+    default-denies a direction it actually governs.
+
+    The bootstrap Jobs are what forces the distinction. They listen on nothing, so their policy
+    has no ingress half at all — and `true` with no rules beneath it would deny every inbound
+    connection to those pods on the strength of an object written only to let them out. The
+    `ingress:` key is omitted with it, since in this dialect the presence of a rule list is the
+    other way a direction gets claimed.
   */}}
   enableDefaultDeny:
-    ingress: {{ include "common.cilium.enableDefaultDeny" $ }}
+    ingress: {{ if $policy.governsIngress }}{{ include "common.cilium.enableDefaultDeny" $ }}{{ else }}false{{ end }}
     egress: {{ include "common.cilium.enableDefaultDeny" $ }}
+  {{- if $policy.governsIngress }}
   ingress:
     {{- range $rule := $policy.ingress }}
     - fromEndpoints:
@@ -76,6 +93,7 @@ spec:
     {{- with $cilium.extraIngress }}
     {{- include "common.tplvalues.render" (dict "value" . "context" $) | nindent 4 }}
     {{- end }}
+  {{- end }}
   egress:
     {{- range $rule := $policy.egress }}
     {{- if $rule.dns }}

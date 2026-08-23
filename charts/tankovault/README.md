@@ -1,6 +1,9 @@
 # tankovault
 
-![Version: 5.3.0](https://img.shields.io/badge/Version-5.3.0-informational?style=flat-square) ![AppVersion: 8.4.0](https://img.shields.io/badge/AppVersion-8.4.0-informational?style=flat-square)
+
+
+
+![Version: 5.4.0](https://img.shields.io/badge/Version-5.4.0-informational?style=flat-square) ![AppVersion: 8.4.0](https://img.shields.io/badge/AppVersion-8.4.0-informational?style=flat-square) 
 
 This chart deploys the full TankoVault manga aggregator stack — frontend, api, control-plane, worker, notifier, sync, challenge-solver and render — hardened to the restricted Pod Security Standard, with file-backed configuration that reloads in place instead of restarting pods, optional bundled PostgreSQL, Valkey, NATS JetStream and TRAWL, and optional Prometheus metrics, alerting rules and Grafana dashboards.
 
@@ -33,6 +36,7 @@ the optional headless `render` tier, plus the one-shot `bootstrap` migration and
 | deploying through Argo CD | [Argo CD and `bootstrap.migrate.ordering`](#argo-cd-and-bootstrapmigrateordering) |
 | running under a cluster-wide default-deny | [The bootstrap Jobs need a policy too](#the-bootstrap-jobs-need-a-policy-too) |
 | hooking up Prometheus or Grafana | [Observability](#observability) |
+| reporting errors and traces to Sentry | [Error reporting and tracing with Sentry](#error-reporting-and-tracing-with-sentry) |
 | running this under your own name | [Branding](#branding) |
 | publishing terms or a privacy policy | [Legal documents](#legal-documents) |
 | turning on two-factor authentication | [Two-factor authentication](#two-factor-authentication) |
@@ -864,6 +868,109 @@ has no per-object cross-namespace grant — a Prometheus decides what it loads t
 chart can influence; on a kube-prometheus-stack cluster it usually has to carry
 `release: kube-prometheus-stack` or the rules are created and never loaded.
 
+### Error reporting and tracing with Sentry
+
+Everything above is aggregate: a rate, a histogram, a gauge. None of it carries the one failing
+request. `telemetry.sentry.*` adds the other half — errors, panics and end-to-end distributed
+traces — and it is **off**, which is not a default so much as a property: while it is off no
+client, no panic hook and no layer is installed in any service, nothing leaves the process, and
+this chart renders exactly what it rendered before.
+
+```yaml
+telemetry:
+  sentry:
+    enabled: true
+    dsn: https://<key>@<host>/<project>
+    tracesSampleRate: 0.1
+```
+
+That is a release-level switch and not a per-service one, because a trace is only worth having
+end to end. One reader action is one trace across the whole tier: the id rides the proxy hop the
+frontend opens to the API, every call the API makes to `control-plane`, `sync` and `worker`,
+every NATS message the broker delivers, and every solve the worker sends to `challenge-solver`
+and `render`. Background work — the scheduler sweeps, each consumed broker message, the
+recommendation build, the audit retention pass — becomes a transaction of its own rather than
+disappearing into a process that serves no requests.
+
+`tracesSampleRate` is the fraction of traces a service **starts**, not a switch for taking part
+in one: a service left at `0` still continues a trace handed to it, so setting one service
+differently cannot cut the tier-wide trace in half. Set it uniformly anyway — the service that
+starts a trace is the one whose rate decides whether it exists at all. Leaving it at `0` is the
+configuration for error reporting with no tracing, which is a reasonable place to start.
+
+Where one service genuinely has to differ, `services.<name>.config.telemetry.sentry.<key>` is the
+highest-precedence configuration layer and overrides a single key on a single service, without
+splitting the switch into eight.
+
+#### The egress rule this chart cannot write for you
+
+The DSN is a credential — the key embedded in it is a bearer token for the project's ingest
+endpoint — so the chart delivers it as a file in `TANKOVAULT_SECRETS_DIR` and never reads it.
+That has a consequence worth stating plainly: **it cannot open a NetworkPolicy for a host it does
+not know.** Three of the eight services (`frontend`, `control-plane`, `challenge-solver`) are
+granted no egress beyond the cluster at all, and the other five reach only what
+`networkPolicy.internetCidrs` allows.
+
+So under `networkPolicy.enabled`, name the ingest endpoint yourself:
+
+```yaml
+networkPolicy:
+  extraEgress:                 # appended to every policy this chart renders
+    - to:
+        - ipBlock:
+            cidr: 34.120.195.249/32
+      ports:
+        - port: 443
+          protocol: TCP
+```
+
+or, under Cilium, as a name rather than an address:
+
+```yaml
+networkPolicy:
+  engine: cilium
+  cilium:
+    egress:
+      toFQDNs:
+        - matchName: o0.ingest.sentry.io
+```
+
+Getting this wrong fails silently and in the worst possible way: an SDK that cannot reach its
+endpoint queues events and then discards them. Nothing errors, nothing logs, and the Sentry
+project simply stays empty — which reads as "no errors" rather than as "no connectivity".
+
+#### Where the DSN lives, and what changes when it does
+
+`telemetry.sentry.dsn` goes into the Secret this chart renders, under
+`telemetry__sentry__dsn`, and is projected into all eight service pods. To keep it out of
+`helm get values` entirely, leave the value empty and put that key in the Secret named by
+`existingSecret` — the chart projects it either way, and naming an existing Secret is taken as
+the answer to where the DSN is. A key that turns out not to be in there is a boot failure naming
+it, on every service at once, because a service told to report with nowhere to report to refuses
+to start rather than running with a reporter that reports nothing. The chart refuses the case it
+can see offline: the switch on with neither a DSN nor an `existingSecret`.
+
+Two consequences of the projection are worth knowing before you switch it on. The `frontend` pod
+reads no other credential, so it gains a secrets volume and a `TANKOVAULT_SECRETS_DIR` it did not
+have. And `telemetry.*` is one of the two carve-outs from this chart's in-place configuration
+reload — the client is built once at boot — so switching Sentry on or off is a restart, not a
+reload. Set `configReload.rolloutOnChange: true` to have the chart roll the Deployments for you.
+
+#### What is deliberately not sent
+
+`sendDefaultPii` is off, and it is two controls rather than one. On, every event carries the
+client IP, the resolved user and the unredacted request header set — `Authorization` and `Cookie`
+included — to a third party, and it is also the flag that stops the HTTP middleware redacting
+sensitive headers. `spanAttributes` is off for a smaller version of the same reason: span fields
+here routinely carry ids and reader-supplied titles, and a transaction is retained for longer
+than a log line. If this deployment publishes a privacy policy under `legal.documents`, these two
+settings are what that policy has to agree with.
+
+`captureLevel` (`error`) and `breadcrumbLevel` (`info`) both sit *under* the subscriber's own
+filter, so a record that `config.telemetry.log_filter` drops never reaches Sentry either,
+whatever they are set to. That is the one surprise in this block: raising `captureLevel` cannot
+recover a record the log filter has already discarded.
+
 ## Branding
 
 Everything a running deployment shows a reader about *itself* — the name, the wordmark, the
@@ -959,6 +1066,7 @@ Version-by-version migration notes live in
 [UPGRADING.md](https://github.com/TimSchoenle/helm-charts/blob/main/charts/tankovault/UPGRADING.md).
 Read it before upgrading across 3.0.3 or 3.1.0 — both need a manual step, and neither fails in a
 way that points at it.
+
 
 ## Exposing it through Gateway API
 
@@ -1629,6 +1737,24 @@ lookup; the chart fails the render if FQDN destinations are named with the DNS r
 | services.worker.resources.requests.memory | string | `"512Mi"` | Minimum guaranteed memory allocation. |
 | services.worker.service.annotations | object | `{}` | Extra Service annotations. |
 | services.worker.service.type | string | `"ClusterIP"` | Service type. |
+| telemetry | object | `{"sentry":{"attachStacktraces":true,"breadcrumbLevel":"info","captureLevel":"error","debug":false,"dsn":"","enabled":false,"environment":"","httpTransactions":true,"maxBreadcrumbs":100,"release":"","sampleRate":1,"sendDefaultPii":false,"serverName":"","shutdownTimeoutSecs":2,"spanAttributes":false,"tracesSampleRate":0}}` | Process-level telemetry. Unlike almost everything under `config`, what is set here is installed once as a service boots rather than re-read from the mounted ConfigMap, so a change takes effect on the next restart instead of within the kubelet's refresh interval. `configReload.rolloutOnChange` is what turns a change here into a rollout. |
+| telemetry.sentry | object | `{"attachStacktraces":true,"breadcrumbLevel":"info","captureLevel":"error","debug":false,"dsn":"","enabled":false,"environment":"","httpTransactions":true,"maxBreadcrumbs":100,"release":"","sampleRate":1,"sendDefaultPii":false,"serverName":"","shutdownTimeoutSecs":2,"spanAttributes":false,"tracesSampleRate":0}` | Sentry error reporting and distributed tracing. **Off**, and wholly inert while it is: no client, no panic hook and no layer is installed, and nothing leaves the process.  Switched on, every enabled service is given the same block, and that is deliberate. One reader action is one trace across the whole tier — the id rides the proxy hop the frontend opens to the API, every call the API makes to `control-plane`, `sync` and `worker`, every NATS message the broker delivers, and every solve the worker sends to `challenge-solver` and `render`. A service set differently does not drop out of a trace someone else started, but it is the only place a trace of its own can begin, so the switch belongs to the release rather than to each service. Where one genuinely has to differ, override it through `services.<name>.config.telemetry.sentry.<key>`, which outranks everything here.  Two things this chart deliberately does not do for you. It never reads the DSN, so it cannot open the NetworkPolicies for the ingest host: `frontend`, `control-plane` and `challenge-solver` are granted no egress beyond the cluster at all, and the other five are granted only `networkPolicy.internetCidrs`. Name the ingest endpoint in `networkPolicy.extraEgress`, or in `networkPolicy.cilium.egress.toFQDNs` where a name can be expressed, or events are lost without a word — an SDK that cannot reach its endpoint queues and discards rather than failing anything. And it configures nothing inside Sentry: the project, its quota and its server-side data-scrubbing rules are yours. |
+| telemetry.sentry.attachStacktraces | bool | `true` | Attach a stack trace to events that carry none of their own. |
+| telemetry.sentry.breadcrumbLevel | string | `"info"` | Least severe `tracing` level kept as a breadcrumb, the trail attached to the next issue. Records at or above `captureLevel` become issues instead. Quote `"off"`. |
+| telemetry.sentry.captureLevel | string | `"error"` | Least severe `tracing` level reported as a Sentry issue. Quote `"off"` — unquoted, YAML reads it as the boolean `false`. This and `breadcrumbLevel` both sit *under* the subscriber's own filter, so a record that `config.telemetry.log_filter` drops never reaches Sentry either, whatever is set here. |
+| telemetry.sentry.debug | bool | `false` | Print the SDK's own diagnostics to stderr. For proving a DSN works, not for running. |
+| telemetry.sentry.dsn | string | `""` | Ingest URL, `https://<key>@<host>/<project>`. A credential — the embedded key is a bearer token for the project's ingest endpoint — so it is delivered as a file in `TANKOVAULT_SECRETS_DIR` under `telemetry__sentry__dsn` and never written into a ConfigMap. Leave it empty and put that key in the Secret named by `existingSecret` to keep it out of `helm get values` entirely. |
+| telemetry.sentry.enabled | bool | `false` | Initialise the Sentry client on every enabled service. Off, every other key here is inert. On, a service refuses to boot without a DSN rather than starting with a reporter that reports nowhere, so this and `dsn` are set together. |
+| telemetry.sentry.environment | string | `""` | Environment tag on every event. Empty lets the service derive it from `profile`: `production` under `profile: production`, `development` otherwise. |
+| telemetry.sentry.httpTransactions | bool | `true` | Record one transaction per request through the shared HTTP stack, named by the matched route (`/v1/series/{id}`) rather than by the URI, so an id in the path does not become a transaction name of its own. Whether a started transaction is kept is `tracesSampleRate`'s decision; this is the switch for a service that should stay out of traces entirely. Probe traffic is outside it either way, as it is outside the metrics middleware. |
+| telemetry.sentry.maxBreadcrumbs | int | `100` | How many breadcrumbs one event carries. |
+| telemetry.sentry.release | string | `""` | Release tag on every event. Empty uses the version the binary was built from, which is what makes a regression attributable to a deploy — set this only to match a release you create in Sentry under a name of your own. |
+| telemetry.sentry.sampleRate | float | `1` | Fraction of captured events actually sent. A blunt volume cap — it drops whole issues, not repetitions of one — so leave it at `1` unless a quota forces otherwise. |
+| telemetry.sentry.sendDefaultPii | bool | `false` | Send personally identifying data with every event: the client IP, the resolved user and the whole request header set, `Authorization` and `Cookie` included. **Off, and worth leaving off** — none of it is needed to make a crash report actionable, and Sentry is a third party for the purposes of whatever this deployment publishes under `legal.documents`. It is two controls rather than one, besides: off is also what keeps the HTTP middleware redacting sensitive headers. |
+| telemetry.sentry.serverName | string | `""` | Host tag on every event. Empty reports none, which is the right answer here: the value would be one replica's pod name, not anything an operator chose. |
+| telemetry.sentry.shutdownTimeoutSecs | int | `2` | How long process exit waits for queued events to drain. It is spent on every pod shutdown, so it is time added to every rollout; keep it short. |
+| telemetry.sentry.spanAttributes | bool | `false` | Copy `tracing` span fields onto the Sentry span as attributes. Off: span fields here routinely carry ids and user-supplied titles, and a transaction is retained for longer than a log line. |
+| telemetry.sentry.tracesSampleRate | float | `0` | Fraction of traces a service **starts** that are recorded. `0` starts none, which is what makes this feature free to switch on for error reporting alone. It does not take a service out of a trace: a request or a broker message that arrives already sampled is continued whatever this says, so the tier-wide trace survives one service being set differently. `0.05`-`0.2` is an ordinary production figure, and it is worth setting uniformly, because the service that starts a trace is the one whose rate decides whether it exists at all. |
 | trawl | object | `{"browserPoolSize":1,"enabled":false,"image":{"repository":"ghcr.io/germondai/trawl","tag":"1.3.1@sha256:1276e2937346190380310e15b3c4cbbf7757827c2ed3056459ad999b10cb90c9"},"redis":{"enabled":true,"url":""},"resources":{"limits":{"memory":"2Gi"},"requests":{"cpu":"500m","memory":"1Gi"}},"runAsUser":1000,"shmSize":"1Gi"}` | Bundled [TRAWL](https://github.com/germondai/trawl), the default backend for the challenge solver. |
 | trawl.browserPoolSize | int | `1` | Number of warm browser instances to keep. Each is a full Firefox, so raising this raises `resources` with it. The image's own default is 3, which fits none of the sizes below. |
 | trawl.enabled | bool | `false` | Deploy the bundled TRAWL. |
@@ -1659,6 +1785,7 @@ lookup; the chart fails the render if FQDN destinations are named with the DNS r
 | Name | Email | Url |
 | ---- | ------ | --- |
 | Tim Schönle | <contact@tim-schoenle.de> |  |
+
 
 ----------------------------------------------
 Autogenerated from chart metadata using [helm-docs v1.14.2](https://github.com/norwoodj/helm-docs/releases/v1.14.2)

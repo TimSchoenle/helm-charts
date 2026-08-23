@@ -97,10 +97,10 @@ origin — `anilist.redirect_uri`, `email.base_url` and `auth.webauthn_origin` a
 that origin by AniList, by mail clients and by the browser's passkey implementation
 respectively, and getting any of them wrong fails only at runtime.
 
-`frontend.cloudflare.*` is the one block emitted only when it is switched on, rather than
-always with its default. This layer outranks `.Values.config`, so an always-emitted `false`
-would silently override the same key written by hand in the raw TOML tree — and `false` is
-already what the service defaults to, so there is nothing to state.
+`frontend.cloudflare.*` and `telemetry.sentry.*` are the two blocks emitted only when they are
+switched on, rather than always with their defaults. This layer outranks `.Values.config`, so an
+always-emitted `false` would silently override the same key written by hand in the raw TOML tree
+— and `false` is already what the service defaults to, so there is nothing to state.
 */}}
 {{- define "tankovault.derivedConfig" -}}
 {{- $ctx := .ctx -}}
@@ -112,6 +112,10 @@ already what the service defaults to, so there is nothing to state.
 bind_addr: {{ printf "0.0.0.0:%v" $spec.port | quote }}
 telemetry:
   service_name: {{ $spec.slug | quote }}
+{{- with include "tankovault.sentry.config" $ctx }}
+  sentry:
+    {{- . | nindent 4 }}
+{{- end }}
 metrics:
   enabled: {{ $ctx.Values.metrics.enabled }}
   listen: {{ printf "0.0.0.0:%v" $ctx.Values.metrics.port | quote }}
@@ -207,6 +211,72 @@ legal:
   {{- . | nindent 2 }}
 {{- end }}
 {{- end }}
+{{- end -}}
+
+{{/*
+Whether Sentry is switched on. Emits "true" or "".
+
+The one predicate the `[telemetry.sentry]` block, the DSN's entry in the chart-managed Secret,
+its per-pod projection and the validator all read, so those four can never disagree about
+whether this release reports anywhere. Written defensively at both levels: a values file that
+empties the block outright (`telemetry: ~`) means "nothing set", not a nil-pointer trace.
+
+Args: ctx (root).
+*/}}
+{{- define "tankovault.sentry.enabled" -}}
+{{- if ((.Values.telemetry | default dict).sentry | default dict).enabled -}}true{{- end -}}
+{{- end -}}
+
+{{/*
+The `[telemetry.sentry]` block, or empty while Sentry is off.
+
+One block, identical on every service, because a trace is only worth having across the whole
+tier: the id is carried on every HTTP hop this chart wires and on every NATS message the broker
+delivers, so a service left unconfigured is the one that ends the trace. Per-service divergence
+is still reachable — `.Values.services.<name>.config` outranks this layer — it is simply not
+what the values surface leads with.
+
+Emitted only when it is switched on, for the reason `derivedConfig` gives above: writing the
+block unconditionally would put an `enabled = false` over the same key set by hand in the raw
+TOML tree, and off is what the service already defaults to.
+
+The DSN is deliberately absent. It is a credential, so it arrives as `telemetry__sentry__dsn` in
+TANKOVAULT_SECRETS_DIR — see `tankovault.secretData` — and never through a ConfigMap, which is
+readable by anything that can read the namespace.
+
+The three tag keys are omitted when empty rather than written blank, because for each of them
+the service's own default is a value this chart cannot compute: the environment follows
+`TANKOVAULT_PROFILE`, the release is the version the binary was built from, and an unset server
+name is what keeps a replica's hostname out of every event. The rest are written through as they
+stand, defaults included, because those defaults are stable settings an operator reads back out
+of the rendered ConfigMap rather than facts about a release this chart does not ship.
+
+The bootstrap Jobs get none of it: `bootstrap`'s contract declares no `telemetry` key at all,
+and a step that runs for seconds and exits has nothing a reporter would outlive.
+
+Args: ctx (root).
+*/}}
+{{- define "tankovault.sentry.config" -}}
+{{- $sentry := (.Values.telemetry | default dict).sentry | default dict -}}
+{{- if include "tankovault.sentry.enabled" . -}}
+{{- $out := dict
+      "enabled" true
+      "sample_rate" $sentry.sampleRate
+      "traces_sample_rate" $sentry.tracesSampleRate
+      "capture_level" $sentry.captureLevel
+      "breadcrumb_level" $sentry.breadcrumbLevel
+      "max_breadcrumbs" $sentry.maxBreadcrumbs
+      "attach_stacktraces" $sentry.attachStacktraces
+      "send_default_pii" $sentry.sendDefaultPii
+      "http_transactions" $sentry.httpTransactions
+      "span_attributes" $sentry.spanAttributes
+      "shutdown_timeout_secs" $sentry.shutdownTimeoutSecs
+      "debug" $sentry.debug -}}
+{{- with $sentry.environment }}{{- $_ := set $out "environment" . }}{{- end -}}
+{{- with $sentry.release }}{{- $_ := set $out "release" . }}{{- end -}}
+{{- with $sentry.serverName }}{{- $_ := set $out "server_name" . }}{{- end -}}
+{{- toYaml $out -}}
+{{- end -}}
 {{- end -}}
 
 {{/*

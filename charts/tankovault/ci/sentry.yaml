@@ -1,0 +1,76 @@
+# Sentry switched on across the whole tier, with the egress rule that makes it reach anything.
+#
+# A render fixture, not an install fixture: external datastores that do not resolve, and a DSN
+# pointing at a host that does not exist. `ct install` takes every `ci/*-values.yaml`, while the
+# render and policy jobs glob `ci/*.yaml`.
+#
+# Every key is set away from its default on purpose. The chart writes the whole block through to
+# all eight services, so a fixture that left the defaults in place would render the same document
+# whether the mapping were right or reversed.
+#
+# `networkPolicy` is here for the half of this feature the chart cannot derive. The DSN is a
+# credential, so the chart never reads it and cannot open a hole for the ingest host — and three
+# of the eight services (`frontend`, `control-plane`, `challenge-solver`) are granted no egress
+# beyond the cluster at all. Without a rule like the one below they would queue events until the
+# SDK dropped them, silently. This fixture names a CIDR because the portable policy dialect
+# cannot express a hostname; `ci/cilium.yaml` is where `toFQDNs` is exercised.
+auth:
+  jwtSecret: ci-jwt-secret-0123456789abcdef0123
+  passwordPepper: ci-password-pepper-0123456789abcd
+internal:
+  # The `token` path. The chart defaults to `mtls`, which needs cert-manager and a CA;
+  # `ci/internal-mtls.yaml` is the fixture that renders that one. Both tokens are set explicitly
+  # for the same reason `auth.jwtSecret` is — `helm template` has no cluster to read a generated
+  # value back out of, so an empty one would render differently on every invocation.
+  identity: token
+  tokens:
+    api: ci-internal-token-api-0123456789abcdef
+    worker: ci-internal-token-worker-0123456789ab
+anilist:
+  clientId: "12345"
+  clientSecret: ci-anilist-client-secret
+  tokenEncryptionKey: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
+  redirectUri: https://tankovault.example.com/account/anilist-callback
+externalDatabase:
+  url: postgres://tankovault:ci@postgresql.example.com:5432/tankovault
+externalRedis:
+  url: redis://valkey.example.com:6379
+externalNats:
+  url: nats://nats.example.com:4222
+externalTrawl:
+  url: http://trawl.example.com:8191
+services:
+  render:
+    enabled: true
+
+telemetry:
+  sentry:
+    enabled: true
+    dsn: https://ci0123456789abcdef@sentry.example.com/42
+    environment: ci
+    release: tankovault@8.4.0
+    serverName: ci-render-fixture
+    sampleRate: 0.5
+    tracesSampleRate: 0.2
+    captureLevel: warn
+    breadcrumbLevel: debug
+    maxBreadcrumbs: 50
+    attachStacktraces: false
+    sendDefaultPii: false
+    httpTransactions: false
+    spanAttributes: true
+    shutdownTimeoutSecs: 5
+    debug: true
+
+networkPolicy:
+  enabled: true
+  monitoring:
+    namespaceSelector:
+      kubernetes.io/metadata.name: monitoring
+  extraEgress:
+    - to:
+        - ipBlock:
+            cidr: 34.120.195.249/32
+      ports:
+        - port: 443
+          protocol: TCP

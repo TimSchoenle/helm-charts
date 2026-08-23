@@ -4823,6 +4823,154 @@
       "required": [],
       "title": "services"
     },
+    "telemetry": {
+      "additionalProperties": true,
+      "description": "Process-level telemetry. Unlike almost everything under `config`, what is set here is\ninstalled once as a service boots rather than re-read from the mounted ConfigMap, so a change\ntakes effect on the next restart instead of within the kubelet's refresh interval.\n`configReload.rolloutOnChange` is what turns a change here into a rollout.",
+      "properties": {
+        "sentry": {
+          "additionalProperties": true,
+          "description": "Sentry error reporting and distributed tracing. **Off**, and wholly inert while it is: no\nclient, no panic hook and no layer is installed, and nothing leaves the process.\n\nSwitched on, every enabled service is given the same block, and that is deliberate. One\nreader action is one trace across the whole tier — the id rides the proxy hop the frontend\nopens to the API, every call the API makes to `control-plane`, `sync` and `worker`, every\nNATS message the broker delivers, and every solve the worker sends to `challenge-solver` and\n`render`. A service set differently does not drop out of a trace someone else started, but it\nis the only place a trace of its own can begin, so the switch belongs to the release rather\nthan to each service. Where one genuinely has to differ, override it through\n`services.\u003cname\u003e.config.telemetry.sentry.\u003ckey\u003e`, which outranks everything here.\n\nTwo things this chart deliberately does not do for you. It never reads the DSN, so it cannot\nopen the NetworkPolicies for the ingest host: `frontend`, `control-plane` and\n`challenge-solver` are granted no egress beyond the cluster at all, and the other five are\ngranted only `networkPolicy.internetCidrs`. Name the ingest endpoint in\n`networkPolicy.extraEgress`, or in `networkPolicy.cilium.egress.toFQDNs` where a name can be\nexpressed, or events are lost without a word — an SDK that cannot reach its endpoint queues\nand discards rather than failing anything. And it configures nothing inside Sentry: the\nproject, its quota and its server-side data-scrubbing rules are yours.",
+          "properties": {
+            "attachStacktraces": {
+              "default": true,
+              "description": "Attach a stack trace to events that carry none of their own.",
+              "required": [],
+              "title": "attachStacktraces",
+              "type": "boolean"
+            },
+            "breadcrumbLevel": {
+              "default": "info",
+              "description": "Least severe `tracing` level kept as a breadcrumb, the trail attached to the next issue.\nRecords at or above `captureLevel` become issues instead. Quote `\"off\"`.",
+              "enum": [
+                "off",
+                "error",
+                "warn",
+                "info",
+                "debug",
+                "trace"
+              ],
+              "required": [],
+              "title": "breadcrumbLevel"
+            },
+            "captureLevel": {
+              "default": "error",
+              "description": "Least severe `tracing` level reported as a Sentry issue. Quote `\"off\"` — unquoted, YAML\nreads it as the boolean `false`. This and `breadcrumbLevel` both sit *under* the\nsubscriber's own filter, so a record that `config.telemetry.log_filter` drops never reaches\nSentry either, whatever is set here.",
+              "enum": [
+                "off",
+                "error",
+                "warn",
+                "info",
+                "debug",
+                "trace"
+              ],
+              "required": [],
+              "title": "captureLevel"
+            },
+            "debug": {
+              "default": false,
+              "description": "Print the SDK's own diagnostics to stderr. For proving a DSN works, not for running.",
+              "required": [],
+              "title": "debug",
+              "type": "boolean"
+            },
+            "dsn": {
+              "default": "",
+              "description": "Ingest URL, `https://\u003ckey\u003e@\u003chost\u003e/\u003cproject\u003e`. A credential — the embedded key is a\nbearer token for the project's ingest endpoint — so it is delivered as a file in\n`TANKOVAULT_SECRETS_DIR` under `telemetry__sentry__dsn` and never written into a ConfigMap.\nLeave it empty and put that key in the Secret named by `existingSecret` to keep it out of\n`helm get values` entirely.",
+              "required": [],
+              "title": "dsn",
+              "type": "string"
+            },
+            "enabled": {
+              "default": false,
+              "description": "Initialise the Sentry client on every enabled service. Off, every other key here is\ninert. On, a service refuses to boot without a DSN rather than starting with a reporter\nthat reports nowhere, so this and `dsn` are set together.",
+              "required": [],
+              "title": "enabled",
+              "type": "boolean"
+            },
+            "environment": {
+              "default": "",
+              "description": "Environment tag on every event. Empty lets the service derive it from `profile`:\n`production` under `profile: production`, `development` otherwise.",
+              "required": [],
+              "title": "environment",
+              "type": "string"
+            },
+            "httpTransactions": {
+              "default": true,
+              "description": "Record one transaction per request through the shared HTTP stack, named by the matched\nroute (`/v1/series/{id}`) rather than by the URI, so an id in the path does not become a\ntransaction name of its own. Whether a started transaction is kept is `tracesSampleRate`'s\ndecision; this is the switch for a service that should stay out of traces entirely. Probe\ntraffic is outside it either way, as it is outside the metrics middleware.",
+              "required": [],
+              "title": "httpTransactions",
+              "type": "boolean"
+            },
+            "maxBreadcrumbs": {
+              "default": 100,
+              "description": "How many breadcrumbs one event carries.",
+              "minimum": 0,
+              "required": [],
+              "title": "maxBreadcrumbs",
+              "type": "integer"
+            },
+            "release": {
+              "default": "",
+              "description": "Release tag on every event. Empty uses the version the binary was built from, which is\nwhat makes a regression attributable to a deploy — set this only to match a release you\ncreate in Sentry under a name of your own.",
+              "required": [],
+              "title": "release",
+              "type": "string"
+            },
+            "sampleRate": {
+              "default": 1,
+              "description": "Fraction of captured events actually sent. A blunt volume cap — it drops whole issues,\nnot repetitions of one — so leave it at `1` unless a quota forces otherwise.",
+              "maximum": 1,
+              "minimum": 0,
+              "required": [],
+              "title": "sampleRate",
+              "type": "number"
+            },
+            "sendDefaultPii": {
+              "default": false,
+              "description": "Send personally identifying data with every event: the client IP, the resolved user and\nthe whole request header set, `Authorization` and `Cookie` included. **Off, and worth\nleaving off** — none of it is needed to make a crash report actionable, and Sentry is a\nthird party for the purposes of whatever this deployment publishes under `legal.documents`.\nIt is two controls rather than one, besides: off is also what keeps the HTTP middleware\nredacting sensitive headers.",
+              "required": [],
+              "title": "sendDefaultPii",
+              "type": "boolean"
+            },
+            "serverName": {
+              "default": "",
+              "description": "Host tag on every event. Empty reports none, which is the right answer here: the value\nwould be one replica's pod name, not anything an operator chose.",
+              "required": [],
+              "title": "serverName",
+              "type": "string"
+            },
+            "shutdownTimeoutSecs": {
+              "default": 2,
+              "description": "How long process exit waits for queued events to drain. It is spent on every pod\nshutdown, so it is time added to every rollout; keep it short.",
+              "minimum": 0,
+              "required": [],
+              "title": "shutdownTimeoutSecs",
+              "type": "integer"
+            },
+            "spanAttributes": {
+              "default": false,
+              "description": "Copy `tracing` span fields onto the Sentry span as attributes. Off: span fields here\nroutinely carry ids and user-supplied titles, and a transaction is retained for longer than\na log line.",
+              "required": [],
+              "title": "spanAttributes",
+              "type": "boolean"
+            },
+            "tracesSampleRate": {
+              "default": 0,
+              "description": "Fraction of traces a service **starts** that are recorded. `0` starts none, which is\nwhat makes this feature free to switch on for error reporting alone. It does not take a\nservice out of a trace: a request or a broker message that arrives already sampled is\ncontinued whatever this says, so the tier-wide trace survives one service being set\ndifferently. `0.05`-`0.2` is an ordinary production figure, and it is worth setting\nuniformly, because the service that starts a trace is the one whose rate decides whether\nit exists at all.",
+              "maximum": 1,
+              "minimum": 0,
+              "required": [],
+              "title": "tracesSampleRate",
+              "type": "number"
+            }
+          },
+          "required": [],
+          "title": "sentry"
+        }
+      },
+      "required": [],
+      "title": "telemetry"
+    },
     "trawl": {
       "additionalProperties": true,
       "description": "Bundled [TRAWL](https://github.com/germondai/trawl), the default backend for the challenge\nsolver.",

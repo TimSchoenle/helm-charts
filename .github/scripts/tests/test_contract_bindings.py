@@ -940,7 +940,7 @@ class TestTheEnrolledCharts(unittest.TestCase):
                 ("netcup-offer-bot", 5, 0),
                 ("portfolio", 7, 3),
                 ("s3-bucket-perma-link", 7, 0),
-                ("tankovault", 99, 0),
+                ("tankovault", 219, 0),
             ],
         )
         self.assertEqual(messages(report), "")
@@ -949,8 +949,8 @@ class TestTheEnrolledCharts(unittest.TestCase):
         """The rule that chart forced: unscoped means every document declaring the key.
 
         `metrics.enabled` is one line of `derivedConfig` written into all eight services, and one
-        value carries one marker. 38 markers resolve to 99 bindings here, which is the arithmetic
-        of that rule and the reason the chart is enrolable at all.
+        value carries one marker. 53 markers resolve to 219 bindings here, which is the
+        arithmetic of that rule and the reason the chart is enrolable at all.
         """
         marker = self.markers("tankovault")["metrics.enabled"]
         self.assertIsNone(marker.documents)

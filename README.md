@@ -1,119 +1,213 @@
 <!--
-Template for the repository README. CI renders it on every pull request and commits the
-result to README.md, so edit this file — never README.md itself.
+Generated from .github/templates/README.md.hbs — edit that file, not this one.
 
-Variables come from .github/scripts/chart-index.py, which reads every charts/*/Chart.yaml.
+The Documentation job in .github/workflows/ci.yaml renders it on every pull request and commits
+the result back to the branch. A push to main whose README.md does not match its template fails
+the `readme` job in .github/workflows/docs.yaml.
+
+The chart table comes from one command:
+
+    just chart-index
+
+which reads every charts/*/Chart.yaml. The rest of the payload — repository, branch, the library
+chart's name and version, and the docs index — is derived from charts/common/Chart.yaml and the
+checkout by TimSchoenle/actions/actions/common/readme-variables, so no name, version or
+description below is typed by hand.
+
+Nothing in this comment may contain a mustache that is not a real reference.
 -->
-# Helm Charts
 
-Helm charts for the applications and utilities I run on Kubernetes. Every chart is built on
-the same `common` library, so they share one values contract, one label scheme and one
-security baseline.
+# helm-charts
 
-## TL;DR
+Helm charts for the applications and utilities I run on Kubernetes, built on one shared library.
+
+[![Latest chart](https://img.shields.io/github/v/release/TimSchoenle/helm-charts?sort=date&display_name=tag&label=latest%20chart)](https://github.com/TimSchoenle/helm-charts/releases)
+[![Publish](https://img.shields.io/github/actions/workflow/status/TimSchoenle/helm-charts/release.yml?branch=main&label=publish)](https://github.com/TimSchoenle/helm-charts/actions/workflows/release.yml)
+
+## What this is
+
+Every one of the 8 application charts here depends on the `common` library chart, which holds the
+shared template partials: the pod spec, both security contexts, the NetworkPolicies, the monitoring
+objects and the file-backed configuration. A change to the security baseline is written once there
+and reaches every chart on its next dependency build.
+
+Packages are published to <https://timschoenle.github.io/helm-charts> by chart-releaser, one GitHub
+Release per chart version.
+
+## Quick start
 
 ```bash
 helm repo add timschoenle https://timschoenle.github.io/helm-charts
 helm repo update
-helm install my-release timschoenle/<chart-name> -f values.yaml
+helm install my-release timschoenle/<chart>
 ```
 
-Requires Kubernetes 1.19+ and Helm 3.0+. CI validates every chart against Helm 3.21 and 4.2.
+Several charts need a credential or an accepted licence that `helm install` cannot invent. Read
+the chart's own README before installing it.
 
-## Charts
+## Table of contents
 
-Each chart's README is the reference for its values, its prerequisites and its migration
-notes. Follow the link before installing — several charts need a credential or an accepted
-licence that `helm install` cannot invent for you.
+- [Features](#features)
+- [Installation](#installation)
+- [Usage](#usage)
+- [Configuration](#configuration)
+- [Compatibility](#compatibility)
+- [Documentation](#documentation)
+- [Contributing](#contributing)
+- [Security](#security)
+
+## Features
+
+### Charts
 
 | Chart | Description |
-|-------|-------------|
-| [cloudflare-access-webhook-redirect](./charts/cloudflare-access-webhook-redirect) | A Helm chart for deploying the Cloudflare Access Webhook Redirect service. This service acts as an authentication proxy that validates requests using Cloudflare Access Service Auth tokens before forwarding them to target backend services. |
-| [mp-stats-legacy-viewer](./charts/mp-stats-legacy-viewer) | MP Stats Legacy Viewer |
-| [netcup-offer-bot](./charts/netcup-offer-bot) | This chart deploys the Netcup Offer Bot, which monitors https://www.netcup-sonderangebote.de/ RSS feed and sends notifications to Discord webhooks when new offers are available. |
-| [paperless-ngx](./charts/paperless-ngx) | This chart deploys paperless-ngx — a document management system that scans, indexes and archives your paper documents — hardened to the restricted Pod Security Standard, with per-directory persistence, scheduled document_exporter backups and document_importer restores, optional bundled Valkey, PostgreSQL, Gotenberg and Tika, Ingress and Gateway API publishing, Grafana dashboards and Prometheus alerting rules. |
-| [portfolio](./charts/portfolio) | Personal portfolio built with Rust (Yew frontend, Axum server). |
-| [s3-bucket-perma-link](./charts/s3-bucket-perma-link) | This chart deploys a simple web server that provides permanent links to specific S3 bucket resources. It allows you to define static URL paths that always point to specific files in your S3 buckets. |
-| [tankovault](./charts/tankovault) | This chart deploys the full TankoVault manga aggregator stack — frontend, api, control-plane, worker, notifier, sync, challenge-solver and render — hardened to the restricted Pod Security Standard, with file-backed configuration that reloads in place instead of restarting pods, optional bundled PostgreSQL, Valkey, NATS JetStream and TRAWL, and optional Prometheus metrics, alerting rules and Grafana dashboards. |
-| [teamspeak](./charts/teamspeak) | This chart deploys a TeamSpeak 3 server hardened to the restricted Pod Security Standard, with optional persistence, an optional Prometheus metrics exporter sidecar, Grafana dashboards and Prometheus alerting rules. |
+| --- | --- |
+| [cloudflare-access-webhook-redirect](charts/cloudflare-access-webhook-redirect) | A Helm chart for deploying the Cloudflare Access Webhook Redirect service. This service acts as an authentication proxy that validates requests using Cloudflare Access Service Auth tokens before forwarding them to target backend services. |
+| [mp-stats-legacy-viewer](charts/mp-stats-legacy-viewer) | MP Stats Legacy Viewer |
+| [netcup-offer-bot](charts/netcup-offer-bot) | This chart deploys the Netcup Offer Bot, which monitors https://www.netcup-sonderangebote.de/ RSS feed and sends notifications to Discord webhooks when new offers are available. |
+| [paperless-ngx](charts/paperless-ngx) | This chart deploys paperless-ngx — a document management system that scans, indexes and archives your paper documents — hardened to the restricted Pod Security Standard, with per-directory persistence, scheduled document_exporter backups and document_importer restores, optional bundled Valkey, PostgreSQL, Gotenberg and Tika, Ingress and Gateway API publishing, Grafana dashboards and Prometheus alerting rules. |
+| [portfolio](charts/portfolio) | Personal portfolio built with Rust (Yew frontend, Axum server). |
+| [s3-bucket-perma-link](charts/s3-bucket-perma-link) | This chart deploys a simple web server that provides permanent links to specific S3 bucket resources. It allows you to define static URL paths that always point to specific files in your S3 buckets. |
+| [tankovault](charts/tankovault) | This chart deploys the full TankoVault manga aggregator stack — frontend, api, control-plane, worker, notifier, sync, challenge-solver and render — hardened to the restricted Pod Security Standard, with file-backed configuration that reloads in place instead of restarting pods, optional bundled PostgreSQL, Valkey, NATS JetStream and TRAWL, and optional Prometheus metrics, alerting rules and Grafana dashboards. |
+| [teamspeak](charts/teamspeak) | This chart deploys a TeamSpeak 3 server hardened to the restricted Pod Security Standard, with optional persistence, an optional Prometheus metrics exporter sidecar, Grafana dashboards and Prometheus alerting rules. |
 
-The [`common`](./charts/common) library chart is not published. It holds the shared
-template partials every chart above composes, and is consumed locally via `file://../common`.
+[`common`](charts/common) is not published. Consumers pull it from `file://../common`, so a
+chart is packaged with the library version its own `Chart.yaml` pinned at release time.
 
-Versions are deliberately absent from this table: they change on nearly every pull request,
-and a rendered version column would turn each of those into a merge conflict on this one
-file. Run `helm search repo timschoenle --versions` for what is published.
+Versions are absent from that table on purpose. They change on nearly every pull request, and a
+rendered version column turned this one file into a merge conflict across concurrent bump
+branches. `helm search repo timschoenle --versions` lists what is published.
 
-## What every chart gives you
+### What every chart gives you
 
-**The [restricted Pod Security Standard][pss] by default.** Pods run non-root with no
-privilege escalation, all Linux capabilities dropped, a read-only root filesystem,
-`seccompProfile: RuntimeDefault` and no ServiceAccount token mounted. Relax any of it per
-chart through `podSecurityContextPreset` / `securityContextPreset` and the matching context
-values.
+**The [restricted Pod Security Standard][pss] by default.** Pods run non-root with no privilege
+escalation, all Linux capabilities dropped, a read-only root filesystem,
+`seccompProfile: RuntimeDefault` and no ServiceAccount token mounted. Setting
+`podSecurityContextPreset` or `securityContextPreset` to `none` opts out, and the matching
+`podSecurityContext` and `securityContext` values merge over whichever preset is in force. The
+identity fields stay with the chart, because `runAsUser` has to match the image's own UID.
 
-**NetworkPolicies that actually restrict.** Opt in with `networkPolicy.enabled`. Every
-generated egress rule carries a `to:` selector — DNS to the cluster DNS service, HTTP/HTTPS
-to a configurable CIDR that excludes RFC1918 space and the link-local range covering the
-cloud instance metadata endpoint. A rule with only `ports:` would permit every destination,
-so custom rules must supply their own `to:`.
+NetworkPolicies are opt-in through `networkPolicy.enabled`, and every generated egress rule
+carries a `to:` selector: DNS to the cluster DNS service, HTTP and HTTPS to a configurable CIDR
+that excludes RFC1918 space and `169.254.0.0/16`, the range the cloud instance metadata endpoint
+sits in. The API reads a rule listing only `ports:` as permitting every destination, so a custom
+rule must supply its own `to:`. Set `networkPolicy.engine` to `cilium` for FQDN and L7 rules, or
+to `both` while a cluster migrates between CNIs.
 
-**Optional observability.** Charts that ship metrics render ServiceMonitors or PodMonitors,
-Prometheus rules and Grafana dashboards. All are off by default and all require the relevant
-operator CRDs; when those are missing the chart fails the render rather than installing
-cleanly and leaving you unmonitored.
+**Monitoring objects that fail loudly.** Charts that ship metrics render ServiceMonitors or
+PodMonitors, Prometheus rules and Grafana dashboards. All are off by default and all need the
+operator CRDs; when those are missing the render fails instead of installing cleanly and leaving
+you unmonitored.
+
+Six charts vendor the configuration contract their image publishes and check the rendered
+`config.toml`, every container environment variable and every secret file name against it. A key
+the application stopped reading fails the pull request that bumps the digest, rather than starting
+a pod that runs on a compiled default nobody chose.
 
 [pss]: https://kubernetes.io/docs/concepts/security/pod-security-standards/#restricted
 
-## Reading a chart's documentation
+## Installation
+
+From the published repository:
 
 ```bash
-helm show readme timschoenle/<chart-name>   # the chart README, as published
-helm show values timschoenle/<chart-name>   # every value with its default
+helm repo add timschoenle https://timschoenle.github.io/helm-charts
+helm repo update
+helm install my-release timschoenle/<chart> --version <x.y.z> -f values.yaml
 ```
 
-## Upgrading
+From a checkout, which is what CI installs:
 
-A chart's major version bump means its values contract changed. Migration notes live in that
-chart's own README under an `Upgrading` heading; for `tankovault` and `paperless-ngx`, whose
-histories are longer, they live in
-[charts/tankovault/UPGRADING.md](./charts/tankovault/UPGRADING.md) and
-[charts/paperless-ngx/UPGRADING.md](./charts/paperless-ngx/UPGRADING.md).
+```bash
+git clone https://github.com/TimSchoenle/helm-charts.git
+cd helm-charts
+just deps
+helm install my-release ./charts/<chart> -f values.yaml
+```
 
-Every chart also publishes a `values.schema.json`, so a value that a new major removed or
-renamed fails at render time with the offending key named, rather than being silently
-dropped.
+`just deps` extracts the `common` library into each chart. A fresh clone cannot render a
+chart before it has run.
 
-## Working on the charts
+## Usage
 
-`README.md` and `values.schema.json` are generated. Edit the sources instead:
+Read a published chart without cloning it:
+
+```bash
+helm show readme timschoenle/<chart>
+helm show values timschoenle/<chart>
+```
+
+A chart's major version bump means its values contract changed. The migration notes sit in that
+chart's README under `Upgrading`, except for the two whose histories outgrew it:
+[charts/tankovault/UPGRADING.md](charts/tankovault/UPGRADING.md) and
+[charts/paperless-ngx/UPGRADING.md](charts/paperless-ngx/UPGRADING.md).
+
+## Configuration
+
+Values are documented where they are declared. Each key in a chart's `values.yaml` carries an
+`@schema` block and a `-- ` comment, and from those `just schema` generates `values.schema.json`
+while helm-docs generates the chart's README table. A value that a new major renamed or removed
+then fails at render time with the offending key named, instead of being dropped in silence.
+
+The keys `common` defines for every chart:
+
+| Key | Purpose |
+| --- | --- |
+| `podSecurityContextPreset`, `securityContextPreset` | `restricted` or `none`, the baseline each security context merges over |
+| `podSecurityContext`, `securityContext` | Kubernetes objects merged over the preset |
+| `networkPolicy.*` | Ingress and egress rules, and which policy dialect renders them |
+| `resources` | Requests and limits, typed against the Kubernetes schema |
+| `metrics.*`, `grafana.*`, `prometheusRule.*` | The monitoring objects, all off by default |
+
+Everything else belongs to the individual chart, whose README lists every value with its default.
+
+## Compatibility
+
+| | Supported |
+| --- | --- |
+| Helm | 3 and 4 |
+| Library chart | `common` 2.0.0 |
+| Kubernetes | No chart declares a `kubeVersion`. The render, validation and install matrices in [.github/workflows/ci.yaml](.github/workflows/ci.yaml) state what is tested. |
+
+## Documentation
+
+Every chart's README is the reference for its values, its prerequisites and its migration notes,
+and `helm show readme` prints the published copy without a clone. The gates are documented beside
+themselves: `justfile` and each file under `just/` open with a header saying what its recipes
+prove and why a recipe is or is not part of `just check`.
+
+## Contributing
+
+Issues and pull requests are welcome. Open an issue with the chart name and version, your
+Kubernetes and Helm versions, the values you installed with, and the output of `helm template` or
+the failing pod's logs.
+
+Three files per chart are generated, and CI regenerates and commits all of them on every pull
+request, so contributing a values change needs no toolchain installed:
 
 | Generated | Source |
-|---|---|
+| --- | --- |
 | `charts/<chart>/README.md` | `charts/<chart>/README.md.gotmpl` and `values.yaml` |
-| `charts/<chart>/values.schema.json` | `charts/<chart>/values.yaml` |
-| `README.md` (this file) | `.github/templates/README.md.hbs` |
+| `charts/<chart>/values.schema.json` | the `@schema` blocks in `values.yaml` |
+| `README.md` | `.github/templates/README.md.hbs` |
 
-CI regenerates all three on every pull request and commits the result back to the branch, so
-there is no toolchain to install locally.
-
-Every check CI runs is a [`just`](https://just.systems) recipe, and the workflows invoke those
-same recipes rather than their own copy of the logic — so any gate can be reproduced locally with
-one command:
+Every gate CI runs is a [`just`](https://just.systems) recipe, and the workflows call those
+recipes rather than keeping a second copy of the logic:
 
 ```bash
 just              # list every recipe, grouped
 just deps         # resolve chart dependencies; a fresh clone needs this first
 just test-unit    # helm unittest, every chart
-just test-rules   # promtool tests for charts that ship Prometheus rules
+just test-rules   # promtool tests for the charts that ship Prometheus rules
 just lint         # helm lint the library chart, chart-testing lint the rest
-just check        # everything CI runs that needs no Kubernetes cluster
+just check        # everything CI runs that needs no cluster and no network
 ```
 
-Recipes live in `justfile` and `just/*.just`, one file per group.
+## Security
 
-## Reporting issues
+Report a vulnerability in a chart through
+[GitHub's advisory form](https://github.com/TimSchoenle/helm-charts/security/advisories/new)
+rather than in a public issue. There is no separate reporting address.
 
-Open an [issue](https://github.com/timschoenle/helm-charts/issues) with the chart name and
-version, your Kubernetes and Helm versions, the values you installed with, and the output of
-`helm template` or the failing pod's logs.
+A vulnerability in an application one of these charts deploys belongs to that application's own
+repository, which the chart's `Chart.yaml` names under `sources`.

@@ -22,6 +22,67 @@ Some of them require a manual step that nothing will remind you about:
 The values contract is enforced by `values.schema.json`, so a key a new major removed or
 renamed fails the render with the offending path named, rather than being silently ignored.
 
+## 5.4.0
+
+**Sentry error reporting and end-to-end tracing, off by default and inert while it is off.**
+
+This release moves the images to TankoVault 8.5.0, which can report errors, panics and
+distributed traces to Sentry, and surfaces that as `telemetry.sentry.*`. Off, nothing about a
+rendered release changes: no key in any ConfigMap, no volume, no environment variable — and in
+the image, no client, no panic hook and no layer is installed, so nothing leaves the process.
+
+```yaml
+telemetry:
+  sentry:
+    enabled: true
+    dsn: https://<key>@<host>/<project>
+    tracesSampleRate: 0.1
+```
+
+The switch belongs to the release rather than to each service, because one reader action is one
+trace across the whole tier: the id rides the proxy hop the frontend opens to the API, every call
+the API makes to `control-plane`, `sync` and `worker`, every NATS message the broker delivers,
+and every solve the worker sends to `challenge-solver` and `render`. A service left unconfigured
+is where that trace stops. Where one genuinely has to differ — a tier that should start no traces
+of its own — `services.<name>.config.telemetry.sentry.<key>` is the highest-precedence layer and
+overrides a single key on a single service.
+
+### What to change
+
+Nothing, on any release. Everything below applies only once you switch it on.
+
+- **Open the egress.** This chart never reads the DSN, so it cannot open a hole for the ingest
+  host, and three of the eight services — `frontend`, `control-plane`, `challenge-solver` — are
+  granted no egress beyond the cluster at all. Under `networkPolicy.enabled` those three send
+  nothing and the other five only reach what `networkPolicy.internetCidrs` allows. Name the
+  ingest endpoint in `networkPolicy.extraEgress`, or in `networkPolicy.cilium.egress.toFQDNs`
+  where a hostname can be expressed. **Getting this wrong is silent**: an SDK that cannot reach
+  its endpoint queues events and then discards them; nothing fails, nothing logs, and the project
+  simply stays empty.
+- **Using `existingSecret`?** Add `telemetry__sentry__dsn` to it and leave `telemetry.sentry.dsn`
+  empty. The chart projects the key whenever the switch is on and treats naming an existing
+  Secret as the answer to "where is the DSN"; a key that is not actually in there is a boot
+  failure naming it, on every service at once.
+- **Expect the `frontend` pod to change shape.** It reads no other credential, so today it
+  carries no secrets volume and no `TANKOVAULT_SECRETS_DIR`. Switching Sentry on gives it both.
+- **It is a restart, not a reload.** `telemetry.*` is one of the two carve-outs from this chart's
+  in-place configuration reload — the client is built once at boot. Roll the Deployments, or set
+  `configReload.rolloutOnChange: true` so the chart does it.
+- **`sendDefaultPii` stays off.** On, every event carries the client IP, the resolved user and
+  the unredacted request headers — `Authorization` and `Cookie` included — to a third party, and
+  it is also what stops the HTTP middleware redacting sensitive headers. If this deployment
+  publishes a privacy policy under `legal.documents`, that policy is what the setting has to
+  agree with.
+
+### The two keys with no chart default
+
+`telemetry.sentry.environment` and `telemetry.sentry.release` are empty, and empty is not the
+same as unset-and-defaulted here. The service derives the environment from `TANKOVAULT_PROFILE`
+and the release from the version the binary was built from, and the second is what makes a
+regression attributable to a deploy — so leaving them empty is usually right, and the chart
+writes neither key rather than writing a blank one. `serverName` behaves the same way and reports
+nothing, which keeps a replica's hostname out of every event.
+
 ## 5.3.0
 
 **The bootstrap Jobs were the one thing in this chart no network policy selected, so under a

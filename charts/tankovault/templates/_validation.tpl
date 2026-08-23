@@ -341,6 +341,26 @@ forever rather than as an error, which is why it is refused here.
 {{- end -}}
 
 {{- /*
+Sentry.
+
+Both halves of "a reporter that reports nowhere is worse than none". Upstream refuses to boot
+when the switch is on and no DSN resolves, and that refusal lands on every pod in the release at
+once — so the case this chart can see offline is caught before the rollout rather than after it.
+It cannot see inside an `existingSecret`, so naming one is taken as the answer.
+
+The converse is the ordinary dead-value check this chart applies to `branding.botUserAgent` and
+the Cloudflare flags: a DSN set while the switch is off is neither projected into any pod nor
+written into the Secret, so it would sit in the release meaning nothing.
+*/ -}}
+{{- $sentry := ($ctx.Values.telemetry | default dict).sentry | default dict -}}
+{{- if and $sentry.enabled (not $sentry.dsn) (not $ctx.Values.existingSecret) -}}
+{{- $errors = append $errors "telemetry.sentry.enabled is set but no DSN is available. Every service refuses to boot rather than installing a client that reports nowhere, so this is the whole release crash-looping, not a degraded feature. Set `telemetry.sentry.dsn`, or put `telemetry__sentry__dsn` in the Secret named by `existingSecret`." -}}
+{{- end -}}
+{{- if and (not $sentry.enabled) $sentry.dsn -}}
+{{- $errors = append $errors "telemetry.sentry.dsn is set while telemetry.sentry.enabled is false. No client is installed, so the DSN is neither projected into any pod nor written into the Secret and would sit in the release meaning nothing — and a DSN is a credential to leave lying around. Set `telemetry.sentry.enabled=true`, or clear the DSN." -}}
+{{- end -}}
+
+{{- /*
 Gateway API exposure. Checked here rather than in `templates/httproute.yaml` for the reason every
 other check is here: one message naming everything wrong beats one `helm template` run per
 mistake. The CRD guard is the library's, so this chart and the four that use

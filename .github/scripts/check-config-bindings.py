@@ -47,30 +47,31 @@ All five charts that map values onto a contract set it today: `portfolio`, `netc
 `s3-bucket-perma-link`, `mp-stats-legacy-viewer` and `tankovault`.
 
 **What a nine-document chart changed about all of this.** The format was designed against two
-single-document charts, and `tankovault` — nine documents, 167 distinct key paths in 454
+single-document charts, and `tankovault` — nine documents, 183 distinct key paths in 582
 declarations — falsified four of its rules at once. Recorded here because each rule read as
 obviously right until a chart of that shape was actually put through it:
 
-1. **A value that feeds several documents could not say so.** 77 of those 167 paths are declared
-   by several documents at once, eight of them by eight documents each — `metrics.enabled`,
-   `metrics.listen`, `bind_addr`, `telemetry.*`. One template line writes each into every service.
+1. **A value that feeds several documents could not say so.** 93 of those 183 paths are declared
+   by several documents at once, twenty-four of them by eight documents each — `bind_addr`, the
+   five `metrics.*` keys and the whole of `telemetry.*`, `telemetry.sentry.*` included. One
+   template line writes each into every service.
    The first draft refused an unqualified target that resolved in more than one document and asked
    for a qualifier, which made the case inexpressible: a value carries one marker, and a qualified
    marker covers one document and leaves the rest owing. An unscoped marker now binds **every**
    document declaring the key, and a scope narrows it where the chart really does write the key
    for only some of them.
-2. **`unbound` was per document.** Only 40 of the 167 paths are written by any rendered document
-   at all; the other 127 are settings the image reads and this chart does not surface. Per
-   document that was 345 entries repeating a handful of sentences, so `unbound` moved to the chart
+2. **`unbound` was per document.** Only 53 of the 183 paths are written by any rendered document
+   at all; the other 130 are settings the image reads and this chart does not surface. Per
+   document that was 378 entries repeating a handful of sentences, so `unbound` moved to the chart
    and takes a list of keys against one reason. Still one key per line, and still no patterns.
 3. **A lone `composed` was refused.** See rule 4: `metrics.listen` is one value and a literal.
 4. **One value could bind only one key.** `internal.tls.certDir` is the directory
    `internal.tls.cert`, `internal.tls.key` and `internal.tls.ca` are each built from, by three
    `printf`s in one template. A value carries a run of markers now — see `config_bindings.py`.
 
-The measurement forced all four. What the chart ended up with: 38 markers resolving to 99
-bindings, and 144 keys written off in six `unbound` entries — eleven the chart derives from its
-own topology, fifteen delivered through the secrets directory, and the rest settings the image
+The measurement forced all four. What the chart ended up with: 53 markers resolving to 219
+bindings, and 145 keys written off in six `unbound` entries — eleven the chart derives from its
+own topology, sixteen delivered through the secrets directory, and the rest settings the image
 reads that this chart offers no value for.
 
 Inferring enrolment from "the chart carries at least one marker" is the obvious alternative, and

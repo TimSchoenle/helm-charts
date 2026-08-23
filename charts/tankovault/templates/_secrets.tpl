@@ -198,6 +198,9 @@ differently.
 {{- with $ctx.Values.email.password }}{{- $_ := set $data "email__password" . }}{{- end -}}
 {{- with $ctx.Values.channels.discordWebhookUrl }}{{- $_ := set $data "channels__discord_webhook_url" . }}{{- end -}}
 {{- with $ctx.Values.channels.webhookUrl }}{{- $_ := set $data "channels__webhook_url" . }}{{- end -}}
+{{- if include "tankovault.sentry.enabled" $ctx -}}
+{{- with $ctx.Values.telemetry.sentry.dsn }}{{- $_ := set $data "telemetry__sentry__dsn" . }}{{- end -}}
+{{- end -}}
 {{- with include "tankovault.seedAdminPassword" $ctx }}{{- $_ := set $data "seed_admin_password" . }}{{- end -}}
 {{- if $ctx.Values.postgresql.enabled -}}
 {{- $password := include "tankovault.postgresqlPassword" $ctx -}}
@@ -274,7 +277,9 @@ Secret and the internal tokens both rely on that.
 `optional: true` covers both a missing Secret and a missing key, which is what makes an
 optional credential — an SMTP password, a Discord webhook — simply absent rather than a mount
 failure. A genuinely missing *required* credential still fails loudly: the service refuses to
-boot and names the key.
+boot and names the key. That is exactly what a Sentry DSN missing from an `existingSecret` does,
+which is why `tankovault.validateValues` refuses the combination this chart *can* see: the
+switch on with no DSN and no existing Secret to have carried one.
 
 Args: ctx, service (a service key), or `keys` for a caller with its own key list. The internal
 and per-service NATS projections are derived from the service and so appear only in the first
@@ -288,6 +293,20 @@ form; the bootstrap steps that pass `keys` are not internal peers and speak to N
 {{- if not $keys -}}
 {{- $spec = include "tankovault.spec" $service | fromYaml -}}
 {{- $keys = $spec.secretKeys | default list -}}
+{{- end -}}
+{{- /*
+The Sentry DSN is the one credential that is not a static property of a service, so it is
+appended here rather than written into `tankovault.serviceSpecs`: every service reads it, but
+only while `telemetry.sentry.enabled` is set. That is also what keeps the `frontend` — which
+reads no other credential at all — free of a secrets volume, and so of a
+`TANKOVAULT_SECRETS_DIR` pointing at a directory nothing mounts, on every release that does not
+report to Sentry.
+
+Only in the per-service form. The bootstrap steps arrive with an explicit `keys` list and their
+image's contract declares no `telemetry` key of any kind.
+*/ -}}
+{{- if and $service (include "tankovault.sentry.enabled" $ctx) -}}
+{{- $keys = append $keys "telemetry__sentry__dsn" -}}
 {{- end -}}
 {{- $dbExternal := and (has "database__url" $keys) $ctx.Values.externalDatabase.existingSecret -}}
 {{- $redisExternal := and (has "redis__url" $keys) $ctx.Values.externalRedis.existingSecret -}}

@@ -190,3 +190,13 @@ NOTE: `metrics.prometheusRule.scope=none` installs the rules unscoped, so they m
 every namespace this Prometheus scrapes — including another release's `job="api"`. That is only
 correct if the Prometheus sets `enforcedNamespaceLabel` and performs the same rewrite itself.
 {{- end }}
+{{- if and (include "tankovault.sentry.enabled" .) .Values.networkPolicy.enabled (not .Values.networkPolicy.extraEgress) (not .Values.networkPolicy.cilium.egress.toFQDNs) }}
+
+NOTE: Sentry is on and the network policies name no egress for it, so no service can reach the
+ingest endpoint — `frontend`, `control-plane` and `challenge-solver` are granted nothing beyond
+the cluster at all, and the other five only `networkPolicy.internetCidrs`. This chart never reads
+the DSN, so it cannot open the hole for you. Nothing will fail: an SDK that cannot reach its
+endpoint queues events and then discards them, so the project simply stays empty, which reads as
+"no errors". Add the ingest host to `networkPolicy.extraEgress`, or to
+`networkPolicy.cilium.egress.toFQDNs` under the Cilium engine.
+{{- end }}

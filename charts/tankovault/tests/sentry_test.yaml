@@ -1,0 +1,274 @@
+# Sentry error reporting and tracing: an optional feature whose whole risk is asymmetric.
+#
+# Off, it must change nothing at all — not a key in a ConfigMap, not a volume, not an environment
+# variable — because it is off in every release that has not asked for it. On, it has to reach
+# *every* service, including the two that read no other credential and the three the policies
+# grant no egress, because a service left out is where the tier-wide trace stops.
+#
+# So the suite is written around the two edges rather than around the middle: what is absent when
+# it is off, what is present on all eight when it is on, and where the DSN is allowed to appear.
+# The DSN is a credential, and the assertion that it never lands in a ConfigMap is the one here
+# whose failure would be a disclosure rather than a bug.
+suite: test Sentry reporting and tracing
+templates:
+  - configmap.yaml
+  - configmap-bootstrap.yaml
+  - deployment.yaml
+  - job-migrate.yaml
+  - secret.yaml
+  - serviceaccount.yaml
+values:
+  - ../ci/default.yaml
+tests:
+  - it: writes no Sentry block and mounts no DSN while it is off
+    # The default posture. `frontend` is the interesting document: it reads no credential of its
+    # own, so an unconditional DSN key would give it a secrets volume — and a
+    # `TANKOVAULT_SECRETS_DIR` pointing at one — on every release in existence.
+    asserts:
+      - notMatchRegex:
+          path: data["config.toml"]
+          pattern: sentry
+        template: configmap.yaml
+      - isNull:
+          path: stringData["telemetry__sentry__dsn"]
+        template: secret.yaml
+      - isNull:
+          path: spec.template.spec.volumes[?(@.name=="secrets")]
+        template: deployment.yaml
+        documentSelector:
+          path: metadata.name
+          value: RELEASE-NAME-tankovault-frontend
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: TANKOVAULT_SECRETS_DIR
+            value: /etc/tankovault/secrets
+        template: deployment.yaml
+        documentSelector:
+          path: metadata.name
+          value: RELEASE-NAME-tankovault-frontend
+
+  - it: writes the whole block into every service that reads it
+    # Eight documents, one per service, and the same block in each: a trace is carried across the
+    # tier, so a service configured differently is the one that ends it. Asserted on the two ends
+    # of the graph — the frontend, where a reader's trace starts, and the worker, which continues
+    # one that arrived over the broker.
+    set:
+      telemetry.sentry.enabled: true
+      telemetry.sentry.dsn: https://key@sentry.example.com/42
+      telemetry.sentry.tracesSampleRate: 0.2
+    template: configmap.yaml
+    asserts:
+      - hasDocuments:
+          count: 8
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\[telemetry\.sentry\]'
+        documentSelector:
+          path: metadata.name
+          value: RELEASE-NAME-tankovault-frontend-config
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: 'traces_sample_rate = 0\.2'
+        documentSelector:
+          path: metadata.name
+          value: RELEASE-NAME-tankovault-worker-config
+      # The defaults are written through rather than left to the image. They are settings an
+      # operator reads back out of the rendered ConfigMap, not facts about a release this chart
+      # does not ship — unlike the three tag keys below.
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: 'capture_level = "error"'
+        documentSelector:
+          path: metadata.name
+          value: RELEASE-NAME-tankovault-api-config
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: 'send_default_pii = false'
+        documentSelector:
+          path: metadata.name
+          value: RELEASE-NAME-tankovault-api-config
+
+  - it: never writes the DSN into a ConfigMap
+    # The assertion whose failure is a disclosure. A ConfigMap is readable by anything that can
+    # read the namespace, and the key embedded in a DSN is a bearer credential for the project's
+    # ingest endpoint.
+    set:
+      telemetry.sentry.enabled: true
+      telemetry.sentry.dsn: https://key@sentry.example.com/42
+    template: configmap.yaml
+    asserts:
+      - notMatchRegex:
+          path: data["config.toml"]
+          pattern: sentry\.example\.com
+
+  - it: delivers the DSN as a file, to every service including the two with no other credential
+    set:
+      telemetry.sentry.enabled: true
+      telemetry.sentry.dsn: https://key@sentry.example.com/42
+    asserts:
+      - equal:
+          path: stringData["telemetry__sentry__dsn"]
+          value: https://key@sentry.example.com/42
+        template: secret.yaml
+      # `frontend` and `challenge-solver` read nothing else out of the Secret, so this is the
+      # projection appearing where there was none, rather than a key added to an existing list.
+      - contains:
+          path: spec.template.spec.volumes[?(@.name=="secrets")].projected.sources[0].secret.items
+          content:
+            key: telemetry__sentry__dsn
+            path: telemetry__sentry__dsn
+        template: deployment.yaml
+        documentSelector:
+          path: metadata.name
+          value: RELEASE-NAME-tankovault-frontend
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: TANKOVAULT_SECRETS_DIR
+            value: /etc/tankovault/secrets
+        template: deployment.yaml
+        documentSelector:
+          path: metadata.name
+          value: RELEASE-NAME-tankovault-frontend
+      - contains:
+          path: spec.template.spec.volumes[?(@.name=="secrets")].projected.sources[0].secret.items
+          content:
+            key: telemetry__sentry__dsn
+            path: telemetry__sentry__dsn
+        template: deployment.yaml
+        documentSelector:
+          path: metadata.name
+          value: RELEASE-NAME-tankovault-worker
+
+  - it: leaves the bootstrap steps out of it entirely
+    # `bootstrap`'s contract declares no `telemetry` key of any kind, and a step that runs for
+    # seconds and exits has nothing a reporter would outlive. Its ConfigMap and its pod are the
+    # two places a key appended to the wrong list would surface.
+    set:
+      telemetry.sentry.enabled: true
+      telemetry.sentry.dsn: https://key@sentry.example.com/42
+    asserts:
+      - notMatchRegex:
+          path: data["config.toml"]
+          pattern: sentry
+        template: configmap-bootstrap.yaml
+      - notContains:
+          path: spec.template.spec.volumes[?(@.name=="secrets")].projected.sources[0].secret.items
+          content:
+            key: telemetry__sentry__dsn
+            path: telemetry__sentry__dsn
+        template: job-migrate.yaml
+
+  - it: omits the tag keys whose default only the service can compute
+    # `environment` follows TANKOVAULT_PROFILE, `release` is the version the binary was built
+    # from, and an unset `server_name` is what keeps a replica's hostname out of every event. An
+    # emitted `""` is not the same as an absent key for any of the three.
+    set:
+      telemetry.sentry.enabled: true
+      telemetry.sentry.dsn: https://key@sentry.example.com/42
+    template: configmap.yaml
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-api-config
+    asserts:
+      - notMatchRegex:
+          path: data["config.toml"]
+          pattern: environment =
+      - notMatchRegex:
+          path: data["config.toml"]
+          pattern: release =
+      - notMatchRegex:
+          path: data["config.toml"]
+          pattern: server_name =
+
+  - it: writes the tag keys the operator did set
+    set:
+      telemetry.sentry.enabled: true
+      telemetry.sentry.dsn: https://key@sentry.example.com/42
+      telemetry.sentry.environment: staging
+      telemetry.sentry.serverName: eu-west
+    template: configmap.yaml
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-api-config
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: 'environment = "staging"'
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: 'server_name = "eu-west"'
+      - notMatchRegex:
+          path: data["config.toml"]
+          pattern: release =
+
+  - it: lets one service be set apart from the rest
+    # The release-level block is a default, not a ceiling: `services.<name>.config` is the
+    # highest-precedence layer, so a tier that should not start traces of its own can be pinned
+    # without splitting the switch into eight.
+    set:
+      telemetry.sentry.enabled: true
+      telemetry.sentry.dsn: https://key@sentry.example.com/42
+      telemetry.sentry.tracesSampleRate: 0.2
+      services.worker.config.telemetry.sentry.traces_sample_rate: 0
+    template: configmap.yaml
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: 'traces_sample_rate = 0\n'
+        documentSelector:
+          path: metadata.name
+          value: RELEASE-NAME-tankovault-worker-config
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: 'traces_sample_rate = 0\.2'
+        documentSelector:
+          path: metadata.name
+          value: RELEASE-NAME-tankovault-api-config
+
+  - it: takes the DSN from an existingSecret without rendering one
+    # The posture that keeps every credential out of `helm get values`. The chart renders no
+    # Secret of its own, and the projection is `optional` — so a key the operator forgot is a
+    # boot failure naming it, not a pod stuck on a volume that never appears.
+    set:
+      existingSecret: tankovault-credentials
+      telemetry.sentry.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 0
+        template: secret.yaml
+      - contains:
+          path: spec.template.spec.volumes[?(@.name=="secrets")].projected.sources[0].secret.items
+          content:
+            key: telemetry__sentry__dsn
+            path: telemetry__sentry__dsn
+        template: deployment.yaml
+        documentSelector:
+          path: metadata.name
+          value: RELEASE-NAME-tankovault-frontend
+      - equal:
+          path: spec.template.spec.volumes[?(@.name=="secrets")].projected.sources[0].secret.name
+          value: tankovault-credentials
+        template: deployment.yaml
+        documentSelector:
+          path: metadata.name
+          value: RELEASE-NAME-tankovault-frontend
+
+  - it: refuses the switch with no DSN anywhere
+    # Upstream refuses to boot on this, and that refusal lands on all eight services at once.
+    # Failing the render turns a fleet-wide CrashLoopBackOff into a message naming the value.
+    set:
+      telemetry.sentry.enabled: true
+    template: serviceaccount.yaml
+    asserts:
+      - failedTemplate:
+          errorPattern: telemetry.sentry.enabled is set but no DSN is available
+
+  - it: refuses a DSN the release would never read
+    set:
+      telemetry.sentry.dsn: https://key@sentry.example.com/42
+    template: serviceaccount.yaml
+    asserts:
+      - failedTemplate:
+          errorPattern: telemetry.sentry.dsn is set while telemetry.sentry.enabled is false

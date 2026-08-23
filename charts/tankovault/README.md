@@ -1,6 +1,6 @@
 # tankovault
 
-![Version: 5.3.0](https://img.shields.io/badge/Version-5.3.0-informational?style=flat-square) ![AppVersion: 8.4.0](https://img.shields.io/badge/AppVersion-8.4.0-informational?style=flat-square)
+![Version: 5.4.0](https://img.shields.io/badge/Version-5.4.0-informational?style=flat-square) ![AppVersion: 8.5.0](https://img.shields.io/badge/AppVersion-8.5.0-informational?style=flat-square)
 
 This chart deploys the full TankoVault manga aggregator stack — frontend, api, control-plane, worker, notifier, sync, challenge-solver and render — hardened to the restricted Pod Security Standard, with file-backed configuration that reloads in place instead of restarting pods, optional bundled PostgreSQL, Valkey, NATS JetStream and TRAWL, and optional Prometheus metrics, alerting rules and Grafana dashboards.
 
@@ -33,6 +33,7 @@ the optional headless `render` tier, plus the one-shot `bootstrap` migration and
 | deploying through Argo CD | [Argo CD and `bootstrap.migrate.ordering`](#argo-cd-and-bootstrapmigrateordering) |
 | running under a cluster-wide default-deny | [The bootstrap Jobs need a policy too](#the-bootstrap-jobs-need-a-policy-too) |
 | hooking up Prometheus or Grafana | [Observability](#observability) |
+| reporting errors and traces to Sentry | [Error reporting and tracing with Sentry](#error-reporting-and-tracing-with-sentry) |
 | running this under your own name | [Branding](#branding) |
 | publishing terms or a privacy policy | [Legal documents](#legal-documents) |
 | turning on two-factor authentication | [Two-factor authentication](#two-factor-authentication) |
@@ -864,6 +865,109 @@ has no per-object cross-namespace grant — a Prometheus decides what it loads t
 chart can influence; on a kube-prometheus-stack cluster it usually has to carry
 `release: kube-prometheus-stack` or the rules are created and never loaded.
 
+### Error reporting and tracing with Sentry
+
+Everything above is aggregate: a rate, a histogram, a gauge. None of it carries the one failing
+request. `telemetry.sentry.*` adds the other half — errors, panics and end-to-end distributed
+traces — and it is **off**, which is not a default so much as a property: while it is off no
+client, no panic hook and no layer is installed in any service, nothing leaves the process, and
+this chart renders exactly what it rendered before.
+
+```yaml
+telemetry:
+  sentry:
+    enabled: true
+    dsn: https://<key>@<host>/<project>
+    tracesSampleRate: 0.1
+```
+
+That is a release-level switch and not a per-service one, because a trace is only worth having
+end to end. One reader action is one trace across the whole tier: the id rides the proxy hop the
+frontend opens to the API, every call the API makes to `control-plane`, `sync` and `worker`,
+every NATS message the broker delivers, and every solve the worker sends to `challenge-solver`
+and `render`. Background work — the scheduler sweeps, each consumed broker message, the
+recommendation build, the audit retention pass — becomes a transaction of its own rather than
+disappearing into a process that serves no requests.
+
+`tracesSampleRate` is the fraction of traces a service **starts**, not a switch for taking part
+in one: a service left at `0` still continues a trace handed to it, so setting one service
+differently cannot cut the tier-wide trace in half. Set it uniformly anyway — the service that
+starts a trace is the one whose rate decides whether it exists at all. Leaving it at `0` is the
+configuration for error reporting with no tracing, which is a reasonable place to start.
+
+Where one service genuinely has to differ, `services.<name>.config.telemetry.sentry.<key>` is the
+highest-precedence configuration layer and overrides a single key on a single service, without
+splitting the switch into eight.
+
+#### The egress rule this chart cannot write for you
+
+The DSN is a credential — the key embedded in it is a bearer token for the project's ingest
+endpoint — so the chart delivers it as a file in `TANKOVAULT_SECRETS_DIR` and never reads it.
+That has a consequence worth stating plainly: **it cannot open a NetworkPolicy for a host it does
+not know.** Three of the eight services (`frontend`, `control-plane`, `challenge-solver`) are
+granted no egress beyond the cluster at all, and the other five reach only what
+`networkPolicy.internetCidrs` allows.
+
+So under `networkPolicy.enabled`, name the ingest endpoint yourself:
+
+```yaml
+networkPolicy:
+  extraEgress:                 # appended to every policy this chart renders
+    - to:
+        - ipBlock:
+            cidr: 34.120.195.249/32
+      ports:
+        - port: 443
+          protocol: TCP
+```
+
+or, under Cilium, as a name rather than an address:
+
+```yaml
+networkPolicy:
+  engine: cilium
+  cilium:
+    egress:
+      toFQDNs:
+        - matchName: o0.ingest.sentry.io
+```
+
+Getting this wrong fails silently and in the worst possible way: an SDK that cannot reach its
+endpoint queues events and then discards them. Nothing errors, nothing logs, and the Sentry
+project simply stays empty — which reads as "no errors" rather than as "no connectivity".
+
+#### Where the DSN lives, and what changes when it does
+
+`telemetry.sentry.dsn` goes into the Secret this chart renders, under
+`telemetry__sentry__dsn`, and is projected into all eight service pods. To keep it out of
+`helm get values` entirely, leave the value empty and put that key in the Secret named by
+`existingSecret` — the chart projects it either way, and naming an existing Secret is taken as
+the answer to where the DSN is. A key that turns out not to be in there is a boot failure naming
+it, on every service at once, because a service told to report with nowhere to report to refuses
+to start rather than running with a reporter that reports nothing. The chart refuses the case it
+can see offline: the switch on with neither a DSN nor an `existingSecret`.
+
+Two consequences of the projection are worth knowing before you switch it on. The `frontend` pod
+reads no other credential, so it gains a secrets volume and a `TANKOVAULT_SECRETS_DIR` it did not
+have. And `telemetry.*` is one of the two carve-outs from this chart's in-place configuration
+reload — the client is built once at boot — so switching Sentry on or off is a restart, not a
+reload. Set `configReload.rolloutOnChange: true` to have the chart roll the Deployments for you.
+
+#### What is deliberately not sent
+
+`sendDefaultPii` is off, and it is two controls rather than one. On, every event carries the
+client IP, the resolved user and the unredacted request header set — `Authorization` and `Cookie`
+included — to a third party, and it is also the flag that stops the HTTP middleware redacting
+sensitive headers. `spanAttributes` is off for a smaller version of the same reason: span fields
+here routinely carry ids and reader-supplied titles, and a transaction is retained for longer
+than a log line. If this deployment publishes a privacy policy under `legal.documents`, these two
+settings are what that policy has to agree with.
+
+`captureLevel` (`error`) and `breadcrumbLevel` (`info`) both sit *under* the subscriber's own
+filter, so a record that `config.telemetry.log_filter` drops never reaches Sentry either,
+whatever they are set to. That is the one surprise in this block: raising `captureLevel` cannot
+recover a record the log filter has already discarded.
+
 ## Branding
 
 Everything a running deployment shows a reader about *itself* — the name, the wordmark, the
@@ -1167,9 +1271,9 @@ lookup; the chart fails the render if FQDN destinations are named with the DNS r
 | auth.jwtSecret | string | `""` | Token signing secret (`auth.jwt_secret`). Left empty the chart generates one and remembers it across upgrades, which is the recommended setting; set one explicitly (minimum 32 characters, e.g. `openssl rand -hex 32`) only if it has to be known outside the release. The known upstream placeholder is refused at boot in every profile, and rotating the value signs every user out. |
 | auth.mfaEncryptionKey | string | `""` | Base64 of exactly 32 bytes (`auth.mfa_encryption_key`), sealing every enrolled TOTP secret at rest. A TOTP secret is symmetric, unlike a password hash — whoever reads the column can mint that account's codes — so a database dump must not be enough on its own. Left empty the chart generates one when `services.api` is enabled and remembers it across upgrades, which is the recommended setting; set one explicitly (`openssl rand -base64 32`) only if it has to be known outside the release. **It must never change once anyone has enrolled**: rotating or losing it locks every enrolled account out of its second factor, and the only repair is clearing `user_totp` and having them enrol again. Deliberately not derived from `jwtSecret`, which is routine to rotate. Unset disables authenticator-app enrolment only — security keys and recovery codes still work — but the seeded administrator holds permissions that require a second factor, so unset leaves it only a hardware key. |
 | auth.passwordPepper | string | `""` | Server-side pepper mixed into every argon2id hash, so a database leak alone cannot be brute-forced offline. Left empty the chart generates one **on a first install only** and remembers it across upgrades; a release that already exists without a pepper keeps running without one, because every password stored unpeppered would stop verifying the moment one appeared. For the same reason it must never change once set: rotating or losing it invalidates every stored password, so back the Secret up. The `seed-admin` step receives the identical value, or the administrator it creates could never log in. |
-| bootstrap | object | `{"image":{"repository":"timschoenle/tankovault-bootstrap","tag":"v8.4.0@sha256:d9b193e56cb593eac587df884e4104f8111cdeed64faa4faf0440a327c4c680d"},"migrate":{"argoSyncWaveBase":0,"backoffLimit":3,"mode":"auto","ordering":"helmHook"},"resources":{"limits":{"memory":"256Mi"},"requests":{"cpu":"50m","memory":"128Mi"}},"seedAdmin":{"email":"","enabled":false,"password":"","username":"admin"},"seedProviders":{"enabled":false}}` | Schema migration and first-install seeding, all from the `bootstrap` image. Nothing published carries a destructive command; resetting the schema is not available in any image. |
+| bootstrap | object | `{"image":{"repository":"timschoenle/tankovault-bootstrap","tag":"v8.5.0@sha256:4d4d4bd7006092b428eb8617a8aae65022a881d6be00a9eaa458489bc8d48928"},"migrate":{"argoSyncWaveBase":0,"backoffLimit":3,"mode":"auto","ordering":"helmHook"},"resources":{"limits":{"memory":"256Mi"},"requests":{"cpu":"50m","memory":"128Mi"}},"seedAdmin":{"email":"","enabled":false,"password":"","username":"admin"},"seedProviders":{"enabled":false}}` | Schema migration and first-install seeding, all from the `bootstrap` image. Nothing published carries a destructive command; resetting the schema is not available in any image. |
 | bootstrap.image.repository | string | `"timschoenle/tankovault-bootstrap"` | Image repository. |
-| bootstrap.image.tag | string | `"v8.4.0@sha256:d9b193e56cb593eac587df884e4104f8111cdeed64faa4faf0440a327c4c680d"` | Image tag, pinned by digest. |
+| bootstrap.image.tag | string | `"v8.5.0@sha256:4d4d4bd7006092b428eb8617a8aae65022a881d6be00a9eaa458489bc8d48928"` | Image tag, pinned by digest. |
 | bootstrap.migrate.argoSyncWaveBase | int | `0` | Sync wave the migration Job takes under `ordering: argoSyncWave`; the workloads take this plus one, which is what reproduces the `pre-upgrade` guarantee — Argo CD holds a wave until the previous one is healthy, and a Job is healthy only once it is Complete. Anything the migration itself depends on — the ExternalSecret carrying `database__url`, a database some operator provisions — must be given a wave strictly below this one.  The bootstrap Jobs' NetworkPolicy is given this **minus one** for exactly that reason, and it has to be: Argo CD orders resources inside a wave by kind from a fixed list that `Job` is on and a policy object is not, and unlisted kinds sort last. In the same wave the policy would therefore be applied after the Job it protects, and the migration would start into a namespace still denying its DNS. |
 | bootstrap.migrate.backoffLimit | int | `3` | Retries before the migration Job is considered failed. |
 | bootstrap.migrate.mode | string | `"auto"` | How `bootstrap migrate` runs. `job` is a `pre-install,pre-upgrade` Helm hook, correct when the database already exists. `initContainer` runs it in every service pod, which is what the bundled PostgreSQL needs — a pre-install hook would run before the StatefulSet exists and could only ever fail. Concurrent runs are safe: sqlx takes a Postgres advisory lock. `auto` picks `initContainer` when `postgresql.enabled`, otherwise `job`. |
@@ -1465,8 +1569,8 @@ lookup; the chart fails the render if FQDN destinations are named with the DNS r
 | serviceAccount.annotations | object | `{}` | Additional annotations for the service account. |
 | serviceAccount.create | bool | `true` | Whether to create a dedicated service account. One account is shared by every workload: nothing in TankoVault talks to the Kubernetes API, so per-service accounts would add objects without reducing any privilege. |
 | serviceAccount.name | string | `""` | Custom service account name (auto-generated if empty). |
-| services | object | `{"api":{"autoscaling":{"enabled":false,"maxReplicas":10,"minReplicas":2,"targetCPUUtilizationPercentage":80,"targetMemoryUtilizationPercentage":null},"config":{},"enabled":true,"image":{"repository":"timschoenle/tankovault-api","tag":"v8.4.0@sha256:1628ca8877dafc5ddb06d150c926178dcd11aadd0788f660b24a3a4dbae8d8ea"},"podDisruptionBudget":{"enabled":false,"maxUnavailable":null,"minAvailable":1},"replicaCount":2,"resources":{"limits":{"memory":"1Gi"},"requests":{"cpu":"250m","memory":"512Mi"}},"service":{"annotations":{},"type":"ClusterIP"}},"challengeSolver":{"autoscaling":{"enabled":false,"maxReplicas":4,"minReplicas":1,"targetCPUUtilizationPercentage":80,"targetMemoryUtilizationPercentage":null},"config":{},"enabled":true,"image":{"repository":"timschoenle/tankovault-challenge-solver","tag":"v8.4.0@sha256:a8024188c9ee9997d7656be8e78daf0272373a242badfa731203237fa2f8dcad"},"podDisruptionBudget":{"enabled":false,"maxUnavailable":null,"minAvailable":1},"replicaCount":1,"resources":{"limits":{"memory":"512Mi"},"requests":{"cpu":"100m","memory":"256Mi"}},"service":{"annotations":{},"type":"ClusterIP"}},"controlPlane":{"config":{},"enabled":true,"image":{"repository":"timschoenle/tankovault-control-plane","tag":"v8.4.0@sha256:040462a5952b854d36ca44327657e9f7f80544f959be464e0d2efa6c639d294c"},"podDisruptionBudget":{"enabled":false,"maxUnavailable":null,"minAvailable":1},"replicaCount":1,"resources":{"limits":{"memory":"512Mi"},"requests":{"cpu":"100m","memory":"256Mi"}},"service":{"annotations":{},"type":"ClusterIP"}},"frontend":{"autoscaling":{"enabled":false,"maxReplicas":6,"minReplicas":2,"targetCPUUtilizationPercentage":80,"targetMemoryUtilizationPercentage":null},"config":{},"enabled":true,"image":{"repository":"timschoenle/tankovault-frontend","tag":"v8.4.0@sha256:294dde2b505a200b14eb32ac5158ccf6616d5cb3a575a95d7c9ea6201d17ab9a"},"podDisruptionBudget":{"enabled":false,"maxUnavailable":null,"minAvailable":1},"replicaCount":2,"resources":{"limits":{"memory":"256Mi"},"requests":{"cpu":"50m","memory":"128Mi"}},"service":{"annotations":{},"type":"ClusterIP"}},"notifier":{"config":{},"enabled":true,"image":{"repository":"timschoenle/tankovault-notifier","tag":"v8.4.0@sha256:47d4e4730e77ef1608e171eb103a64fa22d44538ee21558757c126c325ebda22"},"podDisruptionBudget":{"enabled":false,"maxUnavailable":null,"minAvailable":1},"replicaCount":1,"resources":{"limits":{"memory":"512Mi"},"requests":{"cpu":"100m","memory":"256Mi"}},"service":{"annotations":{},"type":"ClusterIP"}},"render":{"autoscaling":{"enabled":false,"maxReplicas":4,"minReplicas":1,"targetCPUUtilizationPercentage":80,"targetMemoryUtilizationPercentage":null},"config":{},"enabled":false,"homeDir":"/home/nonroot","image":{"repository":"timschoenle/tankovault-render","tag":"v8.4.0@sha256:50485e53758025ed7d508c08e0b5174562089faf3df23231b3b8fdde26933af9"},"podDisruptionBudget":{"enabled":false,"maxUnavailable":null,"minAvailable":1},"replicaCount":1,"resources":{"limits":{"memory":"2Gi"},"requests":{"cpu":"250m","memory":"512Mi"}},"service":{"annotations":{},"type":"ClusterIP"},"shmSize":"1Gi"},"sync":{"config":{},"enabled":true,"image":{"repository":"timschoenle/tankovault-sync","tag":"v8.4.0@sha256:e1bb80a2bebb66461f0e3666520ae76ec8db87637a9a8c51ba556e8a893e372f"},"podDisruptionBudget":{"enabled":false,"maxUnavailable":null,"minAvailable":1},"replicaCount":1,"resources":{"limits":{"memory":"512Mi"},"requests":{"cpu":"100m","memory":"256Mi"}},"service":{"annotations":{},"type":"ClusterIP"}},"worker":{"autoscaling":{"enabled":false,"maxReplicas":10,"minReplicas":2,"targetCPUUtilizationPercentage":80,"targetMemoryUtilizationPercentage":null},"config":{},"enabled":true,"image":{"repository":"timschoenle/tankovault-worker","tag":"v8.4.0@sha256:6b8b5e4d942b089c1e9da409a6767096c5c12d3c987b5704d7cd6bbaae6aedbb"},"podDisruptionBudget":{"enabled":false,"maxUnavailable":null,"minAvailable":1},"replicaCount":2,"resources":{"limits":{"memory":"1Gi"},"requests":{"cpu":"250m","memory":"512Mi"}},"service":{"annotations":{},"type":"ClusterIP"}}}` | Per-service settings. Each block is merged over `defaults`, so any key from `defaults` may be repeated here for one service only. |
-| services.api | object | `{"autoscaling":{"enabled":false,"maxReplicas":10,"minReplicas":2,"targetCPUUtilizationPercentage":80,"targetMemoryUtilizationPercentage":null},"config":{},"enabled":true,"image":{"repository":"timschoenle/tankovault-api","tag":"v8.4.0@sha256:1628ca8877dafc5ddb06d150c926178dcd11aadd0788f660b24a3a4dbae8d8ea"},"podDisruptionBudget":{"enabled":false,"maxUnavailable":null,"minAvailable":1},"replicaCount":2,"resources":{"limits":{"memory":"1Gi"},"requests":{"cpu":"250m","memory":"512Mi"}},"service":{"annotations":{},"type":"ClusterIP"}}` | The axum REST edge: authentication, read models, write endpoints, administration and the server-sent scan feed. |
+| services | object | `{"api":{"autoscaling":{"enabled":false,"maxReplicas":10,"minReplicas":2,"targetCPUUtilizationPercentage":80,"targetMemoryUtilizationPercentage":null},"config":{},"enabled":true,"image":{"repository":"timschoenle/tankovault-api","tag":"v8.5.0@sha256:999cb589626d476154322a9c34ca0efe9bf182f036b85414b0499631bc246601"},"podDisruptionBudget":{"enabled":false,"maxUnavailable":null,"minAvailable":1},"replicaCount":2,"resources":{"limits":{"memory":"1Gi"},"requests":{"cpu":"250m","memory":"512Mi"}},"service":{"annotations":{},"type":"ClusterIP"}},"challengeSolver":{"autoscaling":{"enabled":false,"maxReplicas":4,"minReplicas":1,"targetCPUUtilizationPercentage":80,"targetMemoryUtilizationPercentage":null},"config":{},"enabled":true,"image":{"repository":"timschoenle/tankovault-challenge-solver","tag":"v8.5.0@sha256:fd01bbdfc5648376002d40762593551ac9233fff506fce65eacc6b4b69a8bcc0"},"podDisruptionBudget":{"enabled":false,"maxUnavailable":null,"minAvailable":1},"replicaCount":1,"resources":{"limits":{"memory":"512Mi"},"requests":{"cpu":"100m","memory":"256Mi"}},"service":{"annotations":{},"type":"ClusterIP"}},"controlPlane":{"config":{},"enabled":true,"image":{"repository":"timschoenle/tankovault-control-plane","tag":"v8.5.0@sha256:dbec7d33e6285e7f74f4c16311c9c2ca53b44eaefe96d9ca8c7ed06c10933358"},"podDisruptionBudget":{"enabled":false,"maxUnavailable":null,"minAvailable":1},"replicaCount":1,"resources":{"limits":{"memory":"512Mi"},"requests":{"cpu":"100m","memory":"256Mi"}},"service":{"annotations":{},"type":"ClusterIP"}},"frontend":{"autoscaling":{"enabled":false,"maxReplicas":6,"minReplicas":2,"targetCPUUtilizationPercentage":80,"targetMemoryUtilizationPercentage":null},"config":{},"enabled":true,"image":{"repository":"timschoenle/tankovault-frontend","tag":"v8.5.0@sha256:b21172656b6932889dbd7bb4bf683a19131a4c496a6b1009bb8e11b9a6970d34"},"podDisruptionBudget":{"enabled":false,"maxUnavailable":null,"minAvailable":1},"replicaCount":2,"resources":{"limits":{"memory":"256Mi"},"requests":{"cpu":"50m","memory":"128Mi"}},"service":{"annotations":{},"type":"ClusterIP"}},"notifier":{"config":{},"enabled":true,"image":{"repository":"timschoenle/tankovault-notifier","tag":"v8.5.0@sha256:4c09ebc02aa698c95b9dc0f4328bfbf733ee986d13bd10d614b31f5f2ee8095f"},"podDisruptionBudget":{"enabled":false,"maxUnavailable":null,"minAvailable":1},"replicaCount":1,"resources":{"limits":{"memory":"512Mi"},"requests":{"cpu":"100m","memory":"256Mi"}},"service":{"annotations":{},"type":"ClusterIP"}},"render":{"autoscaling":{"enabled":false,"maxReplicas":4,"minReplicas":1,"targetCPUUtilizationPercentage":80,"targetMemoryUtilizationPercentage":null},"config":{},"enabled":false,"homeDir":"/home/nonroot","image":{"repository":"timschoenle/tankovault-render","tag":"v8.5.0@sha256:5720a73719791db65188aa3f92ac25c91a498789528a57a4a9f19a4711ffeb6d"},"podDisruptionBudget":{"enabled":false,"maxUnavailable":null,"minAvailable":1},"replicaCount":1,"resources":{"limits":{"memory":"2Gi"},"requests":{"cpu":"250m","memory":"512Mi"}},"service":{"annotations":{},"type":"ClusterIP"},"shmSize":"1Gi"},"sync":{"config":{},"enabled":true,"image":{"repository":"timschoenle/tankovault-sync","tag":"v8.5.0@sha256:6b58296e5872b27326489a1abc6d5aeaf898b1d7ce99b50bdc9c1751517a3fd2"},"podDisruptionBudget":{"enabled":false,"maxUnavailable":null,"minAvailable":1},"replicaCount":1,"resources":{"limits":{"memory":"512Mi"},"requests":{"cpu":"100m","memory":"256Mi"}},"service":{"annotations":{},"type":"ClusterIP"}},"worker":{"autoscaling":{"enabled":false,"maxReplicas":10,"minReplicas":2,"targetCPUUtilizationPercentage":80,"targetMemoryUtilizationPercentage":null},"config":{},"enabled":true,"image":{"repository":"timschoenle/tankovault-worker","tag":"v8.5.0@sha256:c9028d9ea3287a4ba076ec9ca3d766e1a509b93d442a689aff4132cbba8831a4"},"podDisruptionBudget":{"enabled":false,"maxUnavailable":null,"minAvailable":1},"replicaCount":2,"resources":{"limits":{"memory":"1Gi"},"requests":{"cpu":"250m","memory":"512Mi"}},"service":{"annotations":{},"type":"ClusterIP"}}}` | Per-service settings. Each block is merged over `defaults`, so any key from `defaults` may be repeated here for one service only. |
+| services.api | object | `{"autoscaling":{"enabled":false,"maxReplicas":10,"minReplicas":2,"targetCPUUtilizationPercentage":80,"targetMemoryUtilizationPercentage":null},"config":{},"enabled":true,"image":{"repository":"timschoenle/tankovault-api","tag":"v8.5.0@sha256:999cb589626d476154322a9c34ca0efe9bf182f036b85414b0499631bc246601"},"podDisruptionBudget":{"enabled":false,"maxUnavailable":null,"minAvailable":1},"replicaCount":2,"resources":{"limits":{"memory":"1Gi"},"requests":{"cpu":"250m","memory":"512Mi"}},"service":{"annotations":{},"type":"ClusterIP"}}` | The axum REST edge: authentication, read models, write endpoints, administration and the server-sent scan feed. |
 | services.api.autoscaling.enabled | bool | `false` | Enable a HorizontalPodAutoscaler. |
 | services.api.autoscaling.maxReplicas | int | `10` | Maximum replicas. |
 | services.api.autoscaling.minReplicas | int | `2` | Minimum replicas. |
@@ -1475,7 +1579,7 @@ lookup; the chart fails the render if FQDN destinations are named with the DNS r
 | services.api.config | object | `{}` | Service-specific configuration, merged over the global `config` tree. |
 | services.api.enabled | bool | `true` | Deploy the API. |
 | services.api.image.repository | string | `"timschoenle/tankovault-api"` | Image repository. |
-| services.api.image.tag | string | `"v8.4.0@sha256:1628ca8877dafc5ddb06d150c926178dcd11aadd0788f660b24a3a4dbae8d8ea"` | Image tag, pinned by digest. |
+| services.api.image.tag | string | `"v8.5.0@sha256:999cb589626d476154322a9c34ca0efe9bf182f036b85414b0499631bc246601"` | Image tag, pinned by digest. |
 | services.api.podDisruptionBudget.enabled | bool | `false` | Create a PodDisruptionBudget. |
 | services.api.podDisruptionBudget.maxUnavailable | string | `nil` | Maximum unavailable pods. |
 | services.api.podDisruptionBudget.minAvailable | int | `1` | Minimum available pods during voluntary disruption. |
@@ -1488,7 +1592,7 @@ lookup; the chart fails the render if FQDN destinations are named with the DNS r
 | services.api.resources.requests.memory | string | `"512Mi"` | Minimum guaranteed memory allocation. |
 | services.api.service.annotations | object | `{}` | Extra Service annotations. |
 | services.api.service.type | string | `"ClusterIP"` | Service type. |
-| services.challengeSolver | object | `{"autoscaling":{"enabled":false,"maxReplicas":4,"minReplicas":1,"targetCPUUtilizationPercentage":80,"targetMemoryUtilizationPercentage":null},"config":{},"enabled":true,"image":{"repository":"timschoenle/tankovault-challenge-solver","tag":"v8.4.0@sha256:a8024188c9ee9997d7656be8e78daf0272373a242badfa731203237fa2f8dcad"},"podDisruptionBudget":{"enabled":false,"maxUnavailable":null,"minAvailable":1},"replicaCount":1,"resources":{"limits":{"memory":"512Mi"},"requests":{"cpu":"100m","memory":"256Mi"}},"service":{"annotations":{},"type":"ClusterIP"}}` | Modular bot-management bypass tier. Detects Cloudflare, JavaScript and Turnstile interstitials and delegates to a solver backend, TRAWL by default. |
+| services.challengeSolver | object | `{"autoscaling":{"enabled":false,"maxReplicas":4,"minReplicas":1,"targetCPUUtilizationPercentage":80,"targetMemoryUtilizationPercentage":null},"config":{},"enabled":true,"image":{"repository":"timschoenle/tankovault-challenge-solver","tag":"v8.5.0@sha256:fd01bbdfc5648376002d40762593551ac9233fff506fce65eacc6b4b69a8bcc0"},"podDisruptionBudget":{"enabled":false,"maxUnavailable":null,"minAvailable":1},"replicaCount":1,"resources":{"limits":{"memory":"512Mi"},"requests":{"cpu":"100m","memory":"256Mi"}},"service":{"annotations":{},"type":"ClusterIP"}}` | Modular bot-management bypass tier. Detects Cloudflare, JavaScript and Turnstile interstitials and delegates to a solver backend, TRAWL by default. |
 | services.challengeSolver.autoscaling.enabled | bool | `false` | Enable a HorizontalPodAutoscaler. |
 | services.challengeSolver.autoscaling.maxReplicas | int | `4` | Maximum replicas. |
 | services.challengeSolver.autoscaling.minReplicas | int | `1` | Minimum replicas. |
@@ -1497,7 +1601,7 @@ lookup; the chart fails the render if FQDN destinations are named with the DNS r
 | services.challengeSolver.config | object | `{}` | Service-specific configuration, merged over the global `config` tree. |
 | services.challengeSolver.enabled | bool | `true` | Deploy the challenge solver. |
 | services.challengeSolver.image.repository | string | `"timschoenle/tankovault-challenge-solver"` | Image repository. |
-| services.challengeSolver.image.tag | string | `"v8.4.0@sha256:a8024188c9ee9997d7656be8e78daf0272373a242badfa731203237fa2f8dcad"` | Image tag, pinned by digest. |
+| services.challengeSolver.image.tag | string | `"v8.5.0@sha256:fd01bbdfc5648376002d40762593551ac9233fff506fce65eacc6b4b69a8bcc0"` | Image tag, pinned by digest. |
 | services.challengeSolver.podDisruptionBudget.enabled | bool | `false` | Create a PodDisruptionBudget. |
 | services.challengeSolver.podDisruptionBudget.maxUnavailable | string | `nil` | Maximum unavailable pods. |
 | services.challengeSolver.podDisruptionBudget.minAvailable | int | `1` | Minimum available pods during voluntary disruption. |
@@ -1510,11 +1614,11 @@ lookup; the chart fails the render if FQDN destinations are named with the DNS r
 | services.challengeSolver.resources.requests.memory | string | `"256Mi"` | Minimum guaranteed memory allocation. |
 | services.challengeSolver.service.annotations | object | `{}` | Extra Service annotations. |
 | services.challengeSolver.service.type | string | `"ClusterIP"` | Service type. Publishing this service exposes a privileged contract. |
-| services.controlPlane | object | `{"config":{},"enabled":true,"image":{"repository":"timschoenle/tankovault-control-plane","tag":"v8.4.0@sha256:040462a5952b854d36ca44327657e9f7f80544f959be464e0d2efa6c639d294c"},"podDisruptionBudget":{"enabled":false,"maxUnavailable":null,"minAvailable":1},"replicaCount":1,"resources":{"limits":{"memory":"512Mi"},"requests":{"cpu":"100m","memory":"256Mi"}},"service":{"annotations":{},"type":"ClusterIP"}}` | The singleton scheduler: run planning, task distribution and provider health. Safe to run with more than one replica — it elects a leader through Redis, and falls open to sole-leader when Redis is absent. |
+| services.controlPlane | object | `{"config":{},"enabled":true,"image":{"repository":"timschoenle/tankovault-control-plane","tag":"v8.5.0@sha256:dbec7d33e6285e7f74f4c16311c9c2ca53b44eaefe96d9ca8c7ed06c10933358"},"podDisruptionBudget":{"enabled":false,"maxUnavailable":null,"minAvailable":1},"replicaCount":1,"resources":{"limits":{"memory":"512Mi"},"requests":{"cpu":"100m","memory":"256Mi"}},"service":{"annotations":{},"type":"ClusterIP"}}` | The singleton scheduler: run planning, task distribution and provider health. Safe to run with more than one replica — it elects a leader through Redis, and falls open to sole-leader when Redis is absent. |
 | services.controlPlane.config | object | `{}` | Service-specific configuration, merged over the global `config` tree. |
 | services.controlPlane.enabled | bool | `true` | Deploy the control plane. |
 | services.controlPlane.image.repository | string | `"timschoenle/tankovault-control-plane"` | Image repository. |
-| services.controlPlane.image.tag | string | `"v8.4.0@sha256:040462a5952b854d36ca44327657e9f7f80544f959be464e0d2efa6c639d294c"` | Image tag, pinned by digest. |
+| services.controlPlane.image.tag | string | `"v8.5.0@sha256:dbec7d33e6285e7f74f4c16311c9c2ca53b44eaefe96d9ca8c7ed06c10933358"` | Image tag, pinned by digest. |
 | services.controlPlane.podDisruptionBudget.enabled | bool | `false` | Create a PodDisruptionBudget. |
 | services.controlPlane.podDisruptionBudget.maxUnavailable | string | `nil` | Maximum unavailable pods. |
 | services.controlPlane.podDisruptionBudget.minAvailable | int | `1` | Minimum available pods during voluntary disruption. |
@@ -1527,7 +1631,7 @@ lookup; the chart fails the render if FQDN destinations are named with the DNS r
 | services.controlPlane.resources.requests.memory | string | `"256Mi"` | Minimum guaranteed memory allocation. |
 | services.controlPlane.service.annotations | object | `{}` | Extra Service annotations. |
 | services.controlPlane.service.type | string | `"ClusterIP"` | Service type. Publishing this service exposes a privileged contract; the chart refuses anything but `ClusterIP` unless `allowUnsafeExposure` is set. |
-| services.frontend | object | `{"autoscaling":{"enabled":false,"maxReplicas":6,"minReplicas":2,"targetCPUUtilizationPercentage":80,"targetMemoryUtilizationPercentage":null},"config":{},"enabled":true,"image":{"repository":"timschoenle/tankovault-frontend","tag":"v8.4.0@sha256:294dde2b505a200b14eb32ac5158ccf6616d5cb3a575a95d7c9ea6201d17ab9a"},"podDisruptionBudget":{"enabled":false,"maxUnavailable":null,"minAvailable":1},"replicaCount":2,"resources":{"limits":{"memory":"256Mi"},"requests":{"cpu":"50m","memory":"128Mi"}},"service":{"annotations":{},"type":"ClusterIP"}}` | The Dioxus WASM SPA and its axum server. It serves the client and reverse-proxies `/v1/*` to the API, so this single origin is all a browser needs — which is why it is the only service the ingress exposes. |
+| services.frontend | object | `{"autoscaling":{"enabled":false,"maxReplicas":6,"minReplicas":2,"targetCPUUtilizationPercentage":80,"targetMemoryUtilizationPercentage":null},"config":{},"enabled":true,"image":{"repository":"timschoenle/tankovault-frontend","tag":"v8.5.0@sha256:b21172656b6932889dbd7bb4bf683a19131a4c496a6b1009bb8e11b9a6970d34"},"podDisruptionBudget":{"enabled":false,"maxUnavailable":null,"minAvailable":1},"replicaCount":2,"resources":{"limits":{"memory":"256Mi"},"requests":{"cpu":"50m","memory":"128Mi"}},"service":{"annotations":{},"type":"ClusterIP"}}` | The Dioxus WASM SPA and its axum server. It serves the client and reverse-proxies `/v1/*` to the API, so this single origin is all a browser needs — which is why it is the only service the ingress exposes. |
 | services.frontend.autoscaling.enabled | bool | `false` | Enable a HorizontalPodAutoscaler. |
 | services.frontend.autoscaling.maxReplicas | int | `6` | Maximum replicas. |
 | services.frontend.autoscaling.minReplicas | int | `2` | Minimum replicas. |
@@ -1536,7 +1640,7 @@ lookup; the chart fails the render if FQDN destinations are named with the DNS r
 | services.frontend.config | object | `{}` | Service-specific configuration, merged over the global `config` tree for this service only. Rendered into this service's own TOML fragment. |
 | services.frontend.enabled | bool | `true` | Deploy the frontend. |
 | services.frontend.image.repository | string | `"timschoenle/tankovault-frontend"` | Image repository. |
-| services.frontend.image.tag | string | `"v8.4.0@sha256:294dde2b505a200b14eb32ac5158ccf6616d5cb3a575a95d7c9ea6201d17ab9a"` | Image tag, pinned by digest. |
+| services.frontend.image.tag | string | `"v8.5.0@sha256:b21172656b6932889dbd7bb4bf683a19131a4c496a6b1009bb8e11b9a6970d34"` | Image tag, pinned by digest. |
 | services.frontend.podDisruptionBudget.enabled | bool | `false` | Create a PodDisruptionBudget. |
 | services.frontend.podDisruptionBudget.maxUnavailable | string | `nil` | Maximum unavailable pods. Mutually exclusive with `minAvailable`. |
 | services.frontend.podDisruptionBudget.minAvailable | int | `1` | Minimum available pods during voluntary disruption. |
@@ -1549,11 +1653,11 @@ lookup; the chart fails the render if FQDN destinations are named with the DNS r
 | services.frontend.resources.requests.memory | string | `"128Mi"` | Minimum guaranteed memory allocation. |
 | services.frontend.service.annotations | object | `{}` | Extra Service annotations. |
 | services.frontend.service.type | string | `"ClusterIP"` | Service type. The frontend is the one service it is safe to publish directly. |
-| services.notifier | object | `{"config":{},"enabled":true,"image":{"repository":"timschoenle/tankovault-notifier","tag":"v8.4.0@sha256:47d4e4730e77ef1608e171eb103a64fa22d44538ee21558757c126c325ebda22"},"podDisruptionBudget":{"enabled":false,"maxUnavailable":null,"minAvailable":1},"replicaCount":1,"resources":{"limits":{"memory":"512Mi"},"requests":{"cpu":"100m","memory":"256Mi"}},"service":{"annotations":{},"type":"ClusterIP"}}` | Distributes new-chapter notifications to users over email, Discord and generic webhooks. |
+| services.notifier | object | `{"config":{},"enabled":true,"image":{"repository":"timschoenle/tankovault-notifier","tag":"v8.5.0@sha256:4c09ebc02aa698c95b9dc0f4328bfbf733ee986d13bd10d614b31f5f2ee8095f"},"podDisruptionBudget":{"enabled":false,"maxUnavailable":null,"minAvailable":1},"replicaCount":1,"resources":{"limits":{"memory":"512Mi"},"requests":{"cpu":"100m","memory":"256Mi"}},"service":{"annotations":{},"type":"ClusterIP"}}` | Distributes new-chapter notifications to users over email, Discord and generic webhooks. |
 | services.notifier.config | object | `{}` | Service-specific configuration, merged over the global `config` tree. |
 | services.notifier.enabled | bool | `true` | Deploy the notifier. |
 | services.notifier.image.repository | string | `"timschoenle/tankovault-notifier"` | Image repository. |
-| services.notifier.image.tag | string | `"v8.4.0@sha256:47d4e4730e77ef1608e171eb103a64fa22d44538ee21558757c126c325ebda22"` | Image tag, pinned by digest. |
+| services.notifier.image.tag | string | `"v8.5.0@sha256:4c09ebc02aa698c95b9dc0f4328bfbf733ee986d13bd10d614b31f5f2ee8095f"` | Image tag, pinned by digest. |
 | services.notifier.podDisruptionBudget.enabled | bool | `false` | Create a PodDisruptionBudget. |
 | services.notifier.podDisruptionBudget.maxUnavailable | string | `nil` | Maximum unavailable pods. |
 | services.notifier.podDisruptionBudget.minAvailable | int | `1` | Minimum available pods during voluntary disruption. |
@@ -1566,7 +1670,7 @@ lookup; the chart fails the render if FQDN destinations are named with the DNS r
 | services.notifier.resources.requests.memory | string | `"256Mi"` | Minimum guaranteed memory allocation. |
 | services.notifier.service.annotations | object | `{}` | Extra Service annotations. |
 | services.notifier.service.type | string | `"ClusterIP"` | Service type. |
-| services.render | object | `{"autoscaling":{"enabled":false,"maxReplicas":4,"minReplicas":1,"targetCPUUtilizationPercentage":80,"targetMemoryUtilizationPercentage":null},"config":{},"enabled":false,"homeDir":"/home/nonroot","image":{"repository":"timschoenle/tankovault-render","tag":"v8.4.0@sha256:50485e53758025ed7d508c08e0b5174562089faf3df23231b3b8fdde26933af9"},"podDisruptionBudget":{"enabled":false,"maxUnavailable":null,"minAvailable":1},"replicaCount":1,"resources":{"limits":{"memory":"2Gi"},"requests":{"cpu":"250m","memory":"512Mi"}},"service":{"annotations":{},"type":"ClusterIP"},"shmSize":"1Gi"}` | Optional headless-browser tier for JavaScript-rendered pages; doubles as a solver backend. This is the one service not built on `scratch`: it is a Debian base driving a real Chromium, so it needs writable scratch space and a shared-memory volume. |
+| services.render | object | `{"autoscaling":{"enabled":false,"maxReplicas":4,"minReplicas":1,"targetCPUUtilizationPercentage":80,"targetMemoryUtilizationPercentage":null},"config":{},"enabled":false,"homeDir":"/home/nonroot","image":{"repository":"timschoenle/tankovault-render","tag":"v8.5.0@sha256:5720a73719791db65188aa3f92ac25c91a498789528a57a4a9f19a4711ffeb6d"},"podDisruptionBudget":{"enabled":false,"maxUnavailable":null,"minAvailable":1},"replicaCount":1,"resources":{"limits":{"memory":"2Gi"},"requests":{"cpu":"250m","memory":"512Mi"}},"service":{"annotations":{},"type":"ClusterIP"},"shmSize":"1Gi"}` | Optional headless-browser tier for JavaScript-rendered pages; doubles as a solver backend. This is the one service not built on `scratch`: it is a Debian base driving a real Chromium, so it needs writable scratch space and a shared-memory volume. |
 | services.render.autoscaling.enabled | bool | `false` | Enable a HorizontalPodAutoscaler. |
 | services.render.autoscaling.maxReplicas | int | `4` | Maximum replicas. |
 | services.render.autoscaling.minReplicas | int | `1` | Minimum replicas. |
@@ -1576,7 +1680,7 @@ lookup; the chart fails the render if FQDN destinations are named with the DNS r
 | services.render.enabled | bool | `false` | Deploy the render tier. |
 | services.render.homeDir | string | `"/home/nonroot"` | Home directory of the image's nonroot user, mounted as a writable emptyDir. Chromium writes its profile and crashpad database here; when it is not writable the failure surfaces as a misleading `--database is required` error. |
 | services.render.image.repository | string | `"timschoenle/tankovault-render"` | Image repository. |
-| services.render.image.tag | string | `"v8.4.0@sha256:50485e53758025ed7d508c08e0b5174562089faf3df23231b3b8fdde26933af9"` | Image tag, pinned by digest. |
+| services.render.image.tag | string | `"v8.5.0@sha256:5720a73719791db65188aa3f92ac25c91a498789528a57a4a9f19a4711ffeb6d"` | Image tag, pinned by digest. |
 | services.render.podDisruptionBudget.enabled | bool | `false` | Create a PodDisruptionBudget. |
 | services.render.podDisruptionBudget.maxUnavailable | string | `nil` | Maximum unavailable pods. |
 | services.render.podDisruptionBudget.minAvailable | int | `1` | Minimum available pods during voluntary disruption. |
@@ -1590,11 +1694,11 @@ lookup; the chart fails the render if FQDN destinations are named with the DNS r
 | services.render.service.annotations | object | `{}` | Extra Service annotations. |
 | services.render.service.type | string | `"ClusterIP"` | Service type. Publishing this service exposes a privileged contract. |
 | services.render.shmSize | string | `"1Gi"` | Size of the `/dev/shm` in-memory volume. Chromium crashes with cryptic renderer failures on the 64Mi Kubernetes default. |
-| services.sync | object | `{"config":{},"enabled":true,"image":{"repository":"timschoenle/tankovault-sync","tag":"v8.4.0@sha256:e1bb80a2bebb66461f0e3666520ae76ec8db87637a9a8c51ba556e8a893e372f"},"podDisruptionBudget":{"enabled":false,"maxUnavailable":null,"minAvailable":1},"replicaCount":1,"resources":{"limits":{"memory":"512Mi"},"requests":{"cpu":"100m","memory":"256Mi"}},"service":{"annotations":{},"type":"ClusterIP"}}` | Bidirectional AniList integration and metadata enrichment. |
+| services.sync | object | `{"config":{},"enabled":true,"image":{"repository":"timschoenle/tankovault-sync","tag":"v8.5.0@sha256:6b58296e5872b27326489a1abc6d5aeaf898b1d7ce99b50bdc9c1751517a3fd2"},"podDisruptionBudget":{"enabled":false,"maxUnavailable":null,"minAvailable":1},"replicaCount":1,"resources":{"limits":{"memory":"512Mi"},"requests":{"cpu":"100m","memory":"256Mi"}},"service":{"annotations":{},"type":"ClusterIP"}}` | Bidirectional AniList integration and metadata enrichment. |
 | services.sync.config | object | `{}` | Service-specific configuration, merged over the global `config` tree. |
 | services.sync.enabled | bool | `true` | Deploy the sync service. Requires the `anilist` credentials. |
 | services.sync.image.repository | string | `"timschoenle/tankovault-sync"` | Image repository. |
-| services.sync.image.tag | string | `"v8.4.0@sha256:e1bb80a2bebb66461f0e3666520ae76ec8db87637a9a8c51ba556e8a893e372f"` | Image tag, pinned by digest. |
+| services.sync.image.tag | string | `"v8.5.0@sha256:6b58296e5872b27326489a1abc6d5aeaf898b1d7ce99b50bdc9c1751517a3fd2"` | Image tag, pinned by digest. |
 | services.sync.podDisruptionBudget.enabled | bool | `false` | Create a PodDisruptionBudget. |
 | services.sync.podDisruptionBudget.maxUnavailable | string | `nil` | Maximum unavailable pods. |
 | services.sync.podDisruptionBudget.minAvailable | int | `1` | Minimum available pods during voluntary disruption. |
@@ -1607,7 +1711,7 @@ lookup; the chart fails the render if FQDN destinations are named with the DNS r
 | services.sync.resources.requests.memory | string | `"256Mi"` | Minimum guaranteed memory allocation. |
 | services.sync.service.annotations | object | `{}` | Extra Service annotations. |
 | services.sync.service.type | string | `"ClusterIP"` | Service type. Publishing this service exposes a privileged contract. |
-| services.worker | object | `{"autoscaling":{"enabled":false,"maxReplicas":10,"minReplicas":2,"targetCPUUtilizationPercentage":80,"targetMemoryUtilizationPercentage":null},"config":{},"enabled":true,"image":{"repository":"timschoenle/tankovault-worker","tag":"v8.4.0@sha256:6b8b5e4d942b089c1e9da409a6767096c5c12d3c987b5704d7cd6bbaae6aedbb"},"podDisruptionBudget":{"enabled":false,"maxUnavailable":null,"minAvailable":1},"replicaCount":2,"resources":{"limits":{"memory":"1Gi"},"requests":{"cpu":"250m","memory":"512Mi"}},"service":{"annotations":{},"type":"ClusterIP"}}` | Fetches and parses provider data through the adapters and upserts chapter and metadata changes. Scales horizontally for free: replicas join one NATS JetStream consumer group. |
+| services.worker | object | `{"autoscaling":{"enabled":false,"maxReplicas":10,"minReplicas":2,"targetCPUUtilizationPercentage":80,"targetMemoryUtilizationPercentage":null},"config":{},"enabled":true,"image":{"repository":"timschoenle/tankovault-worker","tag":"v8.5.0@sha256:c9028d9ea3287a4ba076ec9ca3d766e1a509b93d442a689aff4132cbba8831a4"},"podDisruptionBudget":{"enabled":false,"maxUnavailable":null,"minAvailable":1},"replicaCount":2,"resources":{"limits":{"memory":"1Gi"},"requests":{"cpu":"250m","memory":"512Mi"}},"service":{"annotations":{},"type":"ClusterIP"}}` | Fetches and parses provider data through the adapters and upserts chapter and metadata changes. Scales horizontally for free: replicas join one NATS JetStream consumer group. |
 | services.worker.autoscaling.enabled | bool | `false` | Enable a HorizontalPodAutoscaler. |
 | services.worker.autoscaling.maxReplicas | int | `10` | Maximum replicas. |
 | services.worker.autoscaling.minReplicas | int | `2` | Minimum replicas. |
@@ -1616,7 +1720,7 @@ lookup; the chart fails the render if FQDN destinations are named with the DNS r
 | services.worker.config | object | `{}` | Service-specific configuration, merged over the global `config` tree. |
 | services.worker.enabled | bool | `true` | Deploy the worker. |
 | services.worker.image.repository | string | `"timschoenle/tankovault-worker"` | Image repository. |
-| services.worker.image.tag | string | `"v8.4.0@sha256:6b8b5e4d942b089c1e9da409a6767096c5c12d3c987b5704d7cd6bbaae6aedbb"` | Image tag, pinned by digest. |
+| services.worker.image.tag | string | `"v8.5.0@sha256:c9028d9ea3287a4ba076ec9ca3d766e1a509b93d442a689aff4132cbba8831a4"` | Image tag, pinned by digest. |
 | services.worker.podDisruptionBudget.enabled | bool | `false` | Create a PodDisruptionBudget. |
 | services.worker.podDisruptionBudget.maxUnavailable | string | `nil` | Maximum unavailable pods. |
 | services.worker.podDisruptionBudget.minAvailable | int | `1` | Minimum available pods during voluntary disruption. |
@@ -1629,6 +1733,24 @@ lookup; the chart fails the render if FQDN destinations are named with the DNS r
 | services.worker.resources.requests.memory | string | `"512Mi"` | Minimum guaranteed memory allocation. |
 | services.worker.service.annotations | object | `{}` | Extra Service annotations. |
 | services.worker.service.type | string | `"ClusterIP"` | Service type. |
+| telemetry | object | `{"sentry":{"attachStacktraces":true,"breadcrumbLevel":"info","captureLevel":"error","debug":false,"dsn":"","enabled":false,"environment":"","httpTransactions":true,"maxBreadcrumbs":100,"release":"","sampleRate":1,"sendDefaultPii":false,"serverName":"","shutdownTimeoutSecs":2,"spanAttributes":false,"tracesSampleRate":0}}` | Process-level telemetry. Unlike almost everything under `config`, what is set here is installed once as a service boots rather than re-read from the mounted ConfigMap, so a change takes effect on the next restart instead of within the kubelet's refresh interval. `configReload.rolloutOnChange` is what turns a change here into a rollout. |
+| telemetry.sentry | object | `{"attachStacktraces":true,"breadcrumbLevel":"info","captureLevel":"error","debug":false,"dsn":"","enabled":false,"environment":"","httpTransactions":true,"maxBreadcrumbs":100,"release":"","sampleRate":1,"sendDefaultPii":false,"serverName":"","shutdownTimeoutSecs":2,"spanAttributes":false,"tracesSampleRate":0}` | Sentry error reporting and distributed tracing. **Off**, and wholly inert while it is: no client, no panic hook and no layer is installed, and nothing leaves the process.  Switched on, every enabled service is given the same block, and that is deliberate. One reader action is one trace across the whole tier — the id rides the proxy hop the frontend opens to the API, every call the API makes to `control-plane`, `sync` and `worker`, every NATS message the broker delivers, and every solve the worker sends to `challenge-solver` and `render`. A service set differently does not drop out of a trace someone else started, but it is the only place a trace of its own can begin, so the switch belongs to the release rather than to each service. Where one genuinely has to differ, override it through `services.<name>.config.telemetry.sentry.<key>`, which outranks everything here.  Two things this chart deliberately does not do for you. It never reads the DSN, so it cannot open the NetworkPolicies for the ingest host: `frontend`, `control-plane` and `challenge-solver` are granted no egress beyond the cluster at all, and the other five are granted only `networkPolicy.internetCidrs`. Name the ingest endpoint in `networkPolicy.extraEgress`, or in `networkPolicy.cilium.egress.toFQDNs` where a name can be expressed, or events are lost without a word — an SDK that cannot reach its endpoint queues and discards rather than failing anything. And it configures nothing inside Sentry: the project, its quota and its server-side data-scrubbing rules are yours. |
+| telemetry.sentry.attachStacktraces | bool | `true` | Attach a stack trace to events that carry none of their own. |
+| telemetry.sentry.breadcrumbLevel | string | `"info"` | Least severe `tracing` level kept as a breadcrumb, the trail attached to the next issue. Records at or above `captureLevel` become issues instead. Quote `"off"`. |
+| telemetry.sentry.captureLevel | string | `"error"` | Least severe `tracing` level reported as a Sentry issue. Quote `"off"` — unquoted, YAML reads it as the boolean `false`. This and `breadcrumbLevel` both sit *under* the subscriber's own filter, so a record that `config.telemetry.log_filter` drops never reaches Sentry either, whatever is set here. |
+| telemetry.sentry.debug | bool | `false` | Print the SDK's own diagnostics to stderr. For proving a DSN works, not for running. |
+| telemetry.sentry.dsn | string | `""` | Ingest URL, `https://<key>@<host>/<project>`. A credential — the embedded key is a bearer token for the project's ingest endpoint — so it is delivered as a file in `TANKOVAULT_SECRETS_DIR` under `telemetry__sentry__dsn` and never written into a ConfigMap. Leave it empty and put that key in the Secret named by `existingSecret` to keep it out of `helm get values` entirely. |
+| telemetry.sentry.enabled | bool | `false` | Initialise the Sentry client on every enabled service. Off, every other key here is inert. On, a service refuses to boot without a DSN rather than starting with a reporter that reports nowhere, so this and `dsn` are set together. |
+| telemetry.sentry.environment | string | `""` | Environment tag on every event. Empty lets the service derive it from `profile`: `production` under `profile: production`, `development` otherwise. |
+| telemetry.sentry.httpTransactions | bool | `true` | Record one transaction per request through the shared HTTP stack, named by the matched route (`/v1/series/{id}`) rather than by the URI, so an id in the path does not become a transaction name of its own. Whether a started transaction is kept is `tracesSampleRate`'s decision; this is the switch for a service that should stay out of traces entirely. Probe traffic is outside it either way, as it is outside the metrics middleware. |
+| telemetry.sentry.maxBreadcrumbs | int | `100` | How many breadcrumbs one event carries. |
+| telemetry.sentry.release | string | `""` | Release tag on every event. Empty uses the version the binary was built from, which is what makes a regression attributable to a deploy — set this only to match a release you create in Sentry under a name of your own. |
+| telemetry.sentry.sampleRate | float | `1` | Fraction of captured events actually sent. A blunt volume cap — it drops whole issues, not repetitions of one — so leave it at `1` unless a quota forces otherwise. |
+| telemetry.sentry.sendDefaultPii | bool | `false` | Send personally identifying data with every event: the client IP, the resolved user and the whole request header set, `Authorization` and `Cookie` included. **Off, and worth leaving off** — none of it is needed to make a crash report actionable, and Sentry is a third party for the purposes of whatever this deployment publishes under `legal.documents`. It is two controls rather than one, besides: off is also what keeps the HTTP middleware redacting sensitive headers. |
+| telemetry.sentry.serverName | string | `""` | Host tag on every event. Empty reports none, which is the right answer here: the value would be one replica's pod name, not anything an operator chose. |
+| telemetry.sentry.shutdownTimeoutSecs | int | `2` | How long process exit waits for queued events to drain. It is spent on every pod shutdown, so it is time added to every rollout; keep it short. |
+| telemetry.sentry.spanAttributes | bool | `false` | Copy `tracing` span fields onto the Sentry span as attributes. Off: span fields here routinely carry ids and user-supplied titles, and a transaction is retained for longer than a log line. |
+| telemetry.sentry.tracesSampleRate | float | `0` | Fraction of traces a service **starts** that are recorded. `0` starts none, which is what makes this feature free to switch on for error reporting alone. It does not take a service out of a trace: a request or a broker message that arrives already sampled is continued whatever this says, so the tier-wide trace survives one service being set differently. `0.05`-`0.2` is an ordinary production figure, and it is worth setting uniformly, because the service that starts a trace is the one whose rate decides whether it exists at all. |
 | trawl | object | `{"browserPoolSize":1,"enabled":false,"image":{"repository":"ghcr.io/germondai/trawl","tag":"1.3.1@sha256:1276e2937346190380310e15b3c4cbbf7757827c2ed3056459ad999b10cb90c9"},"redis":{"enabled":true,"url":""},"resources":{"limits":{"memory":"2Gi"},"requests":{"cpu":"500m","memory":"1Gi"}},"runAsUser":1000,"shmSize":"1Gi"}` | Bundled [TRAWL](https://github.com/germondai/trawl), the default backend for the challenge solver. |
 | trawl.browserPoolSize | int | `1` | Number of warm browser instances to keep. Each is a full Firefox, so raising this raises `resources` with it. The image's own default is 3, which fits none of the sizes below. |
 | trawl.enabled | bool | `false` | Deploy the bundled TRAWL. |

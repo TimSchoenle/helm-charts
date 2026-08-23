@@ -26,10 +26,10 @@ renamed fails the render with the offending path named, rather than being silent
 
 **Sentry error reporting and end-to-end tracing, off by default and inert while it is off.**
 
-TankoVault 8.5.0 can report errors, panics and distributed traces to Sentry. This release
-surfaces that as `telemetry.sentry.*`. Off, nothing about a rendered release changes: no key in
-any ConfigMap, no volume, no environment variable — and in the image, no client, no panic hook
-and no layer is installed, so nothing leaves the process.
+This release moves the images to TankoVault 8.5.0, which can report errors, panics and
+distributed traces to Sentry, and surfaces that as `telemetry.sentry.*`. Off, nothing about a
+rendered release changes: no key in any ConfigMap, no volume, no environment variable — and in
+the image, no client, no panic hook and no layer is installed, so nothing leaves the process.
 
 ```yaml
 telemetry:

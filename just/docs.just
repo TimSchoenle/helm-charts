@@ -32,6 +32,29 @@ schema:
 chart-readmes:
     helm-docs --chart-search-root {{ charts }} --template-files README.md.gotmpl
 
+# Fail when a chart value carries no `# --` description.
+#
+# The input side of the two recipes above. helm-docs renders these comments into every chart's
+# README table and helm-schema copies them into `values.schema.json`, so a value without one is
+# undocumented in both outputs — and both regenerate cleanly regardless, which is why nothing
+# noticed that 134 grouping keys had none.
+#
+# Required of a key that has an `@schema` block, because helm-schema emits a property for it, and
+# of a key that has children, because helm-docs gives a documented group its own README row. The
+# contents of an already-documented mapping are exempt; the script's header says why, and why the
+# alternative rule produces `# -- The name.` above `name`.
+#
+# In `just check`: it asserts, reads only committed files, and needs no network, no cluster and no
+# render.
+[doc("Fail when a chart value carries no `# --` description")]
+[group('docs')]
+check-values-docs:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    {{ resolve_python }}
+    "$python" {{ scripts }}/check-values-docs.py \
+      --charts {{ charts }} --chassis .github/templates/chart/values.chassis.yaml
+
 # Print the chart index the root README is rendered from, as one line of JSON.
 #
 # Every value comes from a chart's own Chart.yaml, so the table cannot drift from what the charts

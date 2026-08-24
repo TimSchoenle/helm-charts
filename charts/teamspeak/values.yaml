@@ -4,6 +4,7 @@
 # @schema
 # additionalProperties: true
 # @schema
+# -- Container image the pod runs, composed as `registry/repository:tag`.
 image:
   # @schema
   # type: string
@@ -39,6 +40,8 @@ imagePullSecrets: []
 # @schema
 # additionalProperties: true
 # @schema
+# -- The TeamSpeak licence. The render fails until `accept` is true; without a licence file the
+# server runs on the free 32-slot licence.
 license:
   # @schema
   # type: boolean
@@ -74,6 +77,8 @@ existingSecret: ""
 # @schema
 # additionalProperties: true
 # @schema
+# -- The `serveradmin` ServerQuery account and the interface it logs in over. `metrics.enabled`
+# needs both a password it can be told and `raw` left in `protocols`.
 serverQuery:
   # @schema
   # type: string
@@ -115,6 +120,8 @@ serverQuery:
 # @schema
 # additionalProperties: true
 # @schema
+# -- The voice server's own ports and behaviour, written to the ConfigMap as `TS3SERVER_*`
+# variables the image's entrypoint turns into `ts3server.ini`.
 server:
   # @schema
   # type: integer
@@ -192,6 +199,8 @@ extraServerConfig: {}
 # @schema
 # additionalProperties: true
 # @schema
+# -- Where the server keeps its data. `ts3db_sqlite3` writes into the data volume; the other
+# plugins need a `host` and a password.
 database:
   # @schema
   # enum: [ts3db_sqlite3, ts3db_mariadb, ts3db_postgresql]
@@ -263,6 +272,8 @@ database:
 # @schema
 # additionalProperties: true
 # @schema
+# -- The Service that publishes the voice port. Clients dial `server.voicePort` directly, so the
+# type has to be one that answers on that exact port.
 service:
   # @schema
   # enum: [ClusterIP, NodePort, LoadBalancer]
@@ -409,6 +420,7 @@ service:
 # @schema
 # additionalProperties: true
 # @schema
+# -- The volumes the pod mounts. One today, holding everything under `/var/ts3server`.
 persistence:
   # @schema
   # additionalProperties: true
@@ -464,6 +476,7 @@ persistence:
 # @schema
 # additionalProperties: true
 # @schema
+# -- The Prometheus exporter sidecar and the PodMonitor that scrapes it.
 metrics:
   # @schema
   # type: boolean
@@ -477,6 +490,7 @@ metrics:
   # @schema
   # additionalProperties: true
   # @schema
+  # -- Exporter image, composed as `registry/repository:tag`.
   image:
     # @schema
     # type: string
@@ -999,6 +1013,7 @@ securityContext: {}
 # @schema
 # additionalProperties: true
 # @schema
+# -- ServiceAccount the pods run under. `create: false` with no `name` means the `default` one.
 serviceAccount:
   # @schema
   # type: boolean
@@ -1028,6 +1043,7 @@ serviceAccount:
 # @schema
 # $ref: https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.ResourceRequirements
 # @schema
+# -- Requests and limits for the server container, passed through to the pod spec unchanged.
 resources:
   # @schema
   # additionalProperties: true
@@ -1330,9 +1346,9 @@ networkPolicy:
   # -- Cilium-only additions, used when `engine` is `cilium` or `both`. Every rule above is
   # translated automatically; these are the ones the portable API has no way to express.
   #
-  # Note that `extraIngress`, `extraEgress` and the per-section `customRules` above are *not*
-  # carried over: those are verbatim `networking.k8s.io/v1` rule objects and are not valid CNP.
-  # The fields below are their counterparts.
+  # `extraIngress`, `extraEgress` and the per-section `customRules` above are *not* carried over:
+  # those are verbatim `networking.k8s.io/v1` rule objects and are not valid CNP. The fields
+  # below are their counterparts.
   cilium:
     # @schema
     # type: string

@@ -1,6 +1,6 @@
 # s3-bucket-perma-link
 
-![Version: 4.1.2](https://img.shields.io/badge/Version-4.1.2-informational?style=flat-square) ![AppVersion: v1.1.1](https://img.shields.io/badge/AppVersion-v1.1.1-informational?style=flat-square)
+![Version: 4.1.3](https://img.shields.io/badge/Version-4.1.3-informational?style=flat-square) ![AppVersion: v1.1.1](https://img.shields.io/badge/AppVersion-v1.1.1-informational?style=flat-square)
 
 This chart deploys a simple web server that provides permanent links to specific S3 bucket resources. It allows you to define static URL paths that always point to specific files in your S3 buckets.
 
@@ -385,11 +385,13 @@ policy pointing at the wrong Gateway looks correct and blocks everything.
 |-----|------|---------|-------------|
 | affinity | object | `{}` | Explicit affinity rules. Wins over `podAntiAffinity`. |
 | automountServiceAccountToken | bool | `false` | Mount the ServiceAccount API token into the pod. Set on the pod itself, which is what actually keeps the token out of the container: the ServiceAccount-level setting is ignored as soon as a pod names a different account. |
+| bucket | object | `{"entries":{}}` | The link table. Required: the render fails on an empty `entries`, and on any entry missing `bucket` or `object`. |
 | bucket.entries | object | `{}` | One entry per permanent link (`bucket.entries`), keyed by the request path it is served at and valued by the bucket and object key it resolves to. Required — a server with no entry serves nothing. Example: ```yaml entries:   "docs/handbook":     bucket: media     object: handbook.pdf   changelog:     bucket: media     object: releases/CHANGELOG.md ``` |
 | commonAnnotations | object | `{}` | Annotations added to every object this chart creates. |
 | commonLabels | object | `{}` | Labels added to every object this chart creates. |
 | config | object | `{}` | Extra configuration, expressed as the TOML tree of [the service's README](https://github.com/TimSchoenle/s3-bucket-perma-link#configuration) (`server.host`, `bucket.entries`, ...). Merged over everything the chart derives from the values above, so it can both extend and override them. Rendered into the mounted ConfigMap — never into the environment, which the loader refuses to combine with a file. |
 | configExtraToml | string | `""` | Verbatim TOML appended after the rendered configuration. The escape hatch for anything the chart's TOML renderer cannot express, notably arrays of tables. |
+| configMount | object | `{"configDir":"/etc/s3-bucket-perma-link/config","rolloutOnChange":false,"secretsDir":"/etc/s3-bucket-perma-link/secrets"}` | Where the rendered configuration and the credential files land in the container. |
 | configMount.configDir | string | `"/etc/s3-bucket-perma-link/config"` | Directory the rendered `config.toml` is mounted at, passed as `S3_PERMA_LINK_CONFIG`. |
 | configMount.rolloutOnChange | bool | `false` | Add `checksum/*` pod annotations so a configuration change rolls the Deployment. Off by default, and deliberately so: the service watches the directories its configuration came from and rebuilds its bucket clients and listener in place when the kubelet updates the mounted ConfigMap or Secret, which is strictly better than a rollout. Turn this on only if you want configuration changes to behave like an ordinary image bump. `telemetry.*` is installed once per process and needs a restart either way. |
 | configMount.secretsDir | string | `"/etc/s3-bucket-perma-link/secrets"` | Directory the credential files are mounted at, passed as `S3_PERMA_LINK_SECRETS_DIR`. |
@@ -426,15 +428,17 @@ policy pointing at the wrong Gateway looks correct and blocks everything.
 | gateway.tls.enabled | bool | `false` | Add an HTTPS listener. |
 | gateway.tls.mode | string | `"Terminate"` | TLS mode. |
 | gateway.tls.options | object | `{}` | Implementation-specific TLS options. |
+| image | object | `{"pullPolicy":"","registry":"","repository":"timmi6790/s3-bucket-perma-link","tag":"v1.1.1@sha256:0f3fb15ccda6fe17400186d16d8a4a4bb249b0d7e6c169f7d5bbb950c6337a76"}` | Container image the pod runs, composed as `registry/repository:tag`. |
 | image.pullPolicy | string | `""` | The image pull policy. Empty resolves automatically from the tag/digest. |
 | image.registry | string | `""` | Registry host. Empty means Docker Hub. |
 | image.repository | string | `"timmi6790/s3-bucket-perma-link"` | The container image repository. |
 | image.tag | string | `"v1.1.1@sha256:0f3fb15ccda6fe17400186d16d8a4a4bb249b0d7e6c169f7d5bbb950c6337a76"` | The container image tag, pinned by digest (`vX.Y.Z@sha256:...`). The digest pins the pull, while the tag stays on as the readable version marker. Defaults to the chart's `appVersion` when empty. |
 | imagePullSecrets | list | `[]` | Optional image pull secrets for private registries. |
+| ingress | object | `{"annotations":{},"enabled":false,"hosts":[],"ingressClassName":"nginx","tls":[]}` | The Ingress in front of the Service. Off by default; `gateway` is the Gateway API alternative and the two are independent switches. |
 | ingress.annotations | object | `{}` | Custom annotations for the Ingress resource. Useful for configuring ingress controllers (e.g., cert-manager, rate limits). |
 | ingress.enabled | bool | `false` | Enable or disable Kubernetes Ingress resource creation. Set to `true` to expose the service externally via Ingress. |
 | ingress.hosts | list | `[]` | List of host configurations for the Ingress. Each host defines rules for routing external traffic. Example: ```yaml hosts:   - host: s3.example.com     paths:       - path: /         pathType: Prefix ``` |
-| ingress.ingressClassName | string | `"nginx"` | Ingress class to use (e.g., "nginx", "traefik"). Should match your cluster’s ingress controller configuration. |
+| ingress.ingressClassName | string | `"nginx"` | Ingress class to use (e.g., "nginx", "traefik"). Should match your cluster's ingress controller configuration. |
 | ingress.tls | list | `[]` | TLS configuration for securing ingress connections. Example: ```yaml tls:   - secretName: s3-cert     hosts:       - s3.example.com ``` |
 | kubeVersionOverride | string | `""` | Kubernetes version to target when branching on API availability. Lets `helm template` render for a specific cluster version without a live connection. |
 | livenessProbe | object | `{"enabled":true,"failureThreshold":3,"httpGet":{"path":"/health","port":"http"},"initialDelaySeconds":1,"periodSeconds":10,"timeoutSeconds":5}` | Liveness probe. Restarts the container when it stops responding. |
@@ -449,7 +453,7 @@ policy pointing at the wrong Gateway looks correct and blocks everything.
 | nameOverride | string | `""` | Override the chart name used in resource names and labels. |
 | namespaceOverride | string | `""` | Deploy into a namespace other than the release namespace. |
 | networkPolicy | object | `{"cilium":{"description":"","egress":{"customRules":[],"dnsMatchPatterns":[],"entityPorts":[],"fqdnPorts":[],"httpRules":[],"toEntities":[],"toFQDNs":[]},"enableDefaultDeny":true,"extraEgress":[],"extraIngress":[],"ingress":{"customRules":[],"fromEntities":[]}},"egress":{"cidr":"0.0.0.0/0","customRules":[],"dns":{"enabled":true,"namespaceSelector":{"kubernetes.io/metadata.name":"kube-system"},"podSelector":{"k8s-app":"kube-dns"}},"enabled":true,"except":["10.0.0.0/8","172.16.0.0/12","192.168.0.0/16","169.254.0.0/16"],"http":{"enabled":false},"https":{"enabled":true}},"enabled":false,"engine":"kubernetes","extraEgress":[],"extraIngress":[],"ingress":{"controller":{"enabled":true,"namespace":"traefik","ports":[],"selector":{"app.kubernetes.io/name":"traefik"}},"customRules":[],"enabled":true,"gateway":{"enabled":true,"namespace":"","ports":[],"selector":{}},"monitoring":{"enabled":true,"namespace":"monitoring","namespaceSelector":{},"ports":[]}}}` | Network policy configuration |
-| networkPolicy.cilium | object | `{"description":"","egress":{"customRules":[],"dnsMatchPatterns":[],"entityPorts":[],"fqdnPorts":[],"httpRules":[],"toEntities":[],"toFQDNs":[]},"enableDefaultDeny":true,"extraEgress":[],"extraIngress":[],"ingress":{"customRules":[],"fromEntities":[]}}` | Cilium-only additions, used when `engine` is `cilium` or `both`. Everything above is translated into the CiliumNetworkPolicy automatically; these are the rules the portable API has no way to express.  Note that `extraIngress`, `extraEgress` and the per-section `customRules` above are *not* carried over: those are verbatim `networking.k8s.io/v1` rule objects and are not valid CNP. The fields below are their counterparts. |
+| networkPolicy.cilium | object | `{"description":"","egress":{"customRules":[],"dnsMatchPatterns":[],"entityPorts":[],"fqdnPorts":[],"httpRules":[],"toEntities":[],"toFQDNs":[]},"enableDefaultDeny":true,"extraEgress":[],"extraIngress":[],"ingress":{"customRules":[],"fromEntities":[]}}` | Cilium-only additions, used when `engine` is `cilium` or `both`. Everything above is translated into the CiliumNetworkPolicy automatically; these are the rules the portable API has no way to express.  `extraIngress`, `extraEgress` and the per-section `customRules` above are *not* carried over: those are verbatim `networking.k8s.io/v1` rule objects and are not valid CNP. The fields below are their counterparts. |
 | networkPolicy.cilium.description | string | `""` | `spec.description`, which Cilium surfaces in `cilium policy get` and in Hubble flow verdicts. The one place to record why a rule exists where an operator debugging a drop will actually see it. |
 | networkPolicy.cilium.egress | object | `{"customRules":[],"dnsMatchPatterns":[],"entityPorts":[],"fqdnPorts":[],"httpRules":[],"toEntities":[],"toFQDNs":[]}` | Cilium-only egress rules. |
 | networkPolicy.cilium.egress.customRules | list | `[]` | Additional egress rules in CiliumNetworkPolicy form, appended verbatim. |
@@ -521,22 +525,27 @@ policy pointing at the wrong Gateway looks correct and blocks everything.
 | readinessProbe.successThreshold | int | `1` | Consecutive successes before the pod is considered ready. |
 | readinessProbe.timeoutSeconds | int | `3` | Probe timeout. |
 | replicaCount | int | `1` | Number of application replicas. |
+| resources | object | `{"limits":{"memory":"20Mi"},"requests":{"cpu":"10m","memory":"15Mi"}}` | Requests and limits for the container, passed through to the pod spec unchanged. |
 | resources.limits | object | `{"memory":"20Mi"}` | Resource limits define the maximum resources the container can use. |
 | resources.limits.memory | string | `"20Mi"` | Maximum memory allocation for the container. |
 | resources.requests | object | `{"cpu":"10m","memory":"15Mi"}` | Resource requests define the guaranteed resources reserved for the container. |
 | resources.requests.cpu | string | `"10m"` | Minimum CPU requested by the container. The service proxies small objects and is mostly IO-bound. Without a CPU request the pod is BestEffort and is the first thing evicted under node pressure. |
 | resources.requests.memory | string | `"15Mi"` | Minimum memory requested by the container. |
 | revisionHistoryLimit | int | `3` | Number of old ReplicaSets retained for rollback. |
+| s3 | object | `{"accessKey":"","host":"s3.amazon.com","region":"eu-central-1","secretKey":""}` | The S3-compatible backend the links are resolved against. The two credentials are mounted as files, so a rotation is picked up without a restart. |
 | s3.accessKey | string | `""` | S3 access key (`s3.access_key`). Rendered into the chart's Secret and mounted as a file, so a rotation is picked up without a restart. Required unless `existingSecret` supplies it. |
 | s3.host | string | `"s3.amazon.com"` | S3-compatible API endpoint (`s3.host`), e.g. `s3.eu-central-1.amazonaws.com` or `minio.example.com`. |
 | s3.region | string | `"eu-central-1"` | Region identifier used when signing requests (`s3.region`). |
 | s3.secretKey | string | `""` | S3 secret key (`s3.secret_key`). Required unless `existingSecret` supplies it. |
 | securityContext | object | `{}` | Container security context, merged over the preset. A writable /tmp is provided automatically via an emptyDir volume. |
 | securityContextPreset | string | `"restricted"` | Container security context baseline. `restricted` drops all Linux capabilities and forbids privilege escalation, running as root and a writable root filesystem. |
+| server | object | `{"host":"0.0.0.0","port":8080}` | The listener the server binds, rendered under `server` in the mounted `config.toml`. |
 | server.host | string | `"0.0.0.0"` | Bind address (`server.host`). `0.0.0.0` is what makes the Service reach the listener. |
 | server.port | int | `8080` | Bind port (`server.port`). Also the container port, the Service target and what every probe and NetworkPolicy rule is written against. |
+| service | object | `{"port":80,"type":"ClusterIP"}` | The Service in front of the pods. `port` is what the Ingress and the HTTPRoute route to; the container listens on `server.port`. |
 | service.port | int | `80` | Port that the Kubernetes Service will expose. Typically maps to `application.server.port`. |
 | service.type | string | `"ClusterIP"` | Kubernetes Service type that exposes the application. |
+| serviceAccount | object | `{"annotations":{},"automountToken":false,"create":true,"name":""}` | ServiceAccount the pods run under. `create: false` with no `name` means the `default` one. |
 | serviceAccount.annotations | object | `{}` | Additional annotations for the service account |
 | serviceAccount.automountToken | bool | `false` | Whether to automount the service account token |
 | serviceAccount.create | bool | `true` | Whether to create a dedicated service account |
@@ -551,6 +560,7 @@ policy pointing at the wrong Gateway looks correct and blocks everything.
 | startupProbe.periodSeconds | int | `5` | Probe interval. |
 | startupProbe.timeoutSeconds | int | `3` | Probe timeout. |
 | strategy | object | `{}` | Deployment update strategy. Empty uses the Kubernetes default rolling update. |
+| telemetry | object | `{"logLevel":"info","sentryDsn":""}` | Logging and error reporting, rendered under `telemetry` in `config.toml`. |
 | telemetry.logLevel | string | `"info"` | Log level (`telemetry.log_level`). |
 | telemetry.sentryDsn | string | `""` | Sentry DSN (`telemetry.sentry_dsn`). Empty disables Sentry entirely. |
 | terminationGracePeriodSeconds | int | `30` | Grace period for pod shutdown. |

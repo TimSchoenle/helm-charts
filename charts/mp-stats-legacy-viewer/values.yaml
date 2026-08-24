@@ -4,6 +4,7 @@
 # @schema
 # additionalProperties: true
 # @schema
+# -- Container image the pod runs, composed as `registry/repository:tag`.
 image:
   # @schema
   # type: string
@@ -34,6 +35,8 @@ image:
 # @schema
 # additionalProperties: true
 # @schema
+# -- The listener, and the two directories on disk it serves from. Rendered under `server` in the
+# mounted `config.toml`, never into the environment.
 server:
   # @schema
   # # @config composed server.bind_addr
@@ -143,6 +146,7 @@ configExtraToml: ""
 # @schema
 # additionalProperties: true
 # @schema
+# -- Where the rendered configuration and the credential files land in the container.
 configMount:
   # @schema
   # type: string
@@ -163,6 +167,7 @@ configMount:
 # @schema
 # additionalProperties: true
 # @schema
+# -- ServiceAccount the pods run under. `create: false` with no `name` means the `default` one.
 serviceAccount:
   # @schema
   # type: boolean
@@ -192,6 +197,7 @@ serviceAccount:
 # @schema
 # additionalProperties: true
 # @schema
+# -- The Service in front of the pods, publishing `port` and forwarding to `server.port`.
 service:
   # @schema
   # enum: [ClusterIP, NodePort, LoadBalancer]
@@ -209,6 +215,8 @@ service:
 # @schema
 # additionalProperties: true
 # @schema
+# -- The Ingress in front of the Service. Off by default; `gateway` is the Gateway API
+# alternative and the two are independent switches.
 ingress:
   # @schema
   # type: boolean
@@ -221,7 +229,7 @@ ingress:
   # type: string
   # @schema
   # -- Ingress class to use (e.g., "nginx", "traefik").
-  # Should match your cluster’s ingress controller configuration.
+  # Should match your cluster's ingress controller configuration.
   ingressClassName: "nginx"
 
   # @schema
@@ -483,6 +491,7 @@ gateway:
 # @schema
 # $ref: https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.ResourceRequirements
 # @schema
+# -- Requests and limits for the container, passed through to the pod spec unchanged.
 resources:
   # @schema
   # additionalProperties: true
@@ -779,9 +788,9 @@ networkPolicy:
   # translated into the CiliumNetworkPolicy automatically; these are the rules the portable API
   # has no way to express.
   #
-  # Note that `extraIngress`, `extraEgress` and the per-section `customRules` above are *not*
-  # carried over: those are verbatim `networking.k8s.io/v1` rule objects and are not valid CNP.
-  # The fields below are their counterparts.
+  # `extraIngress`, `extraEgress` and the per-section `customRules` above are *not* carried over:
+  # those are verbatim `networking.k8s.io/v1` rule objects and are not valid CNP. The fields
+  # below are their counterparts.
   cilium:
     # @schema
     # type: string

@@ -4,6 +4,7 @@
 # @schema
 # additionalProperties: true
 # @schema
+# -- Container image the pod runs, composed as `registry/repository:tag`.
 image:
   # @schema
   # type: string
@@ -98,6 +99,7 @@ logLevel: info
 # @schema
 # additionalProperties: true
 # @schema
+# -- Static asset serving, rendered under `assets` in the mounted `config.toml`.
 assets:
   # @schema
   # # @config projection assets.dist_dir
@@ -213,6 +215,7 @@ configExtraToml: ""
 # @schema
 # additionalProperties: true
 # @schema
+# -- Where the rendered configuration and the credential files land in the container.
 configMount:
   # @schema
   # type: string
@@ -446,6 +449,7 @@ automountServiceAccountToken: false
 # @schema
 # additionalProperties: true
 # @schema
+# -- ServiceAccount the pods run under. `create: false` with no `name` means the `default` one.
 serviceAccount:
   # @schema
   # type: boolean
@@ -503,6 +507,7 @@ commonAnnotations: {}
 # @schema
 # additionalProperties: true
 # @schema
+# -- The Service in front of the pods, forwarding `port` to the container's listener.
 service:
   # @schema
   # enum: [ClusterIP, NodePort, LoadBalancer]
@@ -526,6 +531,8 @@ service:
 # @schema
 # additionalProperties: true
 # @schema
+# -- The Ingress in front of the Service. Off by default; `gateway` is the Gateway API
+# alternative and the two are independent switches.
 ingress:
   # @schema
   # type: boolean
@@ -1170,9 +1177,9 @@ networkPolicy:
   # translated into the CiliumNetworkPolicy automatically; these are the rules the portable API
   # has no way to express.
   #
-  # Note that `extraIngress`, `extraEgress` and the per-section `customRules` above are *not*
-  # carried over: those are verbatim `networking.k8s.io/v1` rule objects and are not valid CNP.
-  # The fields below are their counterparts.
+  # `extraIngress`, `extraEgress` and the per-section `customRules` above are *not* carried over:
+  # those are verbatim `networking.k8s.io/v1` rule objects and are not valid CNP. The fields
+  # below are their counterparts.
   cilium:
     # @schema
     # type: string

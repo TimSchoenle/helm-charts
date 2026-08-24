@@ -110,6 +110,7 @@ partOf: ""
 # @schema
 # additionalProperties: true
 # @schema
+# -- Container image the workload runs, composed by `common.image` as `registry/repository:tag`.
 image:
   # @schema
   # type: string
@@ -147,6 +148,7 @@ imagePullSecrets: []
 # @schema
 # additionalProperties: true
 # @schema
+# -- ServiceAccount the pods run under. `create: false` with no `name` means the `default` one.
 serviceAccount:
   # @schema
   # type: boolean
@@ -854,9 +856,9 @@ networkPolicy:
   # translated into the CiliumNetworkPolicy automatically; these are the rules the portable API
   # has no way to express.
   #
-  # Note that `extraIngress`, `extraEgress` and the per-section `customRules` above are *not*
-  # carried over: those are verbatim `networking.k8s.io/v1` rule objects and are not valid CNP.
-  # The fields below are their counterparts.
+  # `extraIngress`, `extraEgress` and the per-section `customRules` above are *not* carried over:
+  # those are verbatim `networking.k8s.io/v1` rule objects and are not valid CNP. The fields
+  # below are their counterparts.
   cilium:
     # @schema
     # type: string
@@ -1054,6 +1056,8 @@ grafanaDashboard:
   # @schema
   # additionalProperties: true
   # @schema
+  # -- The grafana-operator v5 path, rendered in addition to the ConfigMap above rather than
+  # instead of it. Everything here is ignored while `enabled` is false.
   grafanaOperator:
     # @schema
     # type: boolean
@@ -1078,6 +1082,7 @@ grafanaDashboard:
     # -- Label selector for the Grafana instances to import into. Must select something: unlike a
     # Kubernetes label selector, an empty `instanceSelector` matches no instance at all.
     instanceSelector:
+      # -- Labels every Grafana custom resource to import into has to carry.
       matchLabels:
         dashboards: grafana
 

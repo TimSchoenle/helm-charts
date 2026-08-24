@@ -1,6 +1,6 @@
 # cloudflare-access-webhook-redirect
 
-![Version: 5.1.1](https://img.shields.io/badge/Version-5.1.1-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: v1.2.1](https://img.shields.io/badge/AppVersion-v1.2.1-informational?style=flat-square)
+![Version: 5.1.2](https://img.shields.io/badge/Version-5.1.2-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: v1.2.1](https://img.shields.io/badge/AppVersion-v1.2.1-informational?style=flat-square)
 
 A Helm chart for deploying the Cloudflare Access Webhook Redirect service. This service acts as an authentication proxy that validates requests using Cloudflare Access Service Auth tokens before forwarding them to target backend services.
 
@@ -432,17 +432,20 @@ policy pointing at the wrong Gateway looks correct and blocks everything.
 |-----|------|---------|-------------|
 | affinity | object | `{}` | Pod affinity rules |
 | automountServiceAccountToken | bool | `false` | Mount the ServiceAccount API token into the pod. Set on the pod itself, which is what actually keeps the token out of the container: the ServiceAccount-level setting is ignored as soon as a pod names a different account. |
+| autoscaling | object | `{"enabled":false,"maxReplicas":5,"minReplicas":1,"targetCPUUtilizationPercentage":80,"targetMemoryUtilizationPercentage":80}` | Horizontal Pod Autoscaler over the Deployment. While it is enabled the Deployment renders no `replicas`, so `replicaCount` is ignored and a `helm upgrade` leaves the current scale alone. |
 | autoscaling.enabled | bool | `false` | Enable Horizontal Pod Autoscaler (HPA) |
 | autoscaling.maxReplicas | int | `5` | Maximum replicas |
 | autoscaling.minReplicas | int | `1` | Minimum replicas |
 | autoscaling.targetCPUUtilizationPercentage | int | `80` | Target CPU utilization (%) |
 | autoscaling.targetMemoryUtilizationPercentage | int | `80` | Target memory utilization (%) |
+| cloudflare | object | `{"clientId":"","clientSecret":""}` | The Cloudflare Access service token the proxy presents to the protected origin. Both halves are mounted as files, so a rotation is picked up without a restart. |
 | cloudflare.clientId | string | `""` | Cloudflare Access service token client ID (`cloudflare.client_id`). Rendered into the chart's Secret and mounted as a file, so a rotation is picked up without a restart. Required unless `existingSecret` supplies it. |
 | cloudflare.clientSecret | string | `""` | Cloudflare Access service token client secret (`cloudflare.client_secret`). Required unless `existingSecret` supplies it. |
 | commonAnnotations | object | `{}` | Annotations added to every object this chart creates. |
 | commonLabels | object | `{}` | Labels added to every object this chart creates. |
 | config | object | `{}` | Extra configuration, expressed as the TOML tree of [the service's README](https://github.com/TimSchoenle/cloudflare-access-webhook-redirect#-configuration) (`server.host`, `webhook.target_base`, ...). Merged over everything the chart derives from the values above, so it can both extend and override them. Rendered into the mounted ConfigMap — never into the environment, which the loader refuses to combine with a file. |
 | configExtraToml | string | `""` | Verbatim TOML appended after the rendered configuration. The escape hatch for anything the chart's TOML renderer cannot express, notably arrays of tables. |
+| configMount | object | `{"configDir":"/etc/cloudflare-access-webhook-redirect/config","rolloutOnChange":false,"secretsDir":"/etc/cloudflare-access-webhook-redirect/secrets"}` | Where the rendered configuration and the credential files land in the container, and whether a change to either rolls the Deployment. |
 | configMount.configDir | string | `"/etc/cloudflare-access-webhook-redirect/config"` | Directory the rendered `config.toml` is mounted at, passed as `WEBHOOK_REDIRECT_CONFIG`. |
 | configMount.rolloutOnChange | bool | `false` | Add `checksum/*` pod annotations so a configuration change rolls the Deployment. Off by default, and deliberately so: the proxy watches the directories its configuration came from and rebuilds its client, path patterns, credentials and listener in place when the kubelet updates the mounted ConfigMap or Secret, which is strictly better than a rollout. Turn this on only if you want configuration changes to behave like an ordinary image bump. `telemetry.*` is installed once per process and needs a restart either way. |
 | configMount.secretsDir | string | `"/etc/cloudflare-access-webhook-redirect/secrets"` | Directory the credential files are mounted at, passed as `WEBHOOK_REDIRECT_SECRETS_DIR`. |
@@ -479,19 +482,23 @@ policy pointing at the wrong Gateway looks correct and blocks everything.
 | gateway.tls.enabled | bool | `false` | Add an HTTPS listener. |
 | gateway.tls.mode | string | `"Terminate"` | TLS mode. |
 | gateway.tls.options | object | `{}` | Implementation-specific TLS options. |
+| image | object | `{"pullPolicy":"","registry":"","repository":"timmi6790/cloudflare-access-webhook-redirect","tag":"v1.2.1@sha256:39a93296a96f65176a8c1f06e9ee8748d82d438ff2a285fcceac5a4382e564a2"}` | Container image the pod runs, composed as `registry/repository:tag`. |
 | image.pullPolicy | string | `""` | Image pull policy. Empty resolves automatically from the tag/digest. |
 | image.registry | string | `""` | Registry host. Empty means Docker Hub. |
 | image.repository | string | `"timmi6790/cloudflare-access-webhook-redirect"` | Container image repository (e.g. docker.io/user/image) |
 | image.tag | string | `"v1.2.1@sha256:39a93296a96f65176a8c1f06e9ee8748d82d438ff2a285fcceac5a4382e564a2"` | The container image tag, pinned by digest (`vX.Y.Z@sha256:...`). The digest pins the pull, while the tag stays on as the readable version marker. Defaults to the chart's `appVersion` when empty. |
 | imagePullSecrets | list | `[]` | Optional image pull secrets for private registries |
+| ingress | object | `{"annotations":{},"enabled":false,"hosts":[],"ingressClassName":"nginx","tls":[]}` | The Ingress in front of the Service. An independent switch from `gateway`, so a cluster migrating from an Ingress controller to a Gateway implementation can run both. |
 | ingress.annotations | object | `{}` | Additional ingress annotations Example:   cert-manager.io/cluster-issuer: letsencrypt-prod   nginx.ingress.kubernetes.io/rate-limit: "100" |
 | ingress.enabled | bool | `false` | Enable ingress resource |
 | ingress.hosts | list | `[]` | Host definitions for ingress Example:   - host: example.local     paths:       - path: /         pathType: Prefix |
 | ingress.ingressClassName | string | `"nginx"` | Ingress class name (e.g. nginx) |
 | ingress.tls | list | `[]` | TLS configuration for ingress Example:   - secretName: example-tls     hosts:       - example.local |
 | kubeVersionOverride | string | `""` | Kubernetes version to target when branching on API availability. Lets `helm template` render for a specific cluster version without a live connection. |
+| livenessProbe | object | `{"enabled":true,"failureThreshold":3,"httpGet":{"path":"/health","port":"http"},"initialDelaySeconds":10,"periodSeconds":10,"timeoutSeconds":5}` | Liveness probe, whose failure restarts the container. `successThreshold` is dropped from the rendered probe, because the API server accepts nothing but 1 there. |
 | livenessProbe.enabled | bool | `true` | Enable liveness probe |
 | livenessProbe.failureThreshold | int | `3` | Failure threshold |
+| livenessProbe.httpGet | object | `{"path":"/health","port":"http"}` | The probe handler, in the same four forms `startupProbe.httpGet` accepts. |
 | livenessProbe.httpGet.path | string | `"/health"` | Health check path |
 | livenessProbe.httpGet.port | string | `"http"` | Health check port |
 | livenessProbe.initialDelaySeconds | int | `10` | Initial delay before probe starts |
@@ -500,7 +507,7 @@ policy pointing at the wrong Gateway looks correct and blocks everything.
 | nameOverride | string | `""` | Override the chart name |
 | namespaceOverride | string | `""` | Deploy into a namespace other than the release namespace. |
 | networkPolicy | object | `{"cilium":{"description":"","egress":{"customRules":[],"dnsMatchPatterns":[],"entityPorts":[],"fqdnPorts":[],"httpRules":[],"toEntities":[],"toFQDNs":[]},"enableDefaultDeny":true,"extraEgress":[],"extraIngress":[],"ingress":{"customRules":[],"fromEntities":[]}},"egress":{"cidr":"0.0.0.0/0","customRules":[],"dns":{"enabled":true,"namespaceSelector":{"kubernetes.io/metadata.name":"kube-system"},"podSelector":{"k8s-app":"kube-dns"}},"enabled":true,"except":["10.0.0.0/8","172.16.0.0/12","192.168.0.0/16","169.254.0.0/16"],"http":{"enabled":false},"https":{"enabled":true}},"enabled":false,"engine":"kubernetes","extraEgress":[],"extraIngress":[],"ingress":{"controller":{"enabled":true,"namespace":"traefik","ports":[],"selector":{"app.kubernetes.io/name":"traefik"}},"customRules":[],"enabled":true,"gateway":{"enabled":true,"namespace":"","ports":[],"selector":{}},"monitoring":{"enabled":true,"namespace":"monitoring","namespaceSelector":{},"ports":[]}}}` | Network policy configuration |
-| networkPolicy.cilium | object | `{"description":"","egress":{"customRules":[],"dnsMatchPatterns":[],"entityPorts":[],"fqdnPorts":[],"httpRules":[],"toEntities":[],"toFQDNs":[]},"enableDefaultDeny":true,"extraEgress":[],"extraIngress":[],"ingress":{"customRules":[],"fromEntities":[]}}` | Cilium-only additions, used when `engine` is `cilium` or `both`. Everything above is translated into the CiliumNetworkPolicy automatically; these are the rules the portable API has no way to express.  Note that `extraIngress`, `extraEgress` and the per-section `customRules` above are *not* carried over: those are verbatim `networking.k8s.io/v1` rule objects and are not valid CNP. The fields below are their counterparts. |
+| networkPolicy.cilium | object | `{"description":"","egress":{"customRules":[],"dnsMatchPatterns":[],"entityPorts":[],"fqdnPorts":[],"httpRules":[],"toEntities":[],"toFQDNs":[]},"enableDefaultDeny":true,"extraEgress":[],"extraIngress":[],"ingress":{"customRules":[],"fromEntities":[]}}` | Cilium-only additions, used when `engine` is `cilium` or `both`. Everything above is translated into the CiliumNetworkPolicy automatically; these are the rules the portable API has no way to express.  `extraIngress`, `extraEgress` and the per-section `customRules` above are *not* carried over: those are verbatim `networking.k8s.io/v1` rule objects and are not valid CNP. The fields below are their counterparts. |
 | networkPolicy.cilium.description | string | `""` | `spec.description`, which Cilium surfaces in `cilium policy get` and in Hubble flow verdicts. The one place to record why a rule exists where an operator debugging a drop will actually see it. |
 | networkPolicy.cilium.egress | object | `{"customRules":[],"dnsMatchPatterns":[],"entityPorts":[],"fqdnPorts":[],"httpRules":[],"toEntities":[],"toFQDNs":[]}` | Cilium-only egress rules. |
 | networkPolicy.cilium.egress.customRules | list | `[]` | Additional egress rules in CiliumNetworkPolicy form, appended verbatim. |
@@ -554,6 +561,7 @@ policy pointing at the wrong Gateway looks correct and blocks everything.
 | nodeSelector | object | `{}` | Node selector labels for scheduling |
 | podAnnotations | object | `{}` | Additional annotations for the Pod metadata |
 | podAntiAffinity | string | `""` | Shorthand for spreading replicas across nodes. `soft` prefers, `hard` requires. Ignored when `affinity` is set. |
+| podDisruptionBudget | object | `{"enabled":false,"maxUnavailable":1,"minAvailable":1}` | PodDisruptionBudget for the pods. `minAvailable` and `maxUnavailable` both default to 1 and the API server refuses a budget carrying both, so set one of them to `null`. |
 | podDisruptionBudget.enabled | bool | `false` | Enable PodDisruptionBudget |
 | podDisruptionBudget.maxUnavailable | int | `1` | Maximum unavailable pods |
 | podDisruptionBudget.minAvailable | int | `1` | Minimum available pods |
@@ -564,32 +572,42 @@ policy pointing at the wrong Gateway looks correct and blocks everything.
 | podSecurityContext.runAsUser | int | `10001` | User ID to run as |
 | podSecurityContextPreset | string | `"restricted"` | Pod security context baseline. `restricted` applies the Pod Security Standards restricted profile (`runAsNonRoot`, `seccompProfile: RuntimeDefault`, `fsGroupChangePolicy: OnRootMismatch`) on top of the identity fields below. |
 | priorityClassName | string | `""` | Optional Kubernetes PriorityClass name |
+| readinessProbe | object | `{"enabled":true,"failureThreshold":3,"httpGet":{"path":"/health","port":"http"},"initialDelaySeconds":5,"periodSeconds":5,"timeoutSeconds":3}` | Readiness probe. While it fails the pod leaves the Service endpoints and keeps running. |
 | readinessProbe.enabled | bool | `true` | Enable readiness probe |
 | readinessProbe.failureThreshold | int | `3` | Failure threshold |
+| readinessProbe.httpGet | object | `{"path":"/health","port":"http"}` | The probe handler, in the same four forms `startupProbe.httpGet` accepts. |
 | readinessProbe.httpGet.path | string | `"/health"` | Health check path |
 | readinessProbe.httpGet.port | string | `"http"` | Health check port |
 | readinessProbe.initialDelaySeconds | int | `5` | Initial delay before probe starts |
 | readinessProbe.periodSeconds | int | `5` | Probe frequency |
 | readinessProbe.timeoutSeconds | int | `3` | Probe timeout |
 | replicaCount | int | `1` | Number of replicas to deploy |
+| resources | object | `{"limits":{"cpu":"100m","memory":"50Mi"},"requests":{"cpu":"10m","memory":"35Mi"}}` | Requests and limits for the container, passed through to the pod spec unchanged. |
+| resources.limits | object | `{"cpu":"100m","memory":"50Mi"}` | Ceiling for the container. Past the memory limit the kubelet OOM-kills it; past the CPU limit it is throttled instead. |
 | resources.limits.cpu | string | `"100m"` | Maximum CPU usage (e.g. 100m = 0.1 core) |
 | resources.limits.memory | string | `"50Mi"` | Maximum memory usage (e.g. 64Mi) |
+| resources.requests | object | `{"cpu":"10m","memory":"35Mi"}` | What the scheduler reserves. Without a CPU request the pod is BestEffort and is the first thing evicted under node pressure. |
 | resources.requests.cpu | string | `"10m"` | Guaranteed CPU request |
 | resources.requests.memory | string | `"35Mi"` | Guaranteed memory request |
 | revisionHistoryLimit | int | `3` | Number of old ReplicaSets retained for rollback. |
 | securityContext | object | `{}` | Container security context, merged over the preset. The preset mounts the root filesystem read-only; a writable /tmp is provided automatically via an emptyDir volume. |
 | securityContextPreset | string | `"restricted"` | Container security context baseline. `restricted` drops all Linux capabilities and forbids privilege escalation, running as root and a writable root filesystem. |
+| server | object | `{"host":"0.0.0.0","port":8080}` | The listener the proxy binds. Rendered into the mounted `config.toml` under `server`, never into the environment. |
 | server.host | string | `"0.0.0.0"` | Bind address (`server.host`). The application's own default is `127.0.0.1`, which in a container answers nothing; `0.0.0.0` is what makes the Service reach it. |
 | server.port | int | `8080` | Bind port (`server.port`). Also the container port, the Service target and what every probe and NetworkPolicy rule is written against. |
+| service | object | `{"annotations":{},"port":80,"type":"ClusterIP"}` | The Service in front of the pods. `port` is what the Ingress and the HTTPRoute route to; the container port comes from `server.port`. |
 | service.annotations | object | `{}` | Additional service annotations |
 | service.port | int | `80` | Service port |
 | service.type | string | `"ClusterIP"` | Kubernetes service type |
+| serviceAccount | object | `{"annotations":{},"automountToken":false,"create":true,"name":""}` | ServiceAccount the pods run under. `create: false` with no `name` means the `default` one. |
 | serviceAccount.annotations | object | `{}` | Additional annotations for the service account |
 | serviceAccount.automountToken | bool | `false` | Whether to automount the service account token |
 | serviceAccount.create | bool | `true` | Whether to create a dedicated service account |
 | serviceAccount.name | string | `""` | Custom service account name (auto-generated if empty) |
+| startupProbe | object | `{"enabled":true,"failureThreshold":30,"httpGet":{"path":"/health","port":"http"},"initialDelaySeconds":2,"periodSeconds":5,"successThreshold":1,"timeoutSeconds":3}` | Startup probe, which holds the other two off until it passes. `failureThreshold` times `periodSeconds` is the budget before the kubelet restarts the container: 150 seconds here. |
 | startupProbe.enabled | bool | `true` | Enable startup probe |
 | startupProbe.failureThreshold | int | `30` | Failure threshold |
+| startupProbe.httpGet | object | `{"path":"/health","port":"http"}` | The probe handler. `tcpSocket`, `exec` and `grpc` are accepted in its place; an enabled probe with no handler at all fails the render. |
 | startupProbe.httpGet.path | string | `"/health"` | Health check path |
 | startupProbe.httpGet.port | string | `"http"` | Health check port |
 | startupProbe.initialDelaySeconds | int | `2` | Initial delay before probe starts |
@@ -597,11 +615,13 @@ policy pointing at the wrong Gateway looks correct and blocks everything.
 | startupProbe.successThreshold | int | `1` | Success threshold |
 | startupProbe.timeoutSeconds | int | `3` | Probe timeout |
 | strategy | object | `{}` | Deployment update strategy. Empty uses the Kubernetes default rolling update. |
+| telemetry | object | `{"logLevel":"info","sentryDsn":""}` | Logging and error reporting. Installed once when the process starts, so a change here needs a restart even though the rest of the configuration reloads in place. |
 | telemetry.logLevel | string | `"info"` | Log level (`telemetry.log_level`). |
 | telemetry.sentryDsn | string | `""` | Sentry DSN (`telemetry.sentry_dsn`). Empty disables Sentry entirely. |
 | terminationGracePeriodSeconds | int | `30` | Grace period for pod shutdown. |
 | tolerations | list | `[]` | Tolerations for taints |
 | topologySpreadConstraints | list | `[]` | Pod topology spread constraints for availability |
+| webhook | object | `{"paths":{},"targetBase":""}` | What the proxy forwards and where. Both keys are required and the render fails without them, unless `configExtraToml` is set: the chart never parses that, so it stops checking. |
 | webhook.paths | object | `{}` | Path regex to the methods allowed on it (`webhook.paths`). Patterns are anchored, so `/webhook/.*` matches `/webhook/github` but not `/api/webhook/github`. Methods are `ALL`, `GET`, `POST`, `PUT`, `PATCH` or `DELETE`. Required — a proxy with no allowed path forwards nothing. Example:   "/webhook/.*":     - ALL   "/api/public/.*":     - GET     - POST |
 | webhook.targetBase | string | `""` | The Cloudflare Access protected service every allowed path is joined onto (`webhook.target_base`). Required. |
 

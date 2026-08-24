@@ -220,21 +220,26 @@ policy pointing at the wrong Gateway looks correct and blocks everything.
 | commonLabels | object | `{}` | Labels added to every object this chart creates. |
 | config | object | `{}` | Extra configuration, expressed as the TOML tree of [the bot's README](https://github.com/TimSchoenle/netcup-offer-bot#configuration) (`feed.check_interval_secs`, `metrics.port`, ...). Merged over everything the chart derives from the values above, so it can both extend and override them. Rendered into the mounted ConfigMap — never into the environment, which the loader refuses to combine with a file. |
 | configExtraToml | string | `""` | Verbatim TOML appended after the rendered configuration. The escape hatch for anything the chart's TOML renderer cannot express, notably arrays of tables. |
+| configMount | object | `{"configDir":"/etc/netcup-offer-bot/config","secretsDir":"/etc/netcup-offer-bot/secrets"}` | Where the rendered configuration and the credential file land in the container. |
 | configMount.configDir | string | `"/etc/netcup-offer-bot/config"` | Directory the rendered `config.toml` is mounted at, passed as `NETCUP_OFFER_BOT_CONFIG`. |
 | configMount.secretsDir | string | `"/etc/netcup-offer-bot/secrets"` | Directory the credential file is mounted at, passed as `NETCUP_OFFER_BOT_SECRETS_DIR`. |
+| discord | object | `{"webhookUrl":""}` | Where the offers are posted. The webhook is a bearer credential, so it is rendered into the Secret and the render fails when neither it nor `existingSecret` supplies one. |
 | discord.webhookUrl | string | `""` | Discord webhook the offers are posted to (`discord.webhook_url`). Rendered into the chart's Secret and mounted as a file rather than passed as an environment variable, so it never appears in `kubectl describe pod` or in the environment of a child process. Required unless `existingSecret` supplies it. |
 | existingSecret | string | `""` | Name of an existing Secret holding the Discord webhook, which keeps it out of `values.yaml` and out of the Helm release object. **Its key is the configuration path, not a free-form name**: `discord__webhook_url`, because the file name is what the loader parses. Set, the chart renders no Secret of its own and `discord.webhookUrl` is ignored. |
 | extraEnv | list | `[]` | Additional environment variables for the application container. |
 | extraVolumeMounts | list | `[]` | Additional volume mounts added to the application container. |
 | extraVolumes | list | `[]` | Additional volumes added to the pod. |
+| feed | object | `{"checkIntervalSecs":180}` | The RSS poll loop. Only the interval is configurable; which feed the bot watches is not a configuration key. |
 | feed.checkIntervalSecs | int | `180` | Seconds between two RSS feed checks (`feed.check_interval_secs`). |
 | fullnameOverride | string | `""` | Override the full generated resource name. |
+| image | object | `{"pullPolicy":"","registry":"","repository":"timmi6790/netcup-offer-bot","tag":"v2.1.1@sha256:550648f0c51c9664fb519b1e3f1e421a2cbf441ed0a96e025a34b2bcc39f12b9"}` | Container image the pod runs, composed as `registry/repository:tag`. |
 | image.pullPolicy | string | `""` | The image pull policy. Empty resolves automatically from the tag/digest. |
 | image.registry | string | `""` | Registry host. Empty means Docker Hub. |
 | image.repository | string | `"timmi6790/netcup-offer-bot"` | The container image repository. |
 | image.tag | string | `"v2.1.1@sha256:550648f0c51c9664fb519b1e3f1e421a2cbf441ed0a96e025a34b2bcc39f12b9"` | The container image tag. Defaults to the chart's `appVersion` when empty. |
 | imagePullSecrets | list | `[]` | Optional image pull secrets for private registries |
 | kubeVersionOverride | string | `""` | Kubernetes version to target when branching on API availability. Lets `helm template` render for a specific cluster version without a live connection. |
+| metrics | object | `{"enabled":false,"ip":"0.0.0.0","podMonitor":{"enabled":true,"interval":"1m","labels":{},"scrapeTimeout":"30s"},"port":9184}` | The Prometheus exporter and the PodMonitor that scrapes it. The bot binds no metrics listener at all until `enabled` is set. |
 | metrics.enabled | bool | `false` | Enable Prometheus metrics endpoint. |
 | metrics.ip | string | `"0.0.0.0"` | Address the Prometheus exporter binds (`metrics.ip`). The bot's own default is `127.0.0.1`, which answers nothing from outside the container — a PodMonitor pointed at it scrapes a refused connection. |
 | metrics.podMonitor | object | `{"enabled":true,"interval":"1m","labels":{},"scrapeTimeout":"30s"}` | PodMonitor configuration for Prometheus Operator integration. Renamed from `serviceMonitor`: the chart has always rendered a PodMonitor, and there is no Service to monitor. |
@@ -246,7 +251,7 @@ policy pointing at the wrong Gateway looks correct and blocks everything.
 | nameOverride | string | `""` | Override the chart name used in resource names and labels. |
 | namespaceOverride | string | `""` | Deploy into a namespace other than the release namespace. |
 | networkPolicy | object | `{"cilium":{"description":"","egress":{"customRules":[],"dnsMatchPatterns":[],"entityPorts":[],"fqdnPorts":[],"httpRules":[],"toEntities":[],"toFQDNs":[]},"enableDefaultDeny":true,"extraEgress":[],"extraIngress":[],"ingress":{"customRules":[],"fromEntities":[]}},"egress":{"cidr":"0.0.0.0/0","customRules":[],"dns":{"enabled":true,"namespaceSelector":{"kubernetes.io/metadata.name":"kube-system"},"podSelector":{"k8s-app":"kube-dns"}},"enabled":true,"except":["10.0.0.0/8","172.16.0.0/12","192.168.0.0/16","169.254.0.0/16"],"http":{"enabled":false},"https":{"enabled":true}},"enabled":false,"engine":"kubernetes","extraEgress":[],"extraIngress":[],"ingress":{"controller":{"enabled":true,"namespace":"traefik","ports":[],"selector":{"app.kubernetes.io/name":"traefik"}},"customRules":[],"enabled":true,"monitoring":{"enabled":true,"namespace":"monitoring","namespaceSelector":{},"ports":[]}}}` | Network policy configuration |
-| networkPolicy.cilium | object | `{"description":"","egress":{"customRules":[],"dnsMatchPatterns":[],"entityPorts":[],"fqdnPorts":[],"httpRules":[],"toEntities":[],"toFQDNs":[]},"enableDefaultDeny":true,"extraEgress":[],"extraIngress":[],"ingress":{"customRules":[],"fromEntities":[]}}` | Cilium-only additions, used when `engine` is `cilium` or `both`. Everything above is translated into the CiliumNetworkPolicy automatically; these are the rules the portable API has no way to express.  Note that `extraIngress`, `extraEgress` and the per-section `customRules` above are *not* carried over: those are verbatim `networking.k8s.io/v1` rule objects and are not valid CNP. The fields below are their counterparts. |
+| networkPolicy.cilium | object | `{"description":"","egress":{"customRules":[],"dnsMatchPatterns":[],"entityPorts":[],"fqdnPorts":[],"httpRules":[],"toEntities":[],"toFQDNs":[]},"enableDefaultDeny":true,"extraEgress":[],"extraIngress":[],"ingress":{"customRules":[],"fromEntities":[]}}` | Cilium-only additions, used when `engine` is `cilium` or `both`. Everything above is translated into the CiliumNetworkPolicy automatically; these are the rules the portable API has no way to express.  `extraIngress`, `extraEgress` and the per-section `customRules` above are *not* carried over: those are verbatim `networking.k8s.io/v1` rule objects and are not valid CNP. The fields below are their counterparts. |
 | networkPolicy.cilium.description | string | `""` | `spec.description`, which Cilium surfaces in `cilium policy get` and in Hubble flow verdicts. The one place to record why a rule exists where an operator debugging a drop will actually see it. |
 | networkPolicy.cilium.egress | object | `{"customRules":[],"dnsMatchPatterns":[],"entityPorts":[],"fqdnPorts":[],"httpRules":[],"toEntities":[],"toFQDNs":[]}` | Cilium-only egress rules. |
 | networkPolicy.cilium.egress.customRules | list | `[]` | Additional egress rules in CiliumNetworkPolicy form, appended verbatim. |
@@ -293,6 +298,7 @@ policy pointing at the wrong Gateway looks correct and blocks everything.
 | networkPolicy.ingress.monitoring.namespaceSelector | object | `{}` | Namespace selector matching the monitoring namespace, replacing `namespace` when set. For a Prometheus labelled rather than named, or one of several namespaces that scrape. |
 | networkPolicy.ingress.monitoring.ports | list | `[]` | Restrict the rule to specific ports. Empty means all ports. |
 | nodeSelector | object | `{}` | Node selector for pod assignment. |
+| persistence | object | `{"data":{"accessMode":"ReadWriteOnce","annotations":{},"enabled":true,"existingClaim":"","size":"10Mi","storageClassName":""}}` | The volumes the pod mounts. One today, holding the seen-offer state. |
 | persistence.data | object | `{"accessMode":"ReadWriteOnce","annotations":{},"enabled":true,"existingClaim":"","size":"10Mi","storageClassName":""}` | Configuration for persistent data storage. The bot keeps its seen-offer state on disk; disabling persistence means it re-announces every offer after a restart. |
 | persistence.data.accessMode | string | `"ReadWriteOnce"` | The access mode for the persistent volume. `ReadWriteOnce` forces the Deployment to the `Recreate` update strategy: a rolling update would wedge, because the replacement pod cannot attach a volume the outgoing pod still holds. |
 | persistence.data.annotations | object | `{}` | Annotations for the PersistentVolumeClaim, e.g. `helm.sh/resource-policy: keep`. |
@@ -310,6 +316,7 @@ policy pointing at the wrong Gateway looks correct and blocks everything.
 | podSecurityContextPreset | string | `"restricted"` | Pod security context baseline. `restricted` applies the Pod Security Standards restricted profile (`runAsNonRoot`, `seccompProfile: RuntimeDefault`, `fsGroupChangePolicy: OnRootMismatch`) on top of the identity fields below. |
 | priorityClassName | string | `""` | Optional Kubernetes PriorityClass name |
 | replicaCount | int | `1` | Number of replicas. The bot holds a ReadWriteOnce volume, so more than one replica will not schedule. |
+| resources | object | `{"limits":{"memory":"20Mi"},"requests":{"cpu":"10m","memory":"15Mi"}}` | Requests and limits for the container, passed through to the pod spec unchanged. |
 | resources.limits | object | `{"memory":"20Mi"}` | Resource limits for the container. |
 | resources.limits.memory | string | `"20Mi"` | Maximum allowed memory usage. |
 | resources.requests | object | `{"cpu":"10m","memory":"15Mi"}` | Resource requests for the container. |
@@ -318,11 +325,13 @@ policy pointing at the wrong Gateway looks correct and blocks everything.
 | revisionHistoryLimit | int | `3` | Number of old ReplicaSets retained for rollback. |
 | securityContext | object | `{}` | Container security context, merged over the preset. |
 | securityContextPreset | string | `"restricted"` | Container security context baseline. `restricted` drops all Linux capabilities and forbids privilege escalation, running as root and a writable root filesystem. |
+| serviceAccount | object | `{"annotations":{},"automountToken":false,"create":true,"name":""}` | ServiceAccount the pods run under. `create: false` with no `name` means the `default` one. |
 | serviceAccount.annotations | object | `{}` | Additional annotations for the service account |
 | serviceAccount.automountToken | bool | `false` | Whether to automount the service account token |
 | serviceAccount.create | bool | `true` | Whether to create a dedicated service account |
 | serviceAccount.name | string | `""` | Custom service account name (auto-generated if empty) |
 | strategy | object | `{}` | Deployment update strategy. Empty uses the Kubernetes default rolling update. |
+| telemetry | object | `{"logLevel":"INFO","sentryDsn":""}` | Logging and error reporting, rendered under `telemetry` in `config.toml`. |
 | telemetry.logLevel | string | `"INFO"` | Log level (`telemetry.log_level`). |
 | telemetry.sentryDsn | string | `""` | Sentry DSN (`telemetry.sentry_dsn`). Empty disables Sentry entirely. |
 | terminationGracePeriodSeconds | int | `30` | Grace period for pod shutdown. |

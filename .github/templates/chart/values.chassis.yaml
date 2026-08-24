@@ -46,6 +46,7 @@ securityContext: {}
 # @schema
 # additionalProperties: true
 # @schema
+# -- ServiceAccount the pods run under. `create: false` with no `name` means the `default` one.
 serviceAccount:
   # @schema
   # type: boolean
@@ -75,10 +76,13 @@ serviceAccount:
 # @schema
 # $ref: https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.ResourceRequirements
 # @schema
+# -- Requests and limits for the container, passed through to the pod spec unchanged.
 resources:
   # @schema
   # additionalProperties: true
   # @schema
+  # -- Ceiling for the container. Past the memory limit the kubelet OOM-kills it; past the CPU
+  # limit it is throttled instead.
   limits:
     # @schema
     # type: string
@@ -95,6 +99,8 @@ resources:
   # @schema
   # additionalProperties: true
   # @schema
+  # -- What the scheduler reserves. Without a CPU request the pod is BestEffort and is the first
+  # thing evicted under node pressure.
   requests:
     # @schema
     # type: string
@@ -525,9 +531,9 @@ networkPolicy:
   # translated into the CiliumNetworkPolicy automatically; these are the rules the portable API
   # has no way to express.
   #
-  # Note that `extraIngress`, `extraEgress` and the per-section `customRules` above are *not*
-  # carried over: those are verbatim `networking.k8s.io/v1` rule objects and are not valid CNP.
-  # The fields below are their counterparts.
+  # `extraIngress`, `extraEgress` and the per-section `customRules` above are *not* carried over:
+  # those are verbatim `networking.k8s.io/v1` rule objects and are not valid CNP. The fields
+  # below are their counterparts.
   cilium:
     # @schema
     # type: string

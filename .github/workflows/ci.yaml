@@ -473,6 +473,38 @@ jobs:
       - name: Check immutable fields
         run: just check-immutable
 
+  # The `# --` descriptions in `values.yaml`, which are the only documentation an operator gets
+  # for a value: helm-docs renders them into the chart README and helm-schema copies them into
+  # `values.schema.json`, where an editor shows them on hover.
+  #
+  # Blocking, and deliberately not part of the Documentation job. That job repairs what it finds
+  # and commits the result, which works for a generated file and cannot work here — a missing
+  # description is prose nobody has written, and no job can write it.
+  #
+  # Its own job rather than a step in Lint Charts: it needs no chart-testing, no kube-linter and
+  # no rendered manifests, only the committed values files and the system `python3`.
+  values-docs:
+    name: Values Documentation
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # to checkout code
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Setup toolchain
+        uses: ./.github/actions/setup-toolchain
+
+      - name: Check every value carries a description
+        run: just check-values-docs
+
   policy-scan:
     name: Policy Scan
     runs-on: ubuntu-latest

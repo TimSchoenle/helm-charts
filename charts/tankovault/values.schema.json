@@ -11,6 +11,7 @@
     },
     "anilist": {
       "additionalProperties": true,
+      "description": "The AniList OAuth application accounts are linked through, read by `services.sync`.",
       "properties": {
         "clientId": {
           "default": "",
@@ -46,6 +47,7 @@
     },
     "auth": {
       "additionalProperties": true,
+      "description": "The three long-lived secrets the API signs and seals with. Each is generated on a first\ninstall and kept across upgrades; the pepper and the MFA key can never change afterwards.",
       "properties": {
         "jwtSecret": {
           "default": "",
@@ -78,6 +80,7 @@
       "properties": {
         "image": {
           "additionalProperties": true,
+          "description": "Repository and tag for the bootstrap image. Registry and pull policy come from the\ntop-level `image`.",
           "properties": {
             "repository": {
               "default": "timschoenle/tankovault-bootstrap",
@@ -99,6 +102,7 @@
         },
         "migrate": {
           "additionalProperties": true,
+          "description": "How and when `bootstrap migrate` runs against the database.",
           "properties": {
             "argoSyncWaveBase": {
               "default": 0,
@@ -147,6 +151,7 @@
         },
         "seedAdmin": {
           "additionalProperties": true,
+          "description": "The first administrator, created once on install and never touched again.",
           "properties": {
             "email": {
               "default": "",
@@ -182,6 +187,7 @@
         },
         "seedProviders": {
           "additionalProperties": true,
+          "description": "The built-in provider presets, installed once on install.",
           "properties": {
             "enabled": {
               "default": false,
@@ -741,6 +747,7 @@
             },
             "grafanaOperator": {
               "additionalProperties": true,
+              "description": "The grafana-operator v5 path, rendered in addition to the ConfigMap above rather than\ninstead of it. Everything here is ignored while `enabled` is false.",
               "properties": {
                 "allowCrossNamespaceImport": {
                   "default": true,
@@ -769,6 +776,7 @@
                   "properties": {
                     "matchLabels": {
                       "additionalProperties": false,
+                      "description": "Labels every Grafana custom resource to import into has to carry.",
                       "properties": {
                         "dashboards": {
                           "default": "grafana",
@@ -827,6 +835,7 @@
         },
         "image": {
           "additionalProperties": true,
+          "description": "Container image the workload runs, composed by `common.image` as `registry/repository:tag`.",
           "properties": {
             "pullPolicy": {
               "default": "",
@@ -1529,6 +1538,7 @@
         },
         "serviceAccount": {
           "additionalProperties": true,
+          "description": "ServiceAccount the pods run under. `create: false` with no `name` means the `default` one.",
           "properties": {
             "annotations": {
               "additionalProperties": true,
@@ -1643,6 +1653,7 @@
     },
     "configReload": {
       "additionalProperties": true,
+      "description": "Where the configuration and the credential files land in the container, and whether a change\nto either rolls the Deployments.",
       "properties": {
         "configDir": {
           "default": "/etc/tankovault/config",
@@ -2428,6 +2439,7 @@
     },
     "image": {
       "additionalProperties": true,
+      "description": "Registry and pull policy shared by every image this chart runs. The repository and the tag\nare per component, under `services.\u003cname\u003e.image` and the bundled datastores.",
       "properties": {
         "pullPolicy": {
           "default": "",
@@ -2543,6 +2555,7 @@
         },
         "tls": {
           "additionalProperties": true,
+          "description": "TLS on the primary Ingress.",
           "properties": {
             "enabled": {
               "default": false,
@@ -2926,6 +2939,7 @@
       "properties": {
         "dashboard": {
           "additionalProperties": true,
+          "description": "Grafana dashboard delivery, through a labelled ConfigMap and optionally through\ngrafana-operator.",
           "properties": {
             "enabled": {
               "default": false,
@@ -2936,6 +2950,7 @@
             },
             "grafanaOperator": {
               "additionalProperties": true,
+              "description": "The grafana-operator v5 path, rendered in addition to the ConfigMap rather than instead\nof it.",
               "properties": {
                 "allowCrossNamespaceImport": {
                   "default": true,
@@ -2964,6 +2979,7 @@
                   "properties": {
                     "matchLabels": {
                       "additionalProperties": false,
+                      "description": "Labels every Grafana custom resource to import into has to carry.",
                       "properties": {
                         "dashboards": {
                           "default": "grafana",
@@ -3023,6 +3039,7 @@
         },
         "natsExporter": {
           "additionalProperties": true,
+          "description": "The sidecar that turns NATS' own monitoring protocol into a Prometheus exposition.",
           "properties": {
             "enabled": {
               "default": false,
@@ -3033,6 +3050,7 @@
             },
             "image": {
               "additionalProperties": true,
+              "description": "Repository and tag for the exporter image.",
               "properties": {
                 "repository": {
                   "default": "natsio/prometheus-nats-exporter",
@@ -3078,6 +3096,7 @@
         },
         "prometheusRule": {
           "additionalProperties": true,
+          "description": "The recording and alerting rules under `rules/`, installed as a PrometheusRule.",
           "properties": {
             "enabled": {
               "default": false,
@@ -3109,6 +3128,7 @@
         },
         "serviceMonitor": {
           "additionalProperties": true,
+          "description": "Prometheus Operator scrape configuration, one ServiceMonitor per enabled service.",
           "properties": {
             "enabled": {
               "default": false,
@@ -3173,6 +3193,7 @@
         },
         "image": {
           "additionalProperties": true,
+          "description": "Repository and tag for the bundled NATS.",
           "properties": {
             "repository": {
               "default": "nats",
@@ -3194,6 +3215,7 @@
         },
         "persistence": {
           "additionalProperties": true,
+          "description": "The volume the JetStream file store lives on.",
           "properties": {
             "enabled": {
               "default": true,
@@ -3241,7 +3263,7 @@
       "properties": {
         "cilium": {
           "additionalProperties": true,
-          "description": "Cilium-only additions, used when `engine` is `cilium` or `both`. The whole topology above\nis rendered into the CiliumNetworkPolicies automatically; these are the rules the portable API\nhas no way to express.\n\nNote that `extraIngress` and `extraEgress` above are *not* carried over: those are verbatim\n`networking.k8s.io/v1` rule objects and are not valid CNP. The fields below are their\ncounterparts.",
+          "description": "Cilium-only additions, used when `engine` is `cilium` or `both`. The whole topology above\nis rendered into the CiliumNetworkPolicies automatically; these are the rules the portable API\nhas no way to express.\n\n`extraIngress` and `extraEgress` above are *not* carried over: those are verbatim\n`networking.k8s.io/v1` rule objects and are not valid CNP. The fields below are their\ncounterparts.",
           "properties": {
             "description": {
               "default": "",
@@ -3428,6 +3450,7 @@
         },
         "ingressController": {
           "additionalProperties": true,
+          "description": "Selectors matching the ingress controller. Read only while an Ingress is enabled, and only\nfor the service that Ingress publishes.",
           "properties": {
             "namespaceSelector": {
               "additionalProperties": {
@@ -3463,6 +3486,7 @@
         },
         "monitoring": {
           "additionalProperties": true,
+          "description": "Where scrapes are allowed from. Every enabled service and datastore gains an ingress rule\non the metrics port for it.",
           "properties": {
             "namespaceSelector": {
               "additionalProperties": {
@@ -3487,6 +3511,7 @@
       "properties": {
         "auth": {
           "additionalProperties": true,
+          "description": "Credentials for the bundled database. The password is generated and kept across upgrades\nwhen left empty.",
           "properties": {
             "database": {
               "default": "tankovault",
@@ -3522,6 +3547,7 @@
         },
         "image": {
           "additionalProperties": true,
+          "description": "Repository and tag for the bundled PostgreSQL.",
           "properties": {
             "repository": {
               "default": "pgvector/pgvector",
@@ -3543,6 +3569,7 @@
         },
         "persistence": {
           "additionalProperties": true,
+          "description": "The volume the data directory lives on.",
           "properties": {
             "enabled": {
               "default": true,
@@ -3597,6 +3624,7 @@
     },
     "serviceAccount": {
       "additionalProperties": true,
+      "description": "ServiceAccount every workload runs under. `create: false` with no `name` means the `default`\none.",
       "properties": {
         "annotations": {
           "additionalProperties": true,
@@ -3633,6 +3661,7 @@
           "properties": {
             "autoscaling": {
               "additionalProperties": true,
+              "description": "HorizontalPodAutoscaler for this service. While it is enabled the Deployment renders no\n`replicas`, so `replicaCount` is ignored.",
               "properties": {
                 "enabled": {
                   "default": false,
@@ -3697,6 +3726,7 @@
             },
             "image": {
               "additionalProperties": true,
+              "description": "Repository and tag for this service. Registry and pull policy come from the top-level\n`image`.",
               "properties": {
                 "repository": {
                   "default": "timschoenle/tankovault-api",
@@ -3718,6 +3748,7 @@
             },
             "podDisruptionBudget": {
               "additionalProperties": true,
+              "description": "PodDisruptionBudget for this service's pods.",
               "properties": {
                 "enabled": {
                   "default": false,
@@ -3766,6 +3797,7 @@
             },
             "service": {
               "additionalProperties": true,
+              "description": "The Service in front of this deployment. Its port is fixed by the chart, so only the type\nand the annotations are open.",
               "properties": {
                 "annotations": {
                   "additionalProperties": true,
@@ -3799,6 +3831,7 @@
           "properties": {
             "autoscaling": {
               "additionalProperties": true,
+              "description": "HorizontalPodAutoscaler for this service. While it is enabled the Deployment renders no\n`replicas`, so `replicaCount` is ignored.",
               "properties": {
                 "enabled": {
                   "default": false,
@@ -3863,6 +3896,7 @@
             },
             "image": {
               "additionalProperties": true,
+              "description": "Repository and tag for this service. Registry and pull policy come from the top-level\n`image`.",
               "properties": {
                 "repository": {
                   "default": "timschoenle/tankovault-challenge-solver",
@@ -3884,6 +3918,7 @@
             },
             "podDisruptionBudget": {
               "additionalProperties": true,
+              "description": "PodDisruptionBudget for this service's pods.",
               "properties": {
                 "enabled": {
                   "default": false,
@@ -3932,6 +3967,7 @@
             },
             "service": {
               "additionalProperties": true,
+              "description": "The Service in front of this deployment. Its port is fixed by the chart, so only the type\nand the annotations are open.",
               "properties": {
                 "annotations": {
                   "additionalProperties": true,
@@ -3979,6 +4015,7 @@
             },
             "image": {
               "additionalProperties": true,
+              "description": "Repository and tag for this service. Registry and pull policy come from the top-level\n`image`.",
               "properties": {
                 "repository": {
                   "default": "timschoenle/tankovault-control-plane",
@@ -4000,6 +4037,7 @@
             },
             "podDisruptionBudget": {
               "additionalProperties": true,
+              "description": "PodDisruptionBudget for this service's pods.",
               "properties": {
                 "enabled": {
                   "default": false,
@@ -4048,6 +4086,7 @@
             },
             "service": {
               "additionalProperties": true,
+              "description": "The Service in front of this deployment. Its port is fixed by the chart, so only the type\nand the annotations are open.",
               "properties": {
                 "annotations": {
                   "additionalProperties": true,
@@ -4081,6 +4120,7 @@
           "properties": {
             "autoscaling": {
               "additionalProperties": true,
+              "description": "HorizontalPodAutoscaler for this service. While it is enabled the Deployment renders no\n`replicas`, so `replicaCount` is ignored.",
               "properties": {
                 "enabled": {
                   "default": false,
@@ -4145,6 +4185,7 @@
             },
             "image": {
               "additionalProperties": true,
+              "description": "Repository and tag for this service. Registry and pull policy come from the top-level\n`image`.",
               "properties": {
                 "repository": {
                   "default": "timschoenle/tankovault-frontend",
@@ -4166,6 +4207,7 @@
             },
             "podDisruptionBudget": {
               "additionalProperties": true,
+              "description": "PodDisruptionBudget for this service's pods.",
               "properties": {
                 "enabled": {
                   "default": false,
@@ -4214,6 +4256,7 @@
             },
             "service": {
               "additionalProperties": true,
+              "description": "The Service in front of this deployment. Its port is fixed by the chart, so only the type\nand the annotations are open.",
               "properties": {
                 "annotations": {
                   "additionalProperties": true,
@@ -4261,6 +4304,7 @@
             },
             "image": {
               "additionalProperties": true,
+              "description": "Repository and tag for this service. Registry and pull policy come from the top-level\n`image`.",
               "properties": {
                 "repository": {
                   "default": "timschoenle/tankovault-notifier",
@@ -4282,6 +4326,7 @@
             },
             "podDisruptionBudget": {
               "additionalProperties": true,
+              "description": "PodDisruptionBudget for this service's pods.",
               "properties": {
                 "enabled": {
                   "default": false,
@@ -4330,6 +4375,7 @@
             },
             "service": {
               "additionalProperties": true,
+              "description": "The Service in front of this deployment. Its port is fixed by the chart, so only the type\nand the annotations are open.",
               "properties": {
                 "annotations": {
                   "additionalProperties": true,
@@ -4363,6 +4409,7 @@
           "properties": {
             "autoscaling": {
               "additionalProperties": true,
+              "description": "HorizontalPodAutoscaler for this service. While it is enabled the Deployment renders no\n`replicas`, so `replicaCount` is ignored.",
               "properties": {
                 "enabled": {
                   "default": false,
@@ -4434,6 +4481,7 @@
             },
             "image": {
               "additionalProperties": true,
+              "description": "Repository and tag for this service. Registry and pull policy come from the top-level\n`image`.",
               "properties": {
                 "repository": {
                   "default": "timschoenle/tankovault-render",
@@ -4455,6 +4503,7 @@
             },
             "podDisruptionBudget": {
               "additionalProperties": true,
+              "description": "PodDisruptionBudget for this service's pods.",
               "properties": {
                 "enabled": {
                   "default": false,
@@ -4503,6 +4552,7 @@
             },
             "service": {
               "additionalProperties": true,
+              "description": "The Service in front of this deployment. Its port is fixed by the chart, so only the type\nand the annotations are open.",
               "properties": {
                 "annotations": {
                   "additionalProperties": true,
@@ -4557,6 +4607,7 @@
             },
             "image": {
               "additionalProperties": true,
+              "description": "Repository and tag for this service. Registry and pull policy come from the top-level\n`image`.",
               "properties": {
                 "repository": {
                   "default": "timschoenle/tankovault-sync",
@@ -4578,6 +4629,7 @@
             },
             "podDisruptionBudget": {
               "additionalProperties": true,
+              "description": "PodDisruptionBudget for this service's pods.",
               "properties": {
                 "enabled": {
                   "default": false,
@@ -4626,6 +4678,7 @@
             },
             "service": {
               "additionalProperties": true,
+              "description": "The Service in front of this deployment. Its port is fixed by the chart, so only the type\nand the annotations are open.",
               "properties": {
                 "annotations": {
                   "additionalProperties": true,
@@ -4659,6 +4712,7 @@
           "properties": {
             "autoscaling": {
               "additionalProperties": true,
+              "description": "HorizontalPodAutoscaler for this service. While it is enabled the Deployment renders no\n`replicas`, so `replicaCount` is ignored.",
               "properties": {
                 "enabled": {
                   "default": false,
@@ -4723,6 +4777,7 @@
             },
             "image": {
               "additionalProperties": true,
+              "description": "Repository and tag for this service. Registry and pull policy come from the top-level\n`image`.",
               "properties": {
                 "repository": {
                   "default": "timschoenle/tankovault-worker",
@@ -4744,6 +4799,7 @@
             },
             "podDisruptionBudget": {
               "additionalProperties": true,
+              "description": "PodDisruptionBudget for this service's pods.",
               "properties": {
                 "enabled": {
                   "default": false,
@@ -4792,6 +4848,7 @@
             },
             "service": {
               "additionalProperties": true,
+              "description": "The Service in front of this deployment. Its port is fixed by the chart, so only the type\nand the annotations are open.",
               "properties": {
                 "annotations": {
                   "additionalProperties": true,
@@ -4992,6 +5049,7 @@
         },
         "image": {
           "additionalProperties": true,
+          "description": "Repository and tag for the bundled TRAWL.",
           "properties": {
             "repository": {
               "default": "ghcr.io/germondai/trawl",
@@ -5013,6 +5071,7 @@
         },
         "redis": {
           "additionalProperties": true,
+          "description": "TRAWL's own solved-session cache, which defaults to the Redis the services already use.",
           "properties": {
             "enabled": {
               "default": true,
@@ -5038,6 +5097,7 @@
           "properties": {
             "limits": {
               "additionalProperties": false,
+              "description": "Ceiling for the pod. Memory only, as everywhere else in this chart.",
               "properties": {
                 "memory": {
                   "default": "2Gi",
@@ -5054,6 +5114,7 @@
             },
             "requests": {
               "additionalProperties": false,
+              "description": "What the scheduler reserves for one TRAWL pod at `browserPoolSize: 1`.",
               "properties": {
                 "cpu": {
                   "default": "500m",
@@ -5114,6 +5175,7 @@
         },
         "image": {
           "additionalProperties": true,
+          "description": "Repository and tag for the bundled Valkey.",
           "properties": {
             "repository": {
               "default": "valkey/valkey",

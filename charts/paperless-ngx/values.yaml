@@ -4,6 +4,7 @@
 # @schema
 # additionalProperties: true
 # @schema
+# -- Container image the pod runs, composed as `registry/repository:tag`.
 image:
   # @schema
   # type: string
@@ -60,6 +61,9 @@ existingConfigMap: ""
 # @schema
 # additionalProperties: true
 # @schema
+# -- Application settings, rendered into the ConfigMap as `PAPERLESS_*` variables and mounted
+# with `envFrom`. An optional key left empty is omitted rather than written as an empty string,
+# which the application reads as a configured empty value.
 paperless:
   # @schema
   # type: string
@@ -629,6 +633,7 @@ postgresql:
   # @schema
   # additionalProperties: true
   # @schema
+  # -- Image for the bundled PostgreSQL, composed as `registry/repository:tag`.
   image:
     # @schema
     # type: string
@@ -810,6 +815,7 @@ valkey:
   # @schema
   # additionalProperties: true
   # @schema
+  # -- Image for the bundled Valkey, composed as `registry/repository:tag`.
   image:
     # @schema
     # type: string
@@ -939,6 +945,7 @@ tika:
     # @schema
     # additionalProperties: true
     # @schema
+    # -- Image for the bundled Tika server, composed as `registry/repository:tag`.
     image:
       # @schema
       # type: string
@@ -1021,6 +1028,7 @@ tika:
     # @schema
     # additionalProperties: true
     # @schema
+    # -- Image for the bundled Gotenberg, composed as `registry/repository:tag`.
     image:
       # @schema
       # type: string
@@ -1888,6 +1896,7 @@ restore:
 # @schema
 # additionalProperties: true
 # @schema
+# -- The Service in front of the pods, forwarding `port` to the application container.
 service:
   # @schema
   # enum: [ClusterIP, NodePort, LoadBalancer]
@@ -2222,6 +2231,7 @@ metrics:
       # -- Which Grafana instances import them. An empty selector matches none, so the
       # dashboards would be created and then ignored.
       instanceSelector:
+        # -- Labels every Grafana custom resource to import into has to carry.
         matchLabels:
           dashboards: grafana
 
@@ -2410,10 +2420,10 @@ networkPolicy:
   # -- Cilium-only additions, used when `engine` is `cilium` or `both`. Every rule above is
   # translated automatically; these are the ones the portable API cannot express.
   #
-  # Note that `extraIngress` and `extraEgress` above are *not* carried over: those are verbatim
+  # `extraIngress` and `extraEgress` above are *not* carried over: those are verbatim
   # `networking.k8s.io/v1` rule objects and are not valid CNP. The fields below are their
-  # counterparts, and the whole tree mirrors the `common` library's so a chart and the library
-  # are configured the same way.
+  # counterparts, and the whole tree mirrors the `common` library's so a chart and the
+  # library are configured the same way.
   cilium:
     # @schema
     # type: string
@@ -2726,6 +2736,7 @@ securityContext:
 # @schema
 # additionalProperties: true
 # @schema
+# -- ServiceAccount the pods run under. `create: false` with no `name` means the `default` one.
 serviceAccount:
   # @schema
   # type: boolean

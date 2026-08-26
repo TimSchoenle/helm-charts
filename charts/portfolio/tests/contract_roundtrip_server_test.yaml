@@ -8,7 +8,7 @@
 # Chart:       portfolio
 # Declaration: charts/portfolio/config-contract.yaml (document `server`)
 # Contract:    charts/portfolio/contracts/server.json
-# Coverage:    7 of 7 contract keys carry a probe
+# Coverage:    19 of 22 contract keys carry a probe
 #
 # Regenerate with `just contract-tests`. `just check-contract-tests` fails a pull request whose
 # committed copy has drifted from the contract it was generated against.
@@ -127,3 +127,145 @@ tests:
       - matchRegex:
           path: data["config.toml"]
           pattern: '(?m)^\[isr\]$\n(?:[^\[\n][^\n]*\n|\n)*^ttl_secs = 4242$'
+
+  - it: delivers sentry.attach_stacktraces into config.toml
+    documentSelector:
+      path: data["config.toml"]
+    set:
+      config.csp.cloudflare.script_nonce: false
+      config.sentry.attach_stacktraces: false
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '(?m)^\[sentry\]$\n(?:[^\[\n][^\n]*\n|\n)*^attach_stacktraces = false$'
+
+  - it: delivers sentry.breadcrumb_level into config.toml
+    documentSelector:
+      path: data["config.toml"]
+    set:
+      config.csp.cloudflare.script_nonce: false
+      config.sentry.breadcrumb_level: off
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '(?m)^\[sentry\]$\n(?:[^\[\n][^\n]*\n|\n)*^breadcrumb_level = "off"$'
+
+  - it: delivers sentry.capture_level into config.toml
+    documentSelector:
+      path: data["config.toml"]
+    set:
+      config.csp.cloudflare.script_nonce: false
+      config.sentry.capture_level: off
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '(?m)^\[sentry\]$\n(?:[^\[\n][^\n]*\n|\n)*^capture_level = "off"$'
+
+  - it: delivers sentry.debug into config.toml
+    documentSelector:
+      path: data["config.toml"]
+    set:
+      config.csp.cloudflare.script_nonce: false
+      config.sentry.debug: true
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '(?m)^\[sentry\]$\n(?:[^\[\n][^\n]*\n|\n)*^debug = true$'
+
+  - it: delivers sentry.enabled into config.toml
+    documentSelector:
+      path: data["config.toml"]
+    set:
+      config.csp.cloudflare.script_nonce: false
+      config.sentry.enabled: true
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '(?m)^\[sentry\]$\n(?:[^\[\n][^\n]*\n|\n)*^enabled = true$'
+
+  - it: delivers sentry.environment into config.toml
+    documentSelector:
+      path: data["config.toml"]
+    set:
+      config.csp.cloudflare.script_nonce: false
+      config.sentry.environment: contract-probe-sentry-environment
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '(?m)^\[sentry\]$\n(?:[^\[\n][^\n]*\n|\n)*^environment = "contract-probe-sentry-environment"$'
+
+  - it: delivers sentry.http_transactions into config.toml
+    documentSelector:
+      path: data["config.toml"]
+    set:
+      config.csp.cloudflare.script_nonce: false
+      config.sentry.http_transactions: false
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '(?m)^\[sentry\]$\n(?:[^\[\n][^\n]*\n|\n)*^http_transactions = false$'
+
+  - it: delivers sentry.max_breadcrumbs into config.toml
+    documentSelector:
+      path: data["config.toml"]
+    set:
+      config.csp.cloudflare.script_nonce: false
+      config.sentry.max_breadcrumbs: 4242
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '(?m)^\[sentry\]$\n(?:[^\[\n][^\n]*\n|\n)*^max_breadcrumbs = 4242$'
+
+  - it: delivers sentry.release into config.toml
+    documentSelector:
+      path: data["config.toml"]
+    set:
+      config.csp.cloudflare.script_nonce: false
+      config.sentry.release: contract-probe-sentry-release
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '(?m)^\[sentry\]$\n(?:[^\[\n][^\n]*\n|\n)*^release = "contract-probe-sentry-release"$'
+
+  - it: delivers sentry.send_default_pii into config.toml
+    documentSelector:
+      path: data["config.toml"]
+    set:
+      config.csp.cloudflare.script_nonce: false
+      config.sentry.send_default_pii: true
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '(?m)^\[sentry\]$\n(?:[^\[\n][^\n]*\n|\n)*^send_default_pii = true$'
+
+  - it: delivers sentry.server_name into config.toml
+    documentSelector:
+      path: data["config.toml"]
+    set:
+      config.csp.cloudflare.script_nonce: false
+      config.sentry.server_name: contract-probe-sentry-server-name
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '(?m)^\[sentry\]$\n(?:[^\[\n][^\n]*\n|\n)*^server_name = "contract-probe-sentry-server-name"$'
+
+  - it: delivers sentry.span_attributes into config.toml
+    documentSelector:
+      path: data["config.toml"]
+    set:
+      config.csp.cloudflare.script_nonce: false
+      config.sentry.span_attributes: true
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '(?m)^\[sentry\]$\n(?:[^\[\n][^\n]*\n|\n)*^span_attributes = true$'
+
+  # Contract keys carrying no case, and why. An unexplained absence is indistinguishable from an
+  # oversight, so every one of them is named here rather than simply left out.
+  #
+  # sentry.dsn: `secret: true`: the probe would be committed to this repository, and a
+  #             credential-shaped value in a test file is a credential
+  # sentry.sample_rate: `unknown`: the producer publishes no constraint for this key, so no
+  #                     probe can be known-valid
+  # sentry.traces_sample_rate: `unknown`: the producer publishes no constraint for this key, so
+  #                            no probe can be known-valid

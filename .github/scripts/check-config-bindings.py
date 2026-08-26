@@ -75,9 +75,9 @@ own topology, sixteen delivered through the secrets directory, and the rest sett
 reads that this chart offers no value for.
 
 Inferring enrolment from "the chart carries at least one marker" is the obvious alternative, and
-it was measured to fail in the direction that matters. Feeding this gate a `portfolio` whose ten
-markers had been rewritten into a spelling the parser does not recognise produced exit 0 and a
-report the chart had simply vanished from — no error, no mention, and the coverage rule it was
+it was measured to fail in the direction that matters. Feeding this gate a `portfolio` whose
+markers had all been rewritten into a spelling the parser does not recognise produced exit 0 and
+a report the chart had simply vanished from — no error, no mention, and the coverage rule it was
 enrolled for silently not run. The same happens to a chart whose markers are deleted. With the
 switch in the declaration, both disagreements are errors: markers without `bindings: true`, and
 `bindings: true` without markers.

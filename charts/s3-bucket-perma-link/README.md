@@ -1,6 +1,6 @@
 # s3-bucket-perma-link
 
-![Version: 4.1.3](https://img.shields.io/badge/Version-4.1.3-informational?style=flat-square) ![AppVersion: v1.1.1](https://img.shields.io/badge/AppVersion-v1.1.1-informational?style=flat-square)
+![Version: 4.1.4](https://img.shields.io/badge/Version-4.1.4-informational?style=flat-square) ![AppVersion: v2.0.0](https://img.shields.io/badge/AppVersion-v2.0.0-informational?style=flat-square)
 
 This chart deploys a simple web server that provides permanent links to specific S3 bucket resources. It allows you to define static URL paths that always point to specific files in your S3 buckets.
 
@@ -428,11 +428,11 @@ policy pointing at the wrong Gateway looks correct and blocks everything.
 | gateway.tls.enabled | bool | `false` | Add an HTTPS listener. |
 | gateway.tls.mode | string | `"Terminate"` | TLS mode. |
 | gateway.tls.options | object | `{}` | Implementation-specific TLS options. |
-| image | object | `{"pullPolicy":"","registry":"","repository":"timmi6790/s3-bucket-perma-link","tag":"v1.1.1@sha256:0f3fb15ccda6fe17400186d16d8a4a4bb249b0d7e6c169f7d5bbb950c6337a76"}` | Container image the pod runs, composed as `registry/repository:tag`. |
+| image | object | `{"pullPolicy":"","registry":"","repository":"timmi6790/s3-bucket-perma-link","tag":"v2.0.0@sha256:a331869902bd25de2ac46873f6f4188a7a524d8f4717e2bbfdcdfc23c31e6520"}` | Container image the pod runs, composed as `registry/repository:tag`. |
 | image.pullPolicy | string | `""` | The image pull policy. Empty resolves automatically from the tag/digest. |
 | image.registry | string | `""` | Registry host. Empty means Docker Hub. |
 | image.repository | string | `"timmi6790/s3-bucket-perma-link"` | The container image repository. |
-| image.tag | string | `"v1.1.1@sha256:0f3fb15ccda6fe17400186d16d8a4a4bb249b0d7e6c169f7d5bbb950c6337a76"` | The container image tag, pinned by digest (`vX.Y.Z@sha256:...`). The digest pins the pull, while the tag stays on as the readable version marker. Defaults to the chart's `appVersion` when empty. |
+| image.tag | string | `"v2.0.0@sha256:a331869902bd25de2ac46873f6f4188a7a524d8f4717e2bbfdcdfc23c31e6520"` | The container image tag, pinned by digest (`vX.Y.Z@sha256:...`). The digest pins the pull, while the tag stays on as the readable version marker. Defaults to the chart's `appVersion` when empty. |
 | imagePullSecrets | list | `[]` | Optional image pull secrets for private registries. |
 | ingress | object | `{"annotations":{},"enabled":false,"hosts":[],"ingressClassName":"nginx","tls":[]}` | The Ingress in front of the Service. Off by default; `gateway` is the Gateway API alternative and the two are independent switches. |
 | ingress.annotations | object | `{}` | Custom annotations for the Ingress resource. Useful for configuring ingress controllers (e.g., cert-manager, rate limits). |

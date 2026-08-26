@@ -8,7 +8,7 @@
 # Chart:       s3-bucket-perma-link
 # Declaration: charts/s3-bucket-perma-link/config-contract.yaml (document `server`)
 # Contract:    charts/s3-bucket-perma-link/contracts/server.json
-# Coverage:    5 of 9 contract keys carry a probe
+# Coverage:    16 of 24 contract keys carry a probe
 #
 # Regenerate with `just contract-tests`. `just check-contract-tests` fails a pull request whose
 # committed copy has drifted from the contract it was generated against.
@@ -112,6 +112,127 @@ tests:
           path: data["config.toml"]
           pattern: '(?m)^\[telemetry\]$\n(?:[^\[\n][^\n]*\n|\n)*^log_level = "contract-probe-telemetry-log-level"$'
 
+  - it: delivers telemetry.sentry.attach_stacktrace into config.toml
+    documentSelector:
+      path: data["config.toml"]
+    set:
+      bucket.entries: {"render-prerequisite": {"bucket": "render-prerequisite", "object": "render-prerequisite"}}
+      config.telemetry.sentry.attach_stacktrace: false
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '(?m)^\[telemetry\.sentry\]$\n(?:[^\[\n][^\n]*\n|\n)*^attach_stacktrace = false$'
+
+  - it: delivers telemetry.sentry.debug into config.toml
+    documentSelector:
+      path: data["config.toml"]
+    set:
+      bucket.entries: {"render-prerequisite": {"bucket": "render-prerequisite", "object": "render-prerequisite"}}
+      config.telemetry.sentry.debug: true
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '(?m)^\[telemetry\.sentry\]$\n(?:[^\[\n][^\n]*\n|\n)*^debug = true$'
+
+  - it: delivers telemetry.sentry.enabled into config.toml
+    documentSelector:
+      path: data["config.toml"]
+    set:
+      bucket.entries: {"render-prerequisite": {"bucket": "render-prerequisite", "object": "render-prerequisite"}}
+      config.telemetry.sentry.enabled: true
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '(?m)^\[telemetry\.sentry\]$\n(?:[^\[\n][^\n]*\n|\n)*^enabled = true$'
+
+  - it: delivers telemetry.sentry.environment into config.toml
+    documentSelector:
+      path: data["config.toml"]
+    set:
+      bucket.entries: {"render-prerequisite": {"bucket": "render-prerequisite", "object": "render-prerequisite"}}
+      config.telemetry.sentry.environment: contract-probe-telemetry-sentry-environment
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '(?m)^\[telemetry\.sentry\]$\n(?:[^\[\n][^\n]*\n|\n)*^environment = "contract-probe-telemetry-sentry-environment"$'
+
+  - it: delivers telemetry.sentry.http_transactions into config.toml
+    documentSelector:
+      path: data["config.toml"]
+    set:
+      bucket.entries: {"render-prerequisite": {"bucket": "render-prerequisite", "object": "render-prerequisite"}}
+      config.telemetry.sentry.http_transactions: false
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '(?m)^\[telemetry\.sentry\]$\n(?:[^\[\n][^\n]*\n|\n)*^http_transactions = false$'
+
+  - it: delivers telemetry.sentry.max_breadcrumbs into config.toml
+    documentSelector:
+      path: data["config.toml"]
+    set:
+      bucket.entries: {"render-prerequisite": {"bucket": "render-prerequisite", "object": "render-prerequisite"}}
+      config.telemetry.sentry.max_breadcrumbs: 4242
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '(?m)^\[telemetry\.sentry\]$\n(?:[^\[\n][^\n]*\n|\n)*^max_breadcrumbs = 4242$'
+
+  - it: delivers telemetry.sentry.release into config.toml
+    documentSelector:
+      path: data["config.toml"]
+    set:
+      bucket.entries: {"render-prerequisite": {"bucket": "render-prerequisite", "object": "render-prerequisite"}}
+      config.telemetry.sentry.release: contract-probe-telemetry-sentry-release
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '(?m)^\[telemetry\.sentry\]$\n(?:[^\[\n][^\n]*\n|\n)*^release = "contract-probe-telemetry-sentry-release"$'
+
+  - it: delivers telemetry.sentry.send_default_pii into config.toml
+    documentSelector:
+      path: data["config.toml"]
+    set:
+      bucket.entries: {"render-prerequisite": {"bucket": "render-prerequisite", "object": "render-prerequisite"}}
+      config.telemetry.sentry.send_default_pii: true
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '(?m)^\[telemetry\.sentry\]$\n(?:[^\[\n][^\n]*\n|\n)*^send_default_pii = true$'
+
+  - it: delivers telemetry.sentry.server_name into config.toml
+    documentSelector:
+      path: data["config.toml"]
+    set:
+      bucket.entries: {"render-prerequisite": {"bucket": "render-prerequisite", "object": "render-prerequisite"}}
+      config.telemetry.sentry.server_name: contract-probe-telemetry-sentry-server-name
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '(?m)^\[telemetry\.sentry\]$\n(?:[^\[\n][^\n]*\n|\n)*^server_name = "contract-probe-telemetry-sentry-server-name"$'
+
+  - it: delivers telemetry.sentry.shutdown_timeout_secs into config.toml
+    documentSelector:
+      path: data["config.toml"]
+    set:
+      bucket.entries: {"render-prerequisite": {"bucket": "render-prerequisite", "object": "render-prerequisite"}}
+      config.telemetry.sentry.shutdown_timeout_secs: 4242
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '(?m)^\[telemetry\.sentry\]$\n(?:[^\[\n][^\n]*\n|\n)*^shutdown_timeout_secs = 4242$'
+
+  - it: delivers telemetry.sentry.span_attributes into config.toml
+    documentSelector:
+      path: data["config.toml"]
+    set:
+      bucket.entries: {"render-prerequisite": {"bucket": "render-prerequisite", "object": "render-prerequisite"}}
+      config.telemetry.sentry.span_attributes: true
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '(?m)^\[telemetry\.sentry\]$\n(?:[^\[\n][^\n]*\n|\n)*^span_attributes = true$'
+
   # Contract keys carrying no case, and why. An unexplained absence is indistinguishable from an
   # oversight, so every one of them is named here rather than simply left out.
   #
@@ -122,5 +243,13 @@ tests:
   #                credential-shaped value in a test file is a credential
   # s3.secret_key: `secret: true`: the probe would be committed to this repository, and a
   #                credential-shaped value in a test file is a credential
-  # telemetry.sentry_dsn: `secret: true`: the probe would be committed to this repository, and a
+  # telemetry.sentry.breadcrumb_level: `unknown`: the producer publishes no constraint for this
+  #                                    key, so no probe can be known-valid
+  # telemetry.sentry.capture_level: `unknown`: the producer publishes no constraint for this
+  #                                 key, so no probe can be known-valid
+  # telemetry.sentry.dsn: `secret: true`: the probe would be committed to this repository, and a
   #                       credential-shaped value in a test file is a credential
+  # telemetry.sentry.sample_rate: `unknown`: the producer publishes no constraint for this key,
+  #                               so no probe can be known-valid
+  # telemetry.sentry.traces_sample_rate: `unknown`: the producer publishes no constraint for
+  #                                      this key, so no probe can be known-valid

@@ -8,7 +8,7 @@
 # Chart:       netcup-offer-bot
 # Declaration: charts/netcup-offer-bot/config-contract.yaml (document `bot`)
 # Contract:    charts/netcup-offer-bot/contracts/bot.json
-# Coverage:    2 of 6 contract keys carry a probe
+# Coverage:    12 of 18 contract keys carry a probe
 #
 # Regenerate with `just contract-tests`. `just check-contract-tests` fails a pull request whose
 # committed copy has drifted from the contract it was generated against.
@@ -81,6 +81,116 @@ tests:
           path: data["config.toml"]
           pattern: '(?m)^\[metrics\]$\n(?:[^\[\n][^\n]*\n|\n)*^port = 4242$'
 
+  - it: delivers telemetry.sentry.attach_stacktraces into config.toml
+    documentSelector:
+      path: data["config.toml"]
+    set:
+      discord.webhookUrl: 'https://render-prerequisite.invalid/api/webhooks/0/0'
+      config.telemetry.sentry.attach_stacktraces: false
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '(?m)^\[telemetry\.sentry\]$\n(?:[^\[\n][^\n]*\n|\n)*^attach_stacktraces = false$'
+
+  - it: delivers telemetry.sentry.breadcrumb_level into config.toml
+    documentSelector:
+      path: data["config.toml"]
+    set:
+      discord.webhookUrl: 'https://render-prerequisite.invalid/api/webhooks/0/0'
+      config.telemetry.sentry.breadcrumb_level: off
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '(?m)^\[telemetry\.sentry\]$\n(?:[^\[\n][^\n]*\n|\n)*^breadcrumb_level = "off"$'
+
+  - it: delivers telemetry.sentry.capture_level into config.toml
+    documentSelector:
+      path: data["config.toml"]
+    set:
+      discord.webhookUrl: 'https://render-prerequisite.invalid/api/webhooks/0/0'
+      config.telemetry.sentry.capture_level: off
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '(?m)^\[telemetry\.sentry\]$\n(?:[^\[\n][^\n]*\n|\n)*^capture_level = "off"$'
+
+  - it: delivers telemetry.sentry.debug into config.toml
+    documentSelector:
+      path: data["config.toml"]
+    set:
+      discord.webhookUrl: 'https://render-prerequisite.invalid/api/webhooks/0/0'
+      config.telemetry.sentry.debug: true
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '(?m)^\[telemetry\.sentry\]$\n(?:[^\[\n][^\n]*\n|\n)*^debug = true$'
+
+  - it: delivers telemetry.sentry.enabled into config.toml
+    documentSelector:
+      path: data["config.toml"]
+    set:
+      discord.webhookUrl: 'https://render-prerequisite.invalid/api/webhooks/0/0'
+      config.telemetry.sentry.enabled: true
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '(?m)^\[telemetry\.sentry\]$\n(?:[^\[\n][^\n]*\n|\n)*^enabled = true$'
+
+  - it: delivers telemetry.sentry.environment into config.toml
+    documentSelector:
+      path: data["config.toml"]
+    set:
+      discord.webhookUrl: 'https://render-prerequisite.invalid/api/webhooks/0/0'
+      config.telemetry.sentry.environment: contract-probe-telemetry-sentry-environment
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '(?m)^\[telemetry\.sentry\]$\n(?:[^\[\n][^\n]*\n|\n)*^environment = "contract-probe-telemetry-sentry-environment"$'
+
+  - it: delivers telemetry.sentry.max_breadcrumbs into config.toml
+    documentSelector:
+      path: data["config.toml"]
+    set:
+      discord.webhookUrl: 'https://render-prerequisite.invalid/api/webhooks/0/0'
+      config.telemetry.sentry.max_breadcrumbs: 4242
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '(?m)^\[telemetry\.sentry\]$\n(?:[^\[\n][^\n]*\n|\n)*^max_breadcrumbs = 4242$'
+
+  - it: delivers telemetry.sentry.release into config.toml
+    documentSelector:
+      path: data["config.toml"]
+    set:
+      discord.webhookUrl: 'https://render-prerequisite.invalid/api/webhooks/0/0'
+      config.telemetry.sentry.release: contract-probe-telemetry-sentry-release
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '(?m)^\[telemetry\.sentry\]$\n(?:[^\[\n][^\n]*\n|\n)*^release = "contract-probe-telemetry-sentry-release"$'
+
+  - it: delivers telemetry.sentry.server_name into config.toml
+    documentSelector:
+      path: data["config.toml"]
+    set:
+      discord.webhookUrl: 'https://render-prerequisite.invalid/api/webhooks/0/0'
+      config.telemetry.sentry.server_name: contract-probe-telemetry-sentry-server-name
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '(?m)^\[telemetry\.sentry\]$\n(?:[^\[\n][^\n]*\n|\n)*^server_name = "contract-probe-telemetry-sentry-server-name"$'
+
+  - it: delivers telemetry.sentry.shutdown_timeout_secs into config.toml
+    documentSelector:
+      path: data["config.toml"]
+    set:
+      discord.webhookUrl: 'https://render-prerequisite.invalid/api/webhooks/0/0'
+      config.telemetry.sentry.shutdown_timeout_secs: 4242
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '(?m)^\[telemetry\.sentry\]$\n(?:[^\[\n][^\n]*\n|\n)*^shutdown_timeout_secs = 4242$'
+
   # Contract keys carrying no case, and why. An unexplained absence is indistinguishable from an
   # oversight, so every one of them is named here rather than simply left out.
   #
@@ -90,5 +200,9 @@ tests:
   #             known-valid
   # telemetry.log_level: `unknown`: the producer publishes no constraint for this key, so no
   #                      probe can be known-valid
-  # telemetry.sentry_dsn: `secret: true`: the probe would be committed to this repository, and a
+  # telemetry.sentry.dsn: `secret: true`: the probe would be committed to this repository, and a
   #                       credential-shaped value in a test file is a credential
+  # telemetry.sentry.sample_rate: `unknown`: the producer publishes no constraint for this key,
+  #                               so no probe can be known-valid
+  # telemetry.sentry.traces_sample_rate: `unknown`: the producer publishes no constraint for
+  #                                      this key, so no probe can be known-valid

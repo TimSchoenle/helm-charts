@@ -14,6 +14,7 @@ most installs add is an Ingress.
 ## Prerequisites
 
 - Kubernetes 1.19+
+- A Sentry DSN, if `sentry.enabled` is set
 - Helm 3.0+
 - An ingress controller, if `ingress.enabled=true`
 - The Gateway API CRDs and a `Gateway` to attach to, if `gateway.enabled=true`
@@ -109,6 +110,73 @@ The server does not reload its configuration — only the loader half of the lib
 the chart keeps the conventional `checksum/config` pod annotation: a configuration change rolls
 the Deployment, which is the only way it takes effect.
 
+## Error reporting and tracing
+
+`sentry` reports errors and panics to Sentry, and can record a transaction per request. It is
+off, and inert while it is off: no client, no panic hook, no `tracing` layer and no HTTP
+middleware is installed, so nothing leaves the process and nothing about a rendered release
+changes.
+
+```yaml
+sentry:
+  enabled: true
+  dsn: https://<key>@<host>/<project>
+```
+
+Switching it on moves one thing that has nothing to do with Sentry: the server installs the log
+subscriber itself instead of leaving it to the Dioxus toolchain, because a Sentry layer has to
+be a layer *of* the subscriber and the framework's is not extensible after the fact. `logLevel`
+still decides what is printed and the format is unchanged.
+
+The DSN embeds a write key for the project's event stream, so the chart treats it as the
+credential it is: it goes to a Secret under `sentry__dsn`, never into the ConfigMap — which
+matters twice here, because the server prints the configuration it holds on the refusal path. It
+is the **only** credential this server reads, so switching Sentry on is what gives the pod a
+secrets volume and a `PORTFOLIO_SECRETS_DIR` at all; expect the pod spec to change shape, not
+just the ConfigMap. Point `existingSecret` at a Secret you created yourself to keep the DSN out
+of `values.yaml` and out of the Helm release object:
+
+```shell
+kubectl create secret generic portfolio-sentry   --namespace [NAMESPACE]   --from-literal=sentry__dsn='https://<key>@<host>/<project>'
+```
+
+```yaml
+existingSecret: portfolio-sentry
+```
+
+**The key name is the configuration path the server reads, not a free-form name.** The DSN
+arrives as a file in a projected volume and the server takes the key out of the file *name*, so
+`sentry__dsn` is required; a Secret spelled any other way mounts cleanly and supplies nothing.
+Switching the feature on with no DSN — neither inline nor in an `existingSecret` — is refused at
+render time, because the server refuses to boot rather than installing a client that reports
+nowhere, and a rejected `helm upgrade` beats a CrashLoopBackOff.
+
+**Check the egress.** The chart never reads the DSN, so it cannot name the ingest host in the
+network policies. The defaults do cover it — `networkPolicy.egress.https` permits TCP/443 to
+`0.0.0.0/0` minus private space — so an out-of-the-box release reaches Sentry without further
+work. A release that narrowed `networkPolicy.egress.cidr`, turned `egress.https` off, or
+replaced the CIDR rule with `networkPolicy.cilium.egress.toFQDNs` has to name the endpoint
+itself. Getting that wrong is silent: an SDK that cannot reach its endpoint queues events and
+then discards them, so the project simply stays empty, which reads as "no errors".
+
+**`sendDefaultPii` is the one setting to decide deliberately.** On, every event carries the
+client IP, the whole request header set including `Cookie`, and the resolved user, to a third
+party — and the same flag is what stops the HTTP middleware redacting sensitive headers. This
+site publishes a privacy page stating that no third-party service receives visitor data; that
+page is what the setting has to agree with. It is off by default.
+
+`tracesSampleRate` is `0`, which is what keeps switching Sentry on for crash reporting from also
+switching performance data on. This server is the edge and starts every trace it has — nothing
+upstream hands it one — so this rate alone decides whether a trace exists. `0.05`-`0.2` is an
+ordinary production figure.
+
+`environment`, `release` and `serverName` are empty by default and the chart writes none of
+them: the server derives the first two — `production` for the release binary every published
+image is built as, and `portfolio@<version>` from the workspace the binary was cut from, which
+is what makes a regression attributable to a deploy — and reports no host tag. A blank value is
+a *supplied* value to the loader, not an absent one, so set them only to say something the
+server cannot derive.
+
 ### What checks that the configuration is one the image accepts
 
 Nothing about the paragraphs above is enforced by Helm. `values.schema.json` describes this
@@ -179,6 +247,24 @@ positive TTL only when a *persistent* cache volume is shared across deploys — 
 `extraVolumes` mount, since the default cache lives in an `emptyDir`.
 
 ## Upgrading
+
+### 5.1 to 5.2
+
+Chart 5.2 tracks Portfolio 2.10.0, which adds optional Sentry error reporting and request
+tracing. Everything is additive and off, so an existing release needs no change.
+
+Three things are worth knowing before switching it on:
+
+- **The pod gains a secrets volume.** The DSN is the only credential this server reads, so
+  today's pods carry no secrets volume and no `PORTFOLIO_SECRETS_DIR`. Setting `sentry.enabled`
+  gives them both, and an `existingSecret` that should carry the DSN needs the key `sentry__dsn`.
+- **The log subscriber changes hands.** On, the server installs it rather than the Dioxus
+  toolchain, because a Sentry layer has to be a layer of the subscriber. `logLevel` still decides
+  what is printed and the format is unchanged.
+- **`sendDefaultPii` contradicts the privacy page if you turn it on.** The page this site
+  publishes says no third-party service receives visitor data; the key sends the client IP,
+  cookies and the resolved user to Sentry. It is off by default and this is not a default to
+  change casually.
 
 ### 4.x to 5.0
 

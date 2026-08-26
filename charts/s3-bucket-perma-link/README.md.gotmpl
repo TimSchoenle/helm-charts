@@ -16,6 +16,7 @@ bucket has to be made public.
 - Kubernetes 1.19+
 - Helm 3.0+
 - An S3-compatible bucket and a credential pair that can read it
+- A Sentry DSN, if `telemetry.sentry.enabled` is set
 - An ingress controller, or the Gateway API CRDs and a `Gateway`, if the links are meant to
   work outside the cluster
 - Cilium 1.16+, if `networkPolicy.engine` is `cilium` or `both`
@@ -93,7 +94,70 @@ Set `configMount.rolloutOnChange: true` to make it behave like an ordinary image
 `s3.accessKey` / `s3.secretKey` are accepted as an alternative to `existingSecret` and make the
 chart render the Secret itself. That puts the credentials into `values.yaml` and into the Helm
 release object, where anyone who can run `helm get values` can read them — use it for a
-throwaway cluster, not for anything real. `existingSecret` wins if both are set.
+throwaway cluster, not for anything real. `existingSecret` wins if both are set. The same is
+true of `telemetry.sentry.dsn`.
+
+## Error reporting and tracing
+
+`telemetry.sentry` reports errors and panics to Sentry, and can record a transaction per
+request. It is off, and inert while it is off: no client, no panic hook, no subscriber layer and
+no HTTP middleware is installed, so nothing leaves the process and nothing about a rendered
+release changes.
+
+```yaml
+telemetry:
+  sentry:
+    enabled: true
+    dsn: https://<key>@<host>/<project>
+```
+
+The DSN embeds a write key for the project's event stream, so the chart treats it as the
+credential it is: it goes to the Secret under `telemetry__sentry__dsn`, alongside the S3 keys,
+and never into the ConfigMap — which matters twice here, because the reload supervisor prints
+the configuration it holds. Switching the feature on with no DSN, neither inline nor in an
+`existingSecret`, is refused at render time: the service refuses to boot rather than installing
+a client that reports nowhere, and a rejected `helm upgrade` beats a CrashLoopBackOff.
+
+**Check the egress.** The chart never reads the DSN, so it cannot name the ingest host in the
+network policies. The defaults do cover it — `networkPolicy.egress.https` permits TCP/443 to
+`0.0.0.0/0` minus private space — so an out-of-the-box release reaches Sentry without further
+work. A release that narrowed `networkPolicy.egress.cidr`, turned `egress.https` off, or
+replaced the CIDR rule with `networkPolicy.cilium.egress.toFQDNs` has to name the endpoint
+itself. Getting that wrong is silent: an SDK that cannot reach its endpoint queues events and
+then discards them, so the project simply stays empty, which reads as "no errors".
+
+```yaml
+networkPolicy:
+  enabled: true
+  extraEgress:
+    - to:
+        - ipBlock:
+            cidr: 34.120.195.249/32 # your ingest endpoint
+      ports:
+        - port: 443
+          protocol: TCP
+```
+
+Under the Cilium engine the same destination is better expressed by name, via
+`networkPolicy.cilium.egress.toFQDNs`.
+
+`tracesSampleRate` is `0` — this server starts no traces of its own, which is the sensible
+setting for a service whose whole job is one redirect. It still continues a trace that arrives
+already sampled, so a caller that does trace sees the hop either way.
+
+`sendDefaultPii` stays off. On, every event carries the client IP, the whole request header set
+and a buffered body, to a third party — and the same flag is what stops the HTTP middleware
+redacting sensitive headers. This service publishes public links; the address of whoever
+followed one is not what makes a failed S3 fetch actionable.
+
+`environment`, `release` and `serverName` are empty by default and the chart writes none of
+them: the service resolves the first two itself, and `release` is also the name the image's
+debug-file upload symbolicates against — overriding it without a matching upload leaves events
+with no symbols.
+
+Unlike the rest of this chart's configuration, `telemetry.sentry` is read once as the process
+boots, so a change to it needs a restart: roll the Deployment, or set
+`configMount.rolloutOnChange: true`.
 
 ## Non-AWS endpoints
 
@@ -110,6 +174,33 @@ existingSecret: s3-credentials
 ```
 
 ## Upgrading
+
+### 4.x to 5.0
+
+Chart 5.0 tracks the service's 2.0 release, which replaced the single `telemetry.sentry_dsn` key
+with a full `telemetry.sentry` block — fifteen settings and the DSN — and made Sentry an optional
+compile-time feature with tracing support. `telemetry.sentryDsn` is gone; a `helm upgrade` with
+4.x values fails schema validation naming the key rather than silently dropping error reporting.
+
+| Before | After |
+|---|---|
+| `telemetry.sentryDsn: https://...` | `telemetry.sentry.enabled: true` **and** `telemetry.sentry.dsn: https://...` |
+| (unset) | (unset — `telemetry.sentry.enabled` defaults to `false`) |
+
+Two behaviours changed along with the spelling:
+
+- **The DSN is a credential now.** 4.x rendered it into `config.toml`, where anything that can
+  read the namespace could print it — and where the reload supervisor's own logging could too.
+  It goes to the Secret instead, under `telemetry__sentry__dsn`, so an `existingSecret` that
+  should carry it needs that key added, and the pod projects it only while
+  `telemetry.sentry.enabled` is set.
+- **The switch is separate from the DSN.** Setting one without the other is refused at render
+  time in both directions: on with no DSN is a boot failure upstream, and a DSN with the switch
+  off is a credential in the release that nothing reads.
+
+Everything else under the block is new and optional, and the defaults reproduce 4.x behaviour.
+Note `attachStacktrace` — singular, unlike the sibling charts in this repository, because that is
+the key this image reads.
 
 ### 3.x to 4.0
 

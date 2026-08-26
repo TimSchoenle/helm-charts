@@ -868,12 +868,16 @@ class TestTheEnrolledCharts(unittest.TestCase):
     Between them they carry each shape the format claims to have, which is the point of asserting
     them here rather than only over fixtures:
 
-      `portfolio`               seven pure projections, plus the three `external.env` variables
-                                the Dioxus toolchain and `tracing` own
-      `netcup-offer-bot`        an optional projection, a pair gated on `metrics.enabled`, and a
-                                credential written off rather than marked
-      `s3-bucket-perma-link`    the only `structured` binding in the tree, and two credentials
-                                delivered as files
+      `portfolio`               twenty-one pure projections, plus the three `external.env`
+                                variables the Dioxus toolchain and `tracing` own — and the only
+                                chart whose Sentry block sits outside `telemetry`
+      `netcup-offer-bot`        an optional projection, a pair gated on `metrics.enabled`, a
+                                subtree gated on `telemetry.sentry.enabled`, keys that are
+                                optional *and* gated, and two credentials written off rather
+                                than marked
+      `s3-bucket-perma-link`    the only `structured` binding in the tree, three credentials
+                                delivered as files, and `attach_stacktrace` — singular, where
+                                its three siblings spell the same setting plural
       `mp-stats-legacy-viewer`  the only `composed` one: `server.bind_addr` is `printf` over two
                                 values, and both say so
 
@@ -894,21 +898,37 @@ class TestTheEnrolledCharts(unittest.TestCase):
         marker = self.markers("portfolio")["csp.cloudflare.scriptNonce"]
         self.assertEqual(marker.target, "csp.cloudflare.script_nonce")
 
-    def test_netcup_marks_the_sentry_dsn_optional(self):
-        marker = self.markers("netcup-offer-bot")["telemetry.sentryDsn"]
+    def test_netcup_marks_the_sentry_switch_optional(self):
+        """`enabled: false` is falsy, so the whole block is omitted rather than written off."""
+        marker = self.markers("netcup-offer-bot")["telemetry.sentry.enabled"]
         self.assertTrue(marker.optional)
         self.assertIsNone(marker.condition)
+
+    def test_netcup_gates_the_rest_of_the_sentry_block_on_the_switch(self):
+        """Every key under it is inert while the switch is down, so none is written then."""
+        markers = self.markers("netcup-offer-bot")
+        for path in ("telemetry.sentry.sampleRate", "telemetry.sentry.captureLevel"):
+            self.assertEqual(markers[path].condition, "telemetry.sentry.enabled")
+
+    def test_netcup_marks_the_derived_sentry_tags_optional_and_gated(self):
+        """Both at once: only written when the switch is on, and omitted when left empty."""
+        marker = self.markers("netcup-offer-bot")["telemetry.sentry.environment"]
+        self.assertTrue(marker.optional)
+        self.assertEqual(marker.condition, "telemetry.sentry.enabled")
 
     def test_netcup_gates_the_metrics_subtree(self):
         for path in ("metrics.ip", "metrics.port"):
             marker = self.markers("netcup-offer-bot")[path]
             self.assertEqual(marker.condition, "metrics.enabled")
 
-    def test_netcup_writes_off_the_webhook_rather_than_marking_it(self):
-        self.assertNotIn("discord.webhookUrl", self.markers("netcup-offer-bot"))
+    def test_netcup_writes_off_its_credentials_rather_than_marking_them(self):
+        """Both travel the Secret rather than `config.toml`, so neither carries a marker."""
+        markers = self.markers("netcup-offer-bot")
+        self.assertNotIn("discord.webhookUrl", markers)
+        self.assertNotIn("telemetry.sentry.dsn", markers)
         declaration = load_declaration(self.charts / "netcup-offer-bot")
         [unbound] = declaration.unbound
-        self.assertEqual(unbound.keys, ("discord.webhook_url",))
+        self.assertEqual(unbound.keys, ("discord.webhook_url", "telemetry.sentry.dsn"))
         self.assertTrue(unbound.reason)
 
     def test_the_structured_binding_is_the_bucket_map(self):
@@ -919,8 +939,28 @@ class TestTheEnrolledCharts(unittest.TestCase):
     def test_the_s3_credentials_are_written_off_rather_than_marked(self):
         declaration = load_declaration(self.charts / "s3-bucket-perma-link")
         [unbound] = declaration.unbound
-        self.assertEqual(sorted(unbound.keys), ["s3.access_key", "s3.secret_key"])
+        self.assertEqual(
+            sorted(unbound.keys),
+            ["s3.access_key", "s3.secret_key", "telemetry.sentry.dsn"],
+        )
         self.assertIn("check-config-secrets", unbound.reason)
+
+    def test_s3_spells_the_stacktrace_key_the_way_its_image_does(self):
+        """Singular here and plural in all three sibling charts, which is the trap.
+
+        A plural marker would name a key this contract does not carry and the gate would say so;
+        a plural *projection* with a correct marker would not, so the assertion is worth having
+        next to the one the gate already makes.
+        """
+        marker = self.markers("s3-bucket-perma-link")["telemetry.sentry.attachStacktrace"]
+        self.assertEqual(marker.target, "telemetry.sentry.attach_stacktrace")
+
+    def test_portfolio_keeps_sentry_outside_the_telemetry_namespace(self):
+        """The other three nest it under `telemetry`; this image does not, and copying wins
+        nothing.
+        """
+        marker = self.markers("portfolio")["sentry.enabled"]
+        self.assertEqual(marker.target, "sentry.enabled")
 
     def test_the_composed_pair_is_the_bind_address(self):
         """Two values, one key, and a `printf` between them that no marker claims to reproduce."""
@@ -936,10 +976,10 @@ class TestTheEnrolledCharts(unittest.TestCase):
         self.assertEqual(
             [(chart, keys, external) for chart, keys, external in enrolled],
             [
-                ("mp-stats-legacy-viewer", 8, 0),
-                ("netcup-offer-bot", 5, 0),
-                ("portfolio", 7, 3),
-                ("s3-bucket-perma-link", 7, 0),
+                ("mp-stats-legacy-viewer", 25, 0),
+                ("netcup-offer-bot", 16, 0),
+                ("portfolio", 21, 3),
+                ("s3-bucket-perma-link", 21, 0),
                 ("tankovault", 219, 0),
             ],
         )

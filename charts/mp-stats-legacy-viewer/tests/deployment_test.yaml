@@ -68,9 +68,10 @@ tests:
             mountPath: /etc/mp-stats/config
             readOnly: true
 
-  # Neither binary reads a secret, and a configured secrets directory that cannot be read is a
-  # boot failure naming the path, not an empty layer.
-  - it: names no secrets directory, because neither binary reads a secret
+  # The Sentry DSN is the only credential this server reads, so a release that does not report
+  # to Sentry has no secrets volume at all — and a configured secrets directory that cannot be
+  # read is a boot failure naming the path, not an empty layer.
+  - it: names no secrets directory while Sentry is off
     documentSelector:
       path: kind
       value: Deployment
@@ -86,6 +87,69 @@ tests:
             name: secrets
             mountPath: /etc/mp-stats/secrets
             readOnly: true
+      - notContains:
+          path: spec.template.spec.volumes
+          content:
+            name: secrets
+          any: true
+
+  - it: mounts the DSN once Sentry is on
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      telemetry.sentry.enabled: true
+      telemetry.sentry.dsn: https://key@sentry.example.invalid/1
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: MP_STATS_SECRETS_DIR
+            value: /etc/mp-stats/secrets
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: secrets
+            mountPath: /etc/mp-stats/secrets
+            readOnly: true
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: secrets
+            projected:
+              defaultMode: 256
+              sources:
+                - secret:
+                    name: RELEASE-NAME-mp-stats-legacy-viewer
+                    optional: true
+                    items:
+                      - key: telemetry__sentry__dsn
+                        path: telemetry__sentry__dsn
+
+  # The chart cannot read an `existingSecret`, so it projects every key it knows how to consume.
+  # That list is still gated on the switch, or a release reporting nowhere would mount a file
+  # for a client it never installs.
+  - it: projects an existing Secret when one is given
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      telemetry.sentry.enabled: true
+      existingSecret: my-sentry-secret
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: secrets
+            projected:
+              defaultMode: 256
+              sources:
+                - secret:
+                    name: my-sentry-secret
+                    optional: true
+                    items:
+                      - key: telemetry__sentry__dsn
+                        path: telemetry__sentry__dsn
 
   # The server does not reload, so a configuration change has to roll the pod to take effect.
   - it: rolls the pod when the mounted configuration changes

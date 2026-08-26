@@ -1,0 +1,58 @@
+# Sentry switched on, with the egress rule that makes it reach anything.
+#
+# A render fixture, not an install fixture: an S3 endpoint that does not resolve and a DSN
+# pointing at a host that does not exist. `ct install` takes every `ci/*-values.yaml`, while the
+# render and policy jobs glob `ci/*.yaml`.
+#
+# Every key is set away from its default on purpose. The chart writes the whole block through to
+# one document, so a fixture that left the defaults in place would render the same `config.toml`
+# whether the mapping were right or reversed.
+#
+# `networkPolicy` is here for the half of this feature the chart cannot derive. The DSN is a
+# credential, so the chart never reads it and cannot name the ingest host. The defaults would
+# already reach it — `egress.https` permits TCP/443 to `0.0.0.0/0` minus private space — so the
+# fixture renders the *explicit* form instead, which is what a deployment that narrowed
+# `egress.cidr` or turned `egress.https` off has to write for itself. It names a CIDR because
+# the portable dialect cannot express a hostname; `ci/cilium.yaml` is where `toFQDNs` is
+# exercised.
+s3:
+  accessKey: ci-access-key
+  secretKey: ci-secret-key
+  host: s3.example.com
+  region: eu-central-1
+
+bucket:
+  entries:
+    ci:
+      bucket: ci-bucket
+      object: ci/object.txt
+
+telemetry:
+  logLevel: debug
+  sentry:
+    enabled: true
+    dsn: https://ci0123456789abcdef@sentry.example.com/42
+    environment: ci
+    release: s3-bucket-perma-link@2.0.0
+    serverName: ci-render-fixture
+    sampleRate: 0.5
+    tracesSampleRate: 0.2
+    captureLevel: warn
+    breadcrumbLevel: debug
+    maxBreadcrumbs: 50
+    attachStacktrace: false
+    sendDefaultPii: false
+    httpTransactions: false
+    spanAttributes: true
+    shutdownTimeoutSecs: 5
+    debug: true
+
+networkPolicy:
+  enabled: true
+  extraEgress:
+    - to:
+        - ipBlock:
+            cidr: 34.120.195.249/32
+      ports:
+        - port: 443
+          protocol: TCP

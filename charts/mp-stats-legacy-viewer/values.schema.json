@@ -1303,7 +1303,7 @@
         },
         "secretsDir": {
           "default": "/etc/mp-stats/secrets",
-          "description": "Directory credential files would be mounted at, passed as `MP_STATS_SECRETS_DIR`. Neither\nbinary reads a secret today, so nothing is mounted and the variable is not set; the value is\nhere for an operator adding one through `extraVolumes`.",
+          "description": "Directory credential files are mounted at, passed as `MP_STATS_SECRETS_DIR`. The Sentry\nDSN is the only credential this chart handles, so the volume and the variable both appear\nonly while `telemetry.sentry.enabled` is set — a release that does not report to Sentry\ncarries neither.",
           "required": [],
           "title": "secretsDir",
           "type": "string"
@@ -1311,6 +1311,13 @@
       },
       "required": [],
       "title": "configMount"
+    },
+    "existingSecret": {
+      "default": "",
+      "description": "Name of an existing Secret holding the Sentry DSN, which keeps it out of `values.yaml` and\nout of the Helm release object. **Its key is the configuration path, not a free-form name**:\n`telemetry__sentry__dsn`, because the file name is what the loader parses. Set, the chart\nrenders no Secret of its own and `telemetry.sentry.dsn` is ignored. It is read only while\n`telemetry.sentry.enabled` is set — nothing else this server reads is a credential.",
+      "required": [],
+      "title": "existingSecret",
+      "type": "string"
     },
     "extraEnv": {
       "description": "Additional environment variables for the application container.",
@@ -1607,7 +1614,7 @@
           "type": "string"
         },
         "tag": {
-          "default": "v0.18.0@sha256:22aec41fcd9170a7c4799e8170700436332413728ea9c476b7d4d539d284f9fb",
+          "default": "v0.19.0@sha256:115f48976c6091f381668f50c8f8410b26532926c618afbb567bfbd16009adec",
           "description": "The container image tag, pinned by digest (`vX.Y.Z\npull, while the tag stays on as the readable version marker. Defaults to the chart's\n`appVersion` when empty.",
           "required": [],
           "title": "tag",
@@ -2608,6 +2615,168 @@
     "strategy": {
       "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.apps.v1.DeploymentStrategy",
       "required": []
+    },
+    "telemetry": {
+      "additionalProperties": true,
+      "description": "Logging and error reporting. The log settings are rendered under `telemetry` in the mounted\n`config.toml`; the Sentry DSN is a credential and goes to the Secret instead. The whole block\nis read once as the process boots rather than re-read from the mount, so a change to it takes\neffect on the next rollout.",
+      "properties": {
+        "jsonLogs": {
+          "default": false,
+          "description": "Emit one JSON object per record instead of human-readable lines\n(`telemetry.json_logs`). The image's default suits `docker run` on a terminal; a cluster\nshipping logs to a collector wants this on.",
+          "required": [],
+          "title": "jsonLogs",
+          "type": "boolean"
+        },
+        "logFilter": {
+          "default": "info",
+          "description": "`RUST_LOG`-style filter deciding which records are emitted at all\n(`telemetry.log_filter`), for example `info,mp_stats_server=debug`. `RUST_LOG` set in the\ncontainer outranks this — the one place in this configuration where a bare environment\nvariable wins over the layered loader — so `extraEnv` is the override to reach for while a\npod is misbehaving. It governs what reaches Sentry too: a record this filter drops never\nbecomes an issue or a breadcrumb, whatever `sentry.captureLevel` says.",
+          "required": [],
+          "title": "logFilter",
+          "type": "string"
+        },
+        "sentry": {
+          "additionalProperties": true,
+          "description": "Sentry error reporting and request tracing. **Off**, and wholly inert while it is: no\nclient, no panic hook, no `tracing` layer and no HTTP middleware is installed, and nothing\nleaves the process.\n\nTwo things the chart deliberately does not do for you. It never reads the DSN, so it cannot\nname the ingest host in the NetworkPolicies. The defaults do happen to cover it —\n`networkPolicy.egress.https` permits TCP/443 to `0.0.0.0/0` minus private space — but a\ndeployment that narrowed `networkPolicy.egress.cidr`, turned `egress.https` off, or replaced\nthe CIDR rule with `networkPolicy.cilium.egress.toFQDNs` has to name the endpoint itself,\nand getting that wrong is silent: an SDK that cannot reach its endpoint queues events and\nthen discards them, so the project stays empty, which reads as \"no errors\". And it\nconfigures nothing inside Sentry — the project, its quota and its server-side data-scrubbing\nrules are yours.",
+          "properties": {
+            "attachStacktraces": {
+              "default": true,
+              "description": "Attach a stack trace to events that carry none of their own\n(`telemetry.sentry.attach_stacktraces`).",
+              "required": [],
+              "title": "attachStacktraces",
+              "type": "boolean"
+            },
+            "breadcrumbLevel": {
+              "default": "info",
+              "description": "Least severe `tracing` level kept as a breadcrumb, the trail attached to the next issue\n(`telemetry.sentry.breadcrumb_level`). Records at or above `captureLevel` become issues\ninstead, so this only ever describes the band below it. Quote `\"off\"`.",
+              "enum": [
+                "off",
+                "error",
+                "warn",
+                "info",
+                "debug",
+                "trace"
+              ],
+              "required": [],
+              "title": "breadcrumbLevel"
+            },
+            "captureLevel": {
+              "default": "error",
+              "description": "Least severe `tracing` level reported as a Sentry issue\n(`telemetry.sentry.capture_level`). Quote `\"off\"` — unquoted, YAML reads it as the boolean\n`false`. This and `breadcrumbLevel` both sit *under* `logFilter`, so a record that filter\ndrops never reaches Sentry either.",
+              "enum": [
+                "off",
+                "error",
+                "warn",
+                "info",
+                "debug",
+                "trace"
+              ],
+              "required": [],
+              "title": "captureLevel"
+            },
+            "debug": {
+              "default": false,
+              "description": "Print the SDK's own diagnostics to stderr (`telemetry.sentry.debug`). For proving a DSN\nworks, not for running.",
+              "required": [],
+              "title": "debug",
+              "type": "boolean"
+            },
+            "dsn": {
+              "default": "",
+              "description": "Ingest URL, `https://\u003ckey\u003e@\u003chost\u003e/\u003cproject\u003e`. A credential — the embedded key is a\nbearer token for the project's ingest endpoint — so it is delivered as a file in\n`MP_STATS_SECRETS_DIR` under `telemetry__sentry__dsn` and never written into the\nConfigMap. It is the only credential this chart handles, and switching Sentry on is what\ngives the pod a secrets volume at all. Leave it empty and put that key in the Secret named\nby `existingSecret` to keep it out of `helm get values` entirely.",
+              "required": [],
+              "title": "dsn",
+              "type": "string"
+            },
+            "enabled": {
+              "default": false,
+              "description": "Initialise the Sentry client (`telemetry.sentry.enabled`). Off, every other key here is\ninert. On, the server refuses to boot without a DSN rather than starting with a reporter\nthat reports nowhere, so this and `dsn` are set together.",
+              "required": [],
+              "title": "enabled",
+              "type": "boolean"
+            },
+            "environment": {
+              "default": "",
+              "description": "Environment tag on every event (`telemetry.sentry.environment`). Empty lets the server\nderive it from the build: `production` for a release binary, which every published image\nis. Set it for anything in between, such as a staging cluster running that same binary.",
+              "required": [],
+              "title": "environment",
+              "type": "string"
+            },
+            "httpTransactions": {
+              "default": true,
+              "description": "Record one transaction per request, named by the matched route rather than by the URI\n(`telemetry.sentry.http_transactions`). Whether a started transaction is kept is\n`tracesSampleRate`'s decision; this is the switch for a deployment that wants error\nreporting and no performance data at all.",
+              "required": [],
+              "title": "httpTransactions",
+              "type": "boolean"
+            },
+            "maxBreadcrumbs": {
+              "default": 100,
+              "description": "How many breadcrumbs one event carries (`telemetry.sentry.max_breadcrumbs`).",
+              "minimum": 0,
+              "required": [],
+              "title": "maxBreadcrumbs",
+              "type": "integer"
+            },
+            "release": {
+              "default": "",
+              "description": "Release tag on every event (`telemetry.sentry.release`). Empty uses\n`mp-stats-legacy-viewer\nmakes a regression attributable to a deploy — set this only to match a release you create\nin Sentry under a name of your own.",
+              "required": [],
+              "title": "release",
+              "type": "string"
+            },
+            "sampleRate": {
+              "default": 1,
+              "description": "Fraction of captured events actually sent (`telemetry.sentry.sample_rate`). A blunt\nvolume cap — it drops whole issues, not repetitions of one — so leave it at `1` unless a\nquota forces otherwise. A value outside the range fails the boot.",
+              "maximum": 1,
+              "minimum": 0,
+              "required": [],
+              "title": "sampleRate",
+              "type": "number"
+            },
+            "sendDefaultPii": {
+              "default": false,
+              "description": "Send personally identifying data with every event: the client IP, the whole request\nheader set — `Cookie` included — and the resolved user\n(`telemetry.sentry.send_default_pii`). **Off, and worth leaving off** — a reader's IP\naddress is not what makes a crash report actionable, and Sentry is a third party for the\npurposes of whatever data policy this deployment publishes. It is two controls rather than\none, besides: off is also what keeps the HTTP middleware redacting sensitive headers.",
+              "required": [],
+              "title": "sendDefaultPii",
+              "type": "boolean"
+            },
+            "serverName": {
+              "default": "",
+              "description": "Host tag on every event (`telemetry.sentry.server_name`). Empty reports none, which is\nthe right answer here: the value would be one replica's pod name, gone by the time anyone\nreads the issue.",
+              "required": [],
+              "title": "serverName",
+              "type": "string"
+            },
+            "shutdownTimeoutSecs": {
+              "default": 2,
+              "description": "How long process exit waits for queued events to drain\n(`telemetry.sentry.shutdown_timeout_secs`). Paid on every pod shutdown, so it is time\nadded to every rollout; keep it well inside `terminationGracePeriodSeconds`.",
+              "minimum": 0,
+              "required": [],
+              "title": "shutdownTimeoutSecs",
+              "type": "integer"
+            },
+            "spanAttributes": {
+              "default": false,
+              "description": "Copy `tracing` span fields onto the Sentry span as attributes\n(`telemetry.sentry.span_attributes`). Off: the span fields here carry request paths, and a\ntransaction is retained for longer than a log line.",
+              "required": [],
+              "title": "spanAttributes",
+              "type": "boolean"
+            },
+            "tracesSampleRate": {
+              "default": 0,
+              "description": "Fraction of traces this server **starts** that are recorded\n(`telemetry.sentry.traces_sample_rate`). `0` starts none, which is the right figure for a\nstatic file server — a trace per asset request is volume without a question behind it —\nand it is what makes the feature free to switch on for error reporting alone. It does not\ntake the server out of a trace that reaches it already sampled: an inbound `sentry-trace`\nheader is continued whatever this says.",
+              "maximum": 1,
+              "minimum": 0,
+              "required": [],
+              "title": "tracesSampleRate",
+              "type": "number"
+            }
+          },
+          "required": [],
+          "title": "sentry"
+        }
+      },
+      "required": [],
+      "title": "telemetry"
     },
     "terminationGracePeriodSeconds": {
       "default": 30,

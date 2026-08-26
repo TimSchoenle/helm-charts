@@ -1,6 +1,6 @@
 # mp-stats-legacy-viewer
 
-![Version: 3.2.3](https://img.shields.io/badge/Version-3.2.3-informational?style=flat-square) ![AppVersion: v0.18.0](https://img.shields.io/badge/AppVersion-v0.18.0-informational?style=flat-square)
+![Version: 3.3.0](https://img.shields.io/badge/Version-3.3.0-informational?style=flat-square) ![AppVersion: v0.19.0](https://img.shields.io/badge/AppVersion-v0.19.0-informational?style=flat-square)
 
 MP Stats Legacy Viewer
 
@@ -77,6 +77,75 @@ The server does not reload its configuration, so the chart keeps the conventiona
 `checksum/configmap` pod annotation: a configuration change rolls the Deployment, which is the
 only way it takes effect.
 
+## Logging and error reporting
+
+`telemetry.logFilter` is a `RUST_LOG`-style filter — `info,mp_stats_server=debug` — and
+`telemetry.jsonLogs` switches the output from human-readable lines to one JSON object per
+record, which is what a cluster shipping logs to a collector wants. A `RUST_LOG` set in the
+container outranks the filter: it is the one place in this configuration where a bare
+environment variable wins over the layered loader, which makes `extraEnv` the override to reach
+for while a pod is misbehaving.
+
+`telemetry.sentry` reports errors and panics to Sentry, and can record a transaction per
+request. It is off, and inert while it is off: no client, no panic hook, no `tracing` layer and
+no HTTP middleware is installed, so nothing leaves the process and nothing about a rendered
+release changes.
+
+```yaml
+telemetry:
+  sentry:
+    enabled: true
+    dsn: https://<key>@<host>/<project>
+```
+
+The DSN embeds a write key for the project's event stream, so the chart treats it as the
+credential it is: it goes to a Secret under `telemetry__sentry__dsn`, never into the ConfigMap.
+It is the **only** credential this server reads, so switching Sentry on is what gives the pod a
+secrets volume and an `MP_STATS_SECRETS_DIR` at all — expect the pod spec to change shape, not
+just the ConfigMap. Point `existingSecret` at a Secret you created yourself to keep the DSN out
+of `values.yaml` and out of the Helm release object:
+
+```shell
+kubectl create secret generic mp-stats-sentry   --namespace [NAMESPACE]   --from-literal=telemetry__sentry__dsn='https://<key>@<host>/<project>'
+```
+
+```yaml
+existingSecret: mp-stats-sentry
+```
+
+**The key name is the configuration path the server reads, not a free-form name.** The DSN
+arrives as a file in a projected volume and the server takes the key out of the file *name*, so
+`telemetry__sentry__dsn` is required; a Secret spelled any other way mounts cleanly and supplies
+nothing. Switching the feature on with no DSN — neither inline nor in an `existingSecret` — is
+refused at render time, because the server refuses to boot rather than installing a client that
+reports nowhere, and a rejected `helm upgrade` beats a CrashLoopBackOff.
+
+**Check the egress.** The chart never reads the DSN, so it cannot name the ingest host in the
+network policies. The defaults do cover it — `networkPolicy.egress.https` permits TCP/443 to
+`0.0.0.0/0` minus private space — so an out-of-the-box release reaches Sentry without further
+work. A release that narrowed `networkPolicy.egress.cidr`, turned `egress.https` off, or
+replaced the CIDR rule with `networkPolicy.cilium.egress.toFQDNs` has to name the endpoint
+itself. Getting that wrong is silent: an SDK that cannot reach its endpoint queues events and
+then discards them, so the project simply stays empty, which reads as "no errors".
+
+`tracesSampleRate` is `0` — this server starts no traces of its own, which is the right figure
+for a static file server, where a trace per asset request is volume without a question behind
+it. It still continues a trace that arrives already sampled, so one reader action stays readable
+across whatever sits in front of this server.
+
+`sendDefaultPii` stays off. On, every event carries the client IP, the whole request header set
+including `Cookie`, and the resolved user, to a third party — and the same flag is what stops
+the HTTP middleware redacting sensitive headers.
+
+`environment`, `release` and `serverName` are empty by default and the chart writes none of
+them: the server derives the first two — `production` for the release binaries every published
+image is built as, and `mp-stats-legacy-viewer@v<version>` spelled the way the image tag spells
+it — and reports no host tag. A blank value is a *supplied* value to the loader, not an absent
+one, so set them only to say something the server cannot derive.
+
+`captureLevel` and `breadcrumbLevel` both sit *under* `logFilter`: a record the filter drops
+never becomes an issue or a breadcrumb, whatever they say.
+
 ## Content-Security-Policy
 
 The header is derived, not configured: at startup the server reads the `index.html` in
@@ -111,6 +180,24 @@ condition the chart cannot enforce:
 server already sets one.
 
 ## Upgrading
+
+### 3.2 to 3.3
+
+Chart 3.3 tracks the viewer's 0.19.0 release, which adds optional Sentry error reporting and
+tracing and gives the log settings first-class keys. Everything is additive and off, so an
+existing release needs no change.
+
+Two things are worth knowing before switching Sentry on:
+
+- **The pod gains a secrets volume.** The DSN is the only credential this server reads, so
+  today's pods carry no secrets volume and no `MP_STATS_SECRETS_DIR`. Setting
+  `telemetry.sentry.enabled` gives them both, and an `existingSecret` that should carry the DSN
+  needs the key `telemetry__sentry__dsn`.
+- **`telemetry.logFilter` restates a key the mounted file has to carry.** Pointing
+  `MP_STATS_CONFIG` at this chart's mount replaces the image's own `/config.toml`, so the filter
+  is now written explicitly rather than inherited. The default, `info`, is what the image
+  carried; a release that had set a filter through `config.telemetry.log_filter` keeps working —
+  `config` still merges over the derived tree.
 
 ### 2.x to 3.0
 
@@ -332,7 +419,8 @@ policy pointing at the wrong Gateway looks correct and blocks everything.
 | configExtraToml | string | `""` | Verbatim TOML appended after the rendered configuration. The escape hatch for anything the chart's TOML renderer cannot express, notably arrays of tables. |
 | configMount | object | `{"configDir":"/etc/mp-stats/config","secretsDir":"/etc/mp-stats/secrets"}` | Where the rendered configuration and the credential files land in the container. |
 | configMount.configDir | string | `"/etc/mp-stats/config"` | Directory the rendered `config.toml` is mounted at, passed as `MP_STATS_CONFIG`. Pointing this at the mount **replaces** the `/config.toml` the image ships, so everything the image described — the bind address, `dist_dir`, `data_dir` — is restated by the values above. |
-| configMount.secretsDir | string | `"/etc/mp-stats/secrets"` | Directory credential files would be mounted at, passed as `MP_STATS_SECRETS_DIR`. Neither binary reads a secret today, so nothing is mounted and the variable is not set; the value is here for an operator adding one through `extraVolumes`. |
+| configMount.secretsDir | string | `"/etc/mp-stats/secrets"` | Directory credential files are mounted at, passed as `MP_STATS_SECRETS_DIR`. The Sentry DSN is the only credential this chart handles, so the volume and the variable both appear only while `telemetry.sentry.enabled` is set — a release that does not report to Sentry carries neither. |
+| existingSecret | string | `""` | Name of an existing Secret holding the Sentry DSN, which keeps it out of `values.yaml` and out of the Helm release object. **Its key is the configuration path, not a free-form name**: `telemetry__sentry__dsn`, because the file name is what the loader parses. Set, the chart renders no Secret of its own and `telemetry.sentry.dsn` is ignored. It is read only while `telemetry.sentry.enabled` is set — nothing else this server reads is a credential. |
 | extraEnv | list | `[]` | Additional environment variables for the application container. |
 | extraVolumeMounts | list | `[]` | Additional volume mounts added to the application container. |
 | extraVolumes | list | `[]` | Additional volumes added to the pod. |
@@ -365,11 +453,11 @@ policy pointing at the wrong Gateway looks correct and blocks everything.
 | gateway.tls.enabled | bool | `false` | Add an HTTPS listener. |
 | gateway.tls.mode | string | `"Terminate"` | TLS mode. |
 | gateway.tls.options | object | `{}` | Implementation-specific TLS options. |
-| image | object | `{"pullPolicy":"","registry":"","repository":"timschoenle/mp-stats-legacy-viewer","tag":"v0.18.0@sha256:22aec41fcd9170a7c4799e8170700436332413728ea9c476b7d4d539d284f9fb"}` | Container image the pod runs, composed as `registry/repository:tag`. |
+| image | object | `{"pullPolicy":"","registry":"","repository":"timschoenle/mp-stats-legacy-viewer","tag":"v0.19.0@sha256:115f48976c6091f381668f50c8f8410b26532926c618afbb567bfbd16009adec"}` | Container image the pod runs, composed as `registry/repository:tag`. |
 | image.pullPolicy | string | `""` | The image pull policy. Empty resolves automatically from the tag/digest. |
 | image.registry | string | `""` | Registry host. Empty means Docker Hub. |
 | image.repository | string | `"timschoenle/mp-stats-legacy-viewer"` | The container image repository. |
-| image.tag | string | `"v0.18.0@sha256:22aec41fcd9170a7c4799e8170700436332413728ea9c476b7d4d539d284f9fb"` | The container image tag, pinned by digest (`vX.Y.Z@sha256:...`). The digest pins the pull, while the tag stays on as the readable version marker. Defaults to the chart's `appVersion` when empty. |
+| image.tag | string | `"v0.19.0@sha256:115f48976c6091f381668f50c8f8410b26532926c618afbb567bfbd16009adec"` | The container image tag, pinned by digest (`vX.Y.Z@sha256:...`). The digest pins the pull, while the tag stays on as the readable version marker. Defaults to the chart's `appVersion` when empty. |
 | imagePullSecrets | list | `[]` | Optional image pull secrets for private registries. |
 | ingress | object | `{"annotations":{},"enabled":false,"hosts":[],"ingressClassName":"nginx","tls":[]}` | The Ingress in front of the Service. Off by default; `gateway` is the Gateway API alternative and the two are independent switches. |
 | ingress.annotations | object | `{}` | Custom annotations for the Ingress resource. Useful for configuring ingress controllers (e.g., cert-manager, rate limits). |
@@ -500,6 +588,26 @@ policy pointing at the wrong Gateway looks correct and blocks everything.
 | startupProbe.periodSeconds | int | `5` | Probe interval. |
 | startupProbe.timeoutSeconds | int | `3` | Probe timeout. |
 | strategy | object | `{}` | Deployment update strategy. Empty uses the Kubernetes default rolling update. |
+| telemetry | object | `{"jsonLogs":false,"logFilter":"info","sentry":{"attachStacktraces":true,"breadcrumbLevel":"info","captureLevel":"error","debug":false,"dsn":"","enabled":false,"environment":"","httpTransactions":true,"maxBreadcrumbs":100,"release":"","sampleRate":1,"sendDefaultPii":false,"serverName":"","shutdownTimeoutSecs":2,"spanAttributes":false,"tracesSampleRate":0}}` | Logging and error reporting. The log settings are rendered under `telemetry` in the mounted `config.toml`; the Sentry DSN is a credential and goes to the Secret instead. The whole block is read once as the process boots rather than re-read from the mount, so a change to it takes effect on the next rollout. |
+| telemetry.jsonLogs | bool | `false` | Emit one JSON object per record instead of human-readable lines (`telemetry.json_logs`). The image's default suits `docker run` on a terminal; a cluster shipping logs to a collector wants this on. |
+| telemetry.logFilter | string | `"info"` | `RUST_LOG`-style filter deciding which records are emitted at all (`telemetry.log_filter`), for example `info,mp_stats_server=debug`. `RUST_LOG` set in the container outranks this — the one place in this configuration where a bare environment variable wins over the layered loader — so `extraEnv` is the override to reach for while a pod is misbehaving. It governs what reaches Sentry too: a record this filter drops never becomes an issue or a breadcrumb, whatever `sentry.captureLevel` says. |
+| telemetry.sentry | object | `{"attachStacktraces":true,"breadcrumbLevel":"info","captureLevel":"error","debug":false,"dsn":"","enabled":false,"environment":"","httpTransactions":true,"maxBreadcrumbs":100,"release":"","sampleRate":1,"sendDefaultPii":false,"serverName":"","shutdownTimeoutSecs":2,"spanAttributes":false,"tracesSampleRate":0}` | Sentry error reporting and request tracing. **Off**, and wholly inert while it is: no client, no panic hook, no `tracing` layer and no HTTP middleware is installed, and nothing leaves the process.  Two things the chart deliberately does not do for you. It never reads the DSN, so it cannot name the ingest host in the NetworkPolicies. The defaults do happen to cover it — `networkPolicy.egress.https` permits TCP/443 to `0.0.0.0/0` minus private space — but a deployment that narrowed `networkPolicy.egress.cidr`, turned `egress.https` off, or replaced the CIDR rule with `networkPolicy.cilium.egress.toFQDNs` has to name the endpoint itself, and getting that wrong is silent: an SDK that cannot reach its endpoint queues events and then discards them, so the project stays empty, which reads as "no errors". And it configures nothing inside Sentry — the project, its quota and its server-side data-scrubbing rules are yours. |
+| telemetry.sentry.attachStacktraces | bool | `true` | Attach a stack trace to events that carry none of their own (`telemetry.sentry.attach_stacktraces`). |
+| telemetry.sentry.breadcrumbLevel | string | `"info"` | Least severe `tracing` level kept as a breadcrumb, the trail attached to the next issue (`telemetry.sentry.breadcrumb_level`). Records at or above `captureLevel` become issues instead, so this only ever describes the band below it. Quote `"off"`. |
+| telemetry.sentry.captureLevel | string | `"error"` | Least severe `tracing` level reported as a Sentry issue (`telemetry.sentry.capture_level`). Quote `"off"` — unquoted, YAML reads it as the boolean `false`. This and `breadcrumbLevel` both sit *under* `logFilter`, so a record that filter drops never reaches Sentry either. |
+| telemetry.sentry.debug | bool | `false` | Print the SDK's own diagnostics to stderr (`telemetry.sentry.debug`). For proving a DSN works, not for running. |
+| telemetry.sentry.dsn | string | `""` | Ingest URL, `https://<key>@<host>/<project>`. A credential — the embedded key is a bearer token for the project's ingest endpoint — so it is delivered as a file in `MP_STATS_SECRETS_DIR` under `telemetry__sentry__dsn` and never written into the ConfigMap. It is the only credential this chart handles, and switching Sentry on is what gives the pod a secrets volume at all. Leave it empty and put that key in the Secret named by `existingSecret` to keep it out of `helm get values` entirely. |
+| telemetry.sentry.enabled | bool | `false` | Initialise the Sentry client (`telemetry.sentry.enabled`). Off, every other key here is inert. On, the server refuses to boot without a DSN rather than starting with a reporter that reports nowhere, so this and `dsn` are set together. |
+| telemetry.sentry.environment | string | `""` | Environment tag on every event (`telemetry.sentry.environment`). Empty lets the server derive it from the build: `production` for a release binary, which every published image is. Set it for anything in between, such as a staging cluster running that same binary. |
+| telemetry.sentry.httpTransactions | bool | `true` | Record one transaction per request, named by the matched route rather than by the URI (`telemetry.sentry.http_transactions`). Whether a started transaction is kept is `tracesSampleRate`'s decision; this is the switch for a deployment that wants error reporting and no performance data at all. |
+| telemetry.sentry.maxBreadcrumbs | int | `100` | How many breadcrumbs one event carries (`telemetry.sentry.max_breadcrumbs`). |
+| telemetry.sentry.release | string | `""` | Release tag on every event (`telemetry.sentry.release`). Empty uses `mp-stats-legacy-viewer@v<version>`, spelled as the image tag spells it, which is what makes a regression attributable to a deploy — set this only to match a release you create in Sentry under a name of your own. |
+| telemetry.sentry.sampleRate | float | `1` | Fraction of captured events actually sent (`telemetry.sentry.sample_rate`). A blunt volume cap — it drops whole issues, not repetitions of one — so leave it at `1` unless a quota forces otherwise. A value outside the range fails the boot. |
+| telemetry.sentry.sendDefaultPii | bool | `false` | Send personally identifying data with every event: the client IP, the whole request header set — `Cookie` included — and the resolved user (`telemetry.sentry.send_default_pii`). **Off, and worth leaving off** — a reader's IP address is not what makes a crash report actionable, and Sentry is a third party for the purposes of whatever data policy this deployment publishes. It is two controls rather than one, besides: off is also what keeps the HTTP middleware redacting sensitive headers. |
+| telemetry.sentry.serverName | string | `""` | Host tag on every event (`telemetry.sentry.server_name`). Empty reports none, which is the right answer here: the value would be one replica's pod name, gone by the time anyone reads the issue. |
+| telemetry.sentry.shutdownTimeoutSecs | int | `2` | How long process exit waits for queued events to drain (`telemetry.sentry.shutdown_timeout_secs`). Paid on every pod shutdown, so it is time added to every rollout; keep it well inside `terminationGracePeriodSeconds`. |
+| telemetry.sentry.spanAttributes | bool | `false` | Copy `tracing` span fields onto the Sentry span as attributes (`telemetry.sentry.span_attributes`). Off: the span fields here carry request paths, and a transaction is retained for longer than a log line. |
+| telemetry.sentry.tracesSampleRate | float | `0` | Fraction of traces this server **starts** that are recorded (`telemetry.sentry.traces_sample_rate`). `0` starts none, which is the right figure for a static file server — a trace per asset request is volume without a question behind it — and it is what makes the feature free to switch on for error reporting alone. It does not take the server out of a trace that reaches it already sampled: an inbound `sentry-trace` header is continued whatever this says. |
 | terminationGracePeriodSeconds | int | `30` | Grace period for pod shutdown. |
 | tolerations | list | `[]` | Tolerations for pod assignment. |
 | topologySpreadConstraints | list | `[]` | Pod topology spread constraints for availability. |

@@ -15,6 +15,25 @@
 # errors.
 bindings: true
 
+# Contract keys no chart value binds, each group with the reason it does not.
+#
+# Chart-level: a key nothing surfaces is unsurfaced in every document that declares it, and this
+# chart declares one. Secret keys are not exempt by default and each one is written out — the
+# blanket rule "credentials need no marker" cannot tell a key delivered as a file from a key a
+# chart merely forgot, and the second is exactly the regression this gate exists to catch.
+unbound:
+  - keys:
+      - telemetry.sentry.dsn
+    reason: >-
+      Delivered as a file in MP_STATS_SECRETS_DIR — from the Secret this chart renders, or from
+      `existingSecret` under the file name `telemetry__sentry__dsn` — and never written into
+      `config.toml`, because the DSN embeds a bearer key for the project's ingest endpoint and a
+      credential in a ConfigMap is readable by anything that can read the namespace.
+      `telemetry.sentry.dsn` is the value that carries it, so the binding does exist; it simply
+      does not run through the configuration document the markers describe. `just
+      check-config-secrets` is what reconciles that channel, and it does it from the rendered
+      manifests rather than from a comment.
+
 documents:
   - name: viewer
 
@@ -37,7 +56,9 @@ documents:
       - values: image
         contract: contracts/viewer.json
 
-    # The pods that mount it, for the environment and secret-file gates.
+    # The pods that mount it, for the environment and secret-file gates. The secrets volume is
+    # rendered only while `telemetry.sentry.enabled` is set, so on the default render this pod
+    # mounts the ConfigMap alone.
     consumers:
       - workload: { kind: Deployment, selector: { app.kubernetes.io/instance: mp-stats-legacy-viewer } }
         containers: [mp-stats-legacy-viewer]

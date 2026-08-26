@@ -1,15 +1,15 @@
 {
   "source": {
     "image": "docker.io/timschoenle/portfolio",
-    "digest": "sha256:a3380c804d62ea7dcadab149079414a94aeebad99d973eed3c384f912566466d",
-    "sha256": "eb67e70ea9ec4ce1cb948a8316d018c885ff97c632008634cf3a343d84a99df6",
-    "fetched": "2026-08-25T15:03:04Z"
+    "digest": "sha256:a6ada5d26c75bad113006bb6889edc4a5d102edf373b0f57747c3722733fd32b",
+    "sha256": "e5ff18c4fa39eda7fac61e77c4113ed28e3bdd4755c08695cb67e26e337b1a5e",
+    "fetched": "2026-08-26T15:19:27Z"
   },
   "contract": {
     "terrace_contract": 1,
     "app": {
       "name": "portfolio",
-      "version": "v2.9.0",
+      "version": "v2.10.0",
       "source": "https://github.com/TimSchoenle/Portfolio"
     },
     "schema": {
@@ -215,6 +215,418 @@
           "required": false,
           "secret": false,
           "reserved": false
+        },
+        {
+          "path": "sentry.enabled",
+          "env": "PORTFOLIO_SENTRY__ENABLED",
+          "env_file": "PORTFOLIO_SENTRY__ENABLED_FILE",
+          "secrets_file": "sentry__enabled",
+          "docs": "Initialise the Sentry client. `false` installs no client, no panic hook, no `tracing`\nlayer and no HTTP middleware, so every other key here is inert and nothing leaves the\nprocess.\n\nIt also decides who owns the log subscriber. Off — the default — the Dioxus toolchain\ninstalls its own, which is the behaviour this server has always had. On, the server\ninstalls one first (still reading `RUST_LOG`, still formatting the same way) because a\nSentry layer has to be a layer *of* the subscriber, and the framework's is not\nextensible after the fact.",
+          "ty": "bool",
+          "values": [],
+          "constraint": {
+            "type": "boolean"
+          },
+          "text_constraint": {
+            "pattern": "^\\s*(true|false)\\s*$",
+            "type": "string"
+          },
+          "text_form": "boolean",
+          "aliases": [],
+          "env_aliases": [],
+          "env_file_aliases": [],
+          "secrets_file_aliases": [],
+          "default": "false",
+          "default_value": false,
+          "note": null,
+          "required": false,
+          "secret": false,
+          "reserved": false
+        },
+        {
+          "path": "sentry.dsn",
+          "env": "PORTFOLIO_SENTRY__DSN",
+          "env_file": "PORTFOLIO_SENTRY__DSN_FILE",
+          "secrets_file": "sentry__dsn",
+          "docs": "Ingest URL, `https://<key>@<host>/<project>`.\n\nThe embedded key is a bearer credential for the project's ingest endpoint, so it is held\nas a `SecretString` — this block is nested in a `ServerConfig` that is printed with `?` on\nthe refusal path. Supply it as `PORTFOLIO_SENTRY__DSN_FILE=/run/secrets/sentry_dsn`, or as\n`sentry__dsn` inside `$PORTFOLIO_SECRETS_DIR`, so it never enters the process\nenvironment — where `/proc/<pid>/environ`, a crash dump and `docker inspect` all carry\nit, and every child process inherits it.\n\nAbsent while `sentry.enabled` is set is a boot failure, not a silent no-op.",
+          "ty": "SecretString",
+          "values": [],
+          "constraint": {
+            "type": "string"
+          },
+          "text_form": "text",
+          "aliases": [],
+          "env_aliases": [],
+          "env_file_aliases": [],
+          "secrets_file_aliases": [],
+          "default": null,
+          "default_value": null,
+          "note": null,
+          "required": false,
+          "secret": true,
+          "reserved": false
+        },
+        {
+          "path": "sentry.environment",
+          "env": "PORTFOLIO_SENTRY__ENVIRONMENT",
+          "env_file": "PORTFOLIO_SENTRY__ENVIRONMENT_FILE",
+          "secrets_file": "sentry__environment",
+          "docs": "Environment tag on every event.\n\nUnset resolves to `production` for a release build and `development` otherwise, which is\nthe only distinction this workspace has: it ships one image, and the thing that separates\na developer's `dx serve` from the deployed container is the profile it was built with.",
+          "ty": "String",
+          "values": [],
+          "constraint": {
+            "type": "string"
+          },
+          "text_form": "text",
+          "aliases": [],
+          "env_aliases": [],
+          "env_file_aliases": [],
+          "secrets_file_aliases": [],
+          "default": null,
+          "default_value": null,
+          "note": "`production` in a release build, `development` otherwise",
+          "required": false,
+          "secret": false,
+          "reserved": false
+        },
+        {
+          "path": "sentry.release",
+          "env": "PORTFOLIO_SENTRY__RELEASE",
+          "env_file": "PORTFOLIO_SENTRY__RELEASE_FILE",
+          "secrets_file": "sentry__release",
+          "docs": "Release tag on every event.\n\nUnset resolves to `portfolio@<version>`, the workspace version the binary was built from\n— which is what makes a regression attributable to a deploy, since every deploy of this\nsite is a new image cut from a new version.",
+          "ty": "String",
+          "values": [],
+          "constraint": {
+            "type": "string"
+          },
+          "text_form": "text",
+          "aliases": [],
+          "env_aliases": [],
+          "env_file_aliases": [],
+          "secrets_file_aliases": [],
+          "default": null,
+          "default_value": null,
+          "note": "`portfolio@` and the built version",
+          "required": false,
+          "secret": false,
+          "reserved": false
+        },
+        {
+          "path": "sentry.server_name",
+          "env": "PORTFOLIO_SENTRY__SERVER_NAME",
+          "env_file": "PORTFOLIO_SENTRY__SERVER_NAME_FILE",
+          "secrets_file": "sentry__server_name",
+          "docs": "Host tag on every event.\n\nLeft unset, Sentry reports none. The hostname of a replica is infrastructure detail that\n`sentry.send_default_pii` would otherwise be the gate for, and this site runs one image\nbehind a tunnel, so it identifies nothing an event does not already say.",
+          "ty": "String",
+          "values": [],
+          "constraint": {
+            "type": "string"
+          },
+          "text_form": "text",
+          "aliases": [],
+          "env_aliases": [],
+          "env_file_aliases": [],
+          "secrets_file_aliases": [],
+          "default": null,
+          "default_value": null,
+          "note": null,
+          "required": false,
+          "secret": false,
+          "reserved": false
+        },
+        {
+          "path": "sentry.sample_rate",
+          "env": "PORTFOLIO_SENTRY__SAMPLE_RATE",
+          "env_file": "PORTFOLIO_SENTRY__SAMPLE_RATE_FILE",
+          "secrets_file": "sentry__sample_rate",
+          "docs": "Fraction of captured events actually sent, `0.0`–`1.0`.\n\nA blunt volume cap: it drops whole issues rather than repetitions of one, so a rare bug\nis exactly as likely to be dropped as a noisy one. Leave it at `1.0` unless a quota\nforces otherwise.",
+          "ty": "f32",
+          "values": [],
+          "constraint": {
+            "type": "number"
+          },
+          "text_form": "unknown",
+          "aliases": [],
+          "env_aliases": [],
+          "env_file_aliases": [],
+          "secrets_file_aliases": [],
+          "default": "1",
+          "default_value": 1.0,
+          "note": null,
+          "required": false,
+          "secret": false,
+          "reserved": false
+        },
+        {
+          "path": "sentry.traces_sample_rate",
+          "env": "PORTFOLIO_SENTRY__TRACES_SAMPLE_RATE",
+          "env_file": "PORTFOLIO_SENTRY__TRACES_SAMPLE_RATE_FILE",
+          "secrets_file": "sentry__traces_sample_rate",
+          "docs": "Fraction of request traces recorded, `0.0`–`1.0`.\n\n`0.0` — the default — records none, which is what keeps switching Sentry on for crash\nreporting from also switching performance data on. `0.05`–`0.2` is an ordinary\nproduction figure.\n\nThis server starts every trace it has: it is the edge, and nothing upstream of it hands\nit a sampled trace to continue. That is the difference from a service tier, where the\nrate of whoever *starts* the trace decides whether it exists at all.",
+          "ty": "f32",
+          "values": [],
+          "constraint": {
+            "type": "number"
+          },
+          "text_form": "unknown",
+          "aliases": [],
+          "env_aliases": [],
+          "env_file_aliases": [],
+          "secrets_file_aliases": [],
+          "default": "0",
+          "default_value": 0.0,
+          "note": null,
+          "required": false,
+          "secret": false,
+          "reserved": false
+        },
+        {
+          "path": "sentry.capture_level",
+          "env": "PORTFOLIO_SENTRY__CAPTURE_LEVEL",
+          "env_file": "PORTFOLIO_SENTRY__CAPTURE_LEVEL_FILE",
+          "secrets_file": "sentry__capture_level",
+          "docs": "Least severe `tracing` level reported as a Sentry **issue**.",
+          "ty": "SentryLevel",
+          "values": [
+            "off",
+            "error",
+            "warn",
+            "info",
+            "debug",
+            "trace"
+          ],
+          "constraint": {
+            "enum": [
+              "off",
+              "error",
+              "warn",
+              "info",
+              "debug",
+              "trace"
+            ],
+            "type": "string"
+          },
+          "text_constraint": {
+            "pattern": "^\\s*(off|error|warn|info|debug|trace)\\s*$",
+            "type": "string"
+          },
+          "text_form": "choice",
+          "aliases": [],
+          "env_aliases": [],
+          "env_file_aliases": [],
+          "secrets_file_aliases": [],
+          "default": "error",
+          "default_value": "error",
+          "note": null,
+          "required": false,
+          "secret": false,
+          "reserved": false
+        },
+        {
+          "path": "sentry.breadcrumb_level",
+          "env": "PORTFOLIO_SENTRY__BREADCRUMB_LEVEL",
+          "env_file": "PORTFOLIO_SENTRY__BREADCRUMB_LEVEL_FILE",
+          "secrets_file": "sentry__breadcrumb_level",
+          "docs": "Least severe `tracing` level kept as a **breadcrumb**, the trail attached to the next\nissue.\n\nRecords at or above `sentry.capture_level` become issues instead, so the two thresholds\npartition the stream rather than overlapping on it.",
+          "ty": "SentryLevel",
+          "values": [
+            "off",
+            "error",
+            "warn",
+            "info",
+            "debug",
+            "trace"
+          ],
+          "constraint": {
+            "enum": [
+              "off",
+              "error",
+              "warn",
+              "info",
+              "debug",
+              "trace"
+            ],
+            "type": "string"
+          },
+          "text_constraint": {
+            "pattern": "^\\s*(off|error|warn|info|debug|trace)\\s*$",
+            "type": "string"
+          },
+          "text_form": "choice",
+          "aliases": [],
+          "env_aliases": [],
+          "env_file_aliases": [],
+          "secrets_file_aliases": [],
+          "default": "info",
+          "default_value": "info",
+          "note": null,
+          "required": false,
+          "secret": false,
+          "reserved": false
+        },
+        {
+          "path": "sentry.max_breadcrumbs",
+          "env": "PORTFOLIO_SENTRY__MAX_BREADCRUMBS",
+          "env_file": "PORTFOLIO_SENTRY__MAX_BREADCRUMBS_FILE",
+          "secrets_file": "sentry__max_breadcrumbs",
+          "docs": "How many breadcrumbs one event carries.",
+          "ty": "usize",
+          "values": [],
+          "constraint": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "text_constraint": {
+            "pattern": "^\\s*\\+?[0-9]+\\s*$",
+            "type": "string"
+          },
+          "text_form": "integer",
+          "aliases": [],
+          "env_aliases": [],
+          "env_file_aliases": [],
+          "secrets_file_aliases": [],
+          "default": "100",
+          "default_value": 100,
+          "note": null,
+          "required": false,
+          "secret": false,
+          "reserved": false
+        },
+        {
+          "path": "sentry.attach_stacktraces",
+          "env": "PORTFOLIO_SENTRY__ATTACH_STACKTRACES",
+          "env_file": "PORTFOLIO_SENTRY__ATTACH_STACKTRACES_FILE",
+          "secrets_file": "sentry__attach_stacktraces",
+          "docs": "Attach a stack trace to events that carry none of their own.",
+          "ty": "bool",
+          "values": [],
+          "constraint": {
+            "type": "boolean"
+          },
+          "text_constraint": {
+            "pattern": "^\\s*(true|false)\\s*$",
+            "type": "string"
+          },
+          "text_form": "boolean",
+          "aliases": [],
+          "env_aliases": [],
+          "env_file_aliases": [],
+          "secrets_file_aliases": [],
+          "default": "true",
+          "default_value": true,
+          "note": null,
+          "required": false,
+          "secret": false,
+          "reserved": false
+        },
+        {
+          "path": "sentry.send_default_pii",
+          "env": "PORTFOLIO_SENTRY__SEND_DEFAULT_PII",
+          "env_file": "PORTFOLIO_SENTRY__SEND_DEFAULT_PII_FILE",
+          "secrets_file": "sentry__send_default_pii",
+          "docs": "Send personally identifying data with every event: the client IP, the full request header\nset (`Cookie` included) and the resolved user.\n\n**Off, and worth leaving off.** A reader's IP address and cookies are exactly what a\ncrash report does not need in order to be actionable, and Sentry is a third party for the\npurposes of the privacy page this site publishes — a page that currently says no\nthird-party service receives visitor data, which is a statement this key is the one way\nto falsify. On, it also widens what the HTTP middleware records, because `sentry-tower`\nreads this same flag to decide whether to redact sensitive request headers.",
+          "ty": "bool",
+          "values": [],
+          "constraint": {
+            "type": "boolean"
+          },
+          "text_constraint": {
+            "pattern": "^\\s*(true|false)\\s*$",
+            "type": "string"
+          },
+          "text_form": "boolean",
+          "aliases": [],
+          "env_aliases": [],
+          "env_file_aliases": [],
+          "secrets_file_aliases": [],
+          "default": "false",
+          "default_value": false,
+          "note": null,
+          "required": false,
+          "secret": false,
+          "reserved": false
+        },
+        {
+          "path": "sentry.http_transactions",
+          "env": "PORTFOLIO_SENTRY__HTTP_TRANSACTIONS",
+          "env_file": "PORTFOLIO_SENTRY__HTTP_TRANSACTIONS_FILE",
+          "secrets_file": "sentry__http_transactions",
+          "docs": "Record one Sentry transaction per request, named by the *matched route* rather than by\nthe URI — so `/api/repos/{name}` does not become one transaction name per repository.\n\nWhether a started transaction is *kept* is `sentry.traces_sample_rate`'s decision; this is\nthe switch for taking the middleware out entirely.",
+          "ty": "bool",
+          "values": [],
+          "constraint": {
+            "type": "boolean"
+          },
+          "text_constraint": {
+            "pattern": "^\\s*(true|false)\\s*$",
+            "type": "string"
+          },
+          "text_form": "boolean",
+          "aliases": [],
+          "env_aliases": [],
+          "env_file_aliases": [],
+          "secrets_file_aliases": [],
+          "default": "true",
+          "default_value": true,
+          "note": null,
+          "required": false,
+          "secret": false,
+          "reserved": false
+        },
+        {
+          "path": "sentry.span_attributes",
+          "env": "PORTFOLIO_SENTRY__SPAN_ATTRIBUTES",
+          "env_file": "PORTFOLIO_SENTRY__SPAN_ATTRIBUTES_FILE",
+          "secrets_file": "sentry__span_attributes",
+          "docs": "Copy `tracing` span fields onto the Sentry span as attributes.\n\nOff. Span fields here routinely carry request paths and the negotiated locale, and a\ntransaction is stored under a longer retention than a log line.",
+          "ty": "bool",
+          "values": [],
+          "constraint": {
+            "type": "boolean"
+          },
+          "text_constraint": {
+            "pattern": "^\\s*(true|false)\\s*$",
+            "type": "string"
+          },
+          "text_form": "boolean",
+          "aliases": [],
+          "env_aliases": [],
+          "env_file_aliases": [],
+          "secrets_file_aliases": [],
+          "default": "false",
+          "default_value": false,
+          "note": null,
+          "required": false,
+          "secret": false,
+          "reserved": false
+        },
+        {
+          "path": "sentry.debug",
+          "env": "PORTFOLIO_SENTRY__DEBUG",
+          "env_file": "PORTFOLIO_SENTRY__DEBUG_FILE",
+          "secrets_file": "sentry__debug",
+          "docs": "Print the SDK's own diagnostics to stderr. For proving a DSN works, not for running.",
+          "ty": "bool",
+          "values": [],
+          "constraint": {
+            "type": "boolean"
+          },
+          "text_constraint": {
+            "pattern": "^\\s*(true|false)\\s*$",
+            "type": "string"
+          },
+          "text_form": "boolean",
+          "aliases": [],
+          "env_aliases": [],
+          "env_file_aliases": [],
+          "secrets_file_aliases": [],
+          "default": "false",
+          "default_value": false,
+          "note": null,
+          "required": false,
+          "secret": false,
+          "reserved": false
         }
       ]
     },
@@ -277,6 +689,101 @@
               "description": "Revalidation interval in seconds. Zero means a permanent cache.\n\nEvery page renders from compile-time data, so the only thing that changes the output is a\nnew build, which starts from an empty cache anyway. A positive value opts into a finite,\ntime-based TTL, which is useful only when a *persistent* cache volume is shared across\ndeploys.\n\nDefault: permanent.",
               "minimum": 0,
               "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "sentry": {
+          "additionalProperties": false,
+          "properties": {
+            "attach_stacktraces": {
+              "default": true,
+              "description": "Attach a stack trace to events that carry none of their own.",
+              "type": "boolean"
+            },
+            "breadcrumb_level": {
+              "default": "info",
+              "description": "Least severe `tracing` level kept as a **breadcrumb**, the trail attached to the next\nissue.\n\nRecords at or above `sentry.capture_level` become issues instead, so the two thresholds\npartition the stream rather than overlapping on it.",
+              "enum": [
+                "off",
+                "error",
+                "warn",
+                "info",
+                "debug",
+                "trace"
+              ],
+              "type": "string"
+            },
+            "capture_level": {
+              "default": "error",
+              "description": "Least severe `tracing` level reported as a Sentry **issue**.",
+              "enum": [
+                "off",
+                "error",
+                "warn",
+                "info",
+                "debug",
+                "trace"
+              ],
+              "type": "string"
+            },
+            "debug": {
+              "default": false,
+              "description": "Print the SDK's own diagnostics to stderr. For proving a DSN works, not for running.",
+              "type": "boolean"
+            },
+            "dsn": {
+              "description": "Ingest URL, `https://<key>@<host>/<project>`.\n\nThe embedded key is a bearer credential for the project's ingest endpoint, so it is held\nas a `SecretString` — this block is nested in a `ServerConfig` that is printed with `?` on\nthe refusal path. Supply it as `PORTFOLIO_SENTRY__DSN_FILE=/run/secrets/sentry_dsn`, or as\n`sentry__dsn` inside `$PORTFOLIO_SECRETS_DIR`, so it never enters the process\nenvironment — where `/proc/<pid>/environ`, a crash dump and `docker inspect` all carry\nit, and every child process inherits it.\n\nAbsent while `sentry.enabled` is set is a boot failure, not a silent no-op.",
+              "type": "string",
+              "writeOnly": true
+            },
+            "enabled": {
+              "default": false,
+              "description": "Initialise the Sentry client. `false` installs no client, no panic hook, no `tracing`\nlayer and no HTTP middleware, so every other key here is inert and nothing leaves the\nprocess.\n\nIt also decides who owns the log subscriber. Off — the default — the Dioxus toolchain\ninstalls its own, which is the behaviour this server has always had. On, the server\ninstalls one first (still reading `RUST_LOG`, still formatting the same way) because a\nSentry layer has to be a layer *of* the subscriber, and the framework's is not\nextensible after the fact.",
+              "type": "boolean"
+            },
+            "environment": {
+              "description": "Environment tag on every event.\n\nUnset resolves to `production` for a release build and `development` otherwise, which is\nthe only distinction this workspace has: it ships one image, and the thing that separates\na developer's `dx serve` from the deployed container is the profile it was built with.\n\nDefault: `production` in a release build, `development` otherwise.",
+              "type": "string"
+            },
+            "http_transactions": {
+              "default": true,
+              "description": "Record one Sentry transaction per request, named by the *matched route* rather than by\nthe URI — so `/api/repos/{name}` does not become one transaction name per repository.\n\nWhether a started transaction is *kept* is `sentry.traces_sample_rate`'s decision; this is\nthe switch for taking the middleware out entirely.",
+              "type": "boolean"
+            },
+            "max_breadcrumbs": {
+              "default": 100,
+              "description": "How many breadcrumbs one event carries.",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "release": {
+              "description": "Release tag on every event.\n\nUnset resolves to `portfolio@<version>`, the workspace version the binary was built from\n— which is what makes a regression attributable to a deploy, since every deploy of this\nsite is a new image cut from a new version.\n\nDefault: `portfolio@` and the built version.",
+              "type": "string"
+            },
+            "sample_rate": {
+              "default": 1.0,
+              "description": "Fraction of captured events actually sent, `0.0`–`1.0`.\n\nA blunt volume cap: it drops whole issues rather than repetitions of one, so a rare bug\nis exactly as likely to be dropped as a noisy one. Leave it at `1.0` unless a quota\nforces otherwise.",
+              "type": "number"
+            },
+            "send_default_pii": {
+              "default": false,
+              "description": "Send personally identifying data with every event: the client IP, the full request header\nset (`Cookie` included) and the resolved user.\n\n**Off, and worth leaving off.** A reader's IP address and cookies are exactly what a\ncrash report does not need in order to be actionable, and Sentry is a third party for the\npurposes of the privacy page this site publishes — a page that currently says no\nthird-party service receives visitor data, which is a statement this key is the one way\nto falsify. On, it also widens what the HTTP middleware records, because `sentry-tower`\nreads this same flag to decide whether to redact sensitive request headers.",
+              "type": "boolean"
+            },
+            "server_name": {
+              "description": "Host tag on every event.\n\nLeft unset, Sentry reports none. The hostname of a replica is infrastructure detail that\n`sentry.send_default_pii` would otherwise be the gate for, and this site runs one image\nbehind a tunnel, so it identifies nothing an event does not already say.",
+              "type": "string"
+            },
+            "span_attributes": {
+              "default": false,
+              "description": "Copy `tracing` span fields onto the Sentry span as attributes.\n\nOff. Span fields here routinely carry request paths and the negotiated locale, and a\ntransaction is stored under a longer retention than a log line.",
+              "type": "boolean"
+            },
+            "traces_sample_rate": {
+              "default": 0.0,
+              "description": "Fraction of request traces recorded, `0.0`–`1.0`.\n\n`0.0` — the default — records none, which is what keeps switching Sentry on for crash\nreporting from also switching performance data on. `0.05`–`0.2` is an ordinary\nproduction figure.\n\nThis server starts every trace it has: it is the edge, and nothing upstream of it hands\nit a sampled trace to continue. That is the difference from a service tier, where the\nrate of whoever *starts* the trace decides whether it exists at all.",
+              "type": "number"
             }
           },
           "type": "object"

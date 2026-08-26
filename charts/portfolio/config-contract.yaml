@@ -19,12 +19,27 @@ bindings: true
 
 # Contract keys no chart value binds, each group with the reason it does not.
 #
-# None: all seven keys are bound, which is what makes this chart the simplest enrolment in the
-# tree. `server.host`, `server.port` and `logLevel` carry markers too, and are not the reason this
-# list is empty — they bind `IP`, `PORT` and `RUST_LOG`, which are `external.env` variables owned
-# by the Dioxus toolchain and by `tracing`. The coverage rule is over `schema.keys` alone, so that
-# namespace neither needs an entry here nor could be satisfied by one.
-unbound: []
+# One, and only because of where it travels. `server.host`, `server.port` and `logLevel` carry
+# markers too, and are not entries here — they bind `IP`, `PORT` and `RUST_LOG`, which are
+# `external.env` variables owned by the Dioxus toolchain and by `tracing`. The coverage rule is
+# over `schema.keys` alone, so that namespace neither needs an entry here nor could be satisfied
+# by one.
+#
+# Secret keys are not exempt by default and the one below is written out. The blanket rule
+# "credentials need no marker" cannot tell a key delivered as a file from a key a chart merely
+# forgot, and the second is exactly the regression this gate exists to catch.
+unbound:
+  - keys:
+      - sentry.dsn
+    reason: >-
+      Delivered as a file in PORTFOLIO_SECRETS_DIR — from the Secret this chart renders, or from
+      `existingSecret` under the file name `sentry__dsn` — and never written into `config.toml`,
+      because the DSN embeds a bearer key for the project's ingest endpoint and a credential in
+      a ConfigMap is readable by anything that can read the namespace. `sentry.dsn` is the value
+      that carries it, so the binding does exist; it simply does not run through the
+      configuration document the markers describe. `just check-config-secrets` is what
+      reconciles that channel, and it does it from the rendered manifests rather than from a
+      comment.
 
 documents:
   - name: server

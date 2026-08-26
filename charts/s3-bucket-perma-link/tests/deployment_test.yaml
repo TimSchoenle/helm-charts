@@ -109,6 +109,36 @@ tests:
             mountPath: /etc/s3-bucket-perma-link/secrets
             readOnly: true
 
+  # `common.fileConfig.secretKeys` projects every key the chart knows about once an
+  # `existingSecret` is named, because it cannot read one. A DSN key listed unconditionally would
+  # therefore mount a file for a client that is never installed.
+  - it: projects no DSN key while Sentry is off
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      existingSecret: my-s3-secret
+    asserts:
+      - notContains:
+          path: spec.template.spec.volumes[?(@.name == "secrets")].projected.sources[0].secret.items
+          content:
+            key: telemetry__sentry__dsn
+            path: telemetry__sentry__dsn
+
+  - it: projects the DSN key once Sentry is on
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      existingSecret: my-s3-secret
+      telemetry.sentry.enabled: true
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes[?(@.name == "secrets")].projected.sources[0].secret.items
+          content:
+            key: telemetry__sentry__dsn
+            path: telemetry__sentry__dsn
+
   - it: projects an existing Secret when one is given
     documentSelector:
       path: kind

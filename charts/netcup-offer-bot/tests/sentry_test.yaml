@@ -1,0 +1,193 @@
+# Sentry error reporting and tracing: an optional feature whose whole risk is asymmetric.
+#
+# Off, it must change nothing at all — not a key in the ConfigMap, not a key in the Secret —
+# because it is off in every release that has not asked for it. On, thirteen settings have to
+# arrive at thirteen distinct paths, and a value that lands at the wrong one is a compiled
+# default nobody chose rather than an error.
+#
+# So the suite is written around the edges: what is absent while it is off, what is present when
+# it is on, and where the DSN is allowed to appear. The assertion that the DSN never reaches the
+# ConfigMap is the one here whose failure would be a disclosure rather than a bug.
+#
+# The two pod-shape assertions live in `deployment_test.yaml` instead. A suite that lists
+# `deployment.yaml` cannot also carry a `failedTemplate` assertion — helm-unittest reports "no
+# failed document" for the whole suite — and the validation this feature adds is the half worth
+# testing.
+suite: sentry
+templates:
+  - configmap.yaml
+  - secret.yaml
+set:
+  discord.webhookUrl: https://example.invalid/hook
+tests:
+  # Off has to mean *absent*, not "present and false": every key under the block is inert while
+  # the switch is down, so writing them would put twelve settings that do nothing into the
+  # document an operator reads to find out what the bot is doing.
+  - it: writes no Sentry block at all while the switch is off
+    template: configmap.yaml
+    asserts:
+      - notMatchRegex:
+          path: data["config.toml"]
+          pattern: 'sentry'
+
+  - it: writes the whole block when the switch is on
+    template: configmap.yaml
+    set:
+      telemetry.sentry:
+        enabled: true
+        dsn: https://key@sentry.invalid/1
+        environment: staging
+        release: netcup-offer-bot@3.0.0
+        serverName: bot-a
+        sampleRate: 0.5
+        tracesSampleRate: 0.25
+        captureLevel: warn
+        breadcrumbLevel: debug
+        maxBreadcrumbs: 50
+        attachStacktraces: false
+        shutdownTimeoutSecs: 5
+        debug: true
+    asserts:
+      # One assertion per key, and every value set away from its default: the defect class this
+      # suite exists for is a value arriving at the wrong path, which a fixture that left the
+      # defaults in place would render identically whether the mapping were right or reversed.
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\[telemetry\.sentry\]'
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\nenabled = true'
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\nenvironment = "staging"'
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\nrelease = "netcup-offer-bot@3\.0\.0"'
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\nserver_name = "bot-a"'
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\nsample_rate = 0\.5'
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\ntraces_sample_rate = 0\.25'
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\ncapture_level = "warn"'
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\nbreadcrumb_level = "debug"'
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\nmax_breadcrumbs = 50'
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\nattach_stacktraces = false'
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\nshutdown_timeout_secs = 5'
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\ndebug = true'
+
+  # An empty optional value is a *supplied* value to the loader, and "reported with a blank
+  # environment tag" is not what leaving it unset meant. These three have no chart default
+  # because the bot derives all of them.
+  - it: omits the three derived tags rather than writing them empty
+    template: configmap.yaml
+    set:
+      telemetry.sentry.enabled: true
+      telemetry.sentry.dsn: https://key@sentry.invalid/1
+    asserts:
+      - notMatchRegex:
+          path: data["config.toml"]
+          pattern: 'environment'
+      - notMatchRegex:
+          path: data["config.toml"]
+          pattern: 'release'
+      - notMatchRegex:
+          path: data["config.toml"]
+          pattern: 'server_name'
+      # The keys that do have a chart default are still written, so the document says what the
+      # bot is actually doing rather than leaving it to the struct.
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\nsample_rate = 1'
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\ncapture_level = "error"'
+
+  # The DSN embeds an ingest key. A ConfigMap is readable by anything that can read the
+  # namespace, so it travels the channel the Discord webhook does.
+  - it: keeps the DSN out of the ConfigMap
+    template: configmap.yaml
+    set:
+      telemetry.sentry.enabled: true
+      telemetry.sentry.dsn: https://key@sentry.invalid/1
+    asserts:
+      - notMatchRegex:
+          path: data["config.toml"]
+          pattern: 'dsn'
+
+  - it: writes the DSN into the Secret under the path the loader reads
+    template: secret.yaml
+    set:
+      telemetry.sentry.enabled: true
+      telemetry.sentry.dsn: https://key@sentry.invalid/1
+    asserts:
+      - equal:
+          path: stringData.telemetry__sentry__dsn
+          value: https://key@sentry.invalid/1
+
+  - it: writes no DSN key into the Secret while the switch is off
+    template: secret.yaml
+    asserts:
+      - isNull:
+          path: stringData.telemetry__sentry__dsn
+
+  # Upstream refuses to boot with the switch on and no DSN, so this is a CrashLoopBackOff rather
+  # than a degraded feature — worth catching at render time.
+  - it: refuses the switch with no DSN anywhere
+    template: configmap.yaml
+    set:
+      telemetry.sentry.enabled: true
+    asserts:
+      - failedTemplate:
+          errorPattern: "telemetry.sentry.enabled is set but no DSN is available"
+
+  # The chart cannot see inside an `existingSecret`, and a DSN it cannot see is not the same as
+  # a DSN that is missing.
+  - it: accepts an existing Secret as the DSN it cannot see
+    template: configmap.yaml
+    set:
+      telemetry.sentry.enabled: true
+      existingSecret: my-secret
+    asserts:
+      - isKind:
+          of: ConfigMap
+
+  # The ordinary dead-value check: a credential sitting in the release meaning nothing.
+  - it: refuses a DSN set while the switch is off
+    template: configmap.yaml
+    set:
+      telemetry.sentry.dsn: https://key@sentry.invalid/1
+    asserts:
+      - failedTemplate:
+          errorPattern: "telemetry.sentry.dsn is set while telemetry.sentry.enabled is false"
+
+  # `config` is the highest-precedence layer the chart renders, so it has to be able to reach
+  # inside a block the first-class values built.
+  - it: lets the raw config tree override a derived Sentry key
+    template: configmap.yaml
+    set:
+      telemetry.sentry.enabled: true
+      telemetry.sentry.dsn: https://key@sentry.invalid/1
+      config:
+        telemetry:
+          sentry:
+            traces_sample_rate: 0.75
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\ntraces_sample_rate = 0\.75'

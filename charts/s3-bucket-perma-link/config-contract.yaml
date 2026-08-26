@@ -23,13 +23,15 @@ unbound:
   - keys:
       - s3.access_key
       - s3.secret_key
+      - telemetry.sentry.dsn
     reason: >-
-      Delivered as files in S3_PERMA_LINK_SECRETS_DIR, from `s3.accessKey` and `s3.secretKey`,
-      and never written into `config.toml` — a long-lived object-store credential in a
-      ConfigMap is readable by anything that can read the namespace. Both bindings exist; they
-      run through the Secret rather than through the configuration document the markers
-      describe, and `just check-config-secrets` reconciles that channel from the rendered
-      manifests rather than from a comment.
+      Delivered as files in S3_PERMA_LINK_SECRETS_DIR, from `s3.accessKey`, `s3.secretKey` and
+      `telemetry.sentry.dsn`, and never written into `config.toml` — a long-lived object-store
+      credential in a ConfigMap is readable by anything that can read the namespace, and the
+      Sentry DSN embeds an ingest key that is one too. All three bindings exist; they run
+      through the Secret rather than through the configuration document the markers describe,
+      and `just check-config-secrets` reconciles that channel from the rendered manifests
+      rather than from a comment.
 
 documents:
   - name: server

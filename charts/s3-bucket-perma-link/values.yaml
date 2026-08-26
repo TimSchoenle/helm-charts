@@ -129,20 +129,195 @@ telemetry:
   logLevel: info
 
   # @schema
-  # # @config projection telemetry.sentry_dsn optional
-  # type: string
+  # additionalProperties: true
   # @schema
-  # -- Sentry DSN (`telemetry.sentry_dsn`). Empty disables Sentry entirely.
-  sentryDsn: ""
+  # -- Sentry error reporting and request tracing. **Off**, and wholly inert while it is: no
+  # client, no panic hook, no subscriber layer and no HTTP middleware is installed, and nothing
+  # leaves the process.
+  #
+  # Two things the chart deliberately does not do for you. It never reads the DSN, so it cannot
+  # name the ingest host in the NetworkPolicies. The defaults do happen to cover it —
+  # `networkPolicy.egress.https` permits TCP/443 to `0.0.0.0/0` minus private space — but a
+  # deployment that narrowed `networkPolicy.egress.cidr`, turned `egress.https` off, or replaced
+  # the CIDR rule with `networkPolicy.cilium.egress.toFQDNs` has to name the endpoint itself,
+  # and getting that wrong is silent: an SDK that cannot reach its endpoint queues events and
+  # then discards them, so the project stays empty, which reads as "no errors". And it
+  # configures nothing inside Sentry — the project, its quota and its server-side data-scrubbing
+  # rules are yours.
+  #
+  # Unlike the rest of this chart's configuration, the block is read once as the process boots
+  # rather than re-read when the kubelet refreshes the mount, so a change to it takes effect on
+  # the next restart. `configMount.rolloutOnChange` is what turns one into a rollout.
+  sentry:
+    # @schema
+    # # @config projection telemetry.sentry.enabled optional
+    # type: boolean
+    # @schema
+    # -- Initialise the Sentry client (`telemetry.sentry.enabled`). Off, every other key here is
+    # inert. On, the server refuses to boot without a DSN rather than starting with a reporter
+    # that reports nowhere, so this and `dsn` are set together.
+    enabled: false
+
+    # @schema
+    # type: string
+    # @schema
+    # -- Ingest URL, `https://<key>@<host>/<project>`. A credential — the embedded key is a
+    # bearer token for the project's ingest endpoint, and the reload supervisor prints the
+    # configuration it holds — so it is delivered as a file in `S3_PERMA_LINK_SECRETS_DIR` under
+    # `telemetry__sentry__dsn`, alongside the S3 credentials, and never written into the
+    # ConfigMap. Leave it empty and put that key in the Secret named by `existingSecret` to keep
+    # it out of `helm get values` entirely.
+    dsn: ""
+
+    # @schema
+    # # @config projection telemetry.sentry.environment optional when telemetry.sentry.enabled
+    # type: string
+    # @schema
+    # -- Environment tag on every event (`telemetry.sentry.environment`). Empty lets the server
+    # resolve it: `production` from a release build, `development` from a debug one. It always
+    # sends one, so `SENTRY_ENVIRONMENT` — a channel that would bypass the layered loader
+    # entirely — is never consulted.
+    environment: ""
+
+    # @schema
+    # # @config projection telemetry.sentry.release optional when telemetry.sentry.enabled
+    # type: string
+    # @schema
+    # -- Release tag on every event (`telemetry.sentry.release`). Empty uses
+    # `s3-bucket-perma-link@<version>`, which is both what makes a regression attributable to a
+    # deploy and the name the image's debug-file upload symbolicates against — override it only
+    # alongside a matching upload, or events arrive without symbols.
+    release: ""
+
+    # @schema
+    # # @config projection telemetry.sentry.server_name optional when telemetry.sentry.enabled
+    # type: string
+    # @schema
+    # -- Host tag on every event (`telemetry.sentry.server_name`). Empty reports none, which is
+    # the right answer here: the value would be one replica's pod name, gone by the time anyone
+    # reads the issue.
+    serverName: ""
+
+    # @schema
+    # # @config projection telemetry.sentry.sample_rate when telemetry.sentry.enabled
+    # type: number
+    # minimum: 0
+    # maximum: 1
+    # @schema
+    # -- Fraction of captured events actually sent (`telemetry.sentry.sample_rate`). A blunt
+    # volume cap — it drops whole issues, not repetitions of one, so a rare error is exactly what
+    # it loses — so leave it at `1` unless a quota forces otherwise.
+    sampleRate: 1.0
+
+    # @schema
+    # # @config projection telemetry.sentry.traces_sample_rate when telemetry.sentry.enabled
+    # type: number
+    # minimum: 0
+    # maximum: 1
+    # @schema
+    # -- Fraction of traces this server **starts** that are recorded
+    # (`telemetry.sentry.traces_sample_rate`). `0` starts none, which is the sensible setting for
+    # a service whose whole job is one redirect, and it is what makes the feature free to switch
+    # on for error reporting alone. It does not take the server out of a trace that reaches it
+    # already sampled: an inbound `sentry-trace` header is continued whatever this says.
+    tracesSampleRate: 0.0
+
+    # @schema
+    # # @config projection telemetry.sentry.capture_level when telemetry.sentry.enabled
+    # enum: ["off", error, warn, info, debug, trace]
+    # @schema
+    # -- Least severe `tracing` level reported as a Sentry issue
+    # (`telemetry.sentry.capture_level`). Quote `"off"` — unquoted, YAML reads it as the boolean
+    # `false`.
+    captureLevel: error
+
+    # @schema
+    # # @config projection telemetry.sentry.breadcrumb_level when telemetry.sentry.enabled
+    # enum: ["off", error, warn, info, debug, trace]
+    # @schema
+    # -- Least severe `tracing` level kept as a breadcrumb, the trail attached to the next issue
+    # (`telemetry.sentry.breadcrumb_level`). Records at or above `captureLevel` become issues
+    # instead. Independent of `logLevel`, so tightening the console does not silently empty every
+    # trail — and asking for `debug` breadcrumbs makes the process evaluate `debug` records it
+    # does not print. Quote `"off"`.
+    breadcrumbLevel: info
+
+    # @schema
+    # # @config projection telemetry.sentry.max_breadcrumbs when telemetry.sentry.enabled
+    # type: integer
+    # minimum: 0
+    # @schema
+    # -- How many breadcrumbs one event carries (`telemetry.sentry.max_breadcrumbs`).
+    maxBreadcrumbs: 100
+
+    # @schema
+    # # @config projection telemetry.sentry.attach_stacktrace when telemetry.sentry.enabled
+    # type: boolean
+    # @schema
+    # -- Attach a stack trace to events that carry none of their own
+    # (`telemetry.sentry.attach_stacktrace`, singular).
+    attachStacktrace: true
+
+    # @schema
+    # # @config projection telemetry.sentry.send_default_pii when telemetry.sentry.enabled
+    # type: boolean
+    # @schema
+    # -- Send personally identifying data with every event: the client IP, the whole request
+    # header set, and a buffered request body (`telemetry.sentry.send_default_pii`). **Off, and
+    # worth leaving off** — this server publishes public links, and the address of whoever
+    # followed one is not what makes a failed S3 fetch actionable, while Sentry is a third party.
+    # It is two controls rather than one, besides: off is also what keeps the HTTP middleware
+    # redacting sensitive headers.
+    sendDefaultPii: false
+
+    # @schema
+    # # @config projection telemetry.sentry.http_transactions when telemetry.sentry.enabled
+    # type: boolean
+    # @schema
+    # -- Record one transaction per request, named by the matched route rather than by the URI
+    # (`telemetry.sentry.http_transactions`). Whether a started transaction is kept is
+    # `tracesSampleRate`'s decision; this is the switch for a deployment that wants error
+    # reporting and no performance data at all. The per-request hub is installed either way,
+    # which is what stops breadcrumbs from concurrent requests landing on one another's issues.
+    httpTransactions: true
+
+    # @schema
+    # # @config projection telemetry.sentry.span_attributes when telemetry.sentry.enabled
+    # type: boolean
+    # @schema
+    # -- Copy `tracing` span fields onto the Sentry span as attributes
+    # (`telemetry.sentry.span_attributes`). Off: the span fields here carry request paths and
+    # object keys, and a transaction is retained for longer than a log line.
+    spanAttributes: false
+
+    # @schema
+    # # @config projection telemetry.sentry.shutdown_timeout_secs when telemetry.sentry.enabled
+    # type: integer
+    # minimum: 0
+    # @schema
+    # -- How long process exit waits for queued events to drain
+    # (`telemetry.sentry.shutdown_timeout_secs`). Paid on every pod shutdown, so it is time added
+    # to every rollout; keep it well inside `terminationGracePeriodSeconds`. `0` discards
+    # whatever is still queued.
+    shutdownTimeoutSecs: 2
+
+    # @schema
+    # # @config projection telemetry.sentry.debug when telemetry.sentry.enabled
+    # type: boolean
+    # @schema
+    # -- Print the SDK's own diagnostics to stderr (`telemetry.sentry.debug`). For proving a DSN
+    # works, not for running.
+    debug: false
 
 # @schema
 # type: string
 # @schema
-# -- Name of an existing Secret holding the S3 credentials, which keeps them out of
+# -- Name of an existing Secret holding the server's credentials, which keeps them out of
 # `values.yaml` and out of the Helm release object. **Its keys are the configuration paths, not
-# free-form names**: `s3__access_key` and `s3__secret_key`, because the file name is what the
-# loader parses. Set, the chart renders no Secret of its own and `s3.accessKey` / `s3.secretKey`
-# are ignored.
+# free-form names**: `s3__access_key`, `s3__secret_key` and, once `telemetry.sentry.enabled` is
+# set, `telemetry__sentry__dsn` — because the file name is what the loader parses. Set, the
+# chart renders no Secret of its own and `s3.accessKey`, `s3.secretKey` and
+# `telemetry.sentry.dsn` are ignored.
 existingSecret: ""
 
 # @schema

@@ -68,7 +68,10 @@ feed:
 # @schema
 # additionalProperties: true
 # @schema
-# -- Logging and error reporting, rendered under `telemetry` in `config.toml`.
+# -- Logging and error reporting. `log_level` is rendered under `telemetry` in `config.toml`;
+# the Sentry DSN is a credential and goes to the Secret instead. Both are read once as the
+# process boots rather than re-read from the mount, so a change here needs a restart —
+# `configMount.rolloutOnChange` is what turns one into a rollout.
 telemetry:
   # @schema
   # # @config projection telemetry.log_level
@@ -78,19 +81,153 @@ telemetry:
   logLevel: INFO
 
   # @schema
-  # # @config projection telemetry.sentry_dsn optional
-  # type: string
+  # additionalProperties: true
   # @schema
-  # -- Sentry DSN (`telemetry.sentry_dsn`). Empty disables Sentry entirely.
-  sentryDsn: ""
+  # -- Sentry error reporting and tracing. **Off**, and wholly inert while it is: no client, no
+  # panic hook and no layer is installed, and nothing leaves the process.
+  #
+  # Two things the chart deliberately does not do for you. It never reads the DSN, so it cannot
+  # name the ingest host in the NetworkPolicies. The defaults do happen to cover it —
+  # `networkPolicy.egress.https` permits TCP/443 to `0.0.0.0/0` minus private space — but a
+  # deployment that narrowed `networkPolicy.egress.cidr`, turned `egress.https` off, or replaced
+  # the CIDR rule with `networkPolicy.cilium.egress.toFQDNs` has to name the endpoint itself,
+  # and getting that wrong is silent: an SDK that cannot reach its endpoint queues events and
+  # then discards them, so the project stays empty, which reads as "no errors". And it
+  # configures nothing inside Sentry — the project, its quota and its server-side data-scrubbing
+  # rules are yours.
+  sentry:
+    # @schema
+    # # @config projection telemetry.sentry.enabled optional
+    # type: boolean
+    # @schema
+    # -- Initialise the Sentry client (`telemetry.sentry.enabled`). Off, every other key here is
+    # inert. On, the bot refuses to boot without a DSN rather than starting with a reporter that
+    # reports nowhere, so this and `dsn` are set together.
+    enabled: false
+
+    # @schema
+    # type: string
+    # @schema
+    # -- Ingest URL, `https://<key>@<host>/<project>`. A credential — the embedded key is a
+    # bearer token for the project's ingest endpoint — so it is delivered as a file in
+    # `NETCUP_OFFER_BOT_SECRETS_DIR` under `telemetry__sentry__dsn` and never written into the
+    # ConfigMap. Leave it empty and put that key in the Secret named by `existingSecret` to keep
+    # it out of `helm get values` entirely.
+    dsn: ""
+
+    # @schema
+    # # @config projection telemetry.sentry.environment optional when telemetry.sentry.enabled
+    # type: string
+    # @schema
+    # -- Environment tag on every event (`telemetry.sentry.environment`). Empty lets the bot
+    # send `production`, or `development` from a debug build.
+    environment: ""
+
+    # @schema
+    # # @config projection telemetry.sentry.release optional when telemetry.sentry.enabled
+    # type: string
+    # @schema
+    # -- Release tag on every event (`telemetry.sentry.release`). Empty uses the version the
+    # binary was built from, which is what makes a regression attributable to a deploy and what
+    # the image's debug files are indexed under — set this only to match a release you create in
+    # Sentry under a name of your own.
+    release: ""
+
+    # @schema
+    # # @config projection telemetry.sentry.server_name optional when telemetry.sentry.enabled
+    # type: string
+    # @schema
+    # -- Host tag on every event (`telemetry.sentry.server_name`). Empty reports none, which is
+    # the right answer here: the value would be one pod's generated name, not anything an
+    # operator chose.
+    serverName: ""
+
+    # @schema
+    # # @config projection telemetry.sentry.sample_rate when telemetry.sentry.enabled
+    # type: number
+    # minimum: 0
+    # maximum: 1
+    # @schema
+    # -- Fraction of captured events actually sent (`telemetry.sentry.sample_rate`). A blunt
+    # volume cap — it drops whole issues, not repetitions of one — so leave it at `1` unless a
+    # quota forces otherwise.
+    sampleRate: 1.0
+
+    # @schema
+    # # @config projection telemetry.sentry.traces_sample_rate when telemetry.sentry.enabled
+    # type: number
+    # minimum: 0
+    # maximum: 1
+    # @schema
+    # -- Fraction of traces that are recorded (`telemetry.sentry.traces_sample_rate`). `0`
+    # records none, and nothing hands this process a trace to continue, so at `0` no spans are
+    # built at all — which is what makes the feature free to switch on for error reporting
+    # alone. `0.05`-`0.2` is an ordinary production figure.
+    tracesSampleRate: 0.0
+
+    # @schema
+    # # @config projection telemetry.sentry.capture_level when telemetry.sentry.enabled
+    # enum: ["off", error, warn, info, debug, trace]
+    # @schema
+    # -- Least severe `tracing` level reported as a Sentry issue
+    # (`telemetry.sentry.capture_level`). Quote `"off"` — unquoted, YAML reads it as the boolean
+    # `false`. This one sits *under* the subscriber's own filter, so a record `logLevel` drops
+    # never reaches Sentry either.
+    captureLevel: error
+
+    # @schema
+    # # @config projection telemetry.sentry.breadcrumb_level when telemetry.sentry.enabled
+    # enum: ["off", error, warn, info, debug, trace]
+    # @schema
+    # -- Least severe `tracing` level kept as a breadcrumb, the trail attached to the next issue
+    # (`telemetry.sentry.breadcrumb_level`). Records at or above `captureLevel` become issues
+    # instead. Independent of `logLevel` on purpose: the trail keeps being collected however
+    # quiet stdout is. Quote `"off"`.
+    breadcrumbLevel: info
+
+    # @schema
+    # # @config projection telemetry.sentry.max_breadcrumbs when telemetry.sentry.enabled
+    # type: integer
+    # minimum: 0
+    # @schema
+    # -- How many breadcrumbs one event carries (`telemetry.sentry.max_breadcrumbs`).
+    maxBreadcrumbs: 100
+
+    # @schema
+    # # @config projection telemetry.sentry.attach_stacktraces when telemetry.sentry.enabled
+    # type: boolean
+    # @schema
+    # -- Attach a stack trace to events that carry none of their own
+    # (`telemetry.sentry.attach_stacktraces`).
+    attachStacktraces: true
+
+    # @schema
+    # # @config projection telemetry.sentry.shutdown_timeout_secs when telemetry.sentry.enabled
+    # type: integer
+    # minimum: 0
+    # @schema
+    # -- How long process exit waits for queued events to drain
+    # (`telemetry.sentry.shutdown_timeout_secs`). It is the only flush this process performs, and
+    # it is spent on every pod shutdown, so keep it well inside
+    # `terminationGracePeriodSeconds`.
+    shutdownTimeoutSecs: 2
+
+    # @schema
+    # # @config projection telemetry.sentry.debug when telemetry.sentry.enabled
+    # type: boolean
+    # @schema
+    # -- Print the SDK's own diagnostics to stderr (`telemetry.sentry.debug`). For proving a DSN
+    # works, not for running.
+    debug: false
 
 # @schema
 # type: string
 # @schema
-# -- Name of an existing Secret holding the Discord webhook, which keeps it out of `values.yaml`
-# and out of the Helm release object. **Its key is the configuration path, not a free-form
-# name**: `discord__webhook_url`, because the file name is what the loader parses. Set, the
-# chart renders no Secret of its own and `discord.webhookUrl` is ignored.
+# -- Name of an existing Secret holding the bot's credentials, which keeps them out of
+# `values.yaml` and out of the Helm release object. **Its keys are configuration paths, not
+# free-form names**: `discord__webhook_url` and, once `telemetry.sentry.enabled` is set,
+# `telemetry__sentry__dsn` — because the file name is what the loader parses. Set, the chart
+# renders no Secret of its own and `discord.webhookUrl` / `telemetry.sentry.dsn` are ignored.
 existingSecret: ""
 
 # @schema

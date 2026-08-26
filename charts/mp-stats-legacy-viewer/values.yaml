@@ -126,6 +126,219 @@ server:
       webAnalytics: false
 
 # @schema
+# additionalProperties: true
+# @schema
+# -- Logging and error reporting. The log settings are rendered under `telemetry` in the mounted
+# `config.toml`; the Sentry DSN is a credential and goes to the Secret instead. The whole block
+# is read once as the process boots rather than re-read from the mount, so a change to it takes
+# effect on the next rollout.
+telemetry:
+  # @schema
+  # # @config projection telemetry.log_filter
+  # type: string
+  # @schema
+  # -- `RUST_LOG`-style filter deciding which records are emitted at all
+  # (`telemetry.log_filter`), for example `info,mp_stats_server=debug`. `RUST_LOG` set in the
+  # container outranks this — the one place in this configuration where a bare environment
+  # variable wins over the layered loader — so `extraEnv` is the override to reach for while a
+  # pod is misbehaving. It governs what reaches Sentry too: a record this filter drops never
+  # becomes an issue or a breadcrumb, whatever `sentry.captureLevel` says.
+  logFilter: info
+
+  # @schema
+  # # @config projection telemetry.json_logs
+  # type: boolean
+  # @schema
+  # -- Emit one JSON object per record instead of human-readable lines
+  # (`telemetry.json_logs`). The image's default suits `docker run` on a terminal; a cluster
+  # shipping logs to a collector wants this on.
+  jsonLogs: false
+
+  # @schema
+  # additionalProperties: true
+  # @schema
+  # -- Sentry error reporting and request tracing. **Off**, and wholly inert while it is: no
+  # client, no panic hook, no `tracing` layer and no HTTP middleware is installed, and nothing
+  # leaves the process.
+  #
+  # Two things the chart deliberately does not do for you. It never reads the DSN, so it cannot
+  # name the ingest host in the NetworkPolicies. The defaults do happen to cover it —
+  # `networkPolicy.egress.https` permits TCP/443 to `0.0.0.0/0` minus private space — but a
+  # deployment that narrowed `networkPolicy.egress.cidr`, turned `egress.https` off, or replaced
+  # the CIDR rule with `networkPolicy.cilium.egress.toFQDNs` has to name the endpoint itself,
+  # and getting that wrong is silent: an SDK that cannot reach its endpoint queues events and
+  # then discards them, so the project stays empty, which reads as "no errors". And it
+  # configures nothing inside Sentry — the project, its quota and its server-side data-scrubbing
+  # rules are yours.
+  sentry:
+    # @schema
+    # # @config projection telemetry.sentry.enabled optional
+    # type: boolean
+    # @schema
+    # -- Initialise the Sentry client (`telemetry.sentry.enabled`). Off, every other key here is
+    # inert. On, the server refuses to boot without a DSN rather than starting with a reporter
+    # that reports nowhere, so this and `dsn` are set together.
+    enabled: false
+
+    # @schema
+    # type: string
+    # @schema
+    # -- Ingest URL, `https://<key>@<host>/<project>`. A credential — the embedded key is a
+    # bearer token for the project's ingest endpoint — so it is delivered as a file in
+    # `MP_STATS_SECRETS_DIR` under `telemetry__sentry__dsn` and never written into the
+    # ConfigMap. It is the only credential this chart handles, and switching Sentry on is what
+    # gives the pod a secrets volume at all. Leave it empty and put that key in the Secret named
+    # by `existingSecret` to keep it out of `helm get values` entirely.
+    dsn: ""
+
+    # @schema
+    # # @config projection telemetry.sentry.environment optional when telemetry.sentry.enabled
+    # type: string
+    # @schema
+    # -- Environment tag on every event (`telemetry.sentry.environment`). Empty lets the server
+    # derive it from the build: `production` for a release binary, which every published image
+    # is. Set it for anything in between, such as a staging cluster running that same binary.
+    environment: ""
+
+    # @schema
+    # # @config projection telemetry.sentry.release optional when telemetry.sentry.enabled
+    # type: string
+    # @schema
+    # -- Release tag on every event (`telemetry.sentry.release`). Empty uses
+    # `mp-stats-legacy-viewer@v<version>`, spelled as the image tag spells it, which is what
+    # makes a regression attributable to a deploy — set this only to match a release you create
+    # in Sentry under a name of your own.
+    release: ""
+
+    # @schema
+    # # @config projection telemetry.sentry.server_name optional when telemetry.sentry.enabled
+    # type: string
+    # @schema
+    # -- Host tag on every event (`telemetry.sentry.server_name`). Empty reports none, which is
+    # the right answer here: the value would be one replica's pod name, gone by the time anyone
+    # reads the issue.
+    serverName: ""
+
+    # @schema
+    # # @config projection telemetry.sentry.sample_rate when telemetry.sentry.enabled
+    # type: number
+    # minimum: 0
+    # maximum: 1
+    # @schema
+    # -- Fraction of captured events actually sent (`telemetry.sentry.sample_rate`). A blunt
+    # volume cap — it drops whole issues, not repetitions of one — so leave it at `1` unless a
+    # quota forces otherwise. A value outside the range fails the boot.
+    sampleRate: 1.0
+
+    # @schema
+    # # @config projection telemetry.sentry.traces_sample_rate when telemetry.sentry.enabled
+    # type: number
+    # minimum: 0
+    # maximum: 1
+    # @schema
+    # -- Fraction of traces this server **starts** that are recorded
+    # (`telemetry.sentry.traces_sample_rate`). `0` starts none, which is the right figure for a
+    # static file server — a trace per asset request is volume without a question behind it —
+    # and it is what makes the feature free to switch on for error reporting alone. It does not
+    # take the server out of a trace that reaches it already sampled: an inbound `sentry-trace`
+    # header is continued whatever this says.
+    tracesSampleRate: 0.0
+
+    # @schema
+    # # @config projection telemetry.sentry.capture_level when telemetry.sentry.enabled
+    # enum: ["off", error, warn, info, debug, trace]
+    # @schema
+    # -- Least severe `tracing` level reported as a Sentry issue
+    # (`telemetry.sentry.capture_level`). Quote `"off"` — unquoted, YAML reads it as the boolean
+    # `false`. This and `breadcrumbLevel` both sit *under* `logFilter`, so a record that filter
+    # drops never reaches Sentry either.
+    captureLevel: error
+
+    # @schema
+    # # @config projection telemetry.sentry.breadcrumb_level when telemetry.sentry.enabled
+    # enum: ["off", error, warn, info, debug, trace]
+    # @schema
+    # -- Least severe `tracing` level kept as a breadcrumb, the trail attached to the next issue
+    # (`telemetry.sentry.breadcrumb_level`). Records at or above `captureLevel` become issues
+    # instead, so this only ever describes the band below it. Quote `"off"`.
+    breadcrumbLevel: info
+
+    # @schema
+    # # @config projection telemetry.sentry.max_breadcrumbs when telemetry.sentry.enabled
+    # type: integer
+    # minimum: 0
+    # @schema
+    # -- How many breadcrumbs one event carries (`telemetry.sentry.max_breadcrumbs`).
+    maxBreadcrumbs: 100
+
+    # @schema
+    # # @config projection telemetry.sentry.attach_stacktraces when telemetry.sentry.enabled
+    # type: boolean
+    # @schema
+    # -- Attach a stack trace to events that carry none of their own
+    # (`telemetry.sentry.attach_stacktraces`).
+    attachStacktraces: true
+
+    # @schema
+    # # @config projection telemetry.sentry.send_default_pii when telemetry.sentry.enabled
+    # type: boolean
+    # @schema
+    # -- Send personally identifying data with every event: the client IP, the whole request
+    # header set — `Cookie` included — and the resolved user
+    # (`telemetry.sentry.send_default_pii`). **Off, and worth leaving off** — a reader's IP
+    # address is not what makes a crash report actionable, and Sentry is a third party for the
+    # purposes of whatever data policy this deployment publishes. It is two controls rather than
+    # one, besides: off is also what keeps the HTTP middleware redacting sensitive headers.
+    sendDefaultPii: false
+
+    # @schema
+    # # @config projection telemetry.sentry.http_transactions when telemetry.sentry.enabled
+    # type: boolean
+    # @schema
+    # -- Record one transaction per request, named by the matched route rather than by the URI
+    # (`telemetry.sentry.http_transactions`). Whether a started transaction is kept is
+    # `tracesSampleRate`'s decision; this is the switch for a deployment that wants error
+    # reporting and no performance data at all.
+    httpTransactions: true
+
+    # @schema
+    # # @config projection telemetry.sentry.span_attributes when telemetry.sentry.enabled
+    # type: boolean
+    # @schema
+    # -- Copy `tracing` span fields onto the Sentry span as attributes
+    # (`telemetry.sentry.span_attributes`). Off: the span fields here carry request paths, and a
+    # transaction is retained for longer than a log line.
+    spanAttributes: false
+
+    # @schema
+    # # @config projection telemetry.sentry.shutdown_timeout_secs when telemetry.sentry.enabled
+    # type: integer
+    # minimum: 0
+    # @schema
+    # -- How long process exit waits for queued events to drain
+    # (`telemetry.sentry.shutdown_timeout_secs`). Paid on every pod shutdown, so it is time
+    # added to every rollout; keep it well inside `terminationGracePeriodSeconds`.
+    shutdownTimeoutSecs: 2
+
+    # @schema
+    # # @config projection telemetry.sentry.debug when telemetry.sentry.enabled
+    # type: boolean
+    # @schema
+    # -- Print the SDK's own diagnostics to stderr (`telemetry.sentry.debug`). For proving a DSN
+    # works, not for running.
+    debug: false
+
+# @schema
+# type: string
+# @schema
+# -- Name of an existing Secret holding the Sentry DSN, which keeps it out of `values.yaml` and
+# out of the Helm release object. **Its key is the configuration path, not a free-form name**:
+# `telemetry__sentry__dsn`, because the file name is what the loader parses. Set, the chart
+# renders no Secret of its own and `telemetry.sentry.dsn` is ignored. It is read only while
+# `telemetry.sentry.enabled` is set — nothing else this server reads is a credential.
+existingSecret: ""
+
+# @schema
 # type: object
 # additionalProperties: true
 # @schema
@@ -159,9 +372,10 @@ configMount:
   # @schema
   # type: string
   # @schema
-  # -- Directory credential files would be mounted at, passed as `MP_STATS_SECRETS_DIR`. Neither
-  # binary reads a secret today, so nothing is mounted and the variable is not set; the value is
-  # here for an operator adding one through `extraVolumes`.
+  # -- Directory credential files are mounted at, passed as `MP_STATS_SECRETS_DIR`. The Sentry
+  # DSN is the only credential this chart handles, so the volume and the variable both appear
+  # only while `telemetry.sentry.enabled` is set — a release that does not report to Sentry
+  # carries neither.
   secretsDir: /etc/mp-stats/secrets
 
 # @schema

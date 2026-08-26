@@ -105,9 +105,10 @@ tests:
             mountPath: /etc/portfolio/config
             readOnly: true
 
-  # The server reads no secret, so pointing it at a directory no volume provides would be a
-  # boot failure naming the path.
-  - it: names no secrets directory, because the server reads no secret
+  # The Sentry DSN is the only credential this server reads, so a release that does not report
+  # to Sentry has no secrets volume at all — and pointing the server at a directory no volume
+  # provides would be a boot failure naming the path.
+  - it: names no secrets directory while Sentry is off
     documentSelector:
       path: kind
       value: Deployment
@@ -123,6 +124,69 @@ tests:
             name: secrets
             mountPath: /etc/portfolio/secrets
             readOnly: true
+      - notContains:
+          path: spec.template.spec.volumes
+          content:
+            name: secrets
+          any: true
+
+  - it: mounts the DSN once Sentry is on
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      sentry.enabled: true
+      sentry.dsn: https://key@sentry.example.invalid/1
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: PORTFOLIO_SECRETS_DIR
+            value: /etc/portfolio/secrets
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: secrets
+            mountPath: /etc/portfolio/secrets
+            readOnly: true
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: secrets
+            projected:
+              defaultMode: 256
+              sources:
+                - secret:
+                    name: RELEASE-NAME-portfolio
+                    optional: true
+                    items:
+                      - key: sentry__dsn
+                        path: sentry__dsn
+
+  # The chart cannot read an `existingSecret`, so it projects every key it knows how to consume.
+  # That list is still gated on the switch, or a release reporting nowhere would mount a file
+  # for a client it never installs.
+  - it: projects an existing Secret when one is given
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      sentry.enabled: true
+      existingSecret: my-sentry-secret
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: secrets
+            projected:
+              defaultMode: 256
+              sources:
+                - secret:
+                    name: my-sentry-secret
+                    optional: true
+                    items:
+                      - key: sentry__dsn
+                        path: sentry__dsn
 
   - it: probes the health endpoint on all three probes
     documentSelector:

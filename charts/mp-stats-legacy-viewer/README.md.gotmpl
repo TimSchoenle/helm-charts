@@ -79,6 +79,75 @@ The server does not reload its configuration, so the chart keeps the conventiona
 `checksum/configmap` pod annotation: a configuration change rolls the Deployment, which is the
 only way it takes effect.
 
+## Logging and error reporting
+
+`telemetry.logFilter` is a `RUST_LOG`-style filter — `info,mp_stats_server=debug` — and
+`telemetry.jsonLogs` switches the output from human-readable lines to one JSON object per
+record, which is what a cluster shipping logs to a collector wants. A `RUST_LOG` set in the
+container outranks the filter: it is the one place in this configuration where a bare
+environment variable wins over the layered loader, which makes `extraEnv` the override to reach
+for while a pod is misbehaving.
+
+`telemetry.sentry` reports errors and panics to Sentry, and can record a transaction per
+request. It is off, and inert while it is off: no client, no panic hook, no `tracing` layer and
+no HTTP middleware is installed, so nothing leaves the process and nothing about a rendered
+release changes.
+
+```yaml
+telemetry:
+  sentry:
+    enabled: true
+    dsn: https://<key>@<host>/<project>
+```
+
+The DSN embeds a write key for the project's event stream, so the chart treats it as the
+credential it is: it goes to a Secret under `telemetry__sentry__dsn`, never into the ConfigMap.
+It is the **only** credential this server reads, so switching Sentry on is what gives the pod a
+secrets volume and an `MP_STATS_SECRETS_DIR` at all — expect the pod spec to change shape, not
+just the ConfigMap. Point `existingSecret` at a Secret you created yourself to keep the DSN out
+of `values.yaml` and out of the Helm release object:
+
+```shell
+kubectl create secret generic mp-stats-sentry   --namespace [NAMESPACE]   --from-literal=telemetry__sentry__dsn='https://<key>@<host>/<project>'
+```
+
+```yaml
+existingSecret: mp-stats-sentry
+```
+
+**The key name is the configuration path the server reads, not a free-form name.** The DSN
+arrives as a file in a projected volume and the server takes the key out of the file *name*, so
+`telemetry__sentry__dsn` is required; a Secret spelled any other way mounts cleanly and supplies
+nothing. Switching the feature on with no DSN — neither inline nor in an `existingSecret` — is
+refused at render time, because the server refuses to boot rather than installing a client that
+reports nowhere, and a rejected `helm upgrade` beats a CrashLoopBackOff.
+
+**Check the egress.** The chart never reads the DSN, so it cannot name the ingest host in the
+network policies. The defaults do cover it — `networkPolicy.egress.https` permits TCP/443 to
+`0.0.0.0/0` minus private space — so an out-of-the-box release reaches Sentry without further
+work. A release that narrowed `networkPolicy.egress.cidr`, turned `egress.https` off, or
+replaced the CIDR rule with `networkPolicy.cilium.egress.toFQDNs` has to name the endpoint
+itself. Getting that wrong is silent: an SDK that cannot reach its endpoint queues events and
+then discards them, so the project simply stays empty, which reads as "no errors".
+
+`tracesSampleRate` is `0` — this server starts no traces of its own, which is the right figure
+for a static file server, where a trace per asset request is volume without a question behind
+it. It still continues a trace that arrives already sampled, so one reader action stays readable
+across whatever sits in front of this server.
+
+`sendDefaultPii` stays off. On, every event carries the client IP, the whole request header set
+including `Cookie`, and the resolved user, to a third party — and the same flag is what stops
+the HTTP middleware redacting sensitive headers.
+
+`environment`, `release` and `serverName` are empty by default and the chart writes none of
+them: the server derives the first two — `production` for the release binaries every published
+image is built as, and `mp-stats-legacy-viewer@v<version>` spelled the way the image tag spells
+it — and reports no host tag. A blank value is a *supplied* value to the loader, not an absent
+one, so set them only to say something the server cannot derive.
+
+`captureLevel` and `breadcrumbLevel` both sit *under* `logFilter`: a record the filter drops
+never becomes an issue or a breadcrumb, whatever they say.
+
 ## Content-Security-Policy
 
 The header is derived, not configured: at startup the server reads the `index.html` in
@@ -113,6 +182,24 @@ condition the chart cannot enforce:
 server already sets one.
 
 ## Upgrading
+
+### 3.2 to 3.3
+
+Chart 3.3 tracks the viewer's 0.19.0 release, which adds optional Sentry error reporting and
+tracing and gives the log settings first-class keys. Everything is additive and off, so an
+existing release needs no change.
+
+Two things are worth knowing before switching Sentry on:
+
+- **The pod gains a secrets volume.** The DSN is the only credential this server reads, so
+  today's pods carry no secrets volume and no `MP_STATS_SECRETS_DIR`. Setting
+  `telemetry.sentry.enabled` gives them both, and an `existingSecret` that should carry the DSN
+  needs the key `telemetry__sentry__dsn`.
+- **`telemetry.logFilter` restates a key the mounted file has to carry.** Pointing
+  `MP_STATS_CONFIG` at this chart's mount replaces the image's own `/config.toml`, so the filter
+  is now written explicitly rather than inherited. The default, `info`, is what the image
+  carried; a release that had set a filter through `config.telemetry.log_filter` keeps working —
+  `config` still merges over the derived tree.
 
 ### 2.x to 3.0
 

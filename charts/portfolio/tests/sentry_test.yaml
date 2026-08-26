@@ -1,0 +1,242 @@
+# Sentry error reporting and request tracing: an optional feature whose whole risk is asymmetric.
+#
+# Off, it must change nothing at all — not a key in the ConfigMap, not a Secret, not a volume,
+# not an environment variable — because it is off in every release that has not asked for it,
+# and because the DSN is the only credential this server reads. Switching it on is what gives
+# the pod a secrets volume and a `PORTFOLIO_SECRETS_DIR` in the first place, so "off changes
+# nothing" is a claim about pod shape here, not only about a document.
+#
+# On, fourteen settings have to arrive at fourteen distinct paths, and a value that lands at the
+# wrong one is a compiled default nobody chose rather than an error. `sendDefaultPii` is the one
+# whose wrong answer contradicts the privacy page this site publishes, and the assertion that
+# the DSN never reaches the ConfigMap is the one whose failure would be a disclosure.
+#
+# The pod-shape assertions live in `deployment_test.yaml`. A suite that lists `deployment.yaml`
+# cannot also carry a `failedTemplate` assertion — helm-unittest reports "no failed document"
+# for the whole suite — and the validation this feature adds is the half worth testing.
+suite: sentry
+templates:
+  - configmap.yaml
+  - secret.yaml
+tests:
+  # Off has to mean *absent*, not "present and false": every key under the block is inert while
+  # the switch is down, so writing them would put fourteen settings that do nothing into the
+  # document an operator reads to find out what the server is doing.
+  - it: writes no Sentry block at all while the switch is off
+    template: configmap.yaml
+    asserts:
+      - notMatchRegex:
+          path: data["config.toml"]
+          pattern: 'sentry'
+
+  - it: renders no Secret while the switch is off
+    template: secret.yaml
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: writes the whole block when the switch is on
+    template: configmap.yaml
+    set:
+      sentry:
+        enabled: true
+        dsn: https://key@sentry.example.invalid/1
+        environment: staging
+        release: portfolio@2.10.0
+        serverName: portfolio-a
+        sampleRate: 0.5
+        tracesSampleRate: 0.25
+        captureLevel: warn
+        breadcrumbLevel: debug
+        maxBreadcrumbs: 50
+        attachStacktraces: false
+        sendDefaultPii: true
+        httpTransactions: false
+        spanAttributes: true
+        debug: true
+    asserts:
+      # One assertion per key, and every value set away from its default: the defect class this
+      # suite exists for is a value arriving at the wrong path, which a fixture that left the
+      # defaults in place would render identically whether the mapping were right or reversed.
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\[sentry\]'
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\nenabled = true'
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\nenvironment = "staging"'
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\nrelease = "portfolio@2\.10\.0"'
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\nserver_name = "portfolio-a"'
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\nsample_rate = 0\.5'
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\ntraces_sample_rate = 0\.25'
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\ncapture_level = "warn"'
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\nbreadcrumb_level = "debug"'
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\nmax_breadcrumbs = 50'
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\nattach_stacktraces = false'
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\nsend_default_pii = true'
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\nhttp_transactions = false'
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\nspan_attributes = true'
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\ndebug = true'
+
+  # An empty optional value is a *supplied* value to the loader, and "reported with a blank
+  # environment tag" is not what leaving it unset meant. These three have no chart default
+  # because the server derives all of them.
+  - it: omits the three derived tags rather than writing them empty
+    template: configmap.yaml
+    set:
+      sentry.enabled: true
+      sentry.dsn: https://key@sentry.example.invalid/1
+    asserts:
+      - notMatchRegex:
+          path: data["config.toml"]
+          pattern: 'environment'
+      - notMatchRegex:
+          path: data["config.toml"]
+          pattern: 'release'
+      - notMatchRegex:
+          path: data["config.toml"]
+          pattern: 'server_name'
+      # The keys that do have a chart default are still written, so the document says what the
+      # server is actually doing rather than leaving it to the struct.
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\nsample_rate = 1'
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\ncapture_level = "error"'
+
+  # This site publishes a privacy page saying no third-party service receives visitor data. On,
+  # this key is the one way to falsify that — and it is also what stops the HTTP middleware
+  # redacting sensitive headers. Off is the chart default and has to stay it.
+  - it: leaves personally identifying data off by default
+    template: configmap.yaml
+    set:
+      sentry.enabled: true
+      sentry.dsn: https://key@sentry.example.invalid/1
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\nsend_default_pii = false'
+
+  # The DSN embeds an ingest key, and the server prints the configuration it holds on the
+  # refusal path. A ConfigMap is readable by anything that can read the namespace.
+  - it: keeps the DSN out of the ConfigMap
+    template: configmap.yaml
+    set:
+      sentry.enabled: true
+      sentry.dsn: https://key@sentry.example.invalid/1
+    asserts:
+      - notMatchRegex:
+          path: data["config.toml"]
+          pattern: 'dsn'
+
+  - it: writes the DSN into the Secret under the path the loader reads
+    template: secret.yaml
+    set:
+      sentry.enabled: true
+      sentry.dsn: https://key@sentry.example.invalid/1
+    asserts:
+      - isKind:
+          of: Secret
+      - equal:
+          path: type
+          value: Opaque
+      # stringData, not a hand-rolled b64enc into `data`: Kubernetes does the encoding and a
+      # wrongly-encoded value can no longer be committed.
+      - equal:
+          path: stringData.sentry__dsn
+          value: https://key@sentry.example.invalid/1
+
+  - it: renders no Secret when an existing one is named
+    template: secret.yaml
+    set:
+      sentry.enabled: true
+      existingSecret: my-sentry-secret
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  # Upstream refuses to boot with the switch on and no DSN, so this is a CrashLoopBackOff rather
+  # than a degraded feature — worth catching at render time.
+  - it: refuses the switch with no DSN anywhere
+    template: configmap.yaml
+    set:
+      sentry.enabled: true
+    asserts:
+      - failedTemplate:
+          errorPattern: "sentry.enabled is set but no DSN is available"
+
+  # The chart cannot see inside an `existingSecret`, and a DSN it cannot see is not the same as
+  # a DSN that is missing.
+  - it: accepts an existing Secret as the DSN it cannot see
+    template: configmap.yaml
+    set:
+      sentry.enabled: true
+      existingSecret: my-sentry-secret
+    asserts:
+      - isKind:
+          of: ConfigMap
+
+  # The ordinary dead-value check: a credential sitting in the release meaning nothing.
+  - it: refuses a DSN set while the switch is off
+    template: configmap.yaml
+    set:
+      sentry.dsn: https://key@sentry.example.invalid/1
+    asserts:
+      - failedTemplate:
+          errorPattern: "sentry.dsn is set while sentry.enabled is false"
+
+  # `configExtraToml` makes the CSP check step out of the way, because it is appended verbatim
+  # and could be supplying the pair. It cannot be supplying the DSN — that travels the Secret —
+  # so the Sentry checks stay on.
+  - it: still refuses a bad Sentry pair behind configExtraToml
+    template: configmap.yaml
+    set:
+      configExtraToml: |
+        [csp]
+        hash_inline_scripts = true
+      sentry.dsn: https://key@sentry.example.invalid/1
+    asserts:
+      - failedTemplate:
+          errorPattern: "sentry.dsn is set while sentry.enabled is false"
+
+  # `config` is the highest-precedence layer the chart renders, so it has to be able to reach
+  # inside a block the first-class values built.
+  - it: lets the raw config tree override a derived Sentry key
+    template: configmap.yaml
+    set:
+      sentry.enabled: true
+      sentry.dsn: https://key@sentry.example.invalid/1
+      config:
+        sentry:
+          traces_sample_rate: 0.75
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\ntraces_sample_rate = 0\.75'

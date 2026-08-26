@@ -1,6 +1,6 @@
 # s3-bucket-perma-link
 
-![Version: 4.1.3](https://img.shields.io/badge/Version-4.1.3-informational?style=flat-square) ![AppVersion: v1.1.1](https://img.shields.io/badge/AppVersion-v1.1.1-informational?style=flat-square)
+![Version: 5.0.0](https://img.shields.io/badge/Version-5.0.0-informational?style=flat-square) ![AppVersion: v2.0.0](https://img.shields.io/badge/AppVersion-v2.0.0-informational?style=flat-square)
 
 This chart deploys a simple web server that provides permanent links to specific S3 bucket resources. It allows you to define static URL paths that always point to specific files in your S3 buckets.
 
@@ -14,6 +14,7 @@ bucket has to be made public.
 - Kubernetes 1.19+
 - Helm 3.0+
 - An S3-compatible bucket and a credential pair that can read it
+- A Sentry DSN, if `telemetry.sentry.enabled` is set
 - An ingress controller, or the Gateway API CRDs and a `Gateway`, if the links are meant to
   work outside the cluster
 - Cilium 1.16+, if `networkPolicy.engine` is `cilium` or `both`
@@ -91,7 +92,70 @@ Set `configMount.rolloutOnChange: true` to make it behave like an ordinary image
 `s3.accessKey` / `s3.secretKey` are accepted as an alternative to `existingSecret` and make the
 chart render the Secret itself. That puts the credentials into `values.yaml` and into the Helm
 release object, where anyone who can run `helm get values` can read them — use it for a
-throwaway cluster, not for anything real. `existingSecret` wins if both are set.
+throwaway cluster, not for anything real. `existingSecret` wins if both are set. The same is
+true of `telemetry.sentry.dsn`.
+
+## Error reporting and tracing
+
+`telemetry.sentry` reports errors and panics to Sentry, and can record a transaction per
+request. It is off, and inert while it is off: no client, no panic hook, no subscriber layer and
+no HTTP middleware is installed, so nothing leaves the process and nothing about a rendered
+release changes.
+
+```yaml
+telemetry:
+  sentry:
+    enabled: true
+    dsn: https://<key>@<host>/<project>
+```
+
+The DSN embeds a write key for the project's event stream, so the chart treats it as the
+credential it is: it goes to the Secret under `telemetry__sentry__dsn`, alongside the S3 keys,
+and never into the ConfigMap — which matters twice here, because the reload supervisor prints
+the configuration it holds. Switching the feature on with no DSN, neither inline nor in an
+`existingSecret`, is refused at render time: the service refuses to boot rather than installing
+a client that reports nowhere, and a rejected `helm upgrade` beats a CrashLoopBackOff.
+
+**Check the egress.** The chart never reads the DSN, so it cannot name the ingest host in the
+network policies. The defaults do cover it — `networkPolicy.egress.https` permits TCP/443 to
+`0.0.0.0/0` minus private space — so an out-of-the-box release reaches Sentry without further
+work. A release that narrowed `networkPolicy.egress.cidr`, turned `egress.https` off, or
+replaced the CIDR rule with `networkPolicy.cilium.egress.toFQDNs` has to name the endpoint
+itself. Getting that wrong is silent: an SDK that cannot reach its endpoint queues events and
+then discards them, so the project simply stays empty, which reads as "no errors".
+
+```yaml
+networkPolicy:
+  enabled: true
+  extraEgress:
+    - to:
+        - ipBlock:
+            cidr: 34.120.195.249/32 # your ingest endpoint
+      ports:
+        - port: 443
+          protocol: TCP
+```
+
+Under the Cilium engine the same destination is better expressed by name, via
+`networkPolicy.cilium.egress.toFQDNs`.
+
+`tracesSampleRate` is `0` — this server starts no traces of its own, which is the sensible
+setting for a service whose whole job is one redirect. It still continues a trace that arrives
+already sampled, so a caller that does trace sees the hop either way.
+
+`sendDefaultPii` stays off. On, every event carries the client IP, the whole request header set
+and a buffered body, to a third party — and the same flag is what stops the HTTP middleware
+redacting sensitive headers. This service publishes public links; the address of whoever
+followed one is not what makes a failed S3 fetch actionable.
+
+`environment`, `release` and `serverName` are empty by default and the chart writes none of
+them: the service resolves the first two itself, and `release` is also the name the image's
+debug-file upload symbolicates against — overriding it without a matching upload leaves events
+with no symbols.
+
+Unlike the rest of this chart's configuration, `telemetry.sentry` is read once as the process
+boots, so a change to it needs a restart: roll the Deployment, or set
+`configMount.rolloutOnChange: true`.
 
 ## Non-AWS endpoints
 
@@ -108,6 +172,33 @@ existingSecret: s3-credentials
 ```
 
 ## Upgrading
+
+### 4.x to 5.0
+
+Chart 5.0 tracks the service's 2.0 release, which replaced the single `telemetry.sentry_dsn` key
+with a full `telemetry.sentry` block — fifteen settings and the DSN — and made Sentry an optional
+compile-time feature with tracing support. `telemetry.sentryDsn` is gone; a `helm upgrade` with
+4.x values fails schema validation naming the key rather than silently dropping error reporting.
+
+| Before | After |
+|---|---|
+| `telemetry.sentryDsn: https://...` | `telemetry.sentry.enabled: true` **and** `telemetry.sentry.dsn: https://...` |
+| (unset) | (unset — `telemetry.sentry.enabled` defaults to `false`) |
+
+Two behaviours changed along with the spelling:
+
+- **The DSN is a credential now.** 4.x rendered it into `config.toml`, where anything that can
+  read the namespace could print it — and where the reload supervisor's own logging could too.
+  It goes to the Secret instead, under `telemetry__sentry__dsn`, so an `existingSecret` that
+  should carry it needs that key added, and the pod projects it only while
+  `telemetry.sentry.enabled` is set.
+- **The switch is separate from the DSN.** Setting one without the other is refused at render
+  time in both directions: on with no DSN is a boot failure upstream, and a DSN with the switch
+  off is a credential in the release that nothing reads.
+
+Everything else under the block is new and optional, and the defaults reproduce 4.x behaviour.
+Note `attachStacktrace` — singular, unlike the sibling charts in this repository, because that is
+the key this image reads.
 
 ### 3.x to 4.0
 
@@ -395,7 +486,7 @@ policy pointing at the wrong Gateway looks correct and blocks everything.
 | configMount.configDir | string | `"/etc/s3-bucket-perma-link/config"` | Directory the rendered `config.toml` is mounted at, passed as `S3_PERMA_LINK_CONFIG`. |
 | configMount.rolloutOnChange | bool | `false` | Add `checksum/*` pod annotations so a configuration change rolls the Deployment. Off by default, and deliberately so: the service watches the directories its configuration came from and rebuilds its bucket clients and listener in place when the kubelet updates the mounted ConfigMap or Secret, which is strictly better than a rollout. Turn this on only if you want configuration changes to behave like an ordinary image bump. `telemetry.*` is installed once per process and needs a restart either way. |
 | configMount.secretsDir | string | `"/etc/s3-bucket-perma-link/secrets"` | Directory the credential files are mounted at, passed as `S3_PERMA_LINK_SECRETS_DIR`. |
-| existingSecret | string | `""` | Name of an existing Secret holding the S3 credentials, which keeps them out of `values.yaml` and out of the Helm release object. **Its keys are the configuration paths, not free-form names**: `s3__access_key` and `s3__secret_key`, because the file name is what the loader parses. Set, the chart renders no Secret of its own and `s3.accessKey` / `s3.secretKey` are ignored. |
+| existingSecret | string | `""` | Name of an existing Secret holding the server's credentials, which keeps them out of `values.yaml` and out of the Helm release object. **Its keys are the configuration paths, not free-form names**: `s3__access_key`, `s3__secret_key` and, once `telemetry.sentry.enabled` is set, `telemetry__sentry__dsn` — because the file name is what the loader parses. Set, the chart renders no Secret of its own and `s3.accessKey`, `s3.secretKey` and `telemetry.sentry.dsn` are ignored. |
 | extraEnv | list | `[]` | Additional environment variables for the application container. |
 | extraVolumeMounts | list | `[]` | Additional volume mounts added to the application container. |
 | extraVolumes | list | `[]` | Additional volumes added to the pod. |
@@ -560,9 +651,25 @@ policy pointing at the wrong Gateway looks correct and blocks everything.
 | startupProbe.periodSeconds | int | `5` | Probe interval. |
 | startupProbe.timeoutSeconds | int | `3` | Probe timeout. |
 | strategy | object | `{}` | Deployment update strategy. Empty uses the Kubernetes default rolling update. |
-| telemetry | object | `{"logLevel":"info","sentryDsn":""}` | Logging and error reporting, rendered under `telemetry` in `config.toml`. |
+| telemetry | object | `{"logLevel":"info","sentry":{"attachStacktrace":true,"breadcrumbLevel":"info","captureLevel":"error","debug":false,"dsn":"","enabled":false,"environment":"","httpTransactions":true,"maxBreadcrumbs":100,"release":"","sampleRate":1,"sendDefaultPii":false,"serverName":"","shutdownTimeoutSecs":2,"spanAttributes":false,"tracesSampleRate":0}}` | Logging and error reporting, rendered under `telemetry` in `config.toml`. |
 | telemetry.logLevel | string | `"info"` | Log level (`telemetry.log_level`). |
-| telemetry.sentryDsn | string | `""` | Sentry DSN (`telemetry.sentry_dsn`). Empty disables Sentry entirely. |
+| telemetry.sentry | object | `{"attachStacktrace":true,"breadcrumbLevel":"info","captureLevel":"error","debug":false,"dsn":"","enabled":false,"environment":"","httpTransactions":true,"maxBreadcrumbs":100,"release":"","sampleRate":1,"sendDefaultPii":false,"serverName":"","shutdownTimeoutSecs":2,"spanAttributes":false,"tracesSampleRate":0}` | Sentry error reporting and request tracing. **Off**, and wholly inert while it is: no client, no panic hook, no subscriber layer and no HTTP middleware is installed, and nothing leaves the process.  Two things the chart deliberately does not do for you. It never reads the DSN, so it cannot name the ingest host in the NetworkPolicies. The defaults do happen to cover it — `networkPolicy.egress.https` permits TCP/443 to `0.0.0.0/0` minus private space — but a deployment that narrowed `networkPolicy.egress.cidr`, turned `egress.https` off, or replaced the CIDR rule with `networkPolicy.cilium.egress.toFQDNs` has to name the endpoint itself, and getting that wrong is silent: an SDK that cannot reach its endpoint queues events and then discards them, so the project stays empty, which reads as "no errors". And it configures nothing inside Sentry — the project, its quota and its server-side data-scrubbing rules are yours.  Unlike the rest of this chart's configuration, the block is read once as the process boots rather than re-read when the kubelet refreshes the mount, so a change to it takes effect on the next restart. `configMount.rolloutOnChange` is what turns one into a rollout. |
+| telemetry.sentry.attachStacktrace | bool | `true` | Attach a stack trace to events that carry none of their own (`telemetry.sentry.attach_stacktrace`, singular). |
+| telemetry.sentry.breadcrumbLevel | string | `"info"` | Least severe `tracing` level kept as a breadcrumb, the trail attached to the next issue (`telemetry.sentry.breadcrumb_level`). Records at or above `captureLevel` become issues instead. Independent of `logLevel`, so tightening the console does not silently empty every trail — and asking for `debug` breadcrumbs makes the process evaluate `debug` records it does not print. Quote `"off"`. |
+| telemetry.sentry.captureLevel | string | `"error"` | Least severe `tracing` level reported as a Sentry issue (`telemetry.sentry.capture_level`). Quote `"off"` — unquoted, YAML reads it as the boolean `false`. |
+| telemetry.sentry.debug | bool | `false` | Print the SDK's own diagnostics to stderr (`telemetry.sentry.debug`). For proving a DSN works, not for running. |
+| telemetry.sentry.dsn | string | `""` | Ingest URL, `https://<key>@<host>/<project>`. A credential — the embedded key is a bearer token for the project's ingest endpoint, and the reload supervisor prints the configuration it holds — so it is delivered as a file in `S3_PERMA_LINK_SECRETS_DIR` under `telemetry__sentry__dsn`, alongside the S3 credentials, and never written into the ConfigMap. Leave it empty and put that key in the Secret named by `existingSecret` to keep it out of `helm get values` entirely. |
+| telemetry.sentry.enabled | bool | `false` | Initialise the Sentry client (`telemetry.sentry.enabled`). Off, every other key here is inert. On, the server refuses to boot without a DSN rather than starting with a reporter that reports nowhere, so this and `dsn` are set together. |
+| telemetry.sentry.environment | string | `""` | Environment tag on every event (`telemetry.sentry.environment`). Empty lets the server resolve it: `production` from a release build, `development` from a debug one. It always sends one, so `SENTRY_ENVIRONMENT` — a channel that would bypass the layered loader entirely — is never consulted. |
+| telemetry.sentry.httpTransactions | bool | `true` | Record one transaction per request, named by the matched route rather than by the URI (`telemetry.sentry.http_transactions`). Whether a started transaction is kept is `tracesSampleRate`'s decision; this is the switch for a deployment that wants error reporting and no performance data at all. The per-request hub is installed either way, which is what stops breadcrumbs from concurrent requests landing on one another's issues. |
+| telemetry.sentry.maxBreadcrumbs | int | `100` | How many breadcrumbs one event carries (`telemetry.sentry.max_breadcrumbs`). |
+| telemetry.sentry.release | string | `""` | Release tag on every event (`telemetry.sentry.release`). Empty uses `s3-bucket-perma-link@<version>`, which is both what makes a regression attributable to a deploy and the name the image's debug-file upload symbolicates against — override it only alongside a matching upload, or events arrive without symbols. |
+| telemetry.sentry.sampleRate | float | `1` | Fraction of captured events actually sent (`telemetry.sentry.sample_rate`). A blunt volume cap — it drops whole issues, not repetitions of one, so a rare error is exactly what it loses — so leave it at `1` unless a quota forces otherwise. |
+| telemetry.sentry.sendDefaultPii | bool | `false` | Send personally identifying data with every event: the client IP, the whole request header set, and a buffered request body (`telemetry.sentry.send_default_pii`). **Off, and worth leaving off** — this server publishes public links, and the address of whoever followed one is not what makes a failed S3 fetch actionable, while Sentry is a third party. It is two controls rather than one, besides: off is also what keeps the HTTP middleware redacting sensitive headers. |
+| telemetry.sentry.serverName | string | `""` | Host tag on every event (`telemetry.sentry.server_name`). Empty reports none, which is the right answer here: the value would be one replica's pod name, gone by the time anyone reads the issue. |
+| telemetry.sentry.shutdownTimeoutSecs | int | `2` | How long process exit waits for queued events to drain (`telemetry.sentry.shutdown_timeout_secs`). Paid on every pod shutdown, so it is time added to every rollout; keep it well inside `terminationGracePeriodSeconds`. `0` discards whatever is still queued. |
+| telemetry.sentry.spanAttributes | bool | `false` | Copy `tracing` span fields onto the Sentry span as attributes (`telemetry.sentry.span_attributes`). Off: the span fields here carry request paths and object keys, and a transaction is retained for longer than a log line. |
+| telemetry.sentry.tracesSampleRate | float | `0` | Fraction of traces this server **starts** that are recorded (`telemetry.sentry.traces_sample_rate`). `0` starts none, which is the sensible setting for a service whose whole job is one redirect, and it is what makes the feature free to switch on for error reporting alone. It does not take the server out of a trace that reaches it already sampled: an inbound `sentry-trace` header is continued whatever this says. |
 | terminationGracePeriodSeconds | int | `30` | Grace period for pod shutdown. |
 | tolerations | list | `[]` | Tolerations for pod assignment. |
 | topologySpreadConstraints | list | `[]` | Pod topology spread constraints for availability. |

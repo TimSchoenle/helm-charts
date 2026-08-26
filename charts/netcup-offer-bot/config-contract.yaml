@@ -20,22 +20,25 @@ bindings: true
 # Chart-level: a key nothing surfaces is unsurfaced in every document that declares it, and this
 # chart declares one. `documents:` narrows an entry where that is untrue.
 #
-# Secret keys are not exempt by default, and this chart is why the rule was refused:
-# `telemetry.sentry_dsn` is `secret: true` in the same contract *and* is projected into
-# `config.toml` by `telemetry.sentryDsn`. A blanket "credentials need no marker" would have
-# written off a key this chart binds, and the gate would then stop noticing if that projection
-# were dropped. Each key is written out.
+# Secret keys are not exempt by default, and each one is written out. The blanket rule
+# "credentials need no marker" was refused because it cannot tell a key delivered as a file from
+# a key a chart merely forgot: both look identical from the contract's side, and the second is
+# exactly the regression this gate exists to catch. Naming them one by one costs a line and
+# keeps the gate honest — a chart that stopped projecting one would go red rather than quiet.
 unbound:
   - keys:
       - discord.webhook_url
+      - telemetry.sentry.dsn
     reason: >-
-      Delivered as a file in the secrets directory — from the Secret this chart renders, or
-      from `existingSecret` under the file name `discord__webhook_url` — and never written
-      into `config.toml`, because a bearer credential in a ConfigMap is readable by anything
-      that can read the namespace. `discord.webhookUrl` is the value that carries it, so the
-      binding does exist; it simply does not run through the configuration document the
-      markers describe. `just check-config-secrets` is what reconciles that channel, and it
-      does it from the rendered manifests rather than from a comment.
+      Delivered as files in the secrets directory — from the Secret this chart renders, or
+      from `existingSecret` under the file names `discord__webhook_url` and
+      `telemetry__sentry__dsn` — and never written into `config.toml`, because a bearer
+      credential in a ConfigMap is readable by anything that can read the namespace. The DSN
+      embeds an ingest key and is one. `discord.webhookUrl` and `telemetry.sentry.dsn` are the
+      values that carry them, so both bindings exist; they simply do not run through the
+      configuration document the markers describe. `just check-config-secrets` is what
+      reconciles that channel, and it does it from the rendered manifests rather than from a
+      comment.
 
 documents:
   - name: bot

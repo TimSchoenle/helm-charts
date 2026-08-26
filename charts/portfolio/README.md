@@ -1,6 +1,6 @@
 # portfolio
 
-![Version: 5.1.7](https://img.shields.io/badge/Version-5.1.7-informational?style=flat-square) ![AppVersion: v2.9.0](https://img.shields.io/badge/AppVersion-v2.9.0-informational?style=flat-square)
+![Version: 5.2.0](https://img.shields.io/badge/Version-5.2.0-informational?style=flat-square) ![AppVersion: v2.10.0](https://img.shields.io/badge/AppVersion-v2.10.0-informational?style=flat-square)
 
 Personal portfolio built with Rust (Yew frontend, Axum server).
 
@@ -12,6 +12,7 @@ most installs add is an Ingress.
 ## Prerequisites
 
 - Kubernetes 1.19+
+- A Sentry DSN, if `sentry.enabled` is set
 - Helm 3.0+
 - An ingress controller, if `ingress.enabled=true`
 - The Gateway API CRDs and a `Gateway` to attach to, if `gateway.enabled=true`
@@ -107,6 +108,73 @@ The server does not reload its configuration — only the loader half of the lib
 the chart keeps the conventional `checksum/config` pod annotation: a configuration change rolls
 the Deployment, which is the only way it takes effect.
 
+## Error reporting and tracing
+
+`sentry` reports errors and panics to Sentry, and can record a transaction per request. It is
+off, and inert while it is off: no client, no panic hook, no `tracing` layer and no HTTP
+middleware is installed, so nothing leaves the process and nothing about a rendered release
+changes.
+
+```yaml
+sentry:
+  enabled: true
+  dsn: https://<key>@<host>/<project>
+```
+
+Switching it on moves one thing that has nothing to do with Sentry: the server installs the log
+subscriber itself instead of leaving it to the Dioxus toolchain, because a Sentry layer has to
+be a layer *of* the subscriber and the framework's is not extensible after the fact. `logLevel`
+still decides what is printed and the format is unchanged.
+
+The DSN embeds a write key for the project's event stream, so the chart treats it as the
+credential it is: it goes to a Secret under `sentry__dsn`, never into the ConfigMap — which
+matters twice here, because the server prints the configuration it holds on the refusal path. It
+is the **only** credential this server reads, so switching Sentry on is what gives the pod a
+secrets volume and a `PORTFOLIO_SECRETS_DIR` at all; expect the pod spec to change shape, not
+just the ConfigMap. Point `existingSecret` at a Secret you created yourself to keep the DSN out
+of `values.yaml` and out of the Helm release object:
+
+```shell
+kubectl create secret generic portfolio-sentry   --namespace [NAMESPACE]   --from-literal=sentry__dsn='https://<key>@<host>/<project>'
+```
+
+```yaml
+existingSecret: portfolio-sentry
+```
+
+**The key name is the configuration path the server reads, not a free-form name.** The DSN
+arrives as a file in a projected volume and the server takes the key out of the file *name*, so
+`sentry__dsn` is required; a Secret spelled any other way mounts cleanly and supplies nothing.
+Switching the feature on with no DSN — neither inline nor in an `existingSecret` — is refused at
+render time, because the server refuses to boot rather than installing a client that reports
+nowhere, and a rejected `helm upgrade` beats a CrashLoopBackOff.
+
+**Check the egress.** The chart never reads the DSN, so it cannot name the ingest host in the
+network policies. The defaults do cover it — `networkPolicy.egress.https` permits TCP/443 to
+`0.0.0.0/0` minus private space — so an out-of-the-box release reaches Sentry without further
+work. A release that narrowed `networkPolicy.egress.cidr`, turned `egress.https` off, or
+replaced the CIDR rule with `networkPolicy.cilium.egress.toFQDNs` has to name the endpoint
+itself. Getting that wrong is silent: an SDK that cannot reach its endpoint queues events and
+then discards them, so the project simply stays empty, which reads as "no errors".
+
+**`sendDefaultPii` is the one setting to decide deliberately.** On, every event carries the
+client IP, the whole request header set including `Cookie`, and the resolved user, to a third
+party — and the same flag is what stops the HTTP middleware redacting sensitive headers. This
+site publishes a privacy page stating that no third-party service receives visitor data; that
+page is what the setting has to agree with. It is off by default.
+
+`tracesSampleRate` is `0`, which is what keeps switching Sentry on for crash reporting from also
+switching performance data on. This server is the edge and starts every trace it has — nothing
+upstream hands it one — so this rate alone decides whether a trace exists. `0.05`-`0.2` is an
+ordinary production figure.
+
+`environment`, `release` and `serverName` are empty by default and the chart writes none of
+them: the server derives the first two — `production` for the release binary every published
+image is built as, and `portfolio@<version>` from the workspace the binary was cut from, which
+is what makes a regression attributable to a deploy — and reports no host tag. A blank value is
+a *supplied* value to the loader, not an absent one, so set them only to say something the
+server cannot derive.
+
 ### What checks that the configuration is one the image accepts
 
 Nothing about the paragraphs above is enforced by Helm. `values.schema.json` describes this
@@ -177,6 +245,24 @@ positive TTL only when a *persistent* cache volume is shared across deploys — 
 `extraVolumes` mount, since the default cache lives in an `emptyDir`.
 
 ## Upgrading
+
+### 5.1 to 5.2
+
+Chart 5.2 tracks Portfolio 2.10.0, which adds optional Sentry error reporting and request
+tracing. Everything is additive and off, so an existing release needs no change.
+
+Three things are worth knowing before switching it on:
+
+- **The pod gains a secrets volume.** The DSN is the only credential this server reads, so
+  today's pods carry no secrets volume and no `PORTFOLIO_SECRETS_DIR`. Setting `sentry.enabled`
+  gives them both, and an `existingSecret` that should carry the DSN needs the key `sentry__dsn`.
+- **The log subscriber changes hands.** On, the server installs it rather than the Dioxus
+  toolchain, because a Sentry layer has to be a layer of the subscriber. `logLevel` still decides
+  what is printed and the format is unchanged.
+- **`sendDefaultPii` contradicts the privacy page if you turn it on.** The page this site
+  publishes says no third-party service receives visitor data; the key sends the client IP,
+  cookies and the resolved user to Sentry. It is off by default and this is not a default to
+  change casually.
 
 ### 4.x to 5.0
 
@@ -412,13 +498,14 @@ policy pointing at the wrong Gateway looks correct and blocks everything.
 | configExtraToml | string | `""` | Verbatim TOML appended after the rendered configuration. The escape hatch for anything the chart's TOML renderer cannot express, notably arrays of tables. |
 | configMount | object | `{"configDir":"/etc/portfolio/config","secretsDir":"/etc/portfolio/secrets"}` | Where the rendered configuration and the credential files land in the container. |
 | configMount.configDir | string | `"/etc/portfolio/config"` | Directory the rendered `config.toml` is mounted at, passed as `PORTFOLIO_CONFIG`. |
-| configMount.secretsDir | string | `"/etc/portfolio/secrets"` | Directory credential files would be mounted at, passed as `PORTFOLIO_SECRETS_DIR`. The server reads no secret today — `github.token` belongs to the build-time repository builder — so nothing is mounted and the variable is not set; the value is here for an operator adding one through `extraVolumes`. |
+| configMount.secretsDir | string | `"/etc/portfolio/secrets"` | Directory credential files are mounted at, passed as `PORTFOLIO_SECRETS_DIR`. The Sentry DSN is the only credential this server reads — `github.token` belongs to the build-time repository builder — so the volume and the variable both appear only while `sentry.enabled` is set, and a release that does not report to Sentry carries neither. |
 | csp | object | `{"cloudflare":{"scriptNonce":true,"turnstile":false,"webAnalytics":false},"hashInlineScripts":true}` | The `Content-Security-Policy` the server sends on every document. The policy itself is not configurable — it is built from the response body, hashing each inline `<script>` the document actually carries, so it cannot drift from what is sent. These keys decide only what it has to make room for. |
 | csp.cloudflare | object | `{"scriptNonce":true,"turnstile":false,"webAnalytics":false}` | Concessions to the Cloudflare products running in front of this origin. Each one widens the policy, so each is switched on only for a product that is actually in use. |
 | csp.cloudflare.scriptNonce | bool | `true` | Reserve a per-response nonce in `script-src` (`csp.cloudflare.script_nonce`) for the inline `<script>` Cloudflare's bot products — Bot Fight Mode, JavaScript Detections, the challenge platform — inject at the edge, after the server has hashed what it rendered. No hash can cover it, and without the nonce the detection is refused and silently never runs. On by default, and it carries one obligation the chart cannot enforce: **no Cloudflare Cache Rule may cache the shell**, or a single nonce is pinned across every reader for the lifetime of the cache entry. |
 | csp.cloudflare.turnstile | bool | `false` | Admit `https://challenges.cloudflare.com` in `script-src` *and* `frame-src` (`csp.cloudflare.turnstile`), for a Turnstile widget rendered in a page this server serves. Admitting only the first renders an empty box. |
 | csp.cloudflare.webAnalytics | bool | `false` | Admit the Cloudflare Web Analytics beacon and the endpoint it reports to (`csp.cloudflare.web_analytics`). For the manually embedded snippet only — the automatic edge injection is an inline script, which is what `scriptNonce` covers instead. |
 | csp.hashInlineScripts | bool | `true` | Hash the document's inline scripts (`csp.hash_inline_scripts`) instead of admitting all inline script with `'unsafe-inline'`. An escape hatch, not a preference: turning it off also requires `csp.cloudflare.scriptNonce: false`, because a browser ignores `'unsafe-inline'` as soon as the policy carries a nonce. The chart refuses the mismatched pair rather than letting the server fail its own boot. |
+| existingSecret | string | `""` | Name of an existing Secret holding the Sentry DSN, which keeps it out of `values.yaml` and out of the Helm release object. **Its key is the configuration path, not a free-form name**: `sentry__dsn`, because the file name is what the loader parses. Set, the chart renders no Secret of its own and `sentry.dsn` is ignored. It is read only while `sentry.enabled` is set — nothing else this server reads is a credential. |
 | extraEnv | list | `[]` | Additional environment variables for the application container. |
 | extraVolumeMounts | list | `[]` | Additional volume mounts added to the application container. |
 | extraVolumes | list | `[]` | Additional volumes added to the pod. |
@@ -562,6 +649,22 @@ policy pointing at the wrong Gateway looks correct and blocks everything.
 | revisionHistoryLimit | int | `3` | Number of old ReplicaSets retained for rollback. |
 | securityContext | object | `{}` | Container security context, merged over the preset. The application is a statically linked binary serving pre-built assets and needs no writable root filesystem; a writable /tmp is provided automatically via an emptyDir. |
 | securityContextPreset | string | `"restricted"` | Container security context baseline. `restricted` drops all Linux capabilities and forbids privilege escalation and a writable root filesystem. |
+| sentry | object | `{"attachStacktraces":true,"breadcrumbLevel":"info","captureLevel":"error","debug":false,"dsn":"","enabled":false,"environment":"","httpTransactions":true,"maxBreadcrumbs":100,"release":"","sampleRate":1,"sendDefaultPii":false,"serverName":"","spanAttributes":false,"tracesSampleRate":0}` | Sentry error reporting and request tracing, rendered under `sentry` in the mounted `config.toml`. **Off**, and wholly inert while it is: no client, no panic hook, no `tracing` layer and no HTTP middleware is installed, and nothing leaves the process.  Switching it on moves one thing that has nothing to do with Sentry: the server installs the log subscriber itself instead of leaving it to the Dioxus toolchain, because a Sentry layer has to be a layer *of* the subscriber and the framework's is not extensible after the fact. `logLevel` still decides what is printed and the format is unchanged.  Two things the chart deliberately does not do for you. It never reads the DSN, so it cannot name the ingest host in the NetworkPolicies. The defaults do happen to cover it — `networkPolicy.egress.https` permits TCP/443 to `0.0.0.0/0` minus private space — but a deployment that narrowed `networkPolicy.egress.cidr`, turned `egress.https` off, or replaced the CIDR rule with `networkPolicy.cilium.egress.toFQDNs` has to name the endpoint itself, and getting that wrong is silent: an SDK that cannot reach its endpoint queues events and then discards them, so the project stays empty, which reads as "no errors". And it configures nothing inside Sentry — the project, its quota and its server-side data-scrubbing rules are yours. |
+| sentry.attachStacktraces | bool | `true` | Attach a stack trace to events that carry none of their own (`sentry.attach_stacktraces`). |
+| sentry.breadcrumbLevel | string | `"info"` | Least severe `tracing` level kept as a breadcrumb, the trail attached to the next issue (`sentry.breadcrumb_level`). Records at or above `captureLevel` become issues instead, so the two thresholds partition the stream rather than overlapping on it. Quote `"off"`. |
+| sentry.captureLevel | string | `"error"` | Least severe `tracing` level reported as a Sentry issue (`sentry.capture_level`). Quote `"off"` — unquoted, YAML reads it as the boolean `false`. |
+| sentry.debug | bool | `false` | Print the SDK's own diagnostics to stderr (`sentry.debug`). For proving a DSN works, not for running. |
+| sentry.dsn | string | `""` | Ingest URL, `https://<key>@<host>/<project>`. A credential — the embedded key is a bearer token for the project's ingest endpoint, and the server prints the configuration it holds on the refusal path — so it is delivered as a file in `PORTFOLIO_SECRETS_DIR` under `sentry__dsn` and never written into the ConfigMap. It is the only credential this chart handles, and switching Sentry on is what gives the pod a secrets volume at all. Leave it empty and put that key in the Secret named by `existingSecret` to keep it out of `helm get values` entirely. |
+| sentry.enabled | bool | `false` | Initialise the Sentry client (`sentry.enabled`). Off, every other key here is inert. On, the server refuses to boot without a DSN rather than starting with a reporter that reports nowhere, so this and `dsn` are set together. |
+| sentry.environment | string | `""` | Environment tag on every event (`sentry.environment`). Empty lets the server derive it from the build profile: `production` for the release binary every published image is. Set it for anything in between, such as a staging deployment of that same image. |
+| sentry.httpTransactions | bool | `true` | Record one transaction per request, named by the matched route rather than by the URI (`sentry.http_transactions`), so `/api/repos/{name}` does not become one transaction name per repository. Whether a started transaction is kept is `tracesSampleRate`'s decision; this is the switch for taking the middleware out entirely. |
+| sentry.maxBreadcrumbs | int | `100` | How many breadcrumbs one event carries (`sentry.max_breadcrumbs`). |
+| sentry.release | string | `""` | Release tag on every event (`sentry.release`). Empty uses `portfolio@<version>`, the workspace version the binary was built from — which is what makes a regression attributable to a deploy, since every deploy of this site is a new image cut from a new version. |
+| sentry.sampleRate | float | `1` | Fraction of captured events actually sent (`sentry.sample_rate`). A blunt volume cap — it drops whole issues, not repetitions of one, so a rare bug is exactly as likely to be dropped as a noisy one — so leave it at `1` unless a quota forces otherwise. |
+| sentry.sendDefaultPii | bool | `false` | Send personally identifying data with every event: the client IP, the whole request header set — `Cookie` included — and the resolved user (`sentry.send_default_pii`). **Off, and worth leaving off.** A reader's address and cookies are not what makes a crash report actionable, and Sentry is a third party for the purposes of the privacy page this site publishes — a page that says no third-party service receives visitor data, which is a statement this one key is the way to falsify. It is two controls rather than one, besides: off is also what keeps the HTTP middleware redacting sensitive headers. |
+| sentry.serverName | string | `""` | Host tag on every event (`sentry.server_name`). Empty reports none, which is the right answer here: the value would be one replica's pod name, and this site runs one image behind a tunnel, so it identifies nothing an event does not already say. |
+| sentry.spanAttributes | bool | `false` | Copy `tracing` span fields onto the Sentry span as attributes (`sentry.span_attributes`). Off: the span fields here routinely carry request paths and the negotiated locale, and a transaction is retained for longer than a log line. |
+| sentry.tracesSampleRate | float | `0` | Fraction of request traces recorded (`sentry.traces_sample_rate`). `0` records none, which is what keeps switching Sentry on for crash reporting from also switching performance data on. This server is the edge and starts every trace it has — nothing upstream hands it one — so this rate alone decides whether a trace exists. `0.05`-`0.2` is an ordinary production figure. |
 | server | object | `{"host":"0.0.0.0","port":8080}` | The listener, which is the one part of the configuration the `PORTFOLIO_` namespace does not own: `PORT`, `IP` and `RUST_LOG` belong to the Dioxus toolchain, which reads them from the environment itself. They are therefore still passed as environment variables, and cannot be supplied through `config`. |
 | server.host | string | `"0.0.0.0"` | Bind address, passed as `IP`. |
 | server.port | int | `8080` | Bind port, passed as `PORT`. Also the container port, the Service target and what every probe and NetworkPolicy rule is written against. |

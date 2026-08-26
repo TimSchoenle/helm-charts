@@ -1318,7 +1318,7 @@
         },
         "secretsDir": {
           "default": "/etc/portfolio/secrets",
-          "description": "Directory credential files would be mounted at, passed as `PORTFOLIO_SECRETS_DIR`. The\nserver reads no secret today — `github.token` belongs to the build-time repository\nbuilder — so nothing is mounted and the variable is not set; the value is here for an\noperator adding one through `extraVolumes`.",
+          "description": "Directory credential files are mounted at, passed as `PORTFOLIO_SECRETS_DIR`. The Sentry\nDSN is the only credential this server reads — `github.token` belongs to the build-time\nrepository builder — so the volume and the variable both appear only while `sentry.enabled`\nis set, and a release that does not report to Sentry carries neither.",
           "required": [],
           "title": "secretsDir",
           "type": "string"
@@ -1370,6 +1370,13 @@
       },
       "required": [],
       "title": "csp"
+    },
+    "existingSecret": {
+      "default": "",
+      "description": "Name of an existing Secret holding the Sentry DSN, which keeps it out of `values.yaml` and\nout of the Helm release object. **Its key is the configuration path, not a free-form name**:\n`sentry__dsn`, because the file name is what the loader parses. Set, the chart renders no\nSecret of its own and `sentry.dsn` is ignored. It is read only while `sentry.enabled` is set —\nnothing else this server reads is a credential.",
+      "required": [],
+      "title": "existingSecret",
+      "type": "string"
     },
     "extraEnv": {
       "description": "Additional environment variables for the application container.",
@@ -2484,6 +2491,138 @@
       ],
       "required": [],
       "title": "securityContextPreset"
+    },
+    "sentry": {
+      "additionalProperties": true,
+      "description": "Sentry error reporting and request tracing, rendered under `sentry` in the mounted\n`config.toml`. **Off**, and wholly inert while it is: no client, no panic hook, no `tracing`\nlayer and no HTTP middleware is installed, and nothing leaves the process.\n\nSwitching it on moves one thing that has nothing to do with Sentry: the server installs the\nlog subscriber itself instead of leaving it to the Dioxus toolchain, because a Sentry layer\nhas to be a layer *of* the subscriber and the framework's is not extensible after the fact.\n`logLevel` still decides what is printed and the format is unchanged.\n\nTwo things the chart deliberately does not do for you. It never reads the DSN, so it cannot\nname the ingest host in the NetworkPolicies. The defaults do happen to cover it —\n`networkPolicy.egress.https` permits TCP/443 to `0.0.0.0/0` minus private space — but a\ndeployment that narrowed `networkPolicy.egress.cidr`, turned `egress.https` off, or replaced\nthe CIDR rule with `networkPolicy.cilium.egress.toFQDNs` has to name the endpoint itself, and\ngetting that wrong is silent: an SDK that cannot reach its endpoint queues events and then\ndiscards them, so the project stays empty, which reads as \"no errors\". And it configures\nnothing inside Sentry — the project, its quota and its server-side data-scrubbing rules are\nyours.",
+      "properties": {
+        "attachStacktraces": {
+          "default": true,
+          "description": "Attach a stack trace to events that carry none of their own (`sentry.attach_stacktraces`).",
+          "required": [],
+          "title": "attachStacktraces",
+          "type": "boolean"
+        },
+        "breadcrumbLevel": {
+          "default": "info",
+          "description": "Least severe `tracing` level kept as a breadcrumb, the trail attached to the next issue\n(`sentry.breadcrumb_level`). Records at or above `captureLevel` become issues instead, so the\ntwo thresholds partition the stream rather than overlapping on it. Quote `\"off\"`.",
+          "enum": [
+            "off",
+            "error",
+            "warn",
+            "info",
+            "debug",
+            "trace"
+          ],
+          "required": [],
+          "title": "breadcrumbLevel"
+        },
+        "captureLevel": {
+          "default": "error",
+          "description": "Least severe `tracing` level reported as a Sentry issue (`sentry.capture_level`). Quote\n`\"off\"` — unquoted, YAML reads it as the boolean `false`.",
+          "enum": [
+            "off",
+            "error",
+            "warn",
+            "info",
+            "debug",
+            "trace"
+          ],
+          "required": [],
+          "title": "captureLevel"
+        },
+        "debug": {
+          "default": false,
+          "description": "Print the SDK's own diagnostics to stderr (`sentry.debug`). For proving a DSN works, not\nfor running.",
+          "required": [],
+          "title": "debug",
+          "type": "boolean"
+        },
+        "dsn": {
+          "default": "",
+          "description": "Ingest URL, `https://\u003ckey\u003e@\u003chost\u003e/\u003cproject\u003e`. A credential — the embedded key is a bearer\ntoken for the project's ingest endpoint, and the server prints the configuration it holds on\nthe refusal path — so it is delivered as a file in `PORTFOLIO_SECRETS_DIR` under\n`sentry__dsn` and never written into the ConfigMap. It is the only credential this chart\nhandles, and switching Sentry on is what gives the pod a secrets volume at all. Leave it\nempty and put that key in the Secret named by `existingSecret` to keep it out of `helm get\nvalues` entirely.",
+          "required": [],
+          "title": "dsn",
+          "type": "string"
+        },
+        "enabled": {
+          "default": false,
+          "description": "Initialise the Sentry client (`sentry.enabled`). Off, every other key here is inert. On,\nthe server refuses to boot without a DSN rather than starting with a reporter that reports\nnowhere, so this and `dsn` are set together.",
+          "required": [],
+          "title": "enabled",
+          "type": "boolean"
+        },
+        "environment": {
+          "default": "",
+          "description": "Environment tag on every event (`sentry.environment`). Empty lets the server derive it\nfrom the build profile: `production` for the release binary every published image is. Set it\nfor anything in between, such as a staging deployment of that same image.",
+          "required": [],
+          "title": "environment",
+          "type": "string"
+        },
+        "httpTransactions": {
+          "default": true,
+          "description": "Record one transaction per request, named by the matched route rather than by the URI\n(`sentry.http_transactions`), so `/api/repos/{name}` does not become one transaction name per\nrepository. Whether a started transaction is kept is `tracesSampleRate`'s decision; this is\nthe switch for taking the middleware out entirely.",
+          "required": [],
+          "title": "httpTransactions",
+          "type": "boolean"
+        },
+        "maxBreadcrumbs": {
+          "default": 100,
+          "description": "How many breadcrumbs one event carries (`sentry.max_breadcrumbs`).",
+          "minimum": 0,
+          "required": [],
+          "title": "maxBreadcrumbs",
+          "type": "integer"
+        },
+        "release": {
+          "default": "",
+          "description": "Release tag on every event (`sentry.release`). Empty uses `portfolio@\u003cversion\u003e`, the\nworkspace version the binary was built from — which is what makes a regression attributable\nto a deploy, since every deploy of this site is a new image cut from a new version.",
+          "required": [],
+          "title": "release",
+          "type": "string"
+        },
+        "sampleRate": {
+          "default": 1,
+          "description": "Fraction of captured events actually sent (`sentry.sample_rate`). A blunt volume cap — it\ndrops whole issues, not repetitions of one, so a rare bug is exactly as likely to be dropped\nas a noisy one — so leave it at `1` unless a quota forces otherwise.",
+          "maximum": 1,
+          "minimum": 0,
+          "required": [],
+          "title": "sampleRate",
+          "type": "number"
+        },
+        "sendDefaultPii": {
+          "default": false,
+          "description": "Send personally identifying data with every event: the client IP, the whole request header\nset — `Cookie` included — and the resolved user (`sentry.send_default_pii`). **Off, and worth\nleaving off.** A reader's address and cookies are not what makes a crash report actionable,\nand Sentry is a third party for the purposes of the privacy page this site publishes — a page\nthat says no third-party service receives visitor data, which is a statement this one key is\nthe way to falsify. It is two controls rather than one, besides: off is also what keeps the\nHTTP middleware redacting sensitive headers.",
+          "required": [],
+          "title": "sendDefaultPii",
+          "type": "boolean"
+        },
+        "serverName": {
+          "default": "",
+          "description": "Host tag on every event (`sentry.server_name`). Empty reports none, which is the right\nanswer here: the value would be one replica's pod name, and this site runs one image behind\na tunnel, so it identifies nothing an event does not already say.",
+          "required": [],
+          "title": "serverName",
+          "type": "string"
+        },
+        "spanAttributes": {
+          "default": false,
+          "description": "Copy `tracing` span fields onto the Sentry span as attributes (`sentry.span_attributes`).\nOff: the span fields here routinely carry request paths and the negotiated locale, and a\ntransaction is retained for longer than a log line.",
+          "required": [],
+          "title": "spanAttributes",
+          "type": "boolean"
+        },
+        "tracesSampleRate": {
+          "default": 0,
+          "description": "Fraction of request traces recorded (`sentry.traces_sample_rate`). `0` records none, which\nis what keeps switching Sentry on for crash reporting from also switching performance data\non. This server is the edge and starts every trace it has — nothing upstream hands it one —\nso this rate alone decides whether a trace exists. `0.05`-`0.2` is an ordinary production\nfigure.",
+          "maximum": 1,
+          "minimum": 0,
+          "required": [],
+          "title": "tracesSampleRate",
+          "type": "number"
+        }
+      },
+      "required": [],
+      "title": "sentry"
     },
     "server": {
       "additionalProperties": true,

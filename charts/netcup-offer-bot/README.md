@@ -1,6 +1,6 @@
 # netcup-offer-bot
 
-![Version: 5.1.3](https://img.shields.io/badge/Version-5.1.3-informational?style=flat-square) ![AppVersion: v2.1.1](https://img.shields.io/badge/AppVersion-v2.1.1-informational?style=flat-square)
+![Version: 6.0.0](https://img.shields.io/badge/Version-6.0.0-informational?style=flat-square) ![AppVersion: v3.0.0](https://img.shields.io/badge/AppVersion-v3.0.0-informational?style=flat-square)
 
 This chart deploys the Netcup Offer Bot, which monitors https://www.netcup-sonderangebote.de/ RSS feed and sends notifications to Discord webhooks when new offers are available.
 
@@ -12,6 +12,7 @@ offers; everything else is defaults.
 - Kubernetes 1.19+
 - Helm 3.0+
 - A Discord webhook URL
+- A Sentry DSN, if `telemetry.sentry.enabled` is set
 - The Prometheus Operator CRDs, if `metrics.podMonitor` is enabled
 - Cilium 1.16+, if `networkPolicy.engine` is `cilium` or `both`
 
@@ -29,36 +30,40 @@ helm install [RELEASE_NAME] timschoenle/netcup-offer-bot \
 Upgrade with `helm upgrade [RELEASE_NAME] timschoenle/netcup-offer-bot -n [NAMESPACE]`,
 remove with `helm uninstall [RELEASE_NAME] -n [NAMESPACE]`.
 
-## Keeping the webhook out of the release
+## Keeping the credentials out of the release
 
-`discord.webhookUrl` is written into a Secret, but it still passes through `values.yaml` and
-stays readable in the Helm release object afterwards. Point `existingSecret` at a Secret you
-created yourself to avoid both:
+`discord.webhookUrl` and `telemetry.sentry.dsn` are written into a Secret, but they still pass
+through `values.yaml` and stay readable in the Helm release object afterwards. Point
+`existingSecret` at a Secret you created yourself to avoid both:
 
 ```shell
-kubectl create secret generic netcup-webhook   --namespace [NAMESPACE]   --from-literal=discord__webhook_url='https://discord.com/api/webhooks/...'
+kubectl create secret generic netcup-webhook   --namespace [NAMESPACE]   --from-literal=discord__webhook_url='https://discord.com/api/webhooks/...'   --from-literal=telemetry__sentry__dsn='https://<key>@<host>/<project>'
 ```
 
 ```yaml
 existingSecret: netcup-webhook
 ```
 
-**The key name is the configuration path the bot reads, not a free-form name.** The webhook
-arrives as a file in a projected volume and the bot takes the key out of the file *name*, so
-`discord__webhook_url` is required; a Secret spelled any other way mounts cleanly, supplies
-nothing, and the bot refuses to boot naming the missing credential.
+**The key names are the configuration paths the bot reads, not free-form names.** Each
+credential arrives as a file in a projected volume and the bot takes the key out of the file
+*name*, so `discord__webhook_url` and `telemetry__sentry__dsn` are the required spellings; a
+Secret spelled any other way mounts cleanly, supplies nothing, and the bot refuses to boot
+naming the missing credential.
 
-`discord.webhookUrl` is then ignored.
+`discord.webhookUrl` and `telemetry.sentry.dsn` are then ignored. Only the keys the release
+actually uses need to be present: the DSN is projected only while `telemetry.sentry.enabled` is
+set, so a Secret for a release that does not report to Sentry carries the webhook alone.
 
 ## Configuration
 
 Everything the bot reads is rendered into one `config.toml`, mounted as a ConfigMap and pointed
-at by `NETCUP_OFFER_BOT_CONFIG`; the webhook is mounted separately as a file under
-`NETCUP_OFFER_BOT_SECRETS_DIR`. Nothing is passed as an environment variable, and that is
-deliberate on two counts: the loader **fails the boot on a key supplied by both the environment
-and a file** rather than resolving it by precedence, and an environment variable is visible in
-`kubectl describe pod`, in `/proc/<pid>/environ` and in the environment of every child process
-— which for a webhook URL is exactly the exposure worth removing.
+at by `NETCUP_OFFER_BOT_CONFIG`; the credentials — the Discord webhook, and the Sentry DSN when
+that is switched on — are mounted separately as files under `NETCUP_OFFER_BOT_SECRETS_DIR`.
+Nothing is passed as an environment variable, and that is deliberate on two counts: the loader
+**fails the boot on a key supplied by both the environment and a file** rather than resolving it
+by precedence, and an environment variable is visible in `kubectl describe pod`, in
+`/proc/<pid>/environ` and in the environment of every child process — which for a webhook URL is
+exactly the exposure worth removing.
 
 The values above cover the whole documented surface. `config` takes the raw TOML tree for
 anything they do not, merged over the derived one, and `configExtraToml` is appended verbatim
@@ -102,10 +107,86 @@ Without a matching label the PodMonitor is created and never read.
 nothing from outside the container — a PodMonitor pointed at that would scrape a refused
 connection.
 
-`telemetry.sentryDsn` additionally routes application errors to Sentry; leave it empty to keep
-the bot's egress to Discord and the netcup feed only.
+## Error reporting and tracing
+
+`telemetry.sentry` reports errors and panics to Sentry, and can record traces of the poll loop.
+It is off, and inert while it is off: no client, no panic hook and no layer is installed, so
+nothing leaves the process and nothing about a rendered release changes.
+
+```yaml
+telemetry:
+  sentry:
+    enabled: true
+    dsn: https://<key>@<host>/<project>
+    tracesSampleRate: 0.1
+```
+
+The DSN embeds a write key for the project's event stream, so the chart treats it as the
+credential it is: it goes to the Secret under `telemetry__sentry__dsn`, never into the
+ConfigMap. Switching the feature on with no DSN — neither here nor in an `existingSecret` — is
+refused at render time, because the bot refuses to boot rather than installing a client that
+reports nowhere, and a rejected `helm upgrade` beats a CrashLoopBackOff.
+
+**Check the egress.** The chart never reads the DSN, so it cannot name the ingest host in the
+network policies. The defaults do cover it — `networkPolicy.egress.https` permits TCP/443 to
+`0.0.0.0/0` minus private space — so an out-of-the-box release reaches Sentry without further
+work. A release that narrowed `networkPolicy.egress.cidr`, turned `egress.https` off, or
+replaced the CIDR rule with `networkPolicy.cilium.egress.toFQDNs` has to name the endpoint
+itself. Getting that wrong is silent: an SDK that cannot reach its endpoint queues events and
+then discards them, so the project simply stays empty, which reads as "no errors".
+
+```yaml
+networkPolicy:
+  enabled: true
+  extraEgress:
+    - to:
+        - ipBlock:
+            cidr: 34.120.195.249/32 # your ingest endpoint
+      ports:
+        - port: 443
+          protocol: TCP
+```
+
+Under the Cilium engine the same destination is better expressed by name, via
+`networkPolicy.cilium.egress.toFQDNs`.
+
+`environment`, `release` and `serverName` are empty by default and the chart writes none of
+them: the bot sends `production` (or `development` from a debug build) and the version the
+binary was built from, and the second is what makes a regression attributable to a deploy. A
+blank value is a *supplied* value to the loader, not an absent one, so set them only to say
+something the bot cannot derive.
+
+`telemetry.sentry` is installed once as the process boots, so a change to it is a restart rather
+than a reload — which for this chart is the ordinary behaviour anyway, since it keeps the
+`checksum/*` pod annotations.
 
 ## Upgrading
+
+### 5.x to 6.0
+
+Chart 6.0 tracks the bot's 3.0 release, which replaced the single `telemetry.sentry_dsn` key
+with a full `telemetry.sentry` block — twelve settings and the DSN — and made Sentry an optional
+compile-time feature. `telemetry.sentryDsn` is gone; a `helm upgrade` with 5.x values fails
+schema validation naming the key rather than silently dropping error reporting.
+
+| Before | After |
+|---|---|
+| `telemetry.sentryDsn: https://...` | `telemetry.sentry.enabled: true` **and** `telemetry.sentry.dsn: https://...` |
+| (unset) | (unset — `telemetry.sentry.enabled` defaults to `false`) |
+
+Two behaviours changed along with the spelling:
+
+- **The DSN is a credential now.** 5.x rendered it into `config.toml`, where anything that can
+  read the namespace could print it. It goes to the Secret instead, under
+  `telemetry__sentry__dsn` — so an `existingSecret` that should carry it needs that key added,
+  and the pod projects it only while `telemetry.sentry.enabled` is set.
+- **The switch is separate from the DSN.** Setting one without the other is refused at render
+  time in both directions: on with no DSN is a boot failure upstream, and a DSN with the switch
+  off is a credential in the release that nothing reads.
+
+Everything else under the block is new and optional; the defaults reproduce 5.x behaviour apart
+from `tracesSampleRate`, which is `0.0` here against the `0.2` the old build hard-coded. Set it
+explicitly if you were relying on those traces.
 
 ### 4.x to 5.0
 
@@ -225,7 +306,7 @@ policy pointing at the wrong Gateway looks correct and blocks everything.
 | configMount.secretsDir | string | `"/etc/netcup-offer-bot/secrets"` | Directory the credential file is mounted at, passed as `NETCUP_OFFER_BOT_SECRETS_DIR`. |
 | discord | object | `{"webhookUrl":""}` | Where the offers are posted. The webhook is a bearer credential, so it is rendered into the Secret and the render fails when neither it nor `existingSecret` supplies one. |
 | discord.webhookUrl | string | `""` | Discord webhook the offers are posted to (`discord.webhook_url`). Rendered into the chart's Secret and mounted as a file rather than passed as an environment variable, so it never appears in `kubectl describe pod` or in the environment of a child process. Required unless `existingSecret` supplies it. |
-| existingSecret | string | `""` | Name of an existing Secret holding the Discord webhook, which keeps it out of `values.yaml` and out of the Helm release object. **Its key is the configuration path, not a free-form name**: `discord__webhook_url`, because the file name is what the loader parses. Set, the chart renders no Secret of its own and `discord.webhookUrl` is ignored. |
+| existingSecret | string | `""` | Name of an existing Secret holding the bot's credentials, which keeps them out of `values.yaml` and out of the Helm release object. **Its keys are configuration paths, not free-form names**: `discord__webhook_url` and, once `telemetry.sentry.enabled` is set, `telemetry__sentry__dsn` — because the file name is what the loader parses. Set, the chart renders no Secret of its own and `discord.webhookUrl` / `telemetry.sentry.dsn` are ignored. |
 | extraEnv | list | `[]` | Additional environment variables for the application container. |
 | extraVolumeMounts | list | `[]` | Additional volume mounts added to the application container. |
 | extraVolumes | list | `[]` | Additional volumes added to the pod. |
@@ -331,9 +412,22 @@ policy pointing at the wrong Gateway looks correct and blocks everything.
 | serviceAccount.create | bool | `true` | Whether to create a dedicated service account |
 | serviceAccount.name | string | `""` | Custom service account name (auto-generated if empty) |
 | strategy | object | `{}` | Deployment update strategy. Empty uses the Kubernetes default rolling update. |
-| telemetry | object | `{"logLevel":"INFO","sentryDsn":""}` | Logging and error reporting, rendered under `telemetry` in `config.toml`. |
+| telemetry | object | `{"logLevel":"INFO","sentry":{"attachStacktraces":true,"breadcrumbLevel":"info","captureLevel":"error","debug":false,"dsn":"","enabled":false,"environment":"","maxBreadcrumbs":100,"release":"","sampleRate":1,"serverName":"","shutdownTimeoutSecs":2,"tracesSampleRate":0}}` | Logging and error reporting. `log_level` is rendered under `telemetry` in `config.toml`; the Sentry DSN is a credential and goes to the Secret instead. Both are read once as the process boots rather than re-read from the mount, so a change here needs a restart — `configMount.rolloutOnChange` is what turns one into a rollout. |
 | telemetry.logLevel | string | `"INFO"` | Log level (`telemetry.log_level`). |
-| telemetry.sentryDsn | string | `""` | Sentry DSN (`telemetry.sentry_dsn`). Empty disables Sentry entirely. |
+| telemetry.sentry | object | `{"attachStacktraces":true,"breadcrumbLevel":"info","captureLevel":"error","debug":false,"dsn":"","enabled":false,"environment":"","maxBreadcrumbs":100,"release":"","sampleRate":1,"serverName":"","shutdownTimeoutSecs":2,"tracesSampleRate":0}` | Sentry error reporting and tracing. **Off**, and wholly inert while it is: no client, no panic hook and no layer is installed, and nothing leaves the process.  Two things the chart deliberately does not do for you. It never reads the DSN, so it cannot name the ingest host in the NetworkPolicies. The defaults do happen to cover it — `networkPolicy.egress.https` permits TCP/443 to `0.0.0.0/0` minus private space — but a deployment that narrowed `networkPolicy.egress.cidr`, turned `egress.https` off, or replaced the CIDR rule with `networkPolicy.cilium.egress.toFQDNs` has to name the endpoint itself, and getting that wrong is silent: an SDK that cannot reach its endpoint queues events and then discards them, so the project stays empty, which reads as "no errors". And it configures nothing inside Sentry — the project, its quota and its server-side data-scrubbing rules are yours. |
+| telemetry.sentry.attachStacktraces | bool | `true` | Attach a stack trace to events that carry none of their own (`telemetry.sentry.attach_stacktraces`). |
+| telemetry.sentry.breadcrumbLevel | string | `"info"` | Least severe `tracing` level kept as a breadcrumb, the trail attached to the next issue (`telemetry.sentry.breadcrumb_level`). Records at or above `captureLevel` become issues instead. Independent of `logLevel` on purpose: the trail keeps being collected however quiet stdout is. Quote `"off"`. |
+| telemetry.sentry.captureLevel | string | `"error"` | Least severe `tracing` level reported as a Sentry issue (`telemetry.sentry.capture_level`). Quote `"off"` — unquoted, YAML reads it as the boolean `false`. This one sits *under* the subscriber's own filter, so a record `logLevel` drops never reaches Sentry either. |
+| telemetry.sentry.debug | bool | `false` | Print the SDK's own diagnostics to stderr (`telemetry.sentry.debug`). For proving a DSN works, not for running. |
+| telemetry.sentry.dsn | string | `""` | Ingest URL, `https://<key>@<host>/<project>`. A credential — the embedded key is a bearer token for the project's ingest endpoint — so it is delivered as a file in `NETCUP_OFFER_BOT_SECRETS_DIR` under `telemetry__sentry__dsn` and never written into the ConfigMap. Leave it empty and put that key in the Secret named by `existingSecret` to keep it out of `helm get values` entirely. |
+| telemetry.sentry.enabled | bool | `false` | Initialise the Sentry client (`telemetry.sentry.enabled`). Off, every other key here is inert. On, the bot refuses to boot without a DSN rather than starting with a reporter that reports nowhere, so this and `dsn` are set together. |
+| telemetry.sentry.environment | string | `""` | Environment tag on every event (`telemetry.sentry.environment`). Empty lets the bot send `production`, or `development` from a debug build. |
+| telemetry.sentry.maxBreadcrumbs | int | `100` | How many breadcrumbs one event carries (`telemetry.sentry.max_breadcrumbs`). |
+| telemetry.sentry.release | string | `""` | Release tag on every event (`telemetry.sentry.release`). Empty uses the version the binary was built from, which is what makes a regression attributable to a deploy and what the image's debug files are indexed under — set this only to match a release you create in Sentry under a name of your own. |
+| telemetry.sentry.sampleRate | float | `1` | Fraction of captured events actually sent (`telemetry.sentry.sample_rate`). A blunt volume cap — it drops whole issues, not repetitions of one — so leave it at `1` unless a quota forces otherwise. |
+| telemetry.sentry.serverName | string | `""` | Host tag on every event (`telemetry.sentry.server_name`). Empty reports none, which is the right answer here: the value would be one pod's generated name, not anything an operator chose. |
+| telemetry.sentry.shutdownTimeoutSecs | int | `2` | How long process exit waits for queued events to drain (`telemetry.sentry.shutdown_timeout_secs`). It is the only flush this process performs, and it is spent on every pod shutdown, so keep it well inside `terminationGracePeriodSeconds`. |
+| telemetry.sentry.tracesSampleRate | float | `0` | Fraction of traces that are recorded (`telemetry.sentry.traces_sample_rate`). `0` records none, and nothing hands this process a trace to continue, so at `0` no spans are built at all — which is what makes the feature free to switch on for error reporting alone. `0.05`-`0.2` is an ordinary production figure. |
 | terminationGracePeriodSeconds | int | `30` | Grace period for pod shutdown. |
 | tolerations | list | `[]` | Tolerations for pod assignment. |
 | topologySpreadConstraints | list | `[]` | Pod topology spread constraints for availability |

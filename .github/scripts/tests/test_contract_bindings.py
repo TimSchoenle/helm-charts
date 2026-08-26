@@ -969,7 +969,7 @@ class TestTheEnrolledCharts(unittest.TestCase):
         self.assertEqual(targets, ["internal.tls.cert", "internal.tls.key", "internal.tls.ca"])
 
     def test_tankovault_writes_off_what_it_does_not_surface_in_families(self):
-        """144 keys, three reasons, and every key still listed by name."""
+        """146 keys, four reasons, and every key still listed by name."""
         declaration = load_declaration(self.charts / "tankovault")
         written_off = [key for entry in declaration.unbound for key in entry.keys]
         self.assertEqual(len(written_off), len(set(written_off)))

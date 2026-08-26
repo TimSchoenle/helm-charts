@@ -1,15 +1,15 @@
 {
   "source": {
     "image": "docker.io/timmi6790/s3-bucket-perma-link",
-    "digest": "sha256:0f3fb15ccda6fe17400186d16d8a4a4bb249b0d7e6c169f7d5bbb950c6337a76",
-    "sha256": "90c2889892aa32fbae0d5da12be979acc5193bbfb66ac187caf484af10aa9d8a",
-    "fetched": "2026-08-19T12:22:59Z"
+    "digest": "sha256:a331869902bd25de2ac46873f6f4188a7a524d8f4717e2bbfdcdfc23c31e6520",
+    "sha256": "bff2061caad22e5a396ad639e9920d72a180f4bd960f92594252a82f82102096",
+    "fetched": "2026-08-26T14:25:09Z"
   },
   "contract": {
     "terrace_contract": 1,
     "app": {
       "name": "s3-bucket-perma-link",
-      "version": "v1.1.1",
+      "version": "v2.0.0",
       "source": "https://github.com/TimSchoenle/s3-bucket-perma-link"
     },
     "schema": {
@@ -210,7 +210,7 @@
           "env": "S3_PERMA_LINK_TELEMETRY__LOG_LEVEL",
           "env_file": "S3_PERMA_LINK_TELEMETRY__LOG_LEVEL_FILE",
           "secrets_file": "telemetry__log_level",
-          "docs": "How much the service says: `trace`, `debug`, `info`, `warn` or `error`.\n\nParsed by [`Self::level`].",
+          "docs": "How much the service says: `trace`, `debug`, `info`, `warn` or `error`.\n\nThe console sink only. What Sentry takes is `telemetry.sentry.capture_level` and\n`telemetry.sentry.breadcrumb_level`, which are filtered independently.\n\nParsed by [`Self::level`].",
           "ty": "String",
           "values": [],
           "constraint": {
@@ -229,11 +229,38 @@
           "reserved": false
         },
         {
-          "path": "telemetry.sentry_dsn",
-          "env": "S3_PERMA_LINK_TELEMETRY__SENTRY_DSN",
-          "env_file": "S3_PERMA_LINK_TELEMETRY__SENTRY_DSN_FILE",
-          "secrets_file": "telemetry__sentry_dsn",
-          "docs": "Sentry DSN. Absent disables Sentry entirely.\n\nA [`SecretString`]: a DSN is a write credential for the project it names — and, like the\nS3 credentials, one serde must not be able to write back out.",
+          "path": "telemetry.sentry.enabled",
+          "env": "S3_PERMA_LINK_TELEMETRY__SENTRY__ENABLED",
+          "env_file": "S3_PERMA_LINK_TELEMETRY__SENTRY__ENABLED_FILE",
+          "secrets_file": "telemetry__sentry__enabled",
+          "docs": "Initialise the Sentry client. `false` installs no client, no panic hook, no subscriber\nlayer and no HTTP middleware, so every other key in this block is inert.",
+          "ty": "bool",
+          "values": [],
+          "constraint": {
+            "type": "boolean"
+          },
+          "text_constraint": {
+            "pattern": "^\\s*(true|false)\\s*$",
+            "type": "string"
+          },
+          "text_form": "boolean",
+          "aliases": [],
+          "env_aliases": [],
+          "env_file_aliases": [],
+          "secrets_file_aliases": [],
+          "default": "false",
+          "default_value": false,
+          "note": null,
+          "required": false,
+          "secret": false,
+          "reserved": false
+        },
+        {
+          "path": "telemetry.sentry.dsn",
+          "env": "S3_PERMA_LINK_TELEMETRY__SENTRY__DSN",
+          "env_file": "S3_PERMA_LINK_TELEMETRY__SENTRY__DSN_FILE",
+          "secrets_file": "telemetry__sentry__dsn",
+          "docs": "Ingest URL, `https://<key>@<host>/<project>`.\n\nA [`SecretString`]: the embedded key is a bearer credential for the project it names, and\nthis struct is nested inside a [`Config`](super::Config) the reload supervisor logs with\n`{:?}`. Mount it like the S3 credentials rather than committing it — the same `_FILE`\nindirection and secrets-directory layers apply.\n\nAbsent while [`Self::enabled`] is set is a boot failure, not a silent no-op.",
           "ty": "SecretString",
           "values": [],
           "constraint": {
@@ -249,6 +276,352 @@
           "note": null,
           "required": false,
           "secret": true,
+          "reserved": false
+        },
+        {
+          "path": "telemetry.sentry.environment",
+          "env": "S3_PERMA_LINK_TELEMETRY__SENTRY__ENVIRONMENT",
+          "env_file": "S3_PERMA_LINK_TELEMETRY__SENTRY__ENVIRONMENT_FILE",
+          "secrets_file": "telemetry__sentry__environment",
+          "docs": "Environment tag on every event, e.g. `production` or `staging`.\n\nUnset resolves to `production` for a release build and `development` for a debug one —\nthe same rule the SDK applies, but applied *here*, so that `SENTRY_ENVIRONMENT` is never\nconsulted. That variable is a second configuration channel that bypasses this loader and\nits shadow-key rejection, and a field the service always sets is one it cannot reach.",
+          "ty": "String",
+          "values": [],
+          "constraint": {
+            "type": "string"
+          },
+          "text_form": "text",
+          "aliases": [],
+          "env_aliases": [],
+          "env_file_aliases": [],
+          "secrets_file_aliases": [],
+          "default": null,
+          "default_value": null,
+          "note": null,
+          "required": false,
+          "secret": false,
+          "reserved": false
+        },
+        {
+          "path": "telemetry.sentry.release",
+          "env": "S3_PERMA_LINK_TELEMETRY__SENTRY__RELEASE",
+          "env_file": "S3_PERMA_LINK_TELEMETRY__SENTRY__RELEASE_FILE",
+          "secrets_file": "telemetry__sentry__release",
+          "docs": "Release tag on every event.\n\nUnset resolves to `s3-bucket-perma-link@<crate version>`, which is what makes a\nregression attributable to a deploy. It is also the name the Dockerfile's `sentry-cli\ndebug-files upload` symbolicates against, so overriding it here without matching that\nupload leaves events with no symbols.",
+          "ty": "String",
+          "values": [],
+          "constraint": {
+            "type": "string"
+          },
+          "text_form": "text",
+          "aliases": [],
+          "env_aliases": [],
+          "env_file_aliases": [],
+          "secrets_file_aliases": [],
+          "default": null,
+          "default_value": null,
+          "note": null,
+          "required": false,
+          "secret": false,
+          "reserved": false
+        },
+        {
+          "path": "telemetry.sentry.server_name",
+          "env": "S3_PERMA_LINK_TELEMETRY__SENTRY__SERVER_NAME",
+          "env_file": "S3_PERMA_LINK_TELEMETRY__SENTRY__SERVER_NAME_FILE",
+          "secrets_file": "telemetry__sentry__server_name",
+          "docs": "Host tag on every event. Unset reports none: the identity of one replica is\ninfrastructure detail, and in a container it is a pod name that is gone by the time\nanybody reads the issue.",
+          "ty": "String",
+          "values": [],
+          "constraint": {
+            "type": "string"
+          },
+          "text_form": "text",
+          "aliases": [],
+          "env_aliases": [],
+          "env_file_aliases": [],
+          "secrets_file_aliases": [],
+          "default": null,
+          "default_value": null,
+          "note": null,
+          "required": false,
+          "secret": false,
+          "reserved": false
+        },
+        {
+          "path": "telemetry.sentry.sample_rate",
+          "env": "S3_PERMA_LINK_TELEMETRY__SENTRY__SAMPLE_RATE",
+          "env_file": "S3_PERMA_LINK_TELEMETRY__SENTRY__SAMPLE_RATE_FILE",
+          "secrets_file": "telemetry__sentry__sample_rate",
+          "docs": "Fraction of captured events actually sent, `0.0`–`1.0`.\n\nA blunt volume cap: it drops whole issues rather than repetitions of one, so a rare\nerror is exactly what it loses. Leave it at `1.0` unless quota forces otherwise.",
+          "ty": "f32",
+          "values": [],
+          "constraint": {
+            "type": "number"
+          },
+          "text_form": "unknown",
+          "aliases": [],
+          "env_aliases": [],
+          "env_file_aliases": [],
+          "secrets_file_aliases": [],
+          "default": "1",
+          "default_value": 1.0,
+          "note": null,
+          "required": false,
+          "secret": false,
+          "reserved": false
+        },
+        {
+          "path": "telemetry.sentry.traces_sample_rate",
+          "env": "S3_PERMA_LINK_TELEMETRY__SENTRY__TRACES_SAMPLE_RATE",
+          "env_file": "S3_PERMA_LINK_TELEMETRY__SENTRY__TRACES_SAMPLE_RATE_FILE",
+          "secrets_file": "telemetry__sentry__traces_sample_rate",
+          "docs": "Fraction of traces this service **starts** that are recorded, `0.0`–`1.0`.\n\n`0.0` — the default — means it starts none of its own, which is the sensible setting for\na service whose whole job is one redirect: performance data on it is a cost with no\nquestion behind it. It does not remove this service from a trace that reaches it already\nsampled: an inbound `sentry-trace` header is continued regardless, so a caller that does\ntrace still sees the hop.",
+          "ty": "f32",
+          "values": [],
+          "constraint": {
+            "type": "number"
+          },
+          "text_form": "unknown",
+          "aliases": [],
+          "env_aliases": [],
+          "env_file_aliases": [],
+          "secrets_file_aliases": [],
+          "default": "0",
+          "default_value": 0.0,
+          "note": null,
+          "required": false,
+          "secret": false,
+          "reserved": false
+        },
+        {
+          "path": "telemetry.sentry.capture_level",
+          "env": "S3_PERMA_LINK_TELEMETRY__SENTRY__CAPTURE_LEVEL",
+          "env_file": "S3_PERMA_LINK_TELEMETRY__SENTRY__CAPTURE_LEVEL_FILE",
+          "secrets_file": "telemetry__sentry__capture_level",
+          "docs": "Least severe `tracing` level reported as a Sentry **issue**.",
+          "ty": "SentryLevel",
+          "values": [],
+          "text_form": "unknown",
+          "aliases": [],
+          "env_aliases": [],
+          "env_file_aliases": [],
+          "secrets_file_aliases": [],
+          "default": "error",
+          "default_value": "error",
+          "note": null,
+          "required": false,
+          "secret": false,
+          "reserved": false
+        },
+        {
+          "path": "telemetry.sentry.breadcrumb_level",
+          "env": "S3_PERMA_LINK_TELEMETRY__SENTRY__BREADCRUMB_LEVEL",
+          "env_file": "S3_PERMA_LINK_TELEMETRY__SENTRY__BREADCRUMB_LEVEL_FILE",
+          "secrets_file": "telemetry__sentry__breadcrumb_level",
+          "docs": "Least severe `tracing` level kept as a **breadcrumb** — the trail attached to the next\nissue. Records at or above `capture_level` become issues instead.\n\nSpelled as a key rather than as a rustdoc link to [`Self::capture_level`]: this first\nparagraph is a cell in the generated README table, where an intra-doc link renders as\nits own source.\n\nIndependent of [`TelemetryConfig::log_level`](super::TelemetryConfig): the two sinks\ncarry their own filters, so tightening the console to `warn` does not silently empty\nevery breadcrumb trail. The cost is symmetric — asking for `debug` breadcrumbs makes the\nprocess evaluate `debug` records it does not print.",
+          "ty": "SentryLevel",
+          "values": [],
+          "text_form": "unknown",
+          "aliases": [],
+          "env_aliases": [],
+          "env_file_aliases": [],
+          "secrets_file_aliases": [],
+          "default": "info",
+          "default_value": "info",
+          "note": null,
+          "required": false,
+          "secret": false,
+          "reserved": false
+        },
+        {
+          "path": "telemetry.sentry.max_breadcrumbs",
+          "env": "S3_PERMA_LINK_TELEMETRY__SENTRY__MAX_BREADCRUMBS",
+          "env_file": "S3_PERMA_LINK_TELEMETRY__SENTRY__MAX_BREADCRUMBS_FILE",
+          "secrets_file": "telemetry__sentry__max_breadcrumbs",
+          "docs": "How many breadcrumbs one event carries.",
+          "ty": "usize",
+          "values": [],
+          "constraint": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "text_constraint": {
+            "pattern": "^\\s*\\+?[0-9]+\\s*$",
+            "type": "string"
+          },
+          "text_form": "integer",
+          "aliases": [],
+          "env_aliases": [],
+          "env_file_aliases": [],
+          "secrets_file_aliases": [],
+          "default": "100",
+          "default_value": 100,
+          "note": null,
+          "required": false,
+          "secret": false,
+          "reserved": false
+        },
+        {
+          "path": "telemetry.sentry.attach_stacktrace",
+          "env": "S3_PERMA_LINK_TELEMETRY__SENTRY__ATTACH_STACKTRACE",
+          "env_file": "S3_PERMA_LINK_TELEMETRY__SENTRY__ATTACH_STACKTRACE_FILE",
+          "secrets_file": "telemetry__sentry__attach_stacktrace",
+          "docs": "Attach a stack trace to events that carry none of their own.",
+          "ty": "bool",
+          "values": [],
+          "constraint": {
+            "type": "boolean"
+          },
+          "text_constraint": {
+            "pattern": "^\\s*(true|false)\\s*$",
+            "type": "string"
+          },
+          "text_form": "boolean",
+          "aliases": [],
+          "env_aliases": [],
+          "env_file_aliases": [],
+          "secrets_file_aliases": [],
+          "default": "true",
+          "default_value": true,
+          "note": null,
+          "required": false,
+          "secret": false,
+          "reserved": false
+        },
+        {
+          "path": "telemetry.sentry.send_default_pii",
+          "env": "S3_PERMA_LINK_TELEMETRY__SENTRY__SEND_DEFAULT_PII",
+          "env_file": "S3_PERMA_LINK_TELEMETRY__SENTRY__SEND_DEFAULT_PII_FILE",
+          "secrets_file": "telemetry__sentry__send_default_pii",
+          "docs": "Send personally identifying data with every event: the client IP, the full request header\nset, and the request body where one was buffered.\n\n**Off, and worth leaving off.** This service serves public links; the IP address of\nwhoever followed one is not what makes a failed S3 fetch actionable, and Sentry is a\nthird party. On, it also widens what the HTTP middleware records, because the actix\nintegration reads this same flag to decide whether to redact sensitive headers.",
+          "ty": "bool",
+          "values": [],
+          "constraint": {
+            "type": "boolean"
+          },
+          "text_constraint": {
+            "pattern": "^\\s*(true|false)\\s*$",
+            "type": "string"
+          },
+          "text_form": "boolean",
+          "aliases": [],
+          "env_aliases": [],
+          "env_file_aliases": [],
+          "secrets_file_aliases": [],
+          "default": "false",
+          "default_value": false,
+          "note": null,
+          "required": false,
+          "secret": false,
+          "reserved": false
+        },
+        {
+          "path": "telemetry.sentry.http_transactions",
+          "env": "S3_PERMA_LINK_TELEMETRY__SENTRY__HTTP_TRANSACTIONS",
+          "env_file": "S3_PERMA_LINK_TELEMETRY__SENTRY__HTTP_TRANSACTIONS_FILE",
+          "secrets_file": "telemetry__sentry__http_transactions",
+          "docs": "Record one Sentry transaction per request, named by the matched route.\n\nWhether a started transaction is *kept* is [`Self::traces_sample_rate`]'s decision; this\nis the switch for a deployment that wants error reporting and no performance data at all.\nThe per-request hub is installed either way — without it, breadcrumbs from concurrently\nserved requests all land on the main hub and every issue arrives with a trail belonging\nto whoever else was in flight.",
+          "ty": "bool",
+          "values": [],
+          "constraint": {
+            "type": "boolean"
+          },
+          "text_constraint": {
+            "pattern": "^\\s*(true|false)\\s*$",
+            "type": "string"
+          },
+          "text_form": "boolean",
+          "aliases": [],
+          "env_aliases": [],
+          "env_file_aliases": [],
+          "secrets_file_aliases": [],
+          "default": "true",
+          "default_value": true,
+          "note": null,
+          "required": false,
+          "secret": false,
+          "reserved": false
+        },
+        {
+          "path": "telemetry.sentry.span_attributes",
+          "env": "S3_PERMA_LINK_TELEMETRY__SENTRY__SPAN_ATTRIBUTES",
+          "env_file": "S3_PERMA_LINK_TELEMETRY__SENTRY__SPAN_ATTRIBUTES_FILE",
+          "secrets_file": "telemetry__sentry__span_attributes",
+          "docs": "Copy `tracing` span fields onto the Sentry span as attributes.\n\nOff: the span fields here carry request paths and object keys, and a transaction is\nstored under a longer retention than a log line.",
+          "ty": "bool",
+          "values": [],
+          "constraint": {
+            "type": "boolean"
+          },
+          "text_constraint": {
+            "pattern": "^\\s*(true|false)\\s*$",
+            "type": "string"
+          },
+          "text_form": "boolean",
+          "aliases": [],
+          "env_aliases": [],
+          "env_file_aliases": [],
+          "secrets_file_aliases": [],
+          "default": "false",
+          "default_value": false,
+          "note": null,
+          "required": false,
+          "secret": false,
+          "reserved": false
+        },
+        {
+          "path": "telemetry.sentry.shutdown_timeout_secs",
+          "env": "S3_PERMA_LINK_TELEMETRY__SENTRY__SHUTDOWN_TIMEOUT_SECS",
+          "env_file": "S3_PERMA_LINK_TELEMETRY__SENTRY__SHUTDOWN_TIMEOUT_SECS_FILE",
+          "secrets_file": "telemetry__sentry__shutdown_timeout_secs",
+          "docs": "How long process exit waits for queued events to drain, in seconds.\n\nPaid on every shutdown, including the rolling ones a deploy produces, so it trades\nagainst how quickly a replica goes away. `0` discards whatever is still queued.",
+          "ty": "u64",
+          "values": [],
+          "constraint": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "text_constraint": {
+            "pattern": "^\\s*\\+?[0-9]+\\s*$",
+            "type": "string"
+          },
+          "text_form": "integer",
+          "aliases": [],
+          "env_aliases": [],
+          "env_file_aliases": [],
+          "secrets_file_aliases": [],
+          "default": "2",
+          "default_value": 2,
+          "note": null,
+          "required": false,
+          "secret": false,
+          "reserved": false
+        },
+        {
+          "path": "telemetry.sentry.debug",
+          "env": "S3_PERMA_LINK_TELEMETRY__SENTRY__DEBUG",
+          "env_file": "S3_PERMA_LINK_TELEMETRY__SENTRY__DEBUG_FILE",
+          "secrets_file": "telemetry__sentry__debug",
+          "docs": "Print the SDK's own diagnostics to stderr. For proving a DSN works, not for running.",
+          "ty": "bool",
+          "values": [],
+          "constraint": {
+            "type": "boolean"
+          },
+          "text_constraint": {
+            "pattern": "^\\s*(true|false)\\s*$",
+            "type": "string"
+          },
+          "text_form": "boolean",
+          "aliases": [],
+          "env_aliases": [],
+          "env_file_aliases": [],
+          "secrets_file_aliases": [],
+          "default": "false",
+          "default_value": false,
+          "note": null,
+          "required": false,
+          "secret": false,
           "reserved": false
         }
       ]
@@ -314,13 +687,91 @@
           "properties": {
             "log_level": {
               "default": "info",
-              "description": "How much the service says: `trace`, `debug`, `info`, `warn` or `error`.\n\nParsed by [`Self::level`].",
+              "description": "How much the service says: `trace`, `debug`, `info`, `warn` or `error`.\n\nThe console sink only. What Sentry takes is `telemetry.sentry.capture_level` and\n`telemetry.sentry.breadcrumb_level`, which are filtered independently.\n\nParsed by [`Self::level`].",
               "type": "string"
             },
-            "sentry_dsn": {
-              "description": "Sentry DSN. Absent disables Sentry entirely.\n\nA [`SecretString`]: a DSN is a write credential for the project it names — and, like the\nS3 credentials, one serde must not be able to write back out.",
-              "type": "string",
-              "writeOnly": true
+            "sentry": {
+              "additionalProperties": false,
+              "properties": {
+                "attach_stacktrace": {
+                  "default": true,
+                  "description": "Attach a stack trace to events that carry none of their own.",
+                  "type": "boolean"
+                },
+                "breadcrumb_level": {
+                  "default": "info",
+                  "description": "Least severe `tracing` level kept as a **breadcrumb** — the trail attached to the next\nissue. Records at or above `capture_level` become issues instead.\n\nSpelled as a key rather than as a rustdoc link to [`Self::capture_level`]: this first\nparagraph is a cell in the generated README table, where an intra-doc link renders as\nits own source.\n\nIndependent of [`TelemetryConfig::log_level`](super::TelemetryConfig): the two sinks\ncarry their own filters, so tightening the console to `warn` does not silently empty\nevery breadcrumb trail. The cost is symmetric — asking for `debug` breadcrumbs makes the\nprocess evaluate `debug` records it does not print."
+                },
+                "capture_level": {
+                  "default": "error",
+                  "description": "Least severe `tracing` level reported as a Sentry **issue**."
+                },
+                "debug": {
+                  "default": false,
+                  "description": "Print the SDK's own diagnostics to stderr. For proving a DSN works, not for running.",
+                  "type": "boolean"
+                },
+                "dsn": {
+                  "description": "Ingest URL, `https://<key>@<host>/<project>`.\n\nA [`SecretString`]: the embedded key is a bearer credential for the project it names, and\nthis struct is nested inside a [`Config`](super::Config) the reload supervisor logs with\n`{:?}`. Mount it like the S3 credentials rather than committing it — the same `_FILE`\nindirection and secrets-directory layers apply.\n\nAbsent while [`Self::enabled`] is set is a boot failure, not a silent no-op.",
+                  "type": "string",
+                  "writeOnly": true
+                },
+                "enabled": {
+                  "default": false,
+                  "description": "Initialise the Sentry client. `false` installs no client, no panic hook, no subscriber\nlayer and no HTTP middleware, so every other key in this block is inert.",
+                  "type": "boolean"
+                },
+                "environment": {
+                  "description": "Environment tag on every event, e.g. `production` or `staging`.\n\nUnset resolves to `production` for a release build and `development` for a debug one —\nthe same rule the SDK applies, but applied *here*, so that `SENTRY_ENVIRONMENT` is never\nconsulted. That variable is a second configuration channel that bypasses this loader and\nits shadow-key rejection, and a field the service always sets is one it cannot reach.",
+                  "type": "string"
+                },
+                "http_transactions": {
+                  "default": true,
+                  "description": "Record one Sentry transaction per request, named by the matched route.\n\nWhether a started transaction is *kept* is [`Self::traces_sample_rate`]'s decision; this\nis the switch for a deployment that wants error reporting and no performance data at all.\nThe per-request hub is installed either way — without it, breadcrumbs from concurrently\nserved requests all land on the main hub and every issue arrives with a trail belonging\nto whoever else was in flight.",
+                  "type": "boolean"
+                },
+                "max_breadcrumbs": {
+                  "default": 100,
+                  "description": "How many breadcrumbs one event carries.",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "release": {
+                  "description": "Release tag on every event.\n\nUnset resolves to `s3-bucket-perma-link@<crate version>`, which is what makes a\nregression attributable to a deploy. It is also the name the Dockerfile's `sentry-cli\ndebug-files upload` symbolicates against, so overriding it here without matching that\nupload leaves events with no symbols.",
+                  "type": "string"
+                },
+                "sample_rate": {
+                  "default": 1.0,
+                  "description": "Fraction of captured events actually sent, `0.0`–`1.0`.\n\nA blunt volume cap: it drops whole issues rather than repetitions of one, so a rare\nerror is exactly what it loses. Leave it at `1.0` unless quota forces otherwise.",
+                  "type": "number"
+                },
+                "send_default_pii": {
+                  "default": false,
+                  "description": "Send personally identifying data with every event: the client IP, the full request header\nset, and the request body where one was buffered.\n\n**Off, and worth leaving off.** This service serves public links; the IP address of\nwhoever followed one is not what makes a failed S3 fetch actionable, and Sentry is a\nthird party. On, it also widens what the HTTP middleware records, because the actix\nintegration reads this same flag to decide whether to redact sensitive headers.",
+                  "type": "boolean"
+                },
+                "server_name": {
+                  "description": "Host tag on every event. Unset reports none: the identity of one replica is\ninfrastructure detail, and in a container it is a pod name that is gone by the time\nanybody reads the issue.",
+                  "type": "string"
+                },
+                "shutdown_timeout_secs": {
+                  "default": 2,
+                  "description": "How long process exit waits for queued events to drain, in seconds.\n\nPaid on every shutdown, including the rolling ones a deploy produces, so it trades\nagainst how quickly a replica goes away. `0` discards whatever is still queued.",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "span_attributes": {
+                  "default": false,
+                  "description": "Copy `tracing` span fields onto the Sentry span as attributes.\n\nOff: the span fields here carry request paths and object keys, and a transaction is\nstored under a longer retention than a log line.",
+                  "type": "boolean"
+                },
+                "traces_sample_rate": {
+                  "default": 0.0,
+                  "description": "Fraction of traces this service **starts** that are recorded, `0.0`–`1.0`.\n\n`0.0` — the default — means it starts none of its own, which is the sensible setting for\na service whose whole job is one redirect: performance data on it is a cost with no\nquestion behind it. It does not remove this service from a trace that reaches it already\nsampled: an inbound `sentry-trace` header is continued regardless, so a caller that does\ntrace still sees the hop.",
+                  "type": "number"
+                }
+              },
+              "type": "object"
             }
           },
           "type": "object"
@@ -331,20 +782,6 @@
     },
     "external": {
       "env": [
-        {
-          "name": "SENTRY_ENVIRONMENT",
-          "owner": "sentry",
-          "docs": "Environment tag on reported events. Read by `sentry::init`, not by this loader.",
-          "ty": "String",
-          "values": [],
-          "constraint": {
-            "type": "string"
-          },
-          "text_form": "text",
-          "default": "production",
-          "required": false,
-          "secret": false
-        },
         {
           "name": "HTTP_PROXY",
           "owner": "sentry",

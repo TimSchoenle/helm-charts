@@ -1,0 +1,70 @@
+# Which thresholds in `rules/*.yml` an operator may move, and what each one means.
+#
+# Read by `common.prometheus.rules.*` and exposed as `metrics.prometheusRule.thresholds`. Outside
+# the `rules/*.yml` glob on purpose: promtool reads those files strictly and would reject an
+# unknown top-level key, and the PrometheusRule CRD would prune one. The full contract is in the
+# header of `charts/common/templates/_prometheus.tpl`.
+#
+# `anchor` is the substring of the alert's expression that contains the threshold and occurs in it
+# exactly once; substitution replaces the default inside the anchor, then the anchor inside the
+# expression. Both properties are checked at render time and by `just audit-observability`, so an
+# anchor that drifts from its expression fails the chart instead of quietly installing an untuned
+# rule. That is what lets the two volume alerts below anchor on the same metric: they are
+# distinguished by their literal, and if a future edit made either ambiguous the render stops.
+#
+# What is deliberately *not* here
+# --------------------------------
+# Every remaining comparison in this chart's rules is `== 0`, `> 0`, or `absent()` — "no replica
+# is available", "a container was OOM-killed at all", "the backup job reported a failure". None of
+# those is a number anyone chose, so there is nothing to tune: an operator who wants a different
+# condition wants a different rule, which `disabledAlerts` plus `additionalRuleGroups` gives them.
+tunables:
+  PaperlessNgxRestarting:
+    restarts:
+      # -- Restarts per hour that count as unhealthy rather than incidental.
+      description: >-
+        Container restarts in the last hour, above which the pod counts as unstable. A busy
+        archive doing large OCR batches on a tight memory limit will trip a low value legitimately;
+        raise it before reaching for `disabledAlerts`.
+      type: integer
+      default: 3
+      minimum: 1
+      anchor: 'namespace_pod_container:paperless_ngx_restarts:increase1h{paperless_ngx_scope=~".*"} > 3'
+
+  PaperlessNgxVolumeFillingUp:
+    ratio:
+      # -- Fraction of a volume in use that counts as filling up.
+      description: >-
+        How full a PersistentVolumeClaim has to be before the warning fires. The right value
+        depends on how fast the archive grows and how long it takes you to expand a volume, which
+        is site policy rather than anything the chart can derive. Keep it below
+        `PaperlessNgxVolumeAlmostFull.ratio` or the warning fires after the critical.
+      type: number
+      default: 0.85
+      minimum: 0
+      maximum: 1
+      anchor: 'namespace_persistentvolumeclaim:paperless_ngx_volume_used:ratio{paperless_ngx_scope=~".*"} > 0.85'
+
+  PaperlessNgxVolumeAlmostFull:
+    ratio:
+      # -- Fraction of a volume in use that counts as an emergency.
+      description: >-
+        How full a PersistentVolumeClaim has to be before the critical fires. Past this point
+        paperless stops being able to write consumed documents and the failure is user-visible.
+      type: number
+      default: 0.95
+      minimum: 0
+      maximum: 1
+      anchor: 'namespace_persistentvolumeclaim:paperless_ngx_volume_used:ratio{paperless_ngx_scope=~".*"} > 0.95'
+
+  PaperlessNgxBackupStale:
+    age:
+      # -- Seconds since the last successful backup that count as stale.
+      description: >-
+        How long the archive may go without a successful backup. The default is 48 hours, which
+        tolerates one missed daily run; a weekly schedule needs this raised or the alert fires
+        every week by design.
+      type: integer
+      default: 172800
+      minimum: 1
+      anchor: '> 172800'

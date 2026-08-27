@@ -419,6 +419,78 @@ rewrites every selector to this release's namespace, because a `PrometheusRule` 
 the namespace it lives in: left unscoped, two installs page each other for outages neither of them
 had.
 
+### Turning alerts off, retuning them, and adding your own
+
+The rules ship with defaults that suit most installs and no install exactly, so four presets sit
+under `metrics.prometheusRule`. Every one of them is checked against the rules the chart actually
+ships, and a name that matches nothing fails the render rather than being ignored — a values file
+that says an alert is off while it still pages at 3am is the one outcome this whole surface exists
+to prevent.
+
+| Preset | What it does |
+| --- | --- |
+| `disabledAlerts` | drops alerts by name |
+| `disabledGroups` | drops whole rule groups by name |
+| `additionalRuleLabels` | adds labels to every alert, for Alertmanager routing |
+| `severityOverrides` | sets one alert's `severity` |
+| `forOverrides` | sets one alert's `for` — how long the condition must hold |
+| `thresholds` | moves a declared threshold inside a rule expression |
+| `additionalRuleGroups` | appends rule groups of your own |
+
+```yaml
+metrics:
+  prometheusRule:
+    enabled: true
+    # A busy archive doing large OCR batches restarts more than the default tolerates.
+    thresholds:
+      PaperlessNgxRestarting:
+        restarts: 8
+      # Weekly exports, so 48 hours of staleness is normal here.
+      PaperlessNgxBackupStale:
+        age: 691200
+
+    additionalRuleLabels:
+      team: archive
+    severityOverrides:
+      PaperlessNgxRestarting: info
+```
+
+Labels resolve most-specific-last: the rule file's own labels lose to `additionalRuleLabels`,
+which loses to `severityOverrides`. Recording rules are out of reach of all of it — `disabledGroups`
+refuses a group that holds any, and labels are never attached to one, because a label changes the
+identity of the series a recording rule produces and every dashboard panel and expression reading
+it would silently stop matching.
+
+**Not every number in a rule is a threshold somebody chose**, which is why `thresholds` is opt-in
+per alert rather than a search-and-replace over the expressions. Only what
+[`rules/tunables.yaml`](rules/tunables.yaml) declares can be moved; that file names each tunable,
+says what it means, and bounds it. Two reasons for the restriction, and both are the kind of
+mistake that looks fine in review:
+
+- A threshold is a *substring* of PromQL, and often not the only one that looks like it.
+  `PaperlessNgxVolumeFillingUp` and `PaperlessNgxVolumeAlmostFull` read the same recorded series
+  and differ only in their literal, so a threshold preset that searched for a number would have no
+  way to tell which alert it was editing.
+
+  Each tunable therefore carries an `anchor` — the substring of that expression which contains its
+  own default and occurs exactly once — so an override moves the number it was meant to and no
+  other. Anchors are verified on every pull request and again at render time; a rule edit that
+  orphans one fails the build.
+- Some comparisons are derived rather than chosen. Every remaining comparison in these rules is `== 0`,
+  `> 0` or `absent()` — "no replica is available", "a container was OOM-killed at all", "the
+  backup job reported a failure". None of those is a number anyone picked, so there is nothing to
+  tune.
+
+Anything the chart will not tune, you can still replace outright: switch the shipped rule off with
+`disabledAlerts` and write your own through `additionalRuleGroups`. Groups appended that way are
+emitted as written, never passed through Helm's template engine, so a `$labels` reference in an
+annotation reaches Prometheus intact — which also means no `{{ "{{" }} .Release.Name {{ "}}" }}`
+in them. `additionalRuleLabels` is the one thing that does reach them, because it describes the
+release rather than the rules, and there precedence flips: a label you set on your own rule wins.
+
+Disabling an alert changes only the rendered object. The rule stays in `rules/`, stays covered by
+the `promtool` suite in CI, and comes back the moment you stop disabling it.
+
 ## Recipes
 
 ### A household archive

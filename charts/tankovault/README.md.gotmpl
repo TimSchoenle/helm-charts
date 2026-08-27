@@ -836,6 +836,88 @@ forgets the token fails the render instead of quietly escaping the scope.
 
 Two releases in the *same* namespace cannot be told apart by this or by `enforcedNamespaceLabel`.
 
+### Turning alerts off, retuning them, and adding your own
+
+The rules ship with defaults that suit most installs and no install exactly, so four presets sit
+under `metrics.prometheusRule`. Every one of them is checked against the rules the chart actually
+ships, and a name that matches nothing fails the render rather than being ignored — a values file
+that says an alert is off while it still pages at 3am is the one outcome this whole surface exists
+to prevent.
+
+| Preset | What it does |
+| --- | --- |
+| `disabledAlerts` | drops alerts by name |
+| `disabledGroups` | drops whole rule groups by name |
+| `additionalRuleLabels` | adds labels to every alert, for Alertmanager routing |
+| `severityOverrides` | sets one alert's `severity` |
+| `forOverrides` | sets one alert's `for` — how long the condition must hold |
+| `thresholds` | moves a declared threshold inside a rule expression |
+| `additionalRuleGroups` | appends rule groups of your own |
+
+```yaml
+metrics:
+  prometheusRule:
+    enabled: true
+    # Route this whole release away from the production rotation.
+    additionalRuleLabels:
+      team: platform
+      tier: staging
+
+    # Two info-level alerts this deployment does not act on.
+    disabledAlerts:
+      - TankoVaultVersionSkew
+      - TankoVaultScanPaceBound
+
+    # A pool that legitimately runs hot here.
+    thresholds:
+      TankoVaultDatabasePoolSaturated:
+        saturation: 0.95
+
+    severityOverrides:
+      TankoVaultSseEventsUndeliverable: info
+    forOverrides:
+      TankoVaultServiceDown: 15m
+```
+
+Labels resolve most-specific-last: the rule file's own labels lose to `additionalRuleLabels`,
+which loses to `severityOverrides`. Recording rules are out of reach of all of it — `disabledGroups`
+refuses a group that holds any, and labels are never attached to one, because a label changes the
+identity of the series a recording rule produces and every dashboard panel and expression reading
+it would silently stop matching.
+
+**Not every number in a rule is a threshold somebody chose**, which is why `thresholds` is opt-in
+per alert rather than a search-and-replace over the expressions. Only what
+[`rules/tunables.yaml`](rules/tunables.yaml) declares can be moved; that file names each tunable,
+says what it means, and bounds it. Two reasons for the restriction, and both are the kind of
+mistake that looks fine in review:
+
+- A threshold is a *substring* of PromQL, and often not the only one that looks like it.
+  `TankoVaultHighServerErrorRatio` compares against `0.05` twice — once as the 5xx ratio that
+  counts as broken, once as the request rate below which that ratio is too noisy to believe — and
+  nothing textual tells the two apart.
+
+  Each tunable therefore carries an `anchor` — the substring of that expression which contains its
+  own default and occurs exactly once — so an override moves the number it was meant to and no
+  other. Anchors are verified on every pull request and again at render time; a rule edit that
+  orphans one fails the build.
+- Some comparisons are derived rather than chosen. `TankoVaultLatencyDegraded` compares p99 against
+  `2.5`, a boundary in the application's own `LATENCY_BUCKETS`; `histogram_quantile` interpolates
+  *within* a bucket, so any other value reports an interpolated number rather than an observed
+  one. `TankoVaultLatencyCritical` compares against `10`, the top finite bucket, with `>=` —
+  the function cannot return more than that boundary, so `> 12` would be a critical alert that
+  reads perfectly reasonably and can never fire. Both would be inviting as values and both would
+  quietly disarm paging, so neither is offered.
+
+Anything the chart will not tune, you can still replace outright: switch the shipped rule off with
+`disabledAlerts` and write your own through `additionalRuleGroups`. Groups appended that way are
+emitted as written, never passed through Helm's template engine, so a `$labels` reference in an
+annotation reaches Prometheus intact — which also means no `{{ "{{" }} .Release.Name {{ "}}" }}`
+in them. `additionalRuleLabels` is the one thing that does reach them, because it describes the
+release rather than the rules, and there precedence flips: a label you set on your own rule wins.
+
+Disabling an alert changes only the rendered object. The rule stays in `rules/`, stays covered by
+the `promtool` suite in CI, and comes back the moment you stop disabling it.
+
 ### Getting the dashboards into a Grafana in another namespace
 
 Grafana has no Kubernetes-native dashboard type, so there are two ways to deliver one and they

@@ -23,6 +23,11 @@ catches the ways a rule set rots quietly, and all of these have been real in thi
 5. **A selector that escapes namespace scoping** by omitting the chart's scope placeholder, so one
    release's rules evaluate against every namespace in the cluster.
 
+6. **A tunable threshold whose anchor no longer matches its rule.** `rules/tunables.yaml` names,
+   per alert, the exact substring of an expression an operator's `metrics.prometheusRule.thresholds`
+   override rewrites. Edit the rule and the anchor silently stops matching — or worse, starts
+   matching a different comparison — and the override becomes a no-op, or moves the wrong number.
+
 Everything is discovered rather than configured: any chart with a `rules/` or `dashboards/`
 directory is audited, its test suite is expected at `charts/<chart>/rules-tests/`, and a chart
 that grows rules without growing tests fails this gate.
@@ -104,6 +109,20 @@ class Chart:
     @property
     def rules(self) -> list[dict]:
         return [rule for group in self.groups for rule in group.get("rules", [])]
+
+    @property
+    def tunables(self) -> dict[str, dict]:
+        """Declared threshold tunables, keyed alert -> tunable name -> declaration.
+
+        Read from `rules/tunables.yaml`, which sits beside the rules and outside the `rules/*.yml`
+        glob on purpose: promtool reads the rule files strictly and would reject an unknown
+        top-level key, and the PrometheusRule CRD would prune one.
+        """
+        path = self.path / "rules" / "tunables.yaml"
+        if not path.exists():
+            return {}
+        doc = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        return doc.get("tunables") or {}
 
     @property
     def alerts(self) -> list[tuple[str, dict]]:
@@ -285,9 +304,80 @@ def audit(chart: Chart) -> list[str]:
                     f"and reports nothing."
                 )
 
+    # 7. Every declared tunable must still be substitutable into the rule it names.
+    problems.extend(audit_tunables(chart))
+
     problems.extend(audit_dashboards(chart))
     problems.extend(audit_readme_template(chart))
     return problems
+
+
+def audit_tunables(chart: Chart) -> list[str]:
+    """Every anchor in `rules/tunables.yaml` must identify exactly one number in exactly one rule.
+
+    Two properties, and both have to hold for a substitution to mean anything:
+
+      - the anchor occurs exactly once in its alert's expression. Zero occurrences and the
+        override is a no-op; more than one and the substitution rewrites a comparison the author
+        did not mean, which is the whole reason an anchor exists rather than a bare literal.
+      - the declared default occurs exactly once inside the anchor, spelled the way the
+        expression spells it. `avg15m` contains a `1`, so an anchor wide enough to include the
+        metric name is often too wide to carry a default of `1` unambiguously.
+
+    Mirrors what `common.prometheus.rules.presetErrors` refuses at render time. Duplicated on
+    purpose: this one runs on every pull request, against the committed files, without a render.
+    """
+    problems: list[str] = []
+    if not chart.tunables:
+        return problems
+
+    exprs = {rule["alert"]: str(rule["expr"]) for _file, rule in chart.alerts}
+    for alert, declarations in chart.tunables.items():
+        if alert not in exprs:
+            problems.append(
+                f"{chart.name}/rules/tunables.yaml: declares tunables for `{alert}`, which the "
+                f"chart does not ship. The declaration is dead, and an operator setting it would "
+                f"be refused for the wrong reason."
+            )
+            continue
+        expr = exprs[alert]
+        for tunable, declaration in (declarations or {}).items():
+            where = f"{chart.name}/rules/tunables.yaml: `{alert}.{tunable}`"
+            anchor = str(declaration.get("anchor") or "")
+            if not anchor:
+                problems.append(f"{where} declares no `anchor`, so there is nothing to substitute.")
+                continue
+            found = expr.count(anchor)
+            if found != 1:
+                problems.append(
+                    f"{where} anchors on {anchor!r}, which occurs {found} time(s) in that "
+                    f"alert's expression. An anchor has to occur exactly once — widen it until "
+                    f"it does, or the substitution rewrites the wrong comparison."
+                )
+                continue
+            literal = format_default(declaration.get("default"))
+            inside = anchor.count(literal)
+            if inside != 1:
+                problems.append(
+                    f"{where} declares the default {literal}, which occurs {inside} time(s) in "
+                    f"its anchor {anchor!r}. It has to occur exactly once, spelled the way the "
+                    f"expression spells it, or an override edits the wrong number."
+                )
+    return problems
+
+
+def format_default(value) -> str:
+    """A declared default as the rule file spells it.
+
+    Go renders a template value with `%v`, and a YAML integer reaches Helm as an integer, so
+    `172800` stays `172800` rather than becoming `172800.0` the way Python's `str(float)` would.
+    Matching that here is what makes this check agree with the render-time one.
+    """
+    if isinstance(value, bool) or value is None:
+        return str(value)
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return str(value)
 
 
 # A correctly escaped literal: the whole action is one raw or quoted string, whatever is inside

@@ -1,6 +1,9 @@
 # paperless-ngx
 
-![Version: 2.0.2](https://img.shields.io/badge/Version-2.0.2-informational?style=flat-square) ![AppVersion: 3.0.5](https://img.shields.io/badge/AppVersion-3.0.5-informational?style=flat-square)
+
+
+
+![Version: 2.1.0](https://img.shields.io/badge/Version-2.1.0-informational?style=flat-square) ![AppVersion: 3.0.5](https://img.shields.io/badge/AppVersion-3.0.5-informational?style=flat-square) 
 
 This chart deploys paperless-ngx — a document management system that scans, indexes and archives your paper documents — hardened to the restricted Pod Security Standard, with per-directory persistence, scheduled document_exporter backups and document_importer restores, optional bundled Valkey, PostgreSQL, Gotenberg and Tika, Ingress and Gateway API publishing, Grafana dashboards and Prometheus alerting rules.
 
@@ -416,6 +419,78 @@ a rename is in play. And `metrics.prometheusRule.scope: namespace`
 rewrites every selector to this release's namespace, because a `PrometheusRule` is not confined to
 the namespace it lives in: left unscoped, two installs page each other for outages neither of them
 had.
+
+### Turning alerts off, retuning them, and adding your own
+
+The rules ship with defaults that suit most installs and no install exactly, so four presets sit
+under `metrics.prometheusRule`. Every one of them is checked against the rules the chart actually
+ships, and a name that matches nothing fails the render rather than being ignored — a values file
+that says an alert is off while it still pages at 3am is the one outcome this whole surface exists
+to prevent.
+
+| Preset | What it does |
+| --- | --- |
+| `disabledAlerts` | drops alerts by name |
+| `disabledGroups` | drops whole rule groups by name |
+| `additionalRuleLabels` | adds labels to every alert, for Alertmanager routing |
+| `severityOverrides` | sets one alert's `severity` |
+| `forOverrides` | sets one alert's `for` — how long the condition must hold |
+| `thresholds` | moves a declared threshold inside a rule expression |
+| `additionalRuleGroups` | appends rule groups of your own |
+
+```yaml
+metrics:
+  prometheusRule:
+    enabled: true
+    # A busy archive doing large OCR batches restarts more than the default tolerates.
+    thresholds:
+      PaperlessNgxRestarting:
+        restarts: 8
+      # Weekly exports, so 48 hours of staleness is normal here.
+      PaperlessNgxBackupStale:
+        age: 691200
+
+    additionalRuleLabels:
+      team: archive
+    severityOverrides:
+      PaperlessNgxRestarting: info
+```
+
+Labels resolve most-specific-last: the rule file's own labels lose to `additionalRuleLabels`,
+which loses to `severityOverrides`. Recording rules are out of reach of all of it — `disabledGroups`
+refuses a group that holds any, and labels are never attached to one, because a label changes the
+identity of the series a recording rule produces and every dashboard panel and expression reading
+it would silently stop matching.
+
+**Not every number in a rule is a threshold somebody chose**, which is why `thresholds` is opt-in
+per alert rather than a search-and-replace over the expressions. Only what
+[`rules/tunables.yaml`](rules/tunables.yaml) declares can be moved; that file names each tunable,
+says what it means, and bounds it. Two reasons for the restriction, and both are the kind of
+mistake that looks fine in review:
+
+- A threshold is a *substring* of PromQL, and often not the only one that looks like it.
+  `PaperlessNgxVolumeFillingUp` and `PaperlessNgxVolumeAlmostFull` read the same recorded series
+  and differ only in their literal, so a threshold preset that searched for a number would have no
+  way to tell which alert it was editing.
+
+  Each tunable therefore carries an `anchor` — the substring of that expression which contains its
+  own default and occurs exactly once — so an override moves the number it was meant to and no
+  other. Anchors are verified on every pull request and again at render time; a rule edit that
+  orphans one fails the build.
+- Some comparisons are derived rather than chosen. Every remaining comparison in these rules is `== 0`,
+  `> 0` or `absent()` — "no replica is available", "a container was OOM-killed at all", "the
+  backup job reported a failure". None of those is a number anyone picked, so there is nothing to
+  tune.
+
+Anything the chart will not tune, you can still replace outright: switch the shipped rule off with
+`disabledAlerts` and write your own through `additionalRuleGroups`. Groups appended that way are
+emitted as written, never passed through Helm's template engine, so a `$labels` reference in an
+annotation reaches Prometheus intact — which also means no `{{ .Release.Name }}`
+in them. `additionalRuleLabels` is the one thing that does reach them, because it describes the
+release rather than the rules, and there precedence flips: a label you set on your own rule wins.
+
+Disabling an alert changes only the rendered object. The rule stays in `rules/`, stays covered by
+the `promtool` suite in CI, and comes back the moment you stop disabling it.
 
 ## Recipes
 
@@ -860,7 +935,7 @@ earlier `image.tag` after a major upgrade is not supported by the application. E
 | livenessProbe.httpGet.port | string | `"http"` | Named container port to probe. |
 | livenessProbe.periodSeconds | int | `30` | Probe interval. |
 | livenessProbe.timeoutSeconds | int | `10` | Probe timeout. |
-| metrics | object | `{"dashboard":{"enabled":false,"grafanaOperator":{"allowCrossNamespaceImport":true,"enabled":false,"folder":"","instanceSelector":{"matchLabels":{"dashboards":"grafana"}},"resyncPeriod":"5m"},"label":"grafana_dashboard","labelValue":"1"},"prometheusRule":{"enabled":false,"labels":{},"scope":"namespace"}}` | Monitoring. paperless-ngx exposes no Prometheus endpoint of its own, so everything here is built on series a cluster already has: kube-state-metrics for workload health and the kubelet for volume usage. That is a real limit, and it is stated rather than papered over — there are no alerts on queue depth or consumption failures, because nothing publishes them. |
+| metrics | object | `{"dashboard":{"enabled":false,"grafanaOperator":{"allowCrossNamespaceImport":true,"enabled":false,"folder":"","instanceSelector":{"matchLabels":{"dashboards":"grafana"}},"resyncPeriod":"5m"},"label":"grafana_dashboard","labelValue":"1"},"prometheusRule":{"additionalRuleGroups":[],"additionalRuleLabels":{},"disabledAlerts":[],"disabledGroups":[],"enabled":false,"forOverrides":{},"labels":{},"scope":"namespace","severityOverrides":{},"thresholds":{}}}` | Monitoring. paperless-ngx exposes no Prometheus endpoint of its own, so everything here is built on series a cluster already has: kube-state-metrics for workload health and the kubelet for volume usage. That is a real limit, and it is stated rather than papered over — there are no alerts on queue depth or consumption failures, because nothing publishes them. |
 | metrics.dashboard | object | `{"enabled":false,"grafanaOperator":{"allowCrossNamespaceImport":true,"enabled":false,"folder":"","instanceSelector":{"matchLabels":{"dashboards":"grafana"}},"resyncPeriod":"5m"},"label":"grafana_dashboard","labelValue":"1"}` | Grafana dashboards, shipped as a labelled ConfigMap and optionally as `GrafanaDashboard` custom resources. |
 | metrics.dashboard.enabled | bool | `false` | Create the dashboard ConfigMap for the Grafana sidecar to discover. |
 | metrics.dashboard.grafanaOperator | object | `{"allowCrossNamespaceImport":true,"enabled":false,"folder":"","instanceSelector":{"matchLabels":{"dashboards":"grafana"}},"resyncPeriod":"5m"}` | grafana-operator v5 delivery, which — unlike the sidecar — can be granted cross-namespace import from this side. |
@@ -872,10 +947,17 @@ earlier `image.tag` after a major upgrade is not supported by the application. E
 | metrics.dashboard.grafanaOperator.resyncPeriod | string | `"5m"` | How often the operator re-applies them. |
 | metrics.dashboard.label | string | `"grafana_dashboard"` | Label the Grafana sidecar selects dashboards on. |
 | metrics.dashboard.labelValue | string | `"1"` | Value for that label. |
-| metrics.prometheusRule | object | `{"enabled":false,"labels":{},"scope":"namespace"}` | The PrometheusRule carrying this chart's alerting rules. |
+| metrics.prometheusRule | object | `{"additionalRuleGroups":[],"additionalRuleLabels":{},"disabledAlerts":[],"disabledGroups":[],"enabled":false,"forOverrides":{},"labels":{},"scope":"namespace","severityOverrides":{},"thresholds":{}}` | The PrometheusRule carrying this chart's alerting rules. |
+| metrics.prometheusRule.additionalRuleGroups | list | `[]` | Extra rule groups, appended to the ones this chart ships. Each entry is a Prometheus rule group — a `name`, a list of `rules`, optionally an `interval` — emitted as written: they are not passed through Helm's template engine, so a `$labels` reference in an annotation reaches Prometheus intact instead of being resolved to an empty string on the way past. That also means no `{{ .Release.Name }}` in them.  `additionalRuleLabels` does reach these, because it describes the release rather than the rules — skipping them would route exactly the alerts you wrote yourself back into the rotation you were keeping this install out of. Precedence flips: a label you set on your own rule wins, since it is already you speaking rather than a default of the chart's.  This is what makes `disabledAlerts` honest: switch a shipped rule off and write your own with the arithmetic you wanted. A group whose name collides with a shipped one is refused, because Prometheus rejects the whole object rather than the duplicate. |
+| metrics.prometheusRule.additionalRuleLabels | object | `{}` | Labels merged into every alert this chart ships, for Alertmanager routing. This is how a staging release keeps itself out of the production on-call rotation. Applied to alerting rules only: a label on a recording rule changes the identity of the series it records, and every dashboard panel and expression reading it would silently stop matching.  These beat the labels in the rule files, which is the point of them, and lose to `severityOverrides`, which is more specific.  Example: `{team: platform, tier: staging}` |
+| metrics.prometheusRule.disabledAlerts | list | `[]` | Alerts to drop, by name. Refused when the name is not one this chart ships — a typo here is the one failure the whole feature must not produce, because it leaves the values file saying an alert is off while it still pages. The rules stay in `rules/` and stay tested; only the rendered object loses them.  Example: `[PaperlessNgxRestarting]` |
+| metrics.prometheusRule.disabledGroups | list | `[]` | Rule groups to drop entirely, by name. Refused when the name is not one this chart ships, and refused for a group holding recording rules: dashboards and other alerts read the series those produce, so dropping one leaves panels blank and expressions matching nothing, and neither reports an error. Use `disabledAlerts` for the alerts that consume it.  Example: `[paperless-ngx-alerts]` |
 | metrics.prometheusRule.enabled | bool | `false` | Create the PrometheusRule. Requires the Prometheus Operator CRDs. |
+| metrics.prometheusRule.forOverrides | object | `{}` | Per-alert `for` duration, keyed by alert name — how long the condition must hold before the alert fires. A Prometheus duration such as `30s`, `15m` or `1h30m`; write zero as `0m` so YAML keeps it a string. Anything Prometheus cannot parse is refused here, because it would otherwise be refused at load time and take the alert's whole rule group down with it.  Example: `{PaperlessNgxDown: 10m}` |
 | metrics.prometheusRule.labels | object | `{}` | Extra labels for the PrometheusRule, e.g. the `release` label a Prometheus Operator instance selects rules on. Without the one your instance selects, the object is created and never loaded. |
 | metrics.prometheusRule.scope | string | `"namespace"` | How far the rules are scoped. A PrometheusRule is not confined to its own namespace, so `none` makes this release alert on every other paperless-ngx in the cluster as well. `namespace` rewrites every selector to match only this release's namespace. |
+| metrics.prometheusRule.severityOverrides | object | `{}` | Per-alert `severity` label, keyed by alert name. The most specific setting there is, so it beats both the rule file and `additionalRuleLabels`. Refused for an alert this chart does not ship, and for one the same values disable.  Example: `{PaperlessNgxBackupStale: warning}` |
+| metrics.prometheusRule.thresholds | object | `{}` | Threshold overrides, keyed by alert name and then by tunable name. Only the thresholds this chart declares in [`rules/tunables.yaml`](rules/tunables.yaml) can be moved, and that file says what each one means and what it is bounded by; setting anything else is refused with the list of names that would have worked.  Not every number in a rule is a threshold somebody chose. A `histogram_quantile` compared against a bucket boundary reports an observed value and against anything else an interpolated one, and a comparison against the top finite bucket has to be `>=` because the function cannot return more than that. Both would look perfectly reasonable as a value and both would quietly disarm paging, so neither is offered. Disable the alert and re-add your own through `additionalRuleGroups` if you need different arithmetic.  Example: `{PaperlessNgxVolumeFillingUp: {ratio: 0.75}}` |
 | nameOverride | string | `""` | Override the chart name used in resource names and labels. |
 | namespaceOverride | string | `""` | Deploy into a namespace other than the release namespace. |
 | networkPolicy | object | `{"cilium":{"description":"","egress":{"dnsMatchPatterns":[],"entityPorts":[],"fqdnPorts":[],"httpRules":[],"toEntities":[],"toFQDNs":[]},"enableDefaultDeny":true,"extraEgress":[],"extraIngress":[],"ingress":{"fromEntities":[]}},"egress":{"cidr":"0.0.0.0/0","except":["10.0.0.0/8","172.16.0.0/12","192.168.0.0/16","169.254.0.0/16"],"external":{"enabled":true,"namespaceSelector":{},"podSelector":{}},"https":false,"smtp":false},"enabled":false,"engine":"kubernetes","extraEgress":[],"extraIngress":[],"ingress":{"controller":{"enabled":true,"namespace":"ingress-nginx","podSelector":{"app.kubernetes.io/name":"ingress-nginx"}},"gateway":{"enabled":true,"namespaceSelector":{},"podSelector":{}}}}` | Network policies. Every workload in the release gets a default-deny pair, with exactly the rules the enabled components need — the application reaches the broker, the database and the document converters, and nothing reaches back. |
@@ -1174,6 +1256,7 @@ earlier `image.tag` after a major upgrade is not supported by the application. E
 | Name | Email | Url |
 | ---- | ------ | --- |
 | Tim Schönle | <contact@tim-schoenle.de> |  |
+
 
 ----------------------------------------------
 Autogenerated from chart metadata using [helm-docs v1.14.2](https://github.com/norwoodj/helm-docs/releases/v1.14.2)

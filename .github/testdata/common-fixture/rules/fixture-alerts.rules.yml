@@ -4,6 +4,8 @@ groups:
       - alert: FixtureDown
         expr: up{fixture_scope=~".*"} == 0
         for: 5m
+        labels:
+          severity: critical
         annotations:
           # Prometheus' own templating. Go must never evaluate this: a regression that ran the
           # rule files through `tpl` would resolve it to an empty string and leave the alert
@@ -13,3 +15,31 @@ groups:
           # fields only, so this must survive verbatim — an annotation is something an operator
           # reads, not a selector.
           description: 'value {{ $value }}, scoped by fixture_scope=~".*"'
+
+  # A second alerting group, so `disabledGroups` can be exercised without emptying the object.
+  - name: fixture-saturation
+    rules:
+      # Carries `0.05` twice, meaning two unrelated things: the error ratio that counts as bad,
+      # and the traffic floor below which the ratio is noise. That is the case a threshold
+      # preset cannot resolve by searching for a literal, and the reason a tunable declares an
+      # `anchor` instead. Both are declared in `rules/tunables.yaml`; the tests prove each one
+      # moves its own comparison and leaves the other alone.
+      - alert: FixtureErrorRatio
+        expr: 'job:http_errors:ratio_rate5m{fixture_scope=~".*"} > 0.05 and job:http_requests:rate5m{fixture_scope=~".*"} > 0.05'
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: '{{ $labels.job }} is returning {{ $value | humanizePercentage }} errors'
+
+      # Deliberately declares no tunable. `histogram_quantile` cannot return more than the top
+      # finite bucket, so `>= 10` is the only spelling that can ever fire and an operator moving
+      # it to `> 12` would get a critical alert that looks reasonable and never triggers. The
+      # tests pin that `thresholds` on this alert is refused rather than honoured.
+      - alert: FixtureLatencyCritical
+        expr: 'job:http_request_duration_seconds:p99_5m{fixture_scope=~".*"} >= 10'
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: '{{ $labels.job }} latency has passed the top histogram bucket'

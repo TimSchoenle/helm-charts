@@ -35,6 +35,40 @@ metrics:
     enabled: true
     labels:
       release: kube-prometheus-stack
+    # Every preset at once, so the render job covers the whole surface rather than the defaults.
+    # `TankoVaultVersionSkew` is dropped, `tankovault-recsys` goes whole, two thresholds move —
+    # including one where the alert carries the same literal twice and only one of them may — and
+    # a site rule is appended in place of the group that was removed.
+    disabledAlerts:
+      - TankoVaultVersionSkew
+    disabledGroups:
+      - tankovault-recsys
+    additionalRuleLabels:
+      team: platform
+      tier: ci
+    severityOverrides:
+      TankoVaultSseEventsUndeliverable: info
+    forOverrides:
+      TankoVaultServiceDown: 15m
+    thresholds:
+      TankoVaultHighServerErrorRatio:
+        ratio: 0.02
+      TankoVaultScanLaneUnfair:
+        minProviders: 5
+    additionalRuleGroups:
+      - name: tankovault-ci-site
+        interval: 1m
+        rules:
+          - alert: TankoVaultCiSiteRule
+            expr: up{job="api"} == 0
+            for: 5m
+            labels:
+              severity: info
+            annotations:
+              summary: "{{ $labels.job }} is down, per site policy"
+              description: >-
+                Stands in for a rule an operator wrote themselves. Its Prometheus templating must
+                reach the cluster intact, which is what makes it worth rendering here.
   natsExporter:
     enabled: true
     # This fixture runs on external datastores, and the exporter reads NATS' monitoring listener

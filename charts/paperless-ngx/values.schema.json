@@ -2178,8 +2178,36 @@
             "additionalRuleGroups": {
               "description": "Extra rule groups, appended to the ones this chart ships. Each entry is a Prometheus rule\ngroup — a `name`, a list of `rules`, optionally an `interval` — emitted as written: they are\nnot passed through Helm's template engine, so a `$labels` reference in an annotation reaches\nPrometheus intact instead of being resolved to an empty string on the way past. That also\nmeans no `{{ .Release.Name }}` in them.\n\n`additionalRuleLabels` does reach these, because it describes the release rather than the\nrules — skipping them would route exactly the alerts you wrote yourself back into the\nrotation you were keeping this install out of. Precedence flips: a label you set on your own\nrule wins, since it is already you speaking rather than a default of the chart's.\n\nThis is what makes `disabledAlerts` honest: switch a shipped rule off and write your own\nwith the arithmetic you wanted. A group whose name collides with a shipped one is refused,\nbecause Prometheus rejects the whole object rather than the duplicate.",
               "items": {
-                "additionalProperties": true,
-                "required": [],
+                "properties": {
+                  "interval": {
+                    "pattern": "^([0-9]+(ms|[smhdwy]))+$",
+                    "required": [],
+                    "type": "string"
+                  },
+                  "limit": {
+                    "minimum": 0,
+                    "required": [],
+                    "type": "integer"
+                  },
+                  "name": {
+                    "minLength": 1,
+                    "required": [],
+                    "type": "string"
+                  },
+                  "rules": {
+                    "items": {
+                      "required": [],
+                      "type": "object"
+                    },
+                    "minItems": 1,
+                    "required": [],
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "name",
+                  "rules"
+                ],
                 "type": "object"
               },
               "required": [],
@@ -2198,8 +2226,20 @@
             "disabledAlerts": {
               "description": "Alerts to drop, by name. Refused when the name is not one this chart ships — a typo here\nis the one failure the whole feature must not produce, because it leaves the values file\nsaying an alert is off while it still pages. The rules stay in `rules/` and stay tested;\nonly the rendered object loses them.\n\nExample: `[PaperlessNgxRestarting]`",
               "items": {
-                "required": [],
-                "type": "string"
+                "enum": [
+                  "PaperlessNgxAbsent",
+                  "PaperlessNgxBackupFailed",
+                  "PaperlessNgxBackupStale",
+                  "PaperlessNgxBackupSuspended",
+                  "PaperlessNgxCrashLooping",
+                  "PaperlessNgxDatastoreDown",
+                  "PaperlessNgxDown",
+                  "PaperlessNgxOOMKilled",
+                  "PaperlessNgxRestarting",
+                  "PaperlessNgxVolumeAlmostFull",
+                  "PaperlessNgxVolumeFillingUp"
+                ],
+                "required": []
               },
               "required": [],
               "title": "disabledAlerts",
@@ -2208,8 +2248,10 @@
             "disabledGroups": {
               "description": "Rule groups to drop entirely, by name. Refused when the name is not one this chart\nships, and refused for a group holding recording rules: dashboards and other alerts read\nthe series those produce, so dropping one leaves panels blank and expressions matching\nnothing, and neither reports an error. Use `disabledAlerts` for the alerts that consume it.\n\nExample: `[paperless-ngx-alerts]`",
               "items": {
-                "required": [],
-                "type": "string"
+                "enum": [
+                  "paperless-ngx-alerts"
+                ],
+                "required": []
               },
               "required": [],
               "title": "disabledGroups",
@@ -2223,10 +2265,65 @@
               "type": "boolean"
             },
             "forOverrides": {
-              "additionalProperties": {
-                "type": "string"
-              },
+              "additionalProperties": false,
               "description": "Per-alert `for` duration, keyed by alert name — how long the condition must hold before\nthe alert fires. A Prometheus duration such as `30s`, `15m` or `1h30m`; write zero as `0m`\nso YAML keeps it a string. Anything Prometheus cannot parse is refused here, because it\nwould otherwise be refused at load time and take the alert's whole rule group down with it.\n\nExample: `{PaperlessNgxDown: 10m}`",
+              "properties": {
+                "PaperlessNgxAbsent": {
+                  "pattern": "^([0-9]+(ms|[smhdwy]))+$",
+                  "required": [],
+                  "type": "string"
+                },
+                "PaperlessNgxBackupFailed": {
+                  "pattern": "^([0-9]+(ms|[smhdwy]))+$",
+                  "required": [],
+                  "type": "string"
+                },
+                "PaperlessNgxBackupStale": {
+                  "pattern": "^([0-9]+(ms|[smhdwy]))+$",
+                  "required": [],
+                  "type": "string"
+                },
+                "PaperlessNgxBackupSuspended": {
+                  "pattern": "^([0-9]+(ms|[smhdwy]))+$",
+                  "required": [],
+                  "type": "string"
+                },
+                "PaperlessNgxCrashLooping": {
+                  "pattern": "^([0-9]+(ms|[smhdwy]))+$",
+                  "required": [],
+                  "type": "string"
+                },
+                "PaperlessNgxDatastoreDown": {
+                  "pattern": "^([0-9]+(ms|[smhdwy]))+$",
+                  "required": [],
+                  "type": "string"
+                },
+                "PaperlessNgxDown": {
+                  "pattern": "^([0-9]+(ms|[smhdwy]))+$",
+                  "required": [],
+                  "type": "string"
+                },
+                "PaperlessNgxOOMKilled": {
+                  "pattern": "^([0-9]+(ms|[smhdwy]))+$",
+                  "required": [],
+                  "type": "string"
+                },
+                "PaperlessNgxRestarting": {
+                  "pattern": "^([0-9]+(ms|[smhdwy]))+$",
+                  "required": [],
+                  "type": "string"
+                },
+                "PaperlessNgxVolumeAlmostFull": {
+                  "pattern": "^([0-9]+(ms|[smhdwy]))+$",
+                  "required": [],
+                  "type": "string"
+                },
+                "PaperlessNgxVolumeFillingUp": {
+                  "pattern": "^([0-9]+(ms|[smhdwy]))+$",
+                  "required": [],
+                  "type": "string"
+                }
+              },
               "required": [],
               "title": "forOverrides",
               "type": "object"
@@ -2249,20 +2346,168 @@
               "title": "scope"
             },
             "severityOverrides": {
-              "additionalProperties": {
-                "type": "string"
-              },
+              "additionalProperties": false,
               "description": "Per-alert `severity` label, keyed by alert name. The most specific setting there is, so\nit beats both the rule file and `additionalRuleLabels`. Refused for an alert this chart\ndoes not ship, and for one the same values disable.\n\nExample: `{PaperlessNgxBackupStale: warning}`",
+              "properties": {
+                "PaperlessNgxAbsent": {
+                  "minLength": 1,
+                  "required": [],
+                  "type": "string"
+                },
+                "PaperlessNgxBackupFailed": {
+                  "minLength": 1,
+                  "required": [],
+                  "type": "string"
+                },
+                "PaperlessNgxBackupStale": {
+                  "minLength": 1,
+                  "required": [],
+                  "type": "string"
+                },
+                "PaperlessNgxBackupSuspended": {
+                  "minLength": 1,
+                  "required": [],
+                  "type": "string"
+                },
+                "PaperlessNgxCrashLooping": {
+                  "minLength": 1,
+                  "required": [],
+                  "type": "string"
+                },
+                "PaperlessNgxDatastoreDown": {
+                  "minLength": 1,
+                  "required": [],
+                  "type": "string"
+                },
+                "PaperlessNgxDown": {
+                  "minLength": 1,
+                  "required": [],
+                  "type": "string"
+                },
+                "PaperlessNgxOOMKilled": {
+                  "minLength": 1,
+                  "required": [],
+                  "type": "string"
+                },
+                "PaperlessNgxRestarting": {
+                  "minLength": 1,
+                  "required": [],
+                  "type": "string"
+                },
+                "PaperlessNgxVolumeAlmostFull": {
+                  "minLength": 1,
+                  "required": [],
+                  "type": "string"
+                },
+                "PaperlessNgxVolumeFillingUp": {
+                  "minLength": 1,
+                  "required": [],
+                  "type": "string"
+                }
+              },
               "required": [],
               "title": "severityOverrides",
               "type": "object"
             },
             "thresholds": {
-              "additionalProperties": {
-                "additionalProperties": true,
-                "type": "object"
-              },
+              "additionalProperties": false,
               "description": "Threshold overrides, keyed by alert name and then by tunable name. Only the thresholds\nthis chart declares in [`rules/tunables.yaml`](rules/tunables.yaml) can be moved, and that\nfile says what each one means and what it is bounded by; setting anything else is refused\nwith the list of names that would have worked.\n\nNot every number in a rule is a threshold somebody chose. A `histogram_quantile` compared\nagainst a bucket boundary reports an observed value and against anything else an\ninterpolated one, and a comparison against the top finite bucket has to be `\u003e=` because the\nfunction cannot return more than that. Both would look perfectly reasonable as a value and\nboth would quietly disarm paging, so neither is offered. Disable the alert and re-add your\nown through `additionalRuleGroups` if you need different arithmetic.\n\nExample: `{PaperlessNgxVolumeFillingUp: {ratio: 0.75}}`",
+              "properties": {
+                "PaperlessNgxBackupStale": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "age": {
+                      "anyOf": [
+                        {
+                          "minimum": 1,
+                          "required": [],
+                          "type": "integer"
+                        },
+                        {
+                          "pattern": "^-?[0-9]+(\\.[0-9]+)?([eE][-+]?[0-9]+)?$",
+                          "required": [],
+                          "type": "string"
+                        }
+                      ],
+                      "default": 172800,
+                      "required": []
+                    }
+                  },
+                  "required": [],
+                  "type": "object"
+                },
+                "PaperlessNgxRestarting": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "restarts": {
+                      "anyOf": [
+                        {
+                          "minimum": 1,
+                          "required": [],
+                          "type": "integer"
+                        },
+                        {
+                          "pattern": "^-?[0-9]+(\\.[0-9]+)?([eE][-+]?[0-9]+)?$",
+                          "required": [],
+                          "type": "string"
+                        }
+                      ],
+                      "default": 3,
+                      "required": []
+                    }
+                  },
+                  "required": [],
+                  "type": "object"
+                },
+                "PaperlessNgxVolumeAlmostFull": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "ratio": {
+                      "anyOf": [
+                        {
+                          "maximum": 1,
+                          "minimum": 0,
+                          "required": [],
+                          "type": "number"
+                        },
+                        {
+                          "pattern": "^-?[0-9]+(\\.[0-9]+)?([eE][-+]?[0-9]+)?$",
+                          "required": [],
+                          "type": "string"
+                        }
+                      ],
+                      "default": 0.95,
+                      "required": []
+                    }
+                  },
+                  "required": [],
+                  "type": "object"
+                },
+                "PaperlessNgxVolumeFillingUp": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "ratio": {
+                      "anyOf": [
+                        {
+                          "maximum": 1,
+                          "minimum": 0,
+                          "required": [],
+                          "type": "number"
+                        },
+                        {
+                          "pattern": "^-?[0-9]+(\\.[0-9]+)?([eE][-+]?[0-9]+)?$",
+                          "required": [],
+                          "type": "string"
+                        }
+                      ],
+                      "default": 0.85,
+                      "required": []
+                    }
+                  },
+                  "required": [],
+                  "type": "object"
+                }
+              },
               "required": [],
               "title": "thresholds",
               "type": "object"

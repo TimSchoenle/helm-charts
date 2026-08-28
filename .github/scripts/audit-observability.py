@@ -45,6 +45,10 @@ import sys
 
 import yaml
 
+sys.path.insert(0, str(pathlib.Path(__file__).parent))
+
+from rule_anchors import suggest_anchor
+
 # Labels the Prometheus Operator attaches to every series it scrapes. An expression reaching a raw
 # metric without aggregating carries these through, so a runbook may reference them.
 SCRAPE_LABELS = {"namespace", "job", "pod", "instance", "service", "container", "endpoint"}
@@ -353,6 +357,7 @@ def audit_tunables(chart: Chart) -> list[str]:
                     f"{where} anchors on {anchor!r}, which occurs {found} time(s) in that "
                     f"alert's expression. An anchor has to occur exactly once — widen it until "
                     f"it does, or the substitution rewrites the wrong comparison."
+                    + repair_hint(expr, declaration.get("default"))
                 )
                 continue
             literal = format_default(declaration.get("default"))
@@ -364,6 +369,24 @@ def audit_tunables(chart: Chart) -> list[str]:
                     f"expression spells it, or an override edits the wrong number."
                 )
     return problems
+
+
+def repair_hint(expr: str, default) -> str:
+    """An anchor that would work, when there is exactly one place the default could mean.
+
+    A broken anchor is almost always the fallout of a rule edit — a selector gained a label, an
+    expression was rewrapped — and the repair is mechanical: find the number again, widen until
+    unique. Doing that by hand means reading PromQL and counting occurrences, which is the work
+    `just add-tunable` exists to remove, so the same derivation answers here rather than leaving
+    the author to it.
+
+    Silent when the default appears more than once. Choosing between two comparisons is the
+    author's call, and a confident wrong suggestion costs more than no suggestion.
+    """
+    suggestion = suggest_anchor(expr, format_default(default))
+    if not suggestion:
+        return ""
+    return f"\n      `just add-tunable` would derive: {suggestion}"
 
 
 def format_default(value) -> str:

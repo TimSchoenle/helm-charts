@@ -3101,8 +3101,36 @@
             "additionalRuleGroups": {
               "description": "Extra rule groups, appended to the ones this chart ships. Each entry is a Prometheus rule\ngroup — a `name`, a list of `rules`, optionally an `interval` — emitted as written: they are\nnot passed through Helm's template engine, so a `$labels` reference in an annotation reaches\nPrometheus intact instead of being resolved to an empty string on the way past. That also\nmeans no `{{ .Release.Name }}` in them.\n\n`additionalRuleLabels` does reach these, because it describes the release rather than the\nrules — skipping them would route exactly the alerts you wrote yourself back into the\nrotation you were keeping this install out of. Precedence flips: a label you set on your own\nrule wins, since it is already you speaking rather than a default of the chart's.\n\nThis is what makes `disabledAlerts` honest: switch a shipped rule off and write your own\nwith the arithmetic you wanted. A group whose name collides with a shipped one is refused,\nbecause Prometheus rejects the whole object rather than the duplicate.",
               "items": {
-                "additionalProperties": true,
-                "required": [],
+                "properties": {
+                  "interval": {
+                    "pattern": "^([0-9]+(ms|[smhdwy]))+$",
+                    "required": [],
+                    "type": "string"
+                  },
+                  "limit": {
+                    "minimum": 0,
+                    "required": [],
+                    "type": "integer"
+                  },
+                  "name": {
+                    "minLength": 1,
+                    "required": [],
+                    "type": "string"
+                  },
+                  "rules": {
+                    "items": {
+                      "required": [],
+                      "type": "object"
+                    },
+                    "minItems": 1,
+                    "required": [],
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "name",
+                  "rules"
+                ],
                 "type": "object"
               },
               "required": [],
@@ -3121,8 +3149,49 @@
             "disabledAlerts": {
               "description": "Alerts to drop, by name. Refused when the name is not one this chart ships — a typo here\nis the one failure the whole feature must not produce, because it leaves the values file\nsaying an alert is off while it still pages. The rules stay in `rules/` and stay tested;\nonly the rendered object loses them.\n\nExample: `[TankoVaultVersionSkew, TankoVaultScanPaceBound]`",
               "items": {
-                "required": [],
-                "type": "string"
+                "enum": [
+                  "TankoVaultAniListRateLimited",
+                  "TankoVaultAuthFailureSurge",
+                  "TankoVaultAuthRateLimitSurge",
+                  "TankoVaultChallengeSolvingFailing",
+                  "TankoVaultChaptersAllRejected",
+                  "TankoVaultConcurrencyUnusuallyHigh",
+                  "TankoVaultDatabasePoolSaturated",
+                  "TankoVaultDependencyDown",
+                  "TankoVaultDisabledFeatureStillCalled",
+                  "TankoVaultFastScanBacklogImpossible",
+                  "TankoVaultFastScanLanesStarved",
+                  "TankoVaultHighServerErrorRatio",
+                  "TankoVaultLatencyCritical",
+                  "TankoVaultLatencyDegraded",
+                  "TankoVaultNatsExporterDown",
+                  "TankoVaultNatsSlowConsumers",
+                  "TankoVaultNoSchedulerLeader",
+                  "TankoVaultNotificationBacklogNotDraining",
+                  "TankoVaultNotificationDeliveryFailing",
+                  "TankoVaultNotificationEventsFailing",
+                  "TankoVaultProviderFetchFailing",
+                  "TankoVaultProviderThrottlingHeavily",
+                  "TankoVaultRateLimiterFailingOpen",
+                  "TankoVaultRecsysBuildFailing",
+                  "TankoVaultRecsysShelvesEmpty",
+                  "TankoVaultRefusedFetchTargets",
+                  "TankoVaultRenderTierFailing",
+                  "TankoVaultRequestPathDown",
+                  "TankoVaultScanIngestBound",
+                  "TankoVaultScanLaneUnfair",
+                  "TankoVaultScanPaceBound",
+                  "TankoVaultScanTaskRetryStorm",
+                  "TankoVaultScanTasksFailing",
+                  "TankoVaultServerErrorsCritical",
+                  "TankoVaultServiceDown",
+                  "TankoVaultServiceNotReady",
+                  "TankoVaultSplitBrainScheduler",
+                  "TankoVaultSseEventsUndeliverable",
+                  "TankoVaultVersionSkew",
+                  "TankoVaultWorkerTargetsAbsent"
+                ],
+                "required": []
               },
               "required": [],
               "title": "disabledAlerts",
@@ -3131,8 +3200,20 @@
             "disabledGroups": {
               "description": "Rule groups to drop entirely, by name. Refused when the name is not one this chart\nships, and refused for a group holding recording rules: dashboards and other alerts read\nthe series those produce, so dropping one leaves panels blank and expressions matching\nnothing, and neither reports an error. Use `disabledAlerts` for the alerts that consume it.\n\nExample: `[tankovault-recsys, tankovault-anilist]`",
               "items": {
-                "required": [],
-                "type": "string"
+                "enum": [
+                  "tankovault-anilist",
+                  "tankovault-availability",
+                  "tankovault-database",
+                  "tankovault-edge-policy",
+                  "tankovault-fetch-tier",
+                  "tankovault-http",
+                  "tankovault-notifications",
+                  "tankovault-providers",
+                  "tankovault-recsys",
+                  "tankovault-saturation",
+                  "tankovault-scan"
+                ],
+                "required": []
               },
               "required": [],
               "title": "disabledGroups",
@@ -3146,10 +3227,210 @@
               "type": "boolean"
             },
             "forOverrides": {
-              "additionalProperties": {
-                "type": "string"
-              },
+              "additionalProperties": false,
               "description": "Per-alert `for` duration, keyed by alert name — how long the condition must hold before\nthe alert fires. A Prometheus duration such as `30s`, `15m` or `1h30m`; write zero as `0m`\nso YAML keeps it a string. Anything Prometheus cannot parse is refused here, because it\nwould otherwise be refused at load time and take the alert's whole rule group down with it.\n\nExample: `{TankoVaultServiceDown: 15m}`",
+              "properties": {
+                "TankoVaultAniListRateLimited": {
+                  "pattern": "^([0-9]+(ms|[smhdwy]))+$",
+                  "required": [],
+                  "type": "string"
+                },
+                "TankoVaultAuthFailureSurge": {
+                  "pattern": "^([0-9]+(ms|[smhdwy]))+$",
+                  "required": [],
+                  "type": "string"
+                },
+                "TankoVaultAuthRateLimitSurge": {
+                  "pattern": "^([0-9]+(ms|[smhdwy]))+$",
+                  "required": [],
+                  "type": "string"
+                },
+                "TankoVaultChallengeSolvingFailing": {
+                  "pattern": "^([0-9]+(ms|[smhdwy]))+$",
+                  "required": [],
+                  "type": "string"
+                },
+                "TankoVaultChaptersAllRejected": {
+                  "pattern": "^([0-9]+(ms|[smhdwy]))+$",
+                  "required": [],
+                  "type": "string"
+                },
+                "TankoVaultConcurrencyUnusuallyHigh": {
+                  "pattern": "^([0-9]+(ms|[smhdwy]))+$",
+                  "required": [],
+                  "type": "string"
+                },
+                "TankoVaultDatabasePoolSaturated": {
+                  "pattern": "^([0-9]+(ms|[smhdwy]))+$",
+                  "required": [],
+                  "type": "string"
+                },
+                "TankoVaultDependencyDown": {
+                  "pattern": "^([0-9]+(ms|[smhdwy]))+$",
+                  "required": [],
+                  "type": "string"
+                },
+                "TankoVaultDisabledFeatureStillCalled": {
+                  "pattern": "^([0-9]+(ms|[smhdwy]))+$",
+                  "required": [],
+                  "type": "string"
+                },
+                "TankoVaultFastScanBacklogImpossible": {
+                  "pattern": "^([0-9]+(ms|[smhdwy]))+$",
+                  "required": [],
+                  "type": "string"
+                },
+                "TankoVaultFastScanLanesStarved": {
+                  "pattern": "^([0-9]+(ms|[smhdwy]))+$",
+                  "required": [],
+                  "type": "string"
+                },
+                "TankoVaultHighServerErrorRatio": {
+                  "pattern": "^([0-9]+(ms|[smhdwy]))+$",
+                  "required": [],
+                  "type": "string"
+                },
+                "TankoVaultLatencyCritical": {
+                  "pattern": "^([0-9]+(ms|[smhdwy]))+$",
+                  "required": [],
+                  "type": "string"
+                },
+                "TankoVaultLatencyDegraded": {
+                  "pattern": "^([0-9]+(ms|[smhdwy]))+$",
+                  "required": [],
+                  "type": "string"
+                },
+                "TankoVaultNatsExporterDown": {
+                  "pattern": "^([0-9]+(ms|[smhdwy]))+$",
+                  "required": [],
+                  "type": "string"
+                },
+                "TankoVaultNatsSlowConsumers": {
+                  "pattern": "^([0-9]+(ms|[smhdwy]))+$",
+                  "required": [],
+                  "type": "string"
+                },
+                "TankoVaultNoSchedulerLeader": {
+                  "pattern": "^([0-9]+(ms|[smhdwy]))+$",
+                  "required": [],
+                  "type": "string"
+                },
+                "TankoVaultNotificationBacklogNotDraining": {
+                  "pattern": "^([0-9]+(ms|[smhdwy]))+$",
+                  "required": [],
+                  "type": "string"
+                },
+                "TankoVaultNotificationDeliveryFailing": {
+                  "pattern": "^([0-9]+(ms|[smhdwy]))+$",
+                  "required": [],
+                  "type": "string"
+                },
+                "TankoVaultNotificationEventsFailing": {
+                  "pattern": "^([0-9]+(ms|[smhdwy]))+$",
+                  "required": [],
+                  "type": "string"
+                },
+                "TankoVaultProviderFetchFailing": {
+                  "pattern": "^([0-9]+(ms|[smhdwy]))+$",
+                  "required": [],
+                  "type": "string"
+                },
+                "TankoVaultProviderThrottlingHeavily": {
+                  "pattern": "^([0-9]+(ms|[smhdwy]))+$",
+                  "required": [],
+                  "type": "string"
+                },
+                "TankoVaultRateLimiterFailingOpen": {
+                  "pattern": "^([0-9]+(ms|[smhdwy]))+$",
+                  "required": [],
+                  "type": "string"
+                },
+                "TankoVaultRecsysBuildFailing": {
+                  "pattern": "^([0-9]+(ms|[smhdwy]))+$",
+                  "required": [],
+                  "type": "string"
+                },
+                "TankoVaultRecsysShelvesEmpty": {
+                  "pattern": "^([0-9]+(ms|[smhdwy]))+$",
+                  "required": [],
+                  "type": "string"
+                },
+                "TankoVaultRefusedFetchTargets": {
+                  "pattern": "^([0-9]+(ms|[smhdwy]))+$",
+                  "required": [],
+                  "type": "string"
+                },
+                "TankoVaultRenderTierFailing": {
+                  "pattern": "^([0-9]+(ms|[smhdwy]))+$",
+                  "required": [],
+                  "type": "string"
+                },
+                "TankoVaultRequestPathDown": {
+                  "pattern": "^([0-9]+(ms|[smhdwy]))+$",
+                  "required": [],
+                  "type": "string"
+                },
+                "TankoVaultScanIngestBound": {
+                  "pattern": "^([0-9]+(ms|[smhdwy]))+$",
+                  "required": [],
+                  "type": "string"
+                },
+                "TankoVaultScanLaneUnfair": {
+                  "pattern": "^([0-9]+(ms|[smhdwy]))+$",
+                  "required": [],
+                  "type": "string"
+                },
+                "TankoVaultScanPaceBound": {
+                  "pattern": "^([0-9]+(ms|[smhdwy]))+$",
+                  "required": [],
+                  "type": "string"
+                },
+                "TankoVaultScanTaskRetryStorm": {
+                  "pattern": "^([0-9]+(ms|[smhdwy]))+$",
+                  "required": [],
+                  "type": "string"
+                },
+                "TankoVaultScanTasksFailing": {
+                  "pattern": "^([0-9]+(ms|[smhdwy]))+$",
+                  "required": [],
+                  "type": "string"
+                },
+                "TankoVaultServerErrorsCritical": {
+                  "pattern": "^([0-9]+(ms|[smhdwy]))+$",
+                  "required": [],
+                  "type": "string"
+                },
+                "TankoVaultServiceDown": {
+                  "pattern": "^([0-9]+(ms|[smhdwy]))+$",
+                  "required": [],
+                  "type": "string"
+                },
+                "TankoVaultServiceNotReady": {
+                  "pattern": "^([0-9]+(ms|[smhdwy]))+$",
+                  "required": [],
+                  "type": "string"
+                },
+                "TankoVaultSplitBrainScheduler": {
+                  "pattern": "^([0-9]+(ms|[smhdwy]))+$",
+                  "required": [],
+                  "type": "string"
+                },
+                "TankoVaultSseEventsUndeliverable": {
+                  "pattern": "^([0-9]+(ms|[smhdwy]))+$",
+                  "required": [],
+                  "type": "string"
+                },
+                "TankoVaultVersionSkew": {
+                  "pattern": "^([0-9]+(ms|[smhdwy]))+$",
+                  "required": [],
+                  "type": "string"
+                },
+                "TankoVaultWorkerTargetsAbsent": {
+                  "pattern": "^([0-9]+(ms|[smhdwy]))+$",
+                  "required": [],
+                  "type": "string"
+                }
+              },
               "required": [],
               "title": "forOverrides",
               "type": "object"
@@ -3172,20 +3453,872 @@
               "title": "scope"
             },
             "severityOverrides": {
-              "additionalProperties": {
-                "type": "string"
-              },
+              "additionalProperties": false,
               "description": "Per-alert `severity` label, keyed by alert name. The most specific setting there is, so\nit beats both the rule file and `additionalRuleLabels`. Refused for an alert this chart\ndoes not ship, and for one the same values disable.\n\nExample: `{TankoVaultVersionSkew: warning}`",
+              "properties": {
+                "TankoVaultAniListRateLimited": {
+                  "minLength": 1,
+                  "required": [],
+                  "type": "string"
+                },
+                "TankoVaultAuthFailureSurge": {
+                  "minLength": 1,
+                  "required": [],
+                  "type": "string"
+                },
+                "TankoVaultAuthRateLimitSurge": {
+                  "minLength": 1,
+                  "required": [],
+                  "type": "string"
+                },
+                "TankoVaultChallengeSolvingFailing": {
+                  "minLength": 1,
+                  "required": [],
+                  "type": "string"
+                },
+                "TankoVaultChaptersAllRejected": {
+                  "minLength": 1,
+                  "required": [],
+                  "type": "string"
+                },
+                "TankoVaultConcurrencyUnusuallyHigh": {
+                  "minLength": 1,
+                  "required": [],
+                  "type": "string"
+                },
+                "TankoVaultDatabasePoolSaturated": {
+                  "minLength": 1,
+                  "required": [],
+                  "type": "string"
+                },
+                "TankoVaultDependencyDown": {
+                  "minLength": 1,
+                  "required": [],
+                  "type": "string"
+                },
+                "TankoVaultDisabledFeatureStillCalled": {
+                  "minLength": 1,
+                  "required": [],
+                  "type": "string"
+                },
+                "TankoVaultFastScanBacklogImpossible": {
+                  "minLength": 1,
+                  "required": [],
+                  "type": "string"
+                },
+                "TankoVaultFastScanLanesStarved": {
+                  "minLength": 1,
+                  "required": [],
+                  "type": "string"
+                },
+                "TankoVaultHighServerErrorRatio": {
+                  "minLength": 1,
+                  "required": [],
+                  "type": "string"
+                },
+                "TankoVaultLatencyCritical": {
+                  "minLength": 1,
+                  "required": [],
+                  "type": "string"
+                },
+                "TankoVaultLatencyDegraded": {
+                  "minLength": 1,
+                  "required": [],
+                  "type": "string"
+                },
+                "TankoVaultNatsExporterDown": {
+                  "minLength": 1,
+                  "required": [],
+                  "type": "string"
+                },
+                "TankoVaultNatsSlowConsumers": {
+                  "minLength": 1,
+                  "required": [],
+                  "type": "string"
+                },
+                "TankoVaultNoSchedulerLeader": {
+                  "minLength": 1,
+                  "required": [],
+                  "type": "string"
+                },
+                "TankoVaultNotificationBacklogNotDraining": {
+                  "minLength": 1,
+                  "required": [],
+                  "type": "string"
+                },
+                "TankoVaultNotificationDeliveryFailing": {
+                  "minLength": 1,
+                  "required": [],
+                  "type": "string"
+                },
+                "TankoVaultNotificationEventsFailing": {
+                  "minLength": 1,
+                  "required": [],
+                  "type": "string"
+                },
+                "TankoVaultProviderFetchFailing": {
+                  "minLength": 1,
+                  "required": [],
+                  "type": "string"
+                },
+                "TankoVaultProviderThrottlingHeavily": {
+                  "minLength": 1,
+                  "required": [],
+                  "type": "string"
+                },
+                "TankoVaultRateLimiterFailingOpen": {
+                  "minLength": 1,
+                  "required": [],
+                  "type": "string"
+                },
+                "TankoVaultRecsysBuildFailing": {
+                  "minLength": 1,
+                  "required": [],
+                  "type": "string"
+                },
+                "TankoVaultRecsysShelvesEmpty": {
+                  "minLength": 1,
+                  "required": [],
+                  "type": "string"
+                },
+                "TankoVaultRefusedFetchTargets": {
+                  "minLength": 1,
+                  "required": [],
+                  "type": "string"
+                },
+                "TankoVaultRenderTierFailing": {
+                  "minLength": 1,
+                  "required": [],
+                  "type": "string"
+                },
+                "TankoVaultRequestPathDown": {
+                  "minLength": 1,
+                  "required": [],
+                  "type": "string"
+                },
+                "TankoVaultScanIngestBound": {
+                  "minLength": 1,
+                  "required": [],
+                  "type": "string"
+                },
+                "TankoVaultScanLaneUnfair": {
+                  "minLength": 1,
+                  "required": [],
+                  "type": "string"
+                },
+                "TankoVaultScanPaceBound": {
+                  "minLength": 1,
+                  "required": [],
+                  "type": "string"
+                },
+                "TankoVaultScanTaskRetryStorm": {
+                  "minLength": 1,
+                  "required": [],
+                  "type": "string"
+                },
+                "TankoVaultScanTasksFailing": {
+                  "minLength": 1,
+                  "required": [],
+                  "type": "string"
+                },
+                "TankoVaultServerErrorsCritical": {
+                  "minLength": 1,
+                  "required": [],
+                  "type": "string"
+                },
+                "TankoVaultServiceDown": {
+                  "minLength": 1,
+                  "required": [],
+                  "type": "string"
+                },
+                "TankoVaultServiceNotReady": {
+                  "minLength": 1,
+                  "required": [],
+                  "type": "string"
+                },
+                "TankoVaultSplitBrainScheduler": {
+                  "minLength": 1,
+                  "required": [],
+                  "type": "string"
+                },
+                "TankoVaultSseEventsUndeliverable": {
+                  "minLength": 1,
+                  "required": [],
+                  "type": "string"
+                },
+                "TankoVaultVersionSkew": {
+                  "minLength": 1,
+                  "required": [],
+                  "type": "string"
+                },
+                "TankoVaultWorkerTargetsAbsent": {
+                  "minLength": 1,
+                  "required": [],
+                  "type": "string"
+                }
+              },
               "required": [],
               "title": "severityOverrides",
               "type": "object"
             },
             "thresholds": {
-              "additionalProperties": {
-                "additionalProperties": true,
-                "type": "object"
-              },
+              "additionalProperties": false,
               "description": "Threshold overrides, keyed by alert name and then by tunable name. Only the thresholds\nthis chart declares in [`rules/tunables.yaml`](rules/tunables.yaml) can be moved, and that\nfile says what each one means and what it is bounded by; setting anything else is refused\nwith the list of names that would have worked.\n\nNot every number in a rule is a threshold somebody chose. A `histogram_quantile` compared\nagainst a bucket boundary reports an observed value and against anything else an\ninterpolated one, and a comparison against the top finite bucket has to be `\u003e=` because the\nfunction cannot return more than that. Both would look perfectly reasonable as a value and\nboth would quietly disarm paging, so neither is offered. Disable the alert and re-add your\nown through `additionalRuleGroups` if you need different arithmetic.\n\nExample: `{TankoVaultDatabasePoolSaturated: {saturation: 0.8}}`",
+              "properties": {
+                "TankoVaultAniListRateLimited": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "ratio": {
+                      "anyOf": [
+                        {
+                          "maximum": 1,
+                          "minimum": 0,
+                          "required": [],
+                          "type": "number"
+                        },
+                        {
+                          "pattern": "^-?[0-9]+(\\.[0-9]+)?([eE][-+]?[0-9]+)?$",
+                          "required": [],
+                          "type": "string"
+                        }
+                      ],
+                      "default": 0.25,
+                      "required": []
+                    }
+                  },
+                  "required": [],
+                  "type": "object"
+                },
+                "TankoVaultAuthFailureSurge": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "floor": {
+                      "anyOf": [
+                        {
+                          "minimum": 0,
+                          "required": [],
+                          "type": "number"
+                        },
+                        {
+                          "pattern": "^-?[0-9]+(\\.[0-9]+)?([eE][-+]?[0-9]+)?$",
+                          "required": [],
+                          "type": "string"
+                        }
+                      ],
+                      "default": 0.05,
+                      "required": []
+                    },
+                    "ratio": {
+                      "anyOf": [
+                        {
+                          "maximum": 1,
+                          "minimum": 0,
+                          "required": [],
+                          "type": "number"
+                        },
+                        {
+                          "pattern": "^-?[0-9]+(\\.[0-9]+)?([eE][-+]?[0-9]+)?$",
+                          "required": [],
+                          "type": "string"
+                        }
+                      ],
+                      "default": 0.5,
+                      "required": []
+                    }
+                  },
+                  "required": [],
+                  "type": "object"
+                },
+                "TankoVaultAuthRateLimitSurge": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "rate": {
+                      "anyOf": [
+                        {
+                          "minimum": 0,
+                          "required": [],
+                          "type": "number"
+                        },
+                        {
+                          "pattern": "^-?[0-9]+(\\.[0-9]+)?([eE][-+]?[0-9]+)?$",
+                          "required": [],
+                          "type": "string"
+                        }
+                      ],
+                      "default": 0.1,
+                      "required": []
+                    }
+                  },
+                  "required": [],
+                  "type": "object"
+                },
+                "TankoVaultChallengeSolvingFailing": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "ratio": {
+                      "anyOf": [
+                        {
+                          "maximum": 1,
+                          "minimum": 0,
+                          "required": [],
+                          "type": "number"
+                        },
+                        {
+                          "pattern": "^-?[0-9]+(\\.[0-9]+)?([eE][-+]?[0-9]+)?$",
+                          "required": [],
+                          "type": "string"
+                        }
+                      ],
+                      "default": 0.5,
+                      "required": []
+                    }
+                  },
+                  "required": [],
+                  "type": "object"
+                },
+                "TankoVaultChaptersAllRejected": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "minTasks": {
+                      "anyOf": [
+                        {
+                          "minimum": 1,
+                          "required": [],
+                          "type": "integer"
+                        },
+                        {
+                          "pattern": "^-?[0-9]+(\\.[0-9]+)?([eE][-+]?[0-9]+)?$",
+                          "required": [],
+                          "type": "string"
+                        }
+                      ],
+                      "default": 20,
+                      "required": []
+                    },
+                    "ratio": {
+                      "anyOf": [
+                        {
+                          "maximum": 1,
+                          "minimum": 0,
+                          "required": [],
+                          "type": "number"
+                        },
+                        {
+                          "pattern": "^-?[0-9]+(\\.[0-9]+)?([eE][-+]?[0-9]+)?$",
+                          "required": [],
+                          "type": "string"
+                        }
+                      ],
+                      "default": 0.9,
+                      "required": []
+                    }
+                  },
+                  "required": [],
+                  "type": "object"
+                },
+                "TankoVaultConcurrencyUnusuallyHigh": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "inFlight": {
+                      "anyOf": [
+                        {
+                          "minimum": 1,
+                          "required": [],
+                          "type": "integer"
+                        },
+                        {
+                          "pattern": "^-?[0-9]+(\\.[0-9]+)?([eE][-+]?[0-9]+)?$",
+                          "required": [],
+                          "type": "string"
+                        }
+                      ],
+                      "default": 200,
+                      "required": []
+                    }
+                  },
+                  "required": [],
+                  "type": "object"
+                },
+                "TankoVaultDatabasePoolSaturated": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "saturation": {
+                      "anyOf": [
+                        {
+                          "maximum": 1,
+                          "minimum": 0,
+                          "required": [],
+                          "type": "number"
+                        },
+                        {
+                          "pattern": "^-?[0-9]+(\\.[0-9]+)?([eE][-+]?[0-9]+)?$",
+                          "required": [],
+                          "type": "string"
+                        }
+                      ],
+                      "default": 0.9,
+                      "required": []
+                    }
+                  },
+                  "required": [],
+                  "type": "object"
+                },
+                "TankoVaultHighServerErrorRatio": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "floor": {
+                      "anyOf": [
+                        {
+                          "minimum": 0,
+                          "required": [],
+                          "type": "number"
+                        },
+                        {
+                          "pattern": "^-?[0-9]+(\\.[0-9]+)?([eE][-+]?[0-9]+)?$",
+                          "required": [],
+                          "type": "string"
+                        }
+                      ],
+                      "default": 0.05,
+                      "required": []
+                    },
+                    "ratio": {
+                      "anyOf": [
+                        {
+                          "maximum": 1,
+                          "minimum": 0,
+                          "required": [],
+                          "type": "number"
+                        },
+                        {
+                          "pattern": "^-?[0-9]+(\\.[0-9]+)?([eE][-+]?[0-9]+)?$",
+                          "required": [],
+                          "type": "string"
+                        }
+                      ],
+                      "default": 0.05,
+                      "required": []
+                    }
+                  },
+                  "required": [],
+                  "type": "object"
+                },
+                "TankoVaultNotificationDeliveryFailing": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "ratio": {
+                      "anyOf": [
+                        {
+                          "maximum": 1,
+                          "minimum": 0,
+                          "required": [],
+                          "type": "number"
+                        },
+                        {
+                          "pattern": "^-?[0-9]+(\\.[0-9]+)?([eE][-+]?[0-9]+)?$",
+                          "required": [],
+                          "type": "string"
+                        }
+                      ],
+                      "default": 0.5,
+                      "required": []
+                    }
+                  },
+                  "required": [],
+                  "type": "object"
+                },
+                "TankoVaultNotificationEventsFailing": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "ratio": {
+                      "anyOf": [
+                        {
+                          "maximum": 1,
+                          "minimum": 0,
+                          "required": [],
+                          "type": "number"
+                        },
+                        {
+                          "pattern": "^-?[0-9]+(\\.[0-9]+)?([eE][-+]?[0-9]+)?$",
+                          "required": [],
+                          "type": "string"
+                        }
+                      ],
+                      "default": 0.1,
+                      "required": []
+                    }
+                  },
+                  "required": [],
+                  "type": "object"
+                },
+                "TankoVaultProviderFetchFailing": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "floor": {
+                      "anyOf": [
+                        {
+                          "minimum": 0,
+                          "required": [],
+                          "type": "number"
+                        },
+                        {
+                          "pattern": "^-?[0-9]+(\\.[0-9]+)?([eE][-+]?[0-9]+)?$",
+                          "required": [],
+                          "type": "string"
+                        }
+                      ],
+                      "default": 0.01,
+                      "required": []
+                    },
+                    "ratio": {
+                      "anyOf": [
+                        {
+                          "maximum": 1,
+                          "minimum": 0,
+                          "required": [],
+                          "type": "number"
+                        },
+                        {
+                          "pattern": "^-?[0-9]+(\\.[0-9]+)?([eE][-+]?[0-9]+)?$",
+                          "required": [],
+                          "type": "string"
+                        }
+                      ],
+                      "default": 0.5,
+                      "required": []
+                    }
+                  },
+                  "required": [],
+                  "type": "object"
+                },
+                "TankoVaultProviderThrottlingHeavily": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "seconds": {
+                      "anyOf": [
+                        {
+                          "minimum": 0,
+                          "required": [],
+                          "type": "number"
+                        },
+                        {
+                          "pattern": "^-?[0-9]+(\\.[0-9]+)?([eE][-+]?[0-9]+)?$",
+                          "required": [],
+                          "type": "string"
+                        }
+                      ],
+                      "default": 0.5,
+                      "required": []
+                    }
+                  },
+                  "required": [],
+                  "type": "object"
+                },
+                "TankoVaultRecsysShelvesEmpty": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "minServes": {
+                      "anyOf": [
+                        {
+                          "minimum": 0,
+                          "required": [],
+                          "type": "number"
+                        },
+                        {
+                          "pattern": "^-?[0-9]+(\\.[0-9]+)?([eE][-+]?[0-9]+)?$",
+                          "required": [],
+                          "type": "string"
+                        }
+                      ],
+                      "default": 0.01,
+                      "required": []
+                    },
+                    "size": {
+                      "anyOf": [
+                        {
+                          "minimum": 1,
+                          "required": [],
+                          "type": "integer"
+                        },
+                        {
+                          "pattern": "^-?[0-9]+(\\.[0-9]+)?([eE][-+]?[0-9]+)?$",
+                          "required": [],
+                          "type": "string"
+                        }
+                      ],
+                      "default": 1,
+                      "required": []
+                    }
+                  },
+                  "required": [],
+                  "type": "object"
+                },
+                "TankoVaultRenderTierFailing": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "ratio": {
+                      "anyOf": [
+                        {
+                          "maximum": 1,
+                          "minimum": 0,
+                          "required": [],
+                          "type": "number"
+                        },
+                        {
+                          "pattern": "^-?[0-9]+(\\.[0-9]+)?([eE][-+]?[0-9]+)?$",
+                          "required": [],
+                          "type": "string"
+                        }
+                      ],
+                      "default": 0.5,
+                      "required": []
+                    }
+                  },
+                  "required": [],
+                  "type": "object"
+                },
+                "TankoVaultScanIngestBound": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "minTasks": {
+                      "anyOf": [
+                        {
+                          "minimum": 1,
+                          "required": [],
+                          "type": "integer"
+                        },
+                        {
+                          "pattern": "^-?[0-9]+(\\.[0-9]+)?([eE][-+]?[0-9]+)?$",
+                          "required": [],
+                          "type": "string"
+                        }
+                      ],
+                      "default": 20,
+                      "required": []
+                    },
+                    "paceCeiling": {
+                      "anyOf": [
+                        {
+                          "maximum": 1,
+                          "minimum": 0,
+                          "required": [],
+                          "type": "number"
+                        },
+                        {
+                          "pattern": "^-?[0-9]+(\\.[0-9]+)?([eE][-+]?[0-9]+)?$",
+                          "required": [],
+                          "type": "string"
+                        }
+                      ],
+                      "default": 0.25,
+                      "required": []
+                    },
+                    "stageRatio": {
+                      "anyOf": [
+                        {
+                          "maximum": 1,
+                          "minimum": 0,
+                          "required": [],
+                          "type": "number"
+                        },
+                        {
+                          "pattern": "^-?[0-9]+(\\.[0-9]+)?([eE][-+]?[0-9]+)?$",
+                          "required": [],
+                          "type": "string"
+                        }
+                      ],
+                      "default": 0.5,
+                      "required": []
+                    }
+                  },
+                  "required": [],
+                  "type": "object"
+                },
+                "TankoVaultScanLaneUnfair": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "minProviders": {
+                      "anyOf": [
+                        {
+                          "minimum": 2,
+                          "required": [],
+                          "type": "integer"
+                        },
+                        {
+                          "pattern": "^-?[0-9]+(\\.[0-9]+)?([eE][-+]?[0-9]+)?$",
+                          "required": [],
+                          "type": "string"
+                        }
+                      ],
+                      "default": 3,
+                      "required": []
+                    },
+                    "minTasks": {
+                      "anyOf": [
+                        {
+                          "minimum": 1,
+                          "required": [],
+                          "type": "integer"
+                        },
+                        {
+                          "pattern": "^-?[0-9]+(\\.[0-9]+)?([eE][-+]?[0-9]+)?$",
+                          "required": [],
+                          "type": "string"
+                        }
+                      ],
+                      "default": 100,
+                      "required": []
+                    },
+                    "share": {
+                      "anyOf": [
+                        {
+                          "maximum": 1,
+                          "minimum": 0,
+                          "required": [],
+                          "type": "number"
+                        },
+                        {
+                          "pattern": "^-?[0-9]+(\\.[0-9]+)?([eE][-+]?[0-9]+)?$",
+                          "required": [],
+                          "type": "string"
+                        }
+                      ],
+                      "default": 0.9,
+                      "required": []
+                    }
+                  },
+                  "required": [],
+                  "type": "object"
+                },
+                "TankoVaultScanPaceBound": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "minTasks": {
+                      "anyOf": [
+                        {
+                          "minimum": 1,
+                          "required": [],
+                          "type": "integer"
+                        },
+                        {
+                          "pattern": "^-?[0-9]+(\\.[0-9]+)?([eE][-+]?[0-9]+)?$",
+                          "required": [],
+                          "type": "string"
+                        }
+                      ],
+                      "default": 20,
+                      "required": []
+                    },
+                    "paceRatio": {
+                      "anyOf": [
+                        {
+                          "maximum": 1,
+                          "minimum": 0,
+                          "required": [],
+                          "type": "number"
+                        },
+                        {
+                          "pattern": "^-?[0-9]+(\\.[0-9]+)?([eE][-+]?[0-9]+)?$",
+                          "required": [],
+                          "type": "string"
+                        }
+                      ],
+                      "default": 0.8,
+                      "required": []
+                    }
+                  },
+                  "required": [],
+                  "type": "object"
+                },
+                "TankoVaultScanTasksFailing": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "ratio": {
+                      "anyOf": [
+                        {
+                          "maximum": 1,
+                          "minimum": 0,
+                          "required": [],
+                          "type": "number"
+                        },
+                        {
+                          "pattern": "^-?[0-9]+(\\.[0-9]+)?([eE][-+]?[0-9]+)?$",
+                          "required": [],
+                          "type": "string"
+                        }
+                      ],
+                      "default": 0.5,
+                      "required": []
+                    }
+                  },
+                  "required": [],
+                  "type": "object"
+                },
+                "TankoVaultServerErrorsCritical": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "floor": {
+                      "anyOf": [
+                        {
+                          "minimum": 0,
+                          "required": [],
+                          "type": "number"
+                        },
+                        {
+                          "pattern": "^-?[0-9]+(\\.[0-9]+)?([eE][-+]?[0-9]+)?$",
+                          "required": [],
+                          "type": "string"
+                        }
+                      ],
+                      "default": 0.05,
+                      "required": []
+                    },
+                    "ratio": {
+                      "anyOf": [
+                        {
+                          "maximum": 1,
+                          "minimum": 0,
+                          "required": [],
+                          "type": "number"
+                        },
+                        {
+                          "pattern": "^-?[0-9]+(\\.[0-9]+)?([eE][-+]?[0-9]+)?$",
+                          "required": [],
+                          "type": "string"
+                        }
+                      ],
+                      "default": 0.25,
+                      "required": []
+                    }
+                  },
+                  "required": [],
+                  "type": "object"
+                },
+                "TankoVaultSseEventsUndeliverable": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "ratio": {
+                      "anyOf": [
+                        {
+                          "maximum": 1,
+                          "minimum": 0,
+                          "required": [],
+                          "type": "number"
+                        },
+                        {
+                          "pattern": "^-?[0-9]+(\\.[0-9]+)?([eE][-+]?[0-9]+)?$",
+                          "required": [],
+                          "type": "string"
+                        }
+                      ],
+                      "default": 0.25,
+                      "required": []
+                    }
+                  },
+                  "required": [],
+                  "type": "object"
+                }
+              },
               "required": [],
               "title": "thresholds",
               "type": "object"

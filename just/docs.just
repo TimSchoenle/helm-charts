@@ -16,16 +16,48 @@ docs: schema chart-readmes
 # Needs the dependency tree extracted, not just built: the generator resolves the library chart's
 # definitions from `charts/<chart>/charts/common/`. Run `just deps` first.
 #
-# Two invocations, because one cannot cover both. Walking `charts/` finds `charts/common` and the
-# extracted copy of it under every consumer, and the generator keys its results by chart *name* —
-# so the vendored copies shadow the library itself and its own `values.schema.json` is never
-# written. That is silent: the stale file stays checked in and the run exits 0. The second pass
-# points straight at the library, with `--no-dependencies` because a library chart has none.
+# Three invocations. The first regenerates the `@schema` blocks that are themselves derived — the
+# alert preset lists, which enumerate names out of `rules/*.yml` and `rules/tunables.yaml` — and
+# has to run *before* helm-schema, since it edits helm-schema's input.
+#
+# The other two are helm-schema, because one pass cannot cover both. Walking `charts/` finds
+# `charts/common` and the extracted copy of it under every consumer, and the generator keys its
+# results by chart *name* — so the vendored copies shadow the library itself and its own
+# `values.schema.json` is never written. That is silent: the stale file stays checked in and the
+# run exits 0. The second pass points straight at the library, with `--no-dependencies` because a
+# library chart has none.
 [doc("Generate every chart's values.schema.json from the @schema blocks in its values.yaml")]
 [group('docs')]
-schema:
+schema: schema-presets
     helm schema --add-schema-reference --chart-search-root {{ charts }}
     helm schema --add-schema-reference --chart-search-root {{ charts }}/common --no-dependencies
+
+# Regenerate the alert presets' `@schema` blocks from the rules they constrain.
+#
+# `disabledAlerts` enumerates the alerts the chart ships, `thresholds` enumerates what
+# `rules/tunables.yaml` declares, and so on for all seven. Hand-written, those lists are a copy of
+# a fact that already exists in the rule files, and the copy nothing regenerates is the one that
+# goes stale — so they are derived, and `just check-preset-schema` fails the build when they drift.
+[doc("Regenerate the alert presets' @schema blocks from the rules they constrain")]
+[group('docs')]
+schema-presets:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    {{ resolve_python }}
+    "$python" {{ scripts }}/schema-presets.py --charts {{ charts }}
+
+# Fail when a chart's alert preset schemas no longer match its rules.
+#
+# The asserting half of `schema-presets`. In `just check` because a rule renamed or retired without
+# a regeneration leaves a schema that rejects a name the chart now ships, or accepts one it does
+# not — and both read as the chart's bug rather than the schema's.
+[doc("Fail when a chart's alert preset schemas no longer match its rules")]
+[group('docs')]
+check-preset-schema:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    {{ resolve_python }}
+    "$python" {{ scripts }}/schema-presets.py --charts {{ charts }} --check
 
 # Render every chart's README.md from its README.md.gotmpl.
 [group('docs')]

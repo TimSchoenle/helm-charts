@@ -2180,6 +2180,228 @@ metrics:
     # and never loaded.
     labels: {}
 
+    # @schema
+    # type: array
+    # items:
+    #   enum: [paperless-ngx-alerts]
+    # @schema
+    # -- Rule groups to drop entirely, by name. Refused when the name is not one this chart
+    # ships, and refused for a group holding recording rules: dashboards and other alerts read
+    # the series those produce, so dropping one leaves panels blank and expressions matching
+    # nothing, and neither reports an error. Use `disabledAlerts` for the alerts that consume it.
+    #
+    # Example: `[paperless-ngx-alerts]`
+    disabledGroups: []
+
+    # @schema
+    # type: array
+    # items:
+    #   enum: [
+    #       PaperlessNgxAbsent, PaperlessNgxBackupFailed, PaperlessNgxBackupStale, PaperlessNgxBackupSuspended,
+    #       PaperlessNgxCrashLooping, PaperlessNgxDatastoreDown, PaperlessNgxDown, PaperlessNgxOOMKilled,
+    #       PaperlessNgxRestarting, PaperlessNgxVolumeAlmostFull, PaperlessNgxVolumeFillingUp
+    #     ]
+    # @schema
+    # -- Alerts to drop, by name. Refused when the name is not one this chart ships — a typo here
+    # is the one failure the whole feature must not produce, because it leaves the values file
+    # saying an alert is off while it still pages. The rules stay in `rules/` and stay tested;
+    # only the rendered object loses them.
+    #
+    # Example: `[PaperlessNgxRestarting]`
+    disabledAlerts: []
+
+    # @schema
+    # type: object
+    # additionalProperties:
+    #   type: string
+    # @schema
+    # -- Labels merged into every alert this chart ships, for Alertmanager routing. This is how a
+    # staging release keeps itself out of the production on-call rotation. Applied to alerting
+    # rules only: a label on a recording rule changes the identity of the series it records, and
+    # every dashboard panel and expression reading it would silently stop matching.
+    #
+    # These beat the labels in the rule files, which is the point of them, and lose to
+    # `severityOverrides`, which is more specific.
+    #
+    # Example: `{team: platform, tier: staging}`
+    additionalRuleLabels: {}
+
+    # @schema
+    # type: object
+    # additionalProperties: false
+    # properties:
+    #   PaperlessNgxAbsent:
+    #     type: string
+    #     minLength: 1
+    #   PaperlessNgxBackupFailed:
+    #     type: string
+    #     minLength: 1
+    #   PaperlessNgxBackupStale:
+    #     type: string
+    #     minLength: 1
+    #   PaperlessNgxBackupSuspended:
+    #     type: string
+    #     minLength: 1
+    #   PaperlessNgxCrashLooping:
+    #     type: string
+    #     minLength: 1
+    #   PaperlessNgxDatastoreDown:
+    #     type: string
+    #     minLength: 1
+    #   PaperlessNgxDown:
+    #     type: string
+    #     minLength: 1
+    #   PaperlessNgxOOMKilled:
+    #     type: string
+    #     minLength: 1
+    #   PaperlessNgxRestarting:
+    #     type: string
+    #     minLength: 1
+    #   PaperlessNgxVolumeAlmostFull:
+    #     type: string
+    #     minLength: 1
+    #   PaperlessNgxVolumeFillingUp:
+    #     type: string
+    #     minLength: 1
+    # @schema
+    # -- Per-alert `severity` label, keyed by alert name. The most specific setting there is, so
+    # it beats both the rule file and `additionalRuleLabels`. Refused for an alert this chart
+    # does not ship, and for one the same values disable.
+    #
+    # Example: `{PaperlessNgxBackupStale: warning}`
+    severityOverrides: {}
+
+    # @schema
+    # type: object
+    # additionalProperties: false
+    # properties:
+    #   PaperlessNgxAbsent:
+    #     type: string
+    #     pattern: '^([0-9]+(ms|[smhdwy]))+$'
+    #   PaperlessNgxBackupFailed:
+    #     type: string
+    #     pattern: '^([0-9]+(ms|[smhdwy]))+$'
+    #   PaperlessNgxBackupStale:
+    #     type: string
+    #     pattern: '^([0-9]+(ms|[smhdwy]))+$'
+    #   PaperlessNgxBackupSuspended:
+    #     type: string
+    #     pattern: '^([0-9]+(ms|[smhdwy]))+$'
+    #   PaperlessNgxCrashLooping:
+    #     type: string
+    #     pattern: '^([0-9]+(ms|[smhdwy]))+$'
+    #   PaperlessNgxDatastoreDown:
+    #     type: string
+    #     pattern: '^([0-9]+(ms|[smhdwy]))+$'
+    #   PaperlessNgxDown:
+    #     type: string
+    #     pattern: '^([0-9]+(ms|[smhdwy]))+$'
+    #   PaperlessNgxOOMKilled:
+    #     type: string
+    #     pattern: '^([0-9]+(ms|[smhdwy]))+$'
+    #   PaperlessNgxRestarting:
+    #     type: string
+    #     pattern: '^([0-9]+(ms|[smhdwy]))+$'
+    #   PaperlessNgxVolumeAlmostFull:
+    #     type: string
+    #     pattern: '^([0-9]+(ms|[smhdwy]))+$'
+    #   PaperlessNgxVolumeFillingUp:
+    #     type: string
+    #     pattern: '^([0-9]+(ms|[smhdwy]))+$'
+    # @schema
+    # -- Per-alert `for` duration, keyed by alert name — how long the condition must hold before
+    # the alert fires. A Prometheus duration such as `30s`, `15m` or `1h30m`; write zero as `0m`
+    # so YAML keeps it a string. Anything Prometheus cannot parse is refused here, because it
+    # would otherwise be refused at load time and take the alert's whole rule group down with it.
+    #
+    # Example: `{PaperlessNgxDown: 10m}`
+    forOverrides: {}
+
+    # @schema
+    # type: object
+    # additionalProperties: false
+    # properties:
+    #   PaperlessNgxBackupStale:
+    #     type: object
+    #     additionalProperties: false
+    #     properties:
+    #       age:
+    #         default: 172800
+    #         anyOf: [{type: integer, minimum: 1}, {type: string, pattern: '^-?[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?$'}]
+    #   PaperlessNgxRestarting:
+    #     type: object
+    #     additionalProperties: false
+    #     properties:
+    #       restarts:
+    #         default: 3
+    #         anyOf: [{type: integer, minimum: 1}, {type: string, pattern: '^-?[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?$'}]
+    #   PaperlessNgxVolumeAlmostFull:
+    #     type: object
+    #     additionalProperties: false
+    #     properties:
+    #       ratio:
+    #         default: 0.95
+    #         anyOf: [{type: number, minimum: 0, maximum: 1}, {type: string, pattern: '^-?[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?$'}]
+    #   PaperlessNgxVolumeFillingUp:
+    #     type: object
+    #     additionalProperties: false
+    #     properties:
+    #       ratio:
+    #         default: 0.85
+    #         anyOf: [{type: number, minimum: 0, maximum: 1}, {type: string, pattern: '^-?[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?$'}]
+    # @schema
+    # -- Threshold overrides, keyed by alert name and then by tunable name. Only the thresholds
+    # this chart declares in [`rules/tunables.yaml`](rules/tunables.yaml) can be moved, and that
+    # file says what each one means and what it is bounded by; setting anything else is refused
+    # with the list of names that would have worked.
+    #
+    # Not every number in a rule is a threshold somebody chose. A `histogram_quantile` compared
+    # against a bucket boundary reports an observed value and against anything else an
+    # interpolated one, and a comparison against the top finite bucket has to be `>=` because the
+    # function cannot return more than that. Both would look perfectly reasonable as a value and
+    # both would quietly disarm paging, so neither is offered. Disable the alert and re-add your
+    # own through `additionalRuleGroups` if you need different arithmetic.
+    #
+    # Example: `{PaperlessNgxVolumeFillingUp: {ratio: 0.75}}`
+    thresholds: {}
+
+    # @schema
+    # type: array
+    # items:
+    #   type: object
+    #   required: [name, rules]
+    #   properties:
+    #     name:
+    #       type: string
+    #       minLength: 1
+    #     interval:
+    #       type: string
+    #       pattern: '^([0-9]+(ms|[smhdwy]))+$'
+    #     limit:
+    #       type: integer
+    #       minimum: 0
+    #     rules:
+    #       type: array
+    #       minItems: 1
+    #       items:
+    #         type: object
+    # @schema
+    # -- Extra rule groups, appended to the ones this chart ships. Each entry is a Prometheus rule
+    # group — a `name`, a list of `rules`, optionally an `interval` — emitted as written: they are
+    # not passed through Helm's template engine, so a `$labels` reference in an annotation reaches
+    # Prometheus intact instead of being resolved to an empty string on the way past. That also
+    # means no `{{ .Release.Name }}` in them.
+    #
+    # `additionalRuleLabels` does reach these, because it describes the release rather than the
+    # rules — skipping them would route exactly the alerts you wrote yourself back into the
+    # rotation you were keeping this install out of. Precedence flips: a label you set on your own
+    # rule wins, since it is already you speaking rather than a default of the chart's.
+    #
+    # This is what makes `disabledAlerts` honest: switch a shipped rule off and write your own
+    # with the arithmetic you wanted. A group whose name collides with a shipped one is refused,
+    # because Prometheus rejects the whole object rather than the duplicate.
+    additionalRuleGroups: []
+
   # @schema
   # additionalProperties: true
   # @schema

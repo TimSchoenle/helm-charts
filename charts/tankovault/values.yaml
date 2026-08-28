@@ -3536,6 +3536,558 @@ metrics:
     # namespace cannot be told apart by either mechanism.
     scope: namespace
 
+    # @schema
+    # type: array
+    # items:
+    #   enum: [
+    #       tankovault-anilist, tankovault-availability, tankovault-database, tankovault-edge-policy,
+    #       tankovault-fetch-tier, tankovault-http, tankovault-notifications, tankovault-providers,
+    #       tankovault-recsys, tankovault-saturation, tankovault-scan
+    #     ]
+    # @schema
+    # -- Rule groups to drop entirely, by name. Refused when the name is not one this chart
+    # ships, and refused for a group holding recording rules: dashboards and other alerts read
+    # the series those produce, so dropping one leaves panels blank and expressions matching
+    # nothing, and neither reports an error. Use `disabledAlerts` for the alerts that consume it.
+    #
+    # Example: `[tankovault-recsys, tankovault-anilist]`
+    disabledGroups: []
+
+    # @schema
+    # type: array
+    # items:
+    #   enum: [
+    #       TankoVaultAniListRateLimited, TankoVaultAuthFailureSurge, TankoVaultAuthRateLimitSurge, TankoVaultChallengeSolvingFailing,
+    #       TankoVaultChaptersAllRejected, TankoVaultConcurrencyUnusuallyHigh, TankoVaultDatabasePoolSaturated, TankoVaultDependencyDown,
+    #       TankoVaultDisabledFeatureStillCalled, TankoVaultFastScanBacklogImpossible, TankoVaultFastScanLanesStarved, TankoVaultHighServerErrorRatio,
+    #       TankoVaultLatencyCritical, TankoVaultLatencyDegraded, TankoVaultNatsExporterDown, TankoVaultNatsSlowConsumers,
+    #       TankoVaultNoSchedulerLeader, TankoVaultNotificationBacklogNotDraining, TankoVaultNotificationDeliveryFailing, TankoVaultNotificationEventsFailing,
+    #       TankoVaultProviderFetchFailing, TankoVaultProviderThrottlingHeavily, TankoVaultRateLimiterFailingOpen, TankoVaultRecsysBuildFailing,
+    #       TankoVaultRecsysShelvesEmpty, TankoVaultRefusedFetchTargets, TankoVaultRenderTierFailing, TankoVaultRequestPathDown,
+    #       TankoVaultScanIngestBound, TankoVaultScanLaneUnfair, TankoVaultScanPaceBound, TankoVaultScanTaskRetryStorm,
+    #       TankoVaultScanTasksFailing, TankoVaultServerErrorsCritical, TankoVaultServiceDown, TankoVaultServiceNotReady,
+    #       TankoVaultSplitBrainScheduler, TankoVaultSseEventsUndeliverable, TankoVaultVersionSkew, TankoVaultWorkerTargetsAbsent
+    #     ]
+    # @schema
+    # -- Alerts to drop, by name. Refused when the name is not one this chart ships — a typo here
+    # is the one failure the whole feature must not produce, because it leaves the values file
+    # saying an alert is off while it still pages. The rules stay in `rules/` and stay tested;
+    # only the rendered object loses them.
+    #
+    # Example: `[TankoVaultVersionSkew, TankoVaultScanPaceBound]`
+    disabledAlerts: []
+
+    # @schema
+    # type: object
+    # additionalProperties:
+    #   type: string
+    # @schema
+    # -- Labels merged into every alert this chart ships, for Alertmanager routing. This is how a
+    # staging release keeps itself out of the production on-call rotation. Applied to alerting
+    # rules only: a label on a recording rule changes the identity of the series it records, and
+    # every dashboard panel and expression reading it would silently stop matching.
+    #
+    # These beat the labels in the rule files, which is the point of them, and lose to
+    # `severityOverrides`, which is more specific.
+    #
+    # Example: `{team: platform, tier: staging}`
+    additionalRuleLabels: {}
+
+    # @schema
+    # type: object
+    # additionalProperties: false
+    # properties:
+    #   TankoVaultAniListRateLimited:
+    #     type: string
+    #     minLength: 1
+    #   TankoVaultAuthFailureSurge:
+    #     type: string
+    #     minLength: 1
+    #   TankoVaultAuthRateLimitSurge:
+    #     type: string
+    #     minLength: 1
+    #   TankoVaultChallengeSolvingFailing:
+    #     type: string
+    #     minLength: 1
+    #   TankoVaultChaptersAllRejected:
+    #     type: string
+    #     minLength: 1
+    #   TankoVaultConcurrencyUnusuallyHigh:
+    #     type: string
+    #     minLength: 1
+    #   TankoVaultDatabasePoolSaturated:
+    #     type: string
+    #     minLength: 1
+    #   TankoVaultDependencyDown:
+    #     type: string
+    #     minLength: 1
+    #   TankoVaultDisabledFeatureStillCalled:
+    #     type: string
+    #     minLength: 1
+    #   TankoVaultFastScanBacklogImpossible:
+    #     type: string
+    #     minLength: 1
+    #   TankoVaultFastScanLanesStarved:
+    #     type: string
+    #     minLength: 1
+    #   TankoVaultHighServerErrorRatio:
+    #     type: string
+    #     minLength: 1
+    #   TankoVaultLatencyCritical:
+    #     type: string
+    #     minLength: 1
+    #   TankoVaultLatencyDegraded:
+    #     type: string
+    #     minLength: 1
+    #   TankoVaultNatsExporterDown:
+    #     type: string
+    #     minLength: 1
+    #   TankoVaultNatsSlowConsumers:
+    #     type: string
+    #     minLength: 1
+    #   TankoVaultNoSchedulerLeader:
+    #     type: string
+    #     minLength: 1
+    #   TankoVaultNotificationBacklogNotDraining:
+    #     type: string
+    #     minLength: 1
+    #   TankoVaultNotificationDeliveryFailing:
+    #     type: string
+    #     minLength: 1
+    #   TankoVaultNotificationEventsFailing:
+    #     type: string
+    #     minLength: 1
+    #   TankoVaultProviderFetchFailing:
+    #     type: string
+    #     minLength: 1
+    #   TankoVaultProviderThrottlingHeavily:
+    #     type: string
+    #     minLength: 1
+    #   TankoVaultRateLimiterFailingOpen:
+    #     type: string
+    #     minLength: 1
+    #   TankoVaultRecsysBuildFailing:
+    #     type: string
+    #     minLength: 1
+    #   TankoVaultRecsysShelvesEmpty:
+    #     type: string
+    #     minLength: 1
+    #   TankoVaultRefusedFetchTargets:
+    #     type: string
+    #     minLength: 1
+    #   TankoVaultRenderTierFailing:
+    #     type: string
+    #     minLength: 1
+    #   TankoVaultRequestPathDown:
+    #     type: string
+    #     minLength: 1
+    #   TankoVaultScanIngestBound:
+    #     type: string
+    #     minLength: 1
+    #   TankoVaultScanLaneUnfair:
+    #     type: string
+    #     minLength: 1
+    #   TankoVaultScanPaceBound:
+    #     type: string
+    #     minLength: 1
+    #   TankoVaultScanTaskRetryStorm:
+    #     type: string
+    #     minLength: 1
+    #   TankoVaultScanTasksFailing:
+    #     type: string
+    #     minLength: 1
+    #   TankoVaultServerErrorsCritical:
+    #     type: string
+    #     minLength: 1
+    #   TankoVaultServiceDown:
+    #     type: string
+    #     minLength: 1
+    #   TankoVaultServiceNotReady:
+    #     type: string
+    #     minLength: 1
+    #   TankoVaultSplitBrainScheduler:
+    #     type: string
+    #     minLength: 1
+    #   TankoVaultSseEventsUndeliverable:
+    #     type: string
+    #     minLength: 1
+    #   TankoVaultVersionSkew:
+    #     type: string
+    #     minLength: 1
+    #   TankoVaultWorkerTargetsAbsent:
+    #     type: string
+    #     minLength: 1
+    # @schema
+    # -- Per-alert `severity` label, keyed by alert name. The most specific setting there is, so
+    # it beats both the rule file and `additionalRuleLabels`. Refused for an alert this chart
+    # does not ship, and for one the same values disable.
+    #
+    # Example: `{TankoVaultVersionSkew: warning}`
+    severityOverrides: {}
+
+    # @schema
+    # type: object
+    # additionalProperties: false
+    # properties:
+    #   TankoVaultAniListRateLimited:
+    #     type: string
+    #     pattern: '^([0-9]+(ms|[smhdwy]))+$'
+    #   TankoVaultAuthFailureSurge:
+    #     type: string
+    #     pattern: '^([0-9]+(ms|[smhdwy]))+$'
+    #   TankoVaultAuthRateLimitSurge:
+    #     type: string
+    #     pattern: '^([0-9]+(ms|[smhdwy]))+$'
+    #   TankoVaultChallengeSolvingFailing:
+    #     type: string
+    #     pattern: '^([0-9]+(ms|[smhdwy]))+$'
+    #   TankoVaultChaptersAllRejected:
+    #     type: string
+    #     pattern: '^([0-9]+(ms|[smhdwy]))+$'
+    #   TankoVaultConcurrencyUnusuallyHigh:
+    #     type: string
+    #     pattern: '^([0-9]+(ms|[smhdwy]))+$'
+    #   TankoVaultDatabasePoolSaturated:
+    #     type: string
+    #     pattern: '^([0-9]+(ms|[smhdwy]))+$'
+    #   TankoVaultDependencyDown:
+    #     type: string
+    #     pattern: '^([0-9]+(ms|[smhdwy]))+$'
+    #   TankoVaultDisabledFeatureStillCalled:
+    #     type: string
+    #     pattern: '^([0-9]+(ms|[smhdwy]))+$'
+    #   TankoVaultFastScanBacklogImpossible:
+    #     type: string
+    #     pattern: '^([0-9]+(ms|[smhdwy]))+$'
+    #   TankoVaultFastScanLanesStarved:
+    #     type: string
+    #     pattern: '^([0-9]+(ms|[smhdwy]))+$'
+    #   TankoVaultHighServerErrorRatio:
+    #     type: string
+    #     pattern: '^([0-9]+(ms|[smhdwy]))+$'
+    #   TankoVaultLatencyCritical:
+    #     type: string
+    #     pattern: '^([0-9]+(ms|[smhdwy]))+$'
+    #   TankoVaultLatencyDegraded:
+    #     type: string
+    #     pattern: '^([0-9]+(ms|[smhdwy]))+$'
+    #   TankoVaultNatsExporterDown:
+    #     type: string
+    #     pattern: '^([0-9]+(ms|[smhdwy]))+$'
+    #   TankoVaultNatsSlowConsumers:
+    #     type: string
+    #     pattern: '^([0-9]+(ms|[smhdwy]))+$'
+    #   TankoVaultNoSchedulerLeader:
+    #     type: string
+    #     pattern: '^([0-9]+(ms|[smhdwy]))+$'
+    #   TankoVaultNotificationBacklogNotDraining:
+    #     type: string
+    #     pattern: '^([0-9]+(ms|[smhdwy]))+$'
+    #   TankoVaultNotificationDeliveryFailing:
+    #     type: string
+    #     pattern: '^([0-9]+(ms|[smhdwy]))+$'
+    #   TankoVaultNotificationEventsFailing:
+    #     type: string
+    #     pattern: '^([0-9]+(ms|[smhdwy]))+$'
+    #   TankoVaultProviderFetchFailing:
+    #     type: string
+    #     pattern: '^([0-9]+(ms|[smhdwy]))+$'
+    #   TankoVaultProviderThrottlingHeavily:
+    #     type: string
+    #     pattern: '^([0-9]+(ms|[smhdwy]))+$'
+    #   TankoVaultRateLimiterFailingOpen:
+    #     type: string
+    #     pattern: '^([0-9]+(ms|[smhdwy]))+$'
+    #   TankoVaultRecsysBuildFailing:
+    #     type: string
+    #     pattern: '^([0-9]+(ms|[smhdwy]))+$'
+    #   TankoVaultRecsysShelvesEmpty:
+    #     type: string
+    #     pattern: '^([0-9]+(ms|[smhdwy]))+$'
+    #   TankoVaultRefusedFetchTargets:
+    #     type: string
+    #     pattern: '^([0-9]+(ms|[smhdwy]))+$'
+    #   TankoVaultRenderTierFailing:
+    #     type: string
+    #     pattern: '^([0-9]+(ms|[smhdwy]))+$'
+    #   TankoVaultRequestPathDown:
+    #     type: string
+    #     pattern: '^([0-9]+(ms|[smhdwy]))+$'
+    #   TankoVaultScanIngestBound:
+    #     type: string
+    #     pattern: '^([0-9]+(ms|[smhdwy]))+$'
+    #   TankoVaultScanLaneUnfair:
+    #     type: string
+    #     pattern: '^([0-9]+(ms|[smhdwy]))+$'
+    #   TankoVaultScanPaceBound:
+    #     type: string
+    #     pattern: '^([0-9]+(ms|[smhdwy]))+$'
+    #   TankoVaultScanTaskRetryStorm:
+    #     type: string
+    #     pattern: '^([0-9]+(ms|[smhdwy]))+$'
+    #   TankoVaultScanTasksFailing:
+    #     type: string
+    #     pattern: '^([0-9]+(ms|[smhdwy]))+$'
+    #   TankoVaultServerErrorsCritical:
+    #     type: string
+    #     pattern: '^([0-9]+(ms|[smhdwy]))+$'
+    #   TankoVaultServiceDown:
+    #     type: string
+    #     pattern: '^([0-9]+(ms|[smhdwy]))+$'
+    #   TankoVaultServiceNotReady:
+    #     type: string
+    #     pattern: '^([0-9]+(ms|[smhdwy]))+$'
+    #   TankoVaultSplitBrainScheduler:
+    #     type: string
+    #     pattern: '^([0-9]+(ms|[smhdwy]))+$'
+    #   TankoVaultSseEventsUndeliverable:
+    #     type: string
+    #     pattern: '^([0-9]+(ms|[smhdwy]))+$'
+    #   TankoVaultVersionSkew:
+    #     type: string
+    #     pattern: '^([0-9]+(ms|[smhdwy]))+$'
+    #   TankoVaultWorkerTargetsAbsent:
+    #     type: string
+    #     pattern: '^([0-9]+(ms|[smhdwy]))+$'
+    # @schema
+    # -- Per-alert `for` duration, keyed by alert name — how long the condition must hold before
+    # the alert fires. A Prometheus duration such as `30s`, `15m` or `1h30m`; write zero as `0m`
+    # so YAML keeps it a string. Anything Prometheus cannot parse is refused here, because it
+    # would otherwise be refused at load time and take the alert's whole rule group down with it.
+    #
+    # Example: `{TankoVaultServiceDown: 15m}`
+    forOverrides: {}
+
+    # @schema
+    # type: object
+    # additionalProperties: false
+    # properties:
+    #   TankoVaultAniListRateLimited:
+    #     type: object
+    #     additionalProperties: false
+    #     properties:
+    #       ratio:
+    #         default: 0.25
+    #         anyOf: [{type: number, minimum: 0, maximum: 1}, {type: string, pattern: '^-?[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?$'}]
+    #   TankoVaultAuthFailureSurge:
+    #     type: object
+    #     additionalProperties: false
+    #     properties:
+    #       floor:
+    #         default: 0.05
+    #         anyOf: [{type: number, minimum: 0}, {type: string, pattern: '^-?[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?$'}]
+    #       ratio:
+    #         default: 0.5
+    #         anyOf: [{type: number, minimum: 0, maximum: 1}, {type: string, pattern: '^-?[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?$'}]
+    #   TankoVaultAuthRateLimitSurge:
+    #     type: object
+    #     additionalProperties: false
+    #     properties:
+    #       rate:
+    #         default: 0.1
+    #         anyOf: [{type: number, minimum: 0}, {type: string, pattern: '^-?[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?$'}]
+    #   TankoVaultChallengeSolvingFailing:
+    #     type: object
+    #     additionalProperties: false
+    #     properties:
+    #       ratio:
+    #         default: 0.5
+    #         anyOf: [{type: number, minimum: 0, maximum: 1}, {type: string, pattern: '^-?[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?$'}]
+    #   TankoVaultChaptersAllRejected:
+    #     type: object
+    #     additionalProperties: false
+    #     properties:
+    #       minTasks:
+    #         default: 20
+    #         anyOf: [{type: integer, minimum: 1}, {type: string, pattern: '^-?[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?$'}]
+    #       ratio:
+    #         default: 0.9
+    #         anyOf: [{type: number, minimum: 0, maximum: 1}, {type: string, pattern: '^-?[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?$'}]
+    #   TankoVaultConcurrencyUnusuallyHigh:
+    #     type: object
+    #     additionalProperties: false
+    #     properties:
+    #       inFlight:
+    #         default: 200
+    #         anyOf: [{type: integer, minimum: 1}, {type: string, pattern: '^-?[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?$'}]
+    #   TankoVaultDatabasePoolSaturated:
+    #     type: object
+    #     additionalProperties: false
+    #     properties:
+    #       saturation:
+    #         default: 0.9
+    #         anyOf: [{type: number, minimum: 0, maximum: 1}, {type: string, pattern: '^-?[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?$'}]
+    #   TankoVaultHighServerErrorRatio:
+    #     type: object
+    #     additionalProperties: false
+    #     properties:
+    #       floor:
+    #         default: 0.05
+    #         anyOf: [{type: number, minimum: 0}, {type: string, pattern: '^-?[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?$'}]
+    #       ratio:
+    #         default: 0.05
+    #         anyOf: [{type: number, minimum: 0, maximum: 1}, {type: string, pattern: '^-?[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?$'}]
+    #   TankoVaultNotificationDeliveryFailing:
+    #     type: object
+    #     additionalProperties: false
+    #     properties:
+    #       ratio:
+    #         default: 0.5
+    #         anyOf: [{type: number, minimum: 0, maximum: 1}, {type: string, pattern: '^-?[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?$'}]
+    #   TankoVaultNotificationEventsFailing:
+    #     type: object
+    #     additionalProperties: false
+    #     properties:
+    #       ratio:
+    #         default: 0.1
+    #         anyOf: [{type: number, minimum: 0, maximum: 1}, {type: string, pattern: '^-?[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?$'}]
+    #   TankoVaultProviderFetchFailing:
+    #     type: object
+    #     additionalProperties: false
+    #     properties:
+    #       floor:
+    #         default: 0.01
+    #         anyOf: [{type: number, minimum: 0}, {type: string, pattern: '^-?[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?$'}]
+    #       ratio:
+    #         default: 0.5
+    #         anyOf: [{type: number, minimum: 0, maximum: 1}, {type: string, pattern: '^-?[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?$'}]
+    #   TankoVaultProviderThrottlingHeavily:
+    #     type: object
+    #     additionalProperties: false
+    #     properties:
+    #       seconds:
+    #         default: 0.5
+    #         anyOf: [{type: number, minimum: 0}, {type: string, pattern: '^-?[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?$'}]
+    #   TankoVaultRecsysShelvesEmpty:
+    #     type: object
+    #     additionalProperties: false
+    #     properties:
+    #       minServes:
+    #         default: 0.01
+    #         anyOf: [{type: number, minimum: 0}, {type: string, pattern: '^-?[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?$'}]
+    #       size:
+    #         default: 1
+    #         anyOf: [{type: integer, minimum: 1}, {type: string, pattern: '^-?[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?$'}]
+    #   TankoVaultRenderTierFailing:
+    #     type: object
+    #     additionalProperties: false
+    #     properties:
+    #       ratio:
+    #         default: 0.5
+    #         anyOf: [{type: number, minimum: 0, maximum: 1}, {type: string, pattern: '^-?[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?$'}]
+    #   TankoVaultScanIngestBound:
+    #     type: object
+    #     additionalProperties: false
+    #     properties:
+    #       minTasks:
+    #         default: 20
+    #         anyOf: [{type: integer, minimum: 1}, {type: string, pattern: '^-?[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?$'}]
+    #       paceCeiling:
+    #         default: 0.25
+    #         anyOf: [{type: number, minimum: 0, maximum: 1}, {type: string, pattern: '^-?[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?$'}]
+    #       stageRatio:
+    #         default: 0.5
+    #         anyOf: [{type: number, minimum: 0, maximum: 1}, {type: string, pattern: '^-?[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?$'}]
+    #   TankoVaultScanLaneUnfair:
+    #     type: object
+    #     additionalProperties: false
+    #     properties:
+    #       minProviders:
+    #         default: 3
+    #         anyOf: [{type: integer, minimum: 2}, {type: string, pattern: '^-?[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?$'}]
+    #       minTasks:
+    #         default: 100
+    #         anyOf: [{type: integer, minimum: 1}, {type: string, pattern: '^-?[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?$'}]
+    #       share:
+    #         default: 0.9
+    #         anyOf: [{type: number, minimum: 0, maximum: 1}, {type: string, pattern: '^-?[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?$'}]
+    #   TankoVaultScanPaceBound:
+    #     type: object
+    #     additionalProperties: false
+    #     properties:
+    #       minTasks:
+    #         default: 20
+    #         anyOf: [{type: integer, minimum: 1}, {type: string, pattern: '^-?[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?$'}]
+    #       paceRatio:
+    #         default: 0.8
+    #         anyOf: [{type: number, minimum: 0, maximum: 1}, {type: string, pattern: '^-?[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?$'}]
+    #   TankoVaultScanTasksFailing:
+    #     type: object
+    #     additionalProperties: false
+    #     properties:
+    #       ratio:
+    #         default: 0.5
+    #         anyOf: [{type: number, minimum: 0, maximum: 1}, {type: string, pattern: '^-?[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?$'}]
+    #   TankoVaultServerErrorsCritical:
+    #     type: object
+    #     additionalProperties: false
+    #     properties:
+    #       floor:
+    #         default: 0.05
+    #         anyOf: [{type: number, minimum: 0}, {type: string, pattern: '^-?[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?$'}]
+    #       ratio:
+    #         default: 0.25
+    #         anyOf: [{type: number, minimum: 0, maximum: 1}, {type: string, pattern: '^-?[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?$'}]
+    #   TankoVaultSseEventsUndeliverable:
+    #     type: object
+    #     additionalProperties: false
+    #     properties:
+    #       ratio:
+    #         default: 0.25
+    #         anyOf: [{type: number, minimum: 0, maximum: 1}, {type: string, pattern: '^-?[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?$'}]
+    # @schema
+    # -- Threshold overrides, keyed by alert name and then by tunable name. Only the thresholds
+    # this chart declares in [`rules/tunables.yaml`](rules/tunables.yaml) can be moved, and that
+    # file says what each one means and what it is bounded by; setting anything else is refused
+    # with the list of names that would have worked.
+    #
+    # Not every number in a rule is a threshold somebody chose. A `histogram_quantile` compared
+    # against a bucket boundary reports an observed value and against anything else an
+    # interpolated one, and a comparison against the top finite bucket has to be `>=` because the
+    # function cannot return more than that. Both would look perfectly reasonable as a value and
+    # both would quietly disarm paging, so neither is offered. Disable the alert and re-add your
+    # own through `additionalRuleGroups` if you need different arithmetic.
+    #
+    # Example: `{TankoVaultDatabasePoolSaturated: {saturation: 0.8}}`
+    thresholds: {}
+
+    # @schema
+    # type: array
+    # items:
+    #   type: object
+    #   required: [name, rules]
+    #   properties:
+    #     name:
+    #       type: string
+    #       minLength: 1
+    #     interval:
+    #       type: string
+    #       pattern: '^([0-9]+(ms|[smhdwy]))+$'
+    #     limit:
+    #       type: integer
+    #       minimum: 0
+    #     rules:
+    #       type: array
+    #       minItems: 1
+    #       items:
+    #         type: object
+    # @schema
+    # -- Extra rule groups, appended to the ones this chart ships. Each entry is a Prometheus rule
+    # group — a `name`, a list of `rules`, optionally an `interval` — emitted as written: they are
+    # not passed through Helm's template engine, so a `$labels` reference in an annotation reaches
+    # Prometheus intact instead of being resolved to an empty string on the way past. That also
+    # means no `{{ .Release.Name }}` in them.
+    #
+    # `additionalRuleLabels` does reach these, because it describes the release rather than the
+    # rules — skipping them would route exactly the alerts you wrote yourself back into the
+    # rotation you were keeping this install out of. Precedence flips: a label you set on your own
+    # rule wins, since it is already you speaking rather than a default of the chart's.
+    #
+    # This is what makes `disabledAlerts` honest: switch a shipped rule off and write your own
+    # with the arithmetic you wanted. A group whose name collides with a shipped one is refused,
+    # because Prometheus rejects the whole object rather than the duplicate.
+    additionalRuleGroups: []
+
   # @schema
   # additionalProperties: true
   # @schema

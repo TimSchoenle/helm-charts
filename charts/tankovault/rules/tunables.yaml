@@ -1,0 +1,371 @@
+# Which thresholds in `rules/*.yml` an operator may move, and what each one means.
+#
+# Read by `common.prometheus.rules.*` and exposed as `metrics.prometheusRule.thresholds`. Outside
+# the `rules/*.yml` glob on purpose: promtool reads those files strictly and would reject an
+# unknown top-level key, and the PrometheusRule CRD would prune one. The full contract is in the
+# header of `charts/common/templates/_prometheus.tpl`.
+#
+# `anchor` is the substring of the alert's expression that contains the threshold and occurs in it
+# exactly once; substitution replaces the default inside the anchor, then the anchor inside the
+# expression. Both properties are checked at render time and by `just audit-observability`, so a
+# rule edit that makes an anchor ambiguous — or that moves the number it points at — fails the
+# chart rather than quietly retargeting the substitution. Anchors are written against the
+# committed text, placeholder and all, because thresholds are substituted before the scope swap.
+#
+# Which alerts appear here, and which do not
+# -------------------------------------------
+# A threshold is tunable when the comparison encodes a site's judgement — how much failure is
+# acceptable, how full is full, how busy is busy. Those are the twenty alerts below, and the
+# `grounding: baseline-needed` comments in `tankovault-alerts.rules.yml` mark the seven of them
+# whose defaults were judgement in the first place.
+#
+# A threshold is *not* tunable when the comparison is derived from something outside this chart's
+# gift, and three kinds appear in the rules:
+#
+#   - `> 0`, `== 0` and `> 1` are structural. `TankoVaultRateLimiterFailingOpen` fires on any
+#     store error at all, `TankoVaultSplitBrainScheduler` on more than one leader. There is no
+#     number to choose; an operator who wants a different condition wants a different rule.
+#   - `TankoVaultLatencyDegraded` compares p99 against `2.5`, a boundary in the application's own
+#     `LATENCY_BUCKETS`. `histogram_quantile` interpolates *within* a bucket, so an off-boundary
+#     threshold alerts on an interpolated number rather than an observed one.
+#   - `TankoVaultLatencyCritical` compares against `10`, the top finite bucket, with `>=`. The
+#     function cannot return more than that boundary, so every larger threshold is a critical
+#     alert that reads plausibly and can never fire.
+#
+# The last two are the reason this file exists rather than a rule that exposes every literal it
+# can find: both would look entirely reasonable as a value, and both would silently disarm paging.
+# `disabledAlerts` plus `additionalRuleGroups` remains the way to replace either outright.
+tunables:
+  # --- HTTP -------------------------------------------------------------------------------------
+  TankoVaultHighServerErrorRatio:
+    ratio:
+      # -- Server-error ratio at or above which the warning fires.
+      description: >-
+        Fraction of requests answered with a 5xx. Not an error budget: every client-side outcome
+        in this API is a 4xx, so a healthy deployment sits at zero and the default is a floor
+        rather than a target.
+      type: number
+      default: 0.05
+      minimum: 0
+      maximum: 1
+      anchor: 'namespace_job:http_requests_server_errors:ratio_rate5m{tankovault_scope=~".*"} > 0.05'
+
+    floor:
+      # -- Request rate below which the ratio above is too noisy to alert on.
+      description: >-
+        Requests per second under which the ratio is ignored. Without it a single failed request
+        on an idle instance reads as a 100% error rate.
+      type: number
+      default: 0.05
+      minimum: 0
+      anchor: 'namespace_job:http_requests:rate5m{tankovault_scope=~".*"} > 0.05'
+
+  TankoVaultServerErrorsCritical:
+    ratio:
+      # -- Server-error ratio at or above which the critical fires.
+      description: >-
+        Fraction of requests answered with a 5xx that should be treated as an outage of the tier
+        rather than a defect in one handler.
+      type: number
+      default: 0.25
+      minimum: 0
+      maximum: 1
+      anchor: 'namespace_job:http_requests_server_errors:ratio_rate5m{tankovault_scope=~".*"} > 0.25'
+
+    floor:
+      # -- Request rate below which the ratio above is too noisy to alert on.
+      description: Requests per second under which the ratio is ignored.
+      type: number
+      default: 0.05
+      minimum: 0
+      anchor: 'namespace_job:http_requests:rate5m{tankovault_scope=~".*"} > 0.05'
+
+  TankoVaultConcurrencyUnusuallyHigh:
+    inFlight:
+      # -- Average concurrent requests per service that counts as unusual.
+      description: >-
+        `grounding: baseline-needed`. No configured concurrency limit exists to derive this from,
+        so the default is a round number rather than a measured one — the value most worth
+        replacing with your own observed steady state.
+      type: integer
+      default: 200
+      minimum: 1
+      anchor: 'namespace_job:http_requests_in_flight:avg{tankovault_scope=~".*"} > 200'
+
+  # --- Edge policy and the database --------------------------------------------------------------
+  TankoVaultAuthRateLimitSurge:
+    rate:
+      # -- Requests per second refused by the auth-class rate limiter that count as a surge.
+      description: >-
+        Sustained refusals on the `auth` class, which is either a credential-stuffing attempt or a
+        client retrying a broken login in a loop.
+      type: number
+      default: 0.1
+      minimum: 0
+      anchor: 'namespace_job_class:http_rate_limited:rate5m{tankovault_scope=~".*", class="auth"} > 0.1'
+
+  TankoVaultAuthFailureSurge:
+    ratio:
+      # -- Fraction of authentication attempts failing that counts as a surge.
+      description: Failed authentications as a share of all attempts.
+      type: number
+      default: 0.5
+      minimum: 0
+      maximum: 1
+      anchor: 'namespace_job:auth_attempts_failed:ratio_rate15m{tankovault_scope=~".*"} > 0.5'
+
+    floor:
+      # -- Attempt rate below which the ratio above is too noisy to alert on.
+      description: Authentication attempts per second under which the ratio is ignored.
+      type: number
+      default: 0.05
+      minimum: 0
+      anchor: 'namespace_job:auth_attempts:rate5m{tankovault_scope=~".*"} > 0.05'
+
+  TankoVaultDatabasePoolSaturated:
+    saturation:
+      # -- Fraction of the connection pool in use that counts as saturated.
+      description: >-
+        Connections checked out as a share of the pool size. Sustained saturation shows up as
+        latency long before it shows up as an error, which is why this warns rather than pages.
+      type: number
+      default: 0.9
+      minimum: 0
+      maximum: 1
+      anchor: 'namespace_job:db_pool_saturation:ratio{tankovault_scope=~".*"} > 0.9'
+
+  # --- Providers ---------------------------------------------------------------------------------
+  TankoVaultProviderFetchFailing:
+    ratio:
+      # -- Fraction of provider fetches failing that counts as broken.
+      description: >-
+        Failures as a share of fetches against one provider. Providers degrade independently, so
+        this is per provider rather than across them.
+      type: number
+      default: 0.5
+      minimum: 0
+      maximum: 1
+      anchor: 'namespace_provider:provider_fetch_failures:ratio_rate15m{tankovault_scope=~".*"} > 0.5'
+
+    floor:
+      # -- Fetch rate below which the ratio above is too noisy to alert on.
+      description: Fetches per second under which the ratio is ignored.
+      type: number
+      default: 0.01
+      minimum: 0
+      anchor: 'namespace_provider:provider_fetch:rate5m{tankovault_scope=~".*"} > 0.01'
+
+  TankoVaultProviderThrottlingHeavily:
+    seconds:
+      # -- Seconds spent waiting in backoff per second of wall clock that count as heavy.
+      description: >-
+        A rate of 0.5 means half of every second is spent in backoff. Raise it for a provider you
+        already know rate-limits aggressively and have decided to live with.
+      type: number
+      default: 0.5
+      minimum: 0
+      anchor: 'namespace_provider:provider_backoff_wait_seconds:rate15m{tankovault_scope=~".*"} > 0.5'
+
+  # --- Scan pipeline -----------------------------------------------------------------------------
+  TankoVaultScanTasksFailing:
+    ratio:
+      # -- Fraction of scan tasks settling as failures that counts as broken.
+      description: Failed scan tasks as a share of those settled, per provider and scan type.
+      type: number
+      default: 0.5
+      minimum: 0
+      maximum: 1
+      anchor: 'namespace_provider_scan:scan_tasks_failed:ratio_rate15m{tankovault_scope=~".*"} > 0.5'
+
+  TankoVaultScanPaceBound:
+    paceRatio:
+      # -- Fraction of scan-task time spent waiting on the pacer that counts as pace-bound.
+      description: >-
+        `grounding: baseline-needed`. Upstream frames this ratio as "near 1 means polite", not as
+        a fault, so the default is where politeness stops being worth the throughput.
+      type: number
+      default: 0.8
+      minimum: 0
+      maximum: 1
+      anchor: 'namespace_provider:scan_task_pace_wait:ratio_rate15m{tankovault_scope=~".*"} > 0.8'
+
+    minTasks:
+      # -- Tasks served in the last hour below which the provider is too idle to judge.
+      description: Keeps a provider that served three tasks in an hour out of the comparison.
+      type: integer
+      default: 20
+      minimum: 1
+      anchor: 'namespace_provider:scan_tasks_served:increase1h{tankovault_scope=~".*"} > 20'
+
+  TankoVaultScanIngestBound:
+    stageRatio:
+      # -- Fraction of scan-task time spent in `series_ingest` that counts as ingest-bound.
+      description: >-
+        `grounding: baseline-needed`. Judgement about where ingest stops being a cost and starts
+        being the bottleneck.
+      type: number
+      default: 0.5
+      minimum: 0
+      maximum: 1
+      # The metric name wraps two lines above the comparison, so the anchor is the comparison
+      # alone. It is the only `> 0.5` in this expression, and the render fails if that stops
+      # being true.
+      anchor: '> 0.5'
+
+    paceCeiling:
+      # -- Pace-wait ratio below which the pacer is ruled out as the cause.
+      description: >-
+        Separates ingest-bound from pace-bound: above this the provider is being throttled and
+        `TankoVaultScanPaceBound` is the alert that should fire instead.
+      type: number
+      default: 0.25
+      minimum: 0
+      maximum: 1
+      anchor: 'namespace_provider:scan_task_pace_wait:ratio_rate15m{tankovault_scope=~".*"} < 0.25'
+
+    minTasks:
+      # -- Tasks served in the last hour below which the provider is too idle to judge.
+      description: Keeps an idle provider out of the comparison.
+      type: integer
+      default: 20
+      minimum: 1
+      anchor: 'namespace_provider:scan_tasks_served:increase1h{tankovault_scope=~".*"} > 20'
+
+  TankoVaultScanLaneUnfair:
+    share:
+      # -- Share of all scan work one provider lane may take before the split counts as unfair.
+      description: >-
+        `grounding: baseline-needed`. The busiest lane's share of the hour's tasks. Judgement, not
+        a measured limit — a deployment that legitimately follows one provider should raise it or
+        disable the alert.
+      type: number
+      default: 0.9
+      minimum: 0
+      maximum: 1
+      anchor: ') > 0.9'
+
+    minProviders:
+      # -- Provider lanes below which an uneven split is expected rather than a fault.
+      description: With two lanes a 90% share is unremarkable, so the alert needs a floor.
+      type: integer
+      default: 3
+      minimum: 2
+      anchor: '>= 3'
+
+    minTasks:
+      # -- Tasks served across all lanes in the last hour below which the split is noise.
+      description: Keeps a quiet hour from reading as an unfair one.
+      type: integer
+      default: 100
+      minimum: 1
+      anchor: '> 100'
+
+  TankoVaultChaptersAllRejected:
+    ratio:
+      # -- Fraction of discovered chapters rejected that counts as a broken filter.
+      description: >-
+        `grounding: baseline-needed`. A high rejection rate is normal for a provider whose
+        catalogue is mostly out of scope; the default assumes it is not.
+      type: number
+      default: 0.9
+      minimum: 0
+      maximum: 1
+      anchor: 'namespace_provider:chapters_rejected:ratio_rate1h{tankovault_scope=~".*"} > 0.9'
+
+    minTasks:
+      # -- Tasks served in the last hour below which the provider is too idle to judge.
+      description: Keeps an idle provider out of the comparison.
+      type: integer
+      default: 20
+      minimum: 1
+      anchor: 'namespace_provider:scan_tasks_served:increase1h{tankovault_scope=~".*"} > 20'
+
+  # --- Notifications and the fetch tier ----------------------------------------------------------
+  TankoVaultNotificationDeliveryFailing:
+    ratio:
+      # -- Fraction of notification deliveries failing, per channel, that counts as broken.
+      description: >-
+        Delivery failures as a share of attempts on one channel. Channels fail independently —
+        an expired SMTP credential does not affect webhooks — so this is per channel.
+      type: number
+      default: 0.5
+      minimum: 0
+      maximum: 1
+      # The metric name wraps onto the line above the comparison; this is the only `> 0.5` here.
+      anchor: '> 0.5'
+
+  TankoVaultNotificationEventsFailing:
+    ratio:
+      # -- Fraction of notification events erroring that counts as broken.
+      description: Errors as a share of notification events processed.
+      type: number
+      default: 0.1
+      minimum: 0
+      maximum: 1
+      anchor: 'namespace:notification_events_errors:ratio_rate15m{tankovault_scope=~".*"} > 0.1'
+
+  TankoVaultSseEventsUndeliverable:
+    ratio:
+      # -- Fraction of SSE pushes failing that counts as more than ordinary disconnects.
+      description: >-
+        Some failure is normal — a browser tab closing mid-push counts — so this sits well above
+        zero by design.
+      type: number
+      default: 0.25
+      minimum: 0
+      maximum: 1
+      anchor: 'namespace_job:sse_events_pushed_errors:ratio_rate15m{tankovault_scope=~".*"} > 0.25'
+
+  TankoVaultChallengeSolvingFailing:
+    ratio:
+      # -- Fraction of challenge-solve attempts failing that counts as broken.
+      description: Failures as a share of solve attempts.
+      type: number
+      default: 0.5
+      minimum: 0
+      maximum: 1
+      anchor: 'namespace_job:solve_attempts_errors:ratio_rate15m{tankovault_scope=~".*"} > 0.5'
+
+  TankoVaultRenderTierFailing:
+    ratio:
+      # -- Fraction of headless render requests failing that counts as broken.
+      description: Failures as a share of render requests.
+      type: number
+      default: 0.5
+      minimum: 0
+      maximum: 1
+      anchor: 'namespace_job:render_requests_errors:ratio_rate15m{tankovault_scope=~".*"} > 0.5'
+
+  # --- Recommendations and AniList ---------------------------------------------------------------
+  TankoVaultRecsysShelvesEmpty:
+    size:
+      # -- Average shelf size below which the recommender counts as producing nothing.
+      description: >-
+        `grounding: baseline-needed`. A shelf holds 0 to 60 items and new readers legitimately get
+        empty ones, so the default is "essentially always empty" rather than "small".
+      type: integer
+      default: 1
+      minimum: 1
+      # The full comparison would carry the literal twice — `avg15m` contains a `1` — so the
+      # anchor is the comparison alone, which occurs once.
+      anchor: '< 1'
+
+    minServes:
+      # -- Shelf serves per second below which an empty shelf is nobody's problem yet.
+      description: Keeps the alert quiet on a deployment nobody is reading from.
+      type: number
+      default: 0.01
+      minimum: 0
+      anchor: 'namespace:recsys_serves:rate15m{tankovault_scope=~".*"} > 0.01'
+
+  TankoVaultAniListRateLimited:
+    ratio:
+      # -- Fraction of AniList requests rate-limited that counts as sustained throttling.
+      description: >-
+        AniList rate-limits every integration occasionally; this is the share at which sync stops
+        keeping up rather than merely slowing down.
+      type: number
+      default: 0.25
+      minimum: 0
+      maximum: 1
+      anchor: 'namespace:anilist_requests_rate_limited:ratio_rate15m{tankovault_scope=~".*"} > 0.25'

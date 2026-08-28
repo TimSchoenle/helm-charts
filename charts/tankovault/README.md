@@ -1,6 +1,6 @@
 # tankovault
 
-![Version: 5.4.5](https://img.shields.io/badge/Version-5.4.5-informational?style=flat-square) ![AppVersion: 8.7.1](https://img.shields.io/badge/AppVersion-8.7.1-informational?style=flat-square)
+![Version: 5.5.0](https://img.shields.io/badge/Version-5.5.0-informational?style=flat-square) ![AppVersion: 8.7.1](https://img.shields.io/badge/AppVersion-8.7.1-informational?style=flat-square)
 
 This chart deploys the full TankoVault manga aggregator stack — frontend, api, control-plane, worker, notifier, sync, challenge-solver and render — hardened to the restricted Pod Security Standard, with file-backed configuration that reloads in place instead of restarting pods, optional bundled PostgreSQL, Valkey, NATS JetStream and TRAWL, and optional Prometheus metrics, alerting rules and Grafana dashboards.
 
@@ -834,6 +834,88 @@ forgets the token fails the render instead of quietly escaping the scope.
 
 Two releases in the *same* namespace cannot be told apart by this or by `enforcedNamespaceLabel`.
 
+### Turning alerts off, retuning them, and adding your own
+
+The rules ship with defaults that suit most installs and no install exactly, so four presets sit
+under `metrics.prometheusRule`. Every one of them is checked against the rules the chart actually
+ships, and a name that matches nothing fails the render rather than being ignored — a values file
+that says an alert is off while it still pages at 3am is the one outcome this whole surface exists
+to prevent.
+
+| Preset | What it does |
+| --- | --- |
+| `disabledAlerts` | drops alerts by name |
+| `disabledGroups` | drops whole rule groups by name |
+| `additionalRuleLabels` | adds labels to every alert, for Alertmanager routing |
+| `severityOverrides` | sets one alert's `severity` |
+| `forOverrides` | sets one alert's `for` — how long the condition must hold |
+| `thresholds` | moves a declared threshold inside a rule expression |
+| `additionalRuleGroups` | appends rule groups of your own |
+
+```yaml
+metrics:
+  prometheusRule:
+    enabled: true
+    # Route this whole release away from the production rotation.
+    additionalRuleLabels:
+      team: platform
+      tier: staging
+
+    # Two info-level alerts this deployment does not act on.
+    disabledAlerts:
+      - TankoVaultVersionSkew
+      - TankoVaultScanPaceBound
+
+    # A pool that legitimately runs hot here.
+    thresholds:
+      TankoVaultDatabasePoolSaturated:
+        saturation: 0.95
+
+    severityOverrides:
+      TankoVaultSseEventsUndeliverable: info
+    forOverrides:
+      TankoVaultServiceDown: 15m
+```
+
+Labels resolve most-specific-last: the rule file's own labels lose to `additionalRuleLabels`,
+which loses to `severityOverrides`. Recording rules are out of reach of all of it — `disabledGroups`
+refuses a group that holds any, and labels are never attached to one, because a label changes the
+identity of the series a recording rule produces and every dashboard panel and expression reading
+it would silently stop matching.
+
+**Not every number in a rule is a threshold somebody chose**, which is why `thresholds` is opt-in
+per alert rather than a search-and-replace over the expressions. Only what
+[`rules/tunables.yaml`](rules/tunables.yaml) declares can be moved; that file names each tunable,
+says what it means, and bounds it. Two reasons for the restriction, and both are the kind of
+mistake that looks fine in review:
+
+- A threshold is a *substring* of PromQL, and often not the only one that looks like it.
+  `TankoVaultHighServerErrorRatio` compares against `0.05` twice — once as the 5xx ratio that
+  counts as broken, once as the request rate below which that ratio is too noisy to believe — and
+  nothing textual tells the two apart.
+
+  Each tunable therefore carries an `anchor` — the substring of that expression which contains its
+  own default and occurs exactly once — so an override moves the number it was meant to and no
+  other. Anchors are verified on every pull request and again at render time; a rule edit that
+  orphans one fails the build.
+- Some comparisons are derived rather than chosen. `TankoVaultLatencyDegraded` compares p99 against
+  `2.5`, a boundary in the application's own `LATENCY_BUCKETS`; `histogram_quantile` interpolates
+  *within* a bucket, so any other value reports an interpolated number rather than an observed
+  one. `TankoVaultLatencyCritical` compares against `10`, the top finite bucket, with `>=` —
+  the function cannot return more than that boundary, so `> 12` would be a critical alert that
+  reads perfectly reasonably and can never fire. Both would be inviting as values and both would
+  quietly disarm paging, so neither is offered.
+
+Anything the chart will not tune, you can still replace outright: switch the shipped rule off with
+`disabledAlerts` and write your own through `additionalRuleGroups`. Groups appended that way are
+emitted as written, never passed through Helm's template engine, so a `$labels` reference in an
+annotation reaches Prometheus intact — which also means no `{{ .Release.Name }}`
+in them. `additionalRuleLabels` is the one thing that does reach them, because it describes the
+release rather than the rules, and there precedence flips: a label you set on your own rule wins.
+
+Disabling an alert changes only the rendered object. The rule stays in `rules/`, stays covered by
+the `promtool` suite in CI, and comes back the moment you stop disabling it.
+
 ### Getting the dashboards into a Grafana in another namespace
 
 Grafana has no Kubernetes-native dashboard type, so there are two ways to deliver one and they
@@ -1487,7 +1569,7 @@ lookup; the chart fails the render if FQDN destinations are named with the DNS r
 | legal | object | `{"dir":"/etc/tankovault/legal","documents":{}}` | Operator-published legal documents, served unauthenticated by the API at `/v1/legal` and `/v1/legal/{slug}`; the frontend's footer builds its Legal column from that index. Upstream ships none of these on purpose — every deployment is a different operator under different law, and an imprint is a statutory requirement in some jurisdictions and meaningless in others. With no documents the index is empty and the footer publishes no Legal column at all, rather than links that 404. |
 | legal.dir | string | `"/etc/tankovault/legal"` | Directory relative `sources` paths resolve against, and where the chart mounts any document supplied through `content`. An absolute `sources` path ignores it. |
 | legal.documents | object | `{}` | Published documents, keyed by the URL slug they are served under. Each document names its body exactly once, in one of three ways, and the chart refuses a document that names it twice or not at all:  - `content`: a locale-keyed map of the text itself. The chart writes it into a ConfigMap as   `<slug>.<locale>.md` and mounts it into the API pod. Edits are picked up without a restart —   the service re-reads behind an mtime check — so this is the option to reach for by default. - `sources`: a locale-keyed map of file paths you have arranged to mount yourself, through   `extraVolumes`/`extraVolumeMounts`. Use this when the texts belong to a Secret, a PVC or   another chart. - `url`: an absolute `http(s)` link to a document hosted elsewhere. Mounts nothing.  `title` is a locale-keyed display name, and `updated` a free-form date shown alongside it. Both are optional and independent of how the body is supplied.  <details><summary>Example</summary>  ```yaml legal:   documents:     terms:       updated: "2026-08-04"       title:         en: Terms of Service         de: Nutzungsbedingungen       content:         en: |           # Terms of Service           ...         de: |           # Nutzungsbedingungen           ...     imprint:       title:         de: Impressum       url: https://example.org/impressum ```  </details> |
-| metrics | object | `{"dashboard":{"enabled":false,"grafanaOperator":{"allowCrossNamespaceImport":true,"enabled":false,"folder":"","instanceSelector":{"matchLabels":{"dashboards":"grafana"}},"resyncPeriod":"5m"},"label":"grafana_dashboard","labelValue":"1"},"enabled":true,"natsExporter":{"enabled":false,"image":{"repository":"natsio/prometheus-nats-exporter","tag":"0.20.1@sha256:4fbf6dacb84780a45a1c3af9b1080c69451a288d20902deae671b80717bb8f61"},"resources":{"limits":{"memory":"64Mi"},"requests":{"cpu":"10m","memory":"32Mi"}},"url":""},"port":9090,"prometheusRule":{"enabled":false,"labels":{},"scope":"namespace"},"serviceMonitor":{"enabled":false,"interval":"15s","labels":{},"scrapeTimeout":"10s"}}` | Prometheus integration. Every service serves a scrape on an isolated port, outside the request-facing listener and outside its own HTTP metrics middleware. |
+| metrics | object | `{"dashboard":{"enabled":false,"grafanaOperator":{"allowCrossNamespaceImport":true,"enabled":false,"folder":"","instanceSelector":{"matchLabels":{"dashboards":"grafana"}},"resyncPeriod":"5m"},"label":"grafana_dashboard","labelValue":"1"},"enabled":true,"natsExporter":{"enabled":false,"image":{"repository":"natsio/prometheus-nats-exporter","tag":"0.20.1@sha256:4fbf6dacb84780a45a1c3af9b1080c69451a288d20902deae671b80717bb8f61"},"resources":{"limits":{"memory":"64Mi"},"requests":{"cpu":"10m","memory":"32Mi"}},"url":""},"port":9090,"prometheusRule":{"additionalRuleGroups":[],"additionalRuleLabels":{},"disabledAlerts":[],"disabledGroups":[],"enabled":false,"forOverrides":{},"labels":{},"scope":"namespace","severityOverrides":{},"thresholds":{}},"serviceMonitor":{"enabled":false,"interval":"15s","labels":{},"scrapeTimeout":"10s"}}` | Prometheus integration. Every service serves a scrape on an isolated port, outside the request-facing listener and outside its own HTTP metrics middleware. |
 | metrics.dashboard | object | `{"enabled":false,"grafanaOperator":{"allowCrossNamespaceImport":true,"enabled":false,"folder":"","instanceSelector":{"matchLabels":{"dashboards":"grafana"}},"resyncPeriod":"5m"},"label":"grafana_dashboard","labelValue":"1"}` | Grafana dashboard delivery, through a labelled ConfigMap and optionally through grafana-operator. |
 | metrics.dashboard.enabled | bool | `false` | Create a ConfigMap holding the upstream Grafana overview dashboard. |
 | metrics.dashboard.grafanaOperator | object | `{"allowCrossNamespaceImport":true,"enabled":false,"folder":"","instanceSelector":{"matchLabels":{"dashboards":"grafana"}},"resyncPeriod":"5m"}` | The grafana-operator v5 path, rendered in addition to the ConfigMap rather than instead of it. |
@@ -1513,10 +1595,17 @@ lookup; the chart fails the render if FQDN destinations are named with the DNS r
 | metrics.natsExporter.resources.requests.memory | string | `"32Mi"` | Minimum guaranteed memory allocation. |
 | metrics.natsExporter.url | string | `""` | NATS monitoring endpoint to scrape. Defaults to the bundled NATS' `:8222`. This is not the client URL: `externalNats.url` points at 4222 and speaks the NATS protocol, while the exporter reads HTTP on the monitoring listener, so an external NATS needs this set explicitly — e.g. `http://nats.example.com:8222`. |
 | metrics.port | int | `9090` | Port the Prometheus exposition is served on. |
-| metrics.prometheusRule | object | `{"enabled":false,"labels":{},"scope":"namespace"}` | The recording and alerting rules under `rules/`, installed as a PrometheusRule. |
+| metrics.prometheusRule | object | `{"additionalRuleGroups":[],"additionalRuleLabels":{},"disabledAlerts":[],"disabledGroups":[],"enabled":false,"forOverrides":{},"labels":{},"scope":"namespace","severityOverrides":{},"thresholds":{}}` | The recording and alerting rules under `rules/`, installed as a PrometheusRule. |
+| metrics.prometheusRule.additionalRuleGroups | list | `[]` | Extra rule groups, appended to the ones this chart ships. Each entry is a Prometheus rule group — a `name`, a list of `rules`, optionally an `interval` — emitted as written: they are not passed through Helm's template engine, so a `$labels` reference in an annotation reaches Prometheus intact instead of being resolved to an empty string on the way past. That also means no `{{ .Release.Name }}` in them.  `additionalRuleLabels` does reach these, because it describes the release rather than the rules — skipping them would route exactly the alerts you wrote yourself back into the rotation you were keeping this install out of. Precedence flips: a label you set on your own rule wins, since it is already you speaking rather than a default of the chart's.  This is what makes `disabledAlerts` honest: switch a shipped rule off and write your own with the arithmetic you wanted. A group whose name collides with a shipped one is refused, because Prometheus rejects the whole object rather than the duplicate. |
+| metrics.prometheusRule.additionalRuleLabels | object | `{}` | Labels merged into every alert this chart ships, for Alertmanager routing. This is how a staging release keeps itself out of the production on-call rotation. Applied to alerting rules only: a label on a recording rule changes the identity of the series it records, and every dashboard panel and expression reading it would silently stop matching.  These beat the labels in the rule files, which is the point of them, and lose to `severityOverrides`, which is more specific.  Example: `{team: platform, tier: staging}` |
+| metrics.prometheusRule.disabledAlerts | list | `[]` | Alerts to drop, by name. Refused when the name is not one this chart ships — a typo here is the one failure the whole feature must not produce, because it leaves the values file saying an alert is off while it still pages. The rules stay in `rules/` and stay tested; only the rendered object loses them.  Example: `[TankoVaultVersionSkew, TankoVaultScanPaceBound]` |
+| metrics.prometheusRule.disabledGroups | list | `[]` | Rule groups to drop entirely, by name. Refused when the name is not one this chart ships, and refused for a group holding recording rules: dashboards and other alerts read the series those produce, so dropping one leaves panels blank and expressions matching nothing, and neither reports an error. Use `disabledAlerts` for the alerts that consume it.  Example: `[tankovault-recsys, tankovault-anilist]` |
 | metrics.prometheusRule.enabled | bool | `false` | Create a PrometheusRule from the recording and alerting rules under `rules/`. |
+| metrics.prometheusRule.forOverrides | object | `{}` | Per-alert `for` duration, keyed by alert name — how long the condition must hold before the alert fires. A Prometheus duration such as `30s`, `15m` or `1h30m`; write zero as `0m` so YAML keeps it a string. Anything Prometheus cannot parse is refused here, because it would otherwise be refused at load time and take the alert's whole rule group down with it.  Example: `{TankoVaultServiceDown: 15m}` |
 | metrics.prometheusRule.labels | object | `{}` | Extra labels for the PrometheusRule. |
 | metrics.prometheusRule.scope | string | `"namespace"` | Confine the rules to this release's namespace. A `PrometheusRule` is not scoped to the namespace it lives in, so an unscoped `up{job="api"} == 0` matches an `api` job anywhere Prometheus can see — a second TankoVault release, or anyone else's service that happens to produce the same `job` label, and the two then alert on each other. `namespace` rewrites every rule expression to match only series from this namespace; `none` installs them as written, which is correct when a Prometheus already sets `enforcedNamespaceLabel` and would do the same rewrite itself, and wrong otherwise. Two releases of this chart in *one* namespace cannot be told apart by either mechanism. |
+| metrics.prometheusRule.severityOverrides | object | `{}` | Per-alert `severity` label, keyed by alert name. The most specific setting there is, so it beats both the rule file and `additionalRuleLabels`. Refused for an alert this chart does not ship, and for one the same values disable.  Example: `{TankoVaultVersionSkew: warning}` |
+| metrics.prometheusRule.thresholds | object | `{}` | Threshold overrides, keyed by alert name and then by tunable name. Only the thresholds this chart declares in [`rules/tunables.yaml`](rules/tunables.yaml) can be moved, and that file says what each one means and what it is bounded by; setting anything else is refused with the list of names that would have worked.  Not every number in a rule is a threshold somebody chose. A `histogram_quantile` compared against a bucket boundary reports an observed value and against anything else an interpolated one, and a comparison against the top finite bucket has to be `>=` because the function cannot return more than that. Both would look perfectly reasonable as a value and both would quietly disarm paging, so neither is offered. Disable the alert and re-add your own through `additionalRuleGroups` if you need different arithmetic.  Example: `{TankoVaultDatabasePoolSaturated: {saturation: 0.8}}` |
 | metrics.serviceMonitor | object | `{"enabled":false,"interval":"15s","labels":{},"scrapeTimeout":"10s"}` | Prometheus Operator scrape configuration, one ServiceMonitor per enabled service. |
 | metrics.serviceMonitor.enabled | bool | `false` | Create one ServiceMonitor per service. One per service, not one for the release: the `job` label is the sole identifier of which service emitted a metric, and collapsing them would silently break every per-service rule. |
 | metrics.serviceMonitor.interval | string | `"15s"` | Scrape interval. |

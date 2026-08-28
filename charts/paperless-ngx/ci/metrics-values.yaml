@@ -14,6 +14,34 @@ metrics:
     scope: namespace
     labels:
       release: kube-prometheus-stack
+    # Every preset at once, so the API server validates an object the presets have rewritten
+    # rather than the defaults. Both volume alerts read the same recorded series and differ only
+    # in their literal, so moving one and not the other is the case worth installing.
+    disabledAlerts:
+      - PaperlessNgxBackupSuspended
+    additionalRuleLabels:
+      team: archive
+      tier: ci
+    severityOverrides:
+      PaperlessNgxRestarting: info
+    forOverrides:
+      PaperlessNgxDown: 10m
+    thresholds:
+      PaperlessNgxVolumeFillingUp:
+        ratio: 0.7
+      PaperlessNgxRestarting:
+        restarts: 8
+    additionalRuleGroups:
+      - name: paperless-ngx-ci-site
+        rules:
+          - alert: PaperlessNgxCiSiteRule
+            expr: up{job="paperless-ngx"} == 0
+            for: 5m
+            labels:
+              severity: info
+            annotations:
+              summary: "{{ $labels.job }} is down, per site policy"
+              description: Stands in for a rule an operator wrote themselves.
   dashboard:
     enabled: true
     label: grafana_dashboard

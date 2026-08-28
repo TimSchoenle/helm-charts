@@ -1,0 +1,29 @@
+# Which thresholds in `rules/*.yml` an operator may move, for the `common` library's own fixture.
+#
+# Outside the `rules/*.yml` glob on purpose: promtool reads those files strictly and would reject
+# an unknown top-level key, and the PrometheusRule CRD would prune one. See the header of
+# `charts/common/templates/_prometheus.tpl` for the whole contract.
+#
+# `anchor` is the smallest substring of the alert's expression that contains the default and
+# occurs in it exactly once. Both properties are enforced at render time, so an anchor that drifts
+# from the expression fails the chart rather than silently installing an untuned rule.
+tunables:
+  FixtureErrorRatio:
+    ratio:
+      # -- Error ratio at or above which the alert fires.
+      description: Fraction of requests failing that counts as an outage.
+      type: number
+      default: 0.05
+      minimum: 0
+      maximum: 1
+      # The left-hand comparison. Anchoring on `> 0.05` alone would be ambiguous: the traffic
+      # floor below uses the same literal.
+      anchor: 'job:http_errors:ratio_rate5m{fixture_scope=~".*"} > 0.05'
+
+    floor:
+      # -- Traffic below which the ratio above is too noisy to alert on.
+      description: Requests per second below which the ratio is ignored.
+      type: number
+      default: 0.05
+      minimum: 0
+      anchor: 'job:http_requests:rate5m{fixture_scope=~".*"} > 0.05'

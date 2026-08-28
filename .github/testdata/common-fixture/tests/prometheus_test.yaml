@@ -2,6 +2,17 @@
 # second delivery mechanism to choose between — and no per-object cross-namespace grant either.
 # What is shared with the dashboard partials is the refusal to render silently: a missing CRD
 # stops the render rather than dropping the object.
+#
+# Group order follows the file glob, so the indices below are:
+#
+#   0  fixture-availability  (alerting)   FixtureDown
+#   1  fixture-saturation    (alerting)   FixtureErrorRatio, FixtureLatencyCritical
+#   2  fixture-recording     (recording)  job:http_requests:rate5m
+#
+# Every preset is asserted twice over: once for what it changes, and once for what it must leave
+# alone. The second half is the point — a preset that quietly reaches a recording rule, an
+# annotation, or the wrong half of an expression is the failure mode this whole surface exists to
+# avoid, and none of those show up as an error anywhere downstream.
 suite: common.prometheus.rules partials
 templates:
   - prometheusrule.yaml
@@ -23,7 +34,7 @@ tests:
           value: RELEASE-NAME-common-fixture
       - lengthEqual:
           path: spec.groups
-          count: 2
+          count: 3
       - contains:
           path: spec.groups
           content:
@@ -34,7 +45,7 @@ tests:
                 record: job:http_requests:rate5m
 
   - it: leaves Prometheus' own templating untouched
-    # Go would either fail on `{{ $labels.job }}` or, worse, resolve it to an empty string and
+    # Go would either fail on the `$labels` reference or, worse, resolve it to an empty string and
     # leave every alert with an annotation that names nothing.
     capabilities:
       apiVersions:
@@ -104,7 +115,7 @@ tests:
           path: spec.groups[0].rules[0].expr
           value: up{namespace="prod"} == 0
       - equal:
-          path: spec.groups[1].rules[0].expr
+          path: spec.groups[2].rules[0].expr
           value: sum by (job) (rate(http_requests_total{namespace="prod"}[5m]))
 
   - it: substitutes into expressions only, never into annotations
@@ -156,3 +167,554 @@ tests:
     asserts:
       - failedTemplate:
           errorPattern: "registers no `monitoring.coreos.com/v1` API"
+
+  # ---------------------------------------------------------------------------------------------
+  # Filtering
+  # ---------------------------------------------------------------------------------------------
+
+  - it: drops a disabled alert and leaves its neighbours in place
+    capabilities:
+      apiVersions:
+        - monitoring.coreos.com/v1
+    set:
+      prometheusRule.enabled: true
+      prometheusRule.disabledAlerts:
+        - FixtureLatencyCritical
+    asserts:
+      - lengthEqual:
+          path: spec.groups
+          count: 3
+      - lengthEqual:
+          path: spec.groups[1].rules
+          count: 1
+      - equal:
+          path: spec.groups[1].rules[0].alert
+          value: FixtureErrorRatio
+
+  - it: drops a group that its disabled alerts emptied
+    # An empty group is refused by Prometheus at load time, so a group whose last alert was
+    # switched off has to go rather than render as `rules: []`.
+    capabilities:
+      apiVersions:
+        - monitoring.coreos.com/v1
+    set:
+      prometheusRule.enabled: true
+      prometheusRule.disabledAlerts:
+        - FixtureErrorRatio
+        - FixtureLatencyCritical
+    asserts:
+      - lengthEqual:
+          path: spec.groups
+          count: 2
+      - equal:
+          path: spec.groups[0].name
+          value: fixture-availability
+      - equal:
+          path: spec.groups[1].name
+          value: fixture-recording
+
+  - it: drops a disabled group whole
+    capabilities:
+      apiVersions:
+        - monitoring.coreos.com/v1
+    set:
+      prometheusRule.enabled: true
+      prometheusRule.disabledGroups:
+        - fixture-saturation
+    asserts:
+      - lengthEqual:
+          path: spec.groups
+          count: 2
+      - equal:
+          path: spec.groups[1].name
+          value: fixture-recording
+
+  - it: refuses an alert name it does not ship
+    # A typo here is the worst outcome the whole feature can produce: the values file says an
+    # alert is off, and it is armed.
+    capabilities:
+      apiVersions:
+        - monitoring.coreos.com/v1
+    set:
+      prometheusRule.enabled: true
+      prometheusRule.disabledAlerts:
+        - FixtureDwon
+    asserts:
+      - failedTemplate:
+          errorPattern: '`disabledAlerts` names "FixtureDwon", which this chart does not ship'
+
+  - it: names the alerts it does ship when it refuses one
+    capabilities:
+      apiVersions:
+        - monitoring.coreos.com/v1
+    set:
+      prometheusRule.enabled: true
+      prometheusRule.disabledAlerts:
+        - FixtureDwon
+    asserts:
+      - failedTemplate:
+          errorPattern: "FixtureDown, FixtureErrorRatio, FixtureLatencyCritical"
+
+  - it: refuses a group name it does not ship
+    capabilities:
+      apiVersions:
+        - monitoring.coreos.com/v1
+    set:
+      prometheusRule.enabled: true
+      prometheusRule.disabledGroups:
+        - fixture-nope
+    asserts:
+      - failedTemplate:
+          errorPattern: '`disabledGroups` names the rule group "fixture-nope"'
+
+  - it: refuses to disable a group holding recording rules
+    # Dashboards and other alerts read the series those rules produce. Dropping the group leaves
+    # panels blank and expressions matching nothing, and neither reports an error.
+    capabilities:
+      apiVersions:
+        - monitoring.coreos.com/v1
+    set:
+      prometheusRule.enabled: true
+      prometheusRule.disabledGroups:
+        - fixture-recording
+    asserts:
+      - failedTemplate:
+          errorPattern: "which contains recording rules"
+
+  # ---------------------------------------------------------------------------------------------
+  # Routing: labels, severity, for
+  # ---------------------------------------------------------------------------------------------
+
+  - it: adds routing labels to every alert
+    capabilities:
+      apiVersions:
+        - monitoring.coreos.com/v1
+    set:
+      prometheusRule.enabled: true
+      prometheusRule.additionalRuleLabels:
+        team: platform
+    asserts:
+      - equal:
+          path: spec.groups[0].rules[0].labels.team
+          value: platform
+      - equal:
+          path: spec.groups[1].rules[0].labels.team
+          value: platform
+      - equal:
+          path: spec.groups[1].rules[1].labels.team
+          value: platform
+
+  - it: never labels a recording rule
+    # A label on a recording rule changes the identity of the series it records, so every
+    # dashboard panel and every expression reading it silently stops matching.
+    capabilities:
+      apiVersions:
+        - monitoring.coreos.com/v1
+    set:
+      prometheusRule.enabled: true
+      prometheusRule.additionalRuleLabels:
+        team: platform
+    asserts:
+      - notExists:
+          path: spec.groups[2].rules[0].labels
+
+  - it: lets a routing label beat the rule file
+    # The point of the knob: an operator adding `severity: info` to a whole release to keep it out
+    # of the on-call rotation means it, and the shipped `critical` must not win.
+    capabilities:
+      apiVersions:
+        - monitoring.coreos.com/v1
+    set:
+      prometheusRule.enabled: true
+      prometheusRule.additionalRuleLabels:
+        severity: info
+    asserts:
+      - equal:
+          path: spec.groups[0].rules[0].labels.severity
+          value: info
+
+  - it: lets a per-alert severity beat a routing label
+    # Most specific last: rule file < additionalRuleLabels < severityOverrides.
+    capabilities:
+      apiVersions:
+        - monitoring.coreos.com/v1
+    set:
+      prometheusRule.enabled: true
+      prometheusRule.additionalRuleLabels:
+        severity: info
+      prometheusRule.severityOverrides:
+        FixtureDown: warning
+    asserts:
+      - equal:
+          path: spec.groups[0].rules[0].labels.severity
+          value: warning
+      - equal:
+          path: spec.groups[1].rules[0].labels.severity
+          value: info
+
+  - it: overrides the fuse on one alert only
+    capabilities:
+      apiVersions:
+        - monitoring.coreos.com/v1
+    set:
+      prometheusRule.enabled: true
+      prometheusRule.forOverrides:
+        FixtureDown: 15m
+    asserts:
+      - equal:
+          path: spec.groups[0].rules[0].for
+          value: 15m
+      - equal:
+          path: spec.groups[1].rules[0].for
+          value: 10m
+
+  - it: refuses an override keyed by an alert it does not ship
+    capabilities:
+      apiVersions:
+        - monitoring.coreos.com/v1
+    set:
+      prometheusRule.enabled: true
+      prometheusRule.severityOverrides:
+        FixtureNope: warning
+    asserts:
+      - failedTemplate:
+          errorPattern: '`severityOverrides` is keyed by "FixtureNope"'
+
+  - it: refuses an override on an alert the same values disable
+    # Contradictory rather than merely redundant: one of the two lines is not what was meant, and
+    # honouring the disable silently would hide a routing change that never took effect.
+    capabilities:
+      apiVersions:
+        - monitoring.coreos.com/v1
+    set:
+      prometheusRule.enabled: true
+      prometheusRule.disabledAlerts:
+        - FixtureDown
+      prometheusRule.forOverrides:
+        FixtureDown: 9m
+    asserts:
+      - failedTemplate:
+          errorPattern: "but the same values disable that alert"
+
+  - it: refuses a fuse Prometheus cannot parse
+    # Prometheus rejects the whole group at load time, so this would disarm every rule beside it
+    # rather than just the one that was mistyped.
+    capabilities:
+      apiVersions:
+        - monitoring.coreos.com/v1
+    set:
+      prometheusRule.enabled: true
+      prometheusRule.forOverrides:
+        FixtureDown: 15minutes
+    asserts:
+      - failedTemplate:
+          errorPattern: "is not a Prometheus duration"
+
+  # ---------------------------------------------------------------------------------------------
+  # Thresholds
+  # ---------------------------------------------------------------------------------------------
+
+  - it: moves the tunable it was given and no other
+    # `FixtureErrorRatio` carries `0.05` twice — the error ratio and the traffic floor — so this
+    # is the assertion that a threshold preset resolves by anchor rather than by searching for a
+    # literal. Replacing the first match, or every match, fails here.
+    capabilities:
+      apiVersions:
+        - monitoring.coreos.com/v1
+    set:
+      prometheusRule.enabled: true
+      prometheusRule.thresholds:
+        FixtureErrorRatio:
+          ratio: 0.25
+    asserts:
+      - equal:
+          path: spec.groups[1].rules[0].expr
+          value: 'job:http_errors:ratio_rate5m{fixture_scope=~".*"} > 0.25 and job:http_requests:rate5m{fixture_scope=~".*"} > 0.05'
+
+  - it: moves the other tunable in the same expression
+    capabilities:
+      apiVersions:
+        - monitoring.coreos.com/v1
+    set:
+      prometheusRule.enabled: true
+      prometheusRule.thresholds:
+        FixtureErrorRatio:
+          floor: 2
+    asserts:
+      - equal:
+          path: spec.groups[1].rules[0].expr
+          value: 'job:http_errors:ratio_rate5m{fixture_scope=~".*"} > 0.05 and job:http_requests:rate5m{fixture_scope=~".*"} > 2'
+
+  - it: composes both tunables with the scope substitution
+    # Thresholds are applied first, against the committed text, so an anchor is written against
+    # what the file says rather than against whatever a given install rewrites it to.
+    capabilities:
+      apiVersions:
+        - monitoring.coreos.com/v1
+    set:
+      prometheusRule.enabled: true
+      prometheusRule.scope.placeholder: 'fixture_scope=~".*"'
+      prometheusRule.scope.matcher: 'namespace="prod"'
+      prometheusRule.thresholds:
+        FixtureErrorRatio:
+          ratio: 0.25
+          floor: 2
+    asserts:
+      - equal:
+          path: spec.groups[1].rules[0].expr
+          value: 'job:http_errors:ratio_rate5m{namespace="prod"} > 0.25 and job:http_requests:rate5m{namespace="prod"} > 2'
+
+  - it: accepts the string spelling a --set flag produces
+    # Helm's `--set` parser promotes integers and booleans and hands every float to the chart as
+    # text, so refusing strings would make the commonest way of setting one impossible.
+    capabilities:
+      apiVersions:
+        - monitoring.coreos.com/v1
+    set:
+      prometheusRule.enabled: true
+      prometheusRule.thresholds:
+        FixtureErrorRatio:
+          ratio: "0.25"
+    asserts:
+      - equal:
+          path: spec.groups[1].rules[0].expr
+          value: 'job:http_errors:ratio_rate5m{fixture_scope=~".*"} > 0.25 and job:http_requests:rate5m{fixture_scope=~".*"} > 0.05'
+
+  - it: refuses a threshold that is not a number
+    # The value is pasted into PromQL. Anything else is either an expression that will not parse
+    # or one the operator did not mean to write.
+    capabilities:
+      apiVersions:
+        - monitoring.coreos.com/v1
+    set:
+      prometheusRule.enabled: true
+      prometheusRule.thresholds:
+        FixtureErrorRatio:
+          ratio: "0 or vector(1)"
+    asserts:
+      - failedTemplate:
+          errorPattern: "which is not a number"
+
+  - it: refuses a threshold outside the declared bounds
+    capabilities:
+      apiVersions:
+        - monitoring.coreos.com/v1
+    set:
+      prometheusRule.enabled: true
+      prometheusRule.thresholds:
+        FixtureErrorRatio:
+          ratio: 1.5
+    asserts:
+      - failedTemplate:
+          errorPattern: "above the declared maximum of 1"
+
+  - it: refuses a tunable the alert does not declare
+    capabilities:
+      apiVersions:
+        - monitoring.coreos.com/v1
+    set:
+      prometheusRule.enabled: true
+      prometheusRule.thresholds:
+        FixtureErrorRatio:
+          nope: 1
+    asserts:
+      - failedTemplate:
+          errorPattern: "which that alert does not declare as tunable. It declares: floor, ratio"
+
+  - it: refuses a threshold on an alert whose comparison is derived
+    # `FixtureLatencyCritical` compares a `histogram_quantile` against the top finite bucket. The
+    # function cannot return more than that boundary, so any larger threshold is a critical alert
+    # that reads plausibly and can never fire.
+    capabilities:
+      apiVersions:
+        - monitoring.coreos.com/v1
+    set:
+      prometheusRule.enabled: true
+      prometheusRule.thresholds:
+        FixtureLatencyCritical:
+          max: 12
+    asserts:
+      - failedTemplate:
+          errorPattern: "but no threshold of that alert is tunable"
+
+  # ---------------------------------------------------------------------------------------------
+  # Appended groups
+  # ---------------------------------------------------------------------------------------------
+
+  - it: appends a site's own rule group after the shipped ones
+    capabilities:
+      apiVersions:
+        - monitoring.coreos.com/v1
+    set:
+      prometheusRule.enabled: true
+      prometheusRule.additionalRuleGroups:
+        - name: fixture-site-local
+          interval: 1m
+          rules:
+            - alert: FixtureSiteLocal
+              expr: up == 0
+              for: 2m
+              labels:
+                severity: page
+    asserts:
+      - lengthEqual:
+          path: spec.groups
+          count: 4
+      - equal:
+          path: spec.groups[3].name
+          value: fixture-site-local
+      - equal:
+          path: spec.groups[3].rules[0].alert
+          value: FixtureSiteLocal
+
+  - it: leaves an appended group's own templating alone
+    # Same contract as the rule files: a `$labels` reference in an annotation an operator wrote
+    # has to reach Prometheus intact rather than being resolved by Go on the way past.
+    capabilities:
+      apiVersions:
+        - monitoring.coreos.com/v1
+    set:
+      prometheusRule.enabled: true
+      prometheusRule.additionalRuleGroups:
+        - name: fixture-site-local
+          rules:
+            - alert: FixtureSiteLocal
+              expr: up == 0
+              annotations:
+                summary: '{{ $labels.job }} is down, per site policy'
+    asserts:
+      - equal:
+          path: spec.groups[3].rules[0].annotations.summary
+          value: '{{ $labels.job }} is down, per site policy'
+
+  - it: re-adds a disabled alert on the site's own terms
+    # The escape hatch that makes `disabledAlerts` honest: an operator who wants different
+    # arithmetic switches the shipped rule off and writes their own, rather than being told no.
+    capabilities:
+      apiVersions:
+        - monitoring.coreos.com/v1
+    set:
+      prometheusRule.enabled: true
+      prometheusRule.disabledAlerts:
+        - FixtureLatencyCritical
+      prometheusRule.additionalRuleGroups:
+        - name: fixture-site-latency
+          rules:
+            - alert: FixtureLatencyCritical
+              expr: 'job:http_request_duration_seconds:p99_5m{fixture_scope=~".*"} >= 5'
+              for: 5m
+    asserts:
+      - lengthEqual:
+          path: spec.groups[1].rules
+          count: 1
+      - equal:
+          path: spec.groups[3].rules[0].expr
+          value: 'job:http_request_duration_seconds:p99_5m{fixture_scope=~".*"} >= 5'
+
+  - it: gives an appended group the release's routing labels
+    # `additionalRuleLabels` is a property of the install, not of the shipped rules. Skipping the
+    # groups an operator appended would route exactly the rules they cared most about back into
+    # the rotation they were trying to stay out of.
+    capabilities:
+      apiVersions:
+        - monitoring.coreos.com/v1
+    set:
+      prometheusRule.enabled: true
+      prometheusRule.additionalRuleLabels:
+        tier: staging
+      prometheusRule.additionalRuleGroups:
+        - name: fixture-site-local
+          rules:
+            - alert: FixtureSiteLocal
+              expr: up == 0
+    asserts:
+      - equal:
+          path: spec.groups[3].rules[0].labels.tier
+          value: staging
+
+  - it: lets an appended rule's own label win
+    # Precedence flips here, and deliberately: on a shipped rule `additionalRuleLabels` beats the
+    # chart's default, but a label the operator wrote on their own rule is already the operator
+    # speaking and there is nothing left to override.
+    capabilities:
+      apiVersions:
+        - monitoring.coreos.com/v1
+    set:
+      prometheusRule.enabled: true
+      prometheusRule.additionalRuleLabels:
+        severity: info
+      prometheusRule.additionalRuleGroups:
+        - name: fixture-site-local
+          rules:
+            - alert: FixtureSiteLocal
+              expr: up == 0
+              labels:
+                severity: page
+    asserts:
+      - equal:
+          path: spec.groups[3].rules[0].labels.severity
+          value: page
+      - equal:
+          path: spec.groups[0].rules[0].labels.severity
+          value: info
+
+  - it: never labels a recording rule in an appended group
+    capabilities:
+      apiVersions:
+        - monitoring.coreos.com/v1
+    set:
+      prometheusRule.enabled: true
+      prometheusRule.additionalRuleLabels:
+        tier: staging
+      prometheusRule.additionalRuleGroups:
+        - name: fixture-site-recording
+          rules:
+            - record: job:site_local:rate5m
+              expr: rate(up[5m])
+    asserts:
+      - notExists:
+          path: spec.groups[3].rules[0].labels
+
+  - it: refuses an appended group with no name
+    capabilities:
+      apiVersions:
+        - monitoring.coreos.com/v1
+    set:
+      prometheusRule.enabled: true
+      prometheusRule.additionalRuleGroups:
+        - rules:
+            - alert: FixtureSiteLocal
+              expr: up == 0
+    asserts:
+      - failedTemplate:
+          errorPattern: '`additionalRuleGroups\[0\]` has no `name`'
+
+  - it: refuses an appended group with no rules
+    capabilities:
+      apiVersions:
+        - monitoring.coreos.com/v1
+    set:
+      prometheusRule.enabled: true
+      prometheusRule.additionalRuleGroups:
+        - name: fixture-site-local
+          rules: []
+    asserts:
+      - failedTemplate:
+          errorPattern: "has no `rules`"
+
+  - it: refuses an appended group that shadows a shipped one
+    # Prometheus refuses a rule file holding two groups of the same name, which would take the
+    # whole object down rather than just the appended group.
+    capabilities:
+      apiVersions:
+        - monitoring.coreos.com/v1
+    set:
+      prometheusRule.enabled: true
+      prometheusRule.additionalRuleGroups:
+        - name: fixture-availability
+          rules:
+            - alert: FixtureSiteLocal
+              expr: up == 0
+    asserts:
+      - failedTemplate:
+          errorPattern: "which is already the name of a group this chart ships"

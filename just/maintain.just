@@ -91,3 +91,34 @@ check-chassis chart='' *flags:
     {{ resolve_python }}
     "$python" {{ scripts }}/check-chassis.py '{{ chart }}' \
       --charts {{ charts }} --chassis .github/templates/chart/values.chassis.yaml {{ flags }}
+
+# Declare a rule threshold as tunable, deriving its `anchor` from the rule itself.
+#
+# The hard part of a tunable is the anchor: the slice of the alert's expression that contains the
+# number and occurs in it exactly once. Hand-copied, it is the field that goes wrong — an anchor
+# matching nothing makes the override a silent no-op, one matching twice rewrites a comparison the
+# author did not mean. `just audit-observability` catches both, but on the pull request rather than
+# in the editor, and the repair is a hunt through PromQL. Deriving it removes the hunt.
+#
+# Not every number in a rule is a threshold. Bucket boundaries and structural `> 0` comparisons are
+# deliberately not tunable, and the header of each chart's `rules/tunables.yaml` says which and
+# why — this cannot tell them apart and does not try. Read that before declaring one.
+#
+#   just add-tunable tankovault TankoVaultDatabasePoolSaturated
+#       list what the alert compares against, with the anchor each number would get
+#
+#   just add-tunable tankovault TankoVaultDatabasePoolSaturated saturation 0.9
+#       print the declaration
+#
+#   just add-tunable tankovault TankoVaultDatabasePoolSaturated saturation 0.9 --write
+#       insert it, then fill in the `description:` and run `just schema`
+[doc("Declare a rule threshold as tunable, deriving its anchor from the rule")]
+[group('maintain')]
+add-tunable chart alert name='' literal='' *flags:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    {{ resolve_python }}
+    args=(--charts {{ charts }} --chart '{{ chart }}' --alert '{{ alert }}')
+    if [ -n '{{ name }}' ]; then args+=(--name '{{ name }}'); fi
+    if [ -n '{{ literal }}' ]; then args+=(--literal '{{ literal }}'); fi
+    "$python" {{ scripts }}/add-tunable.py "${args[@]}" {{ flags }}

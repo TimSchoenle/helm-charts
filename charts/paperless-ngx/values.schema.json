@@ -2089,6 +2089,13 @@
               "title": "enabled",
               "type": "boolean"
             },
+            "folder": {
+              "default": "",
+              "description": "Grafana folder to file the dashboards under, for both delivery mechanisms: the sidecar\nreads it from a `grafana_folder` annotation on the ConfigMap and the operator from a field\non its own resource. Empty leaves each to its default.",
+              "required": [],
+              "title": "folder",
+              "type": "string"
+            },
             "grafanaOperator": {
               "additionalProperties": true,
               "description": "grafana-operator v5 delivery, which — unlike the sidecar — can be granted\ncross-namespace import from this side.",
@@ -2109,7 +2116,7 @@
                 },
                 "folder": {
                   "default": "",
-                  "description": "Grafana folder to file the dashboards under. Empty uses the operator's default.",
+                  "description": "Grafana folder to file the dashboards under, for the operator path only. Overrides\n`folder` when set; empty falls back to it.",
                   "required": [],
                   "title": "folder",
                   "type": "string"
@@ -2165,6 +2172,13 @@
               "description": "Value for that label.",
               "required": [],
               "title": "labelValue",
+              "type": "string"
+            },
+            "namespace": {
+              "default": "",
+              "description": "Namespace for the ConfigMap and, when enabled, the `GrafanaDashboard` resources beside\nit. Empty uses the release namespace. Which namespaces the sidecar watches is configured on\nthe *Grafana* release and cannot be reached from here, so putting the ConfigMap where it is\nalready looking is the only cross-namespace move the sidecar path has. The custom resources\nmove with it, because `configMapRef` resolves in their own namespace.",
+              "required": [],
+              "title": "namespace",
               "type": "string"
             }
           },
@@ -2334,6 +2348,13 @@
               "required": [],
               "title": "labels",
               "type": "object"
+            },
+            "namespace": {
+              "default": "",
+              "description": "Namespace for the PrometheusRule. Empty uses the release namespace. A Prometheus loads\nrules from whichever namespaces its `ruleNamespaceSelector` names, which this chart cannot\nreach; landing the object in one of them is the move that is left. The rules stay scoped to\nthis release either way — `scope` is derived from the release, not from where the object\nlands.",
+              "required": [],
+              "title": "namespace",
+              "type": "string"
             },
             "scope": {
               "default": "namespace",

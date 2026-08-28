@@ -1,0 +1,56 @@
+# Which thresholds in `rules/*.yml` an operator may move, and what each one means.
+#
+# Read by `common.prometheus.rules.*` and exposed as `metrics.prometheusRule.thresholds`. Outside
+# the `rules/*.yml` glob on purpose: promtool reads those files strictly and would reject an
+# unknown top-level key, and the PrometheusRule CRD would prune one. The full contract is in the
+# header of `charts/common/templates/_prometheus.tpl`.
+#
+# `anchor` is the substring of the alert's expression that contains the threshold and occurs in it
+# exactly once; substitution replaces the default inside the anchor, then the anchor inside the
+# expression. Both properties are checked at render time and by `just audit-observability`, so a
+# rule edit that makes an anchor ambiguous — or that moves the number it points at — fails the
+# chart rather than quietly retargeting the substitution.
+#
+# `TeamSpeakExporterDown` and `TeamSpeakServerOffline` do not appear here and cannot: both compare
+# against zero, which is structural rather than a judgement about how much is too much. An
+# operator who wants a different condition wants a different rule, which `disabledAlerts` plus
+# `additionalRuleGroups` is for.
+tunables:
+  TeamSpeakSlotsNearlyFull:
+    ratio:
+      # -- Fraction of the licensed slot limit in use that counts as nearly full.
+      description: >-
+        Connected clients as a share of `virtualServer.maxClients`. Slots are licensed rather
+        than provisioned, so the warning has to arrive with enough lead time to buy more; lower
+        it on a licence that takes a while to extend.
+      type: number
+      default: 0.9
+      minimum: 0
+      maximum: 1
+      anchor: 'namespace_virtualserver:ts3_slots_used:ratio{teamspeak_scope=~".*"} > 0.9'
+
+  TeamSpeakServerRestarted:
+    seconds:
+      # -- Uptime in seconds below which the server counts as freshly restarted.
+      description: >-
+        How recently the server must have started for this to fire. It has to exceed the scrape
+        interval by a comfortable margin or a restart lands between two scrapes and is never
+        seen; the default is five minutes against a one-minute default scrape.
+      type: integer
+      default: 300
+      minimum: 1
+      anchor: 'ts3_serverinfo_uptime{teamspeak_scope=~".*"} < 300'
+
+  TeamSpeakQueryCommandFailures:
+    failures:
+      # -- Failed ServerQuery commands in fifteen minutes that count as more than a blip.
+      description: >-
+        A count, not a rate, because that is the form the number is actionable in. It sits above
+        zero deliberately: a single refused command during a reconnect is normal, a sustained
+        handful means the credentials or the flood allowlist are wrong.
+      type: integer
+      default: 3
+      minimum: 0
+      # `ts3` carries a 3 of its own, so the full comparison would contain the default twice.
+      # This is the only `> 3` in the expression, and the render fails if that stops being true.
+      anchor: '} > 3'

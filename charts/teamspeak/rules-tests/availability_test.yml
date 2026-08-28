@@ -1,0 +1,121 @@
+# Whether the server is there, and whether the exporter can still see it.
+#
+# The distinction these pin is between an absent target and a lying one. `TeamSpeakExporterDown`
+# is the honest failure: the scrape fails, the series go stale, and every other alert here stops
+# evaluating. `TeamSpeakQueryCommandFailures` is the dishonest one: the exporter is scraped
+# perfectly well and keeps publishing whatever it last managed to read, so the dashboard looks
+# healthy and frozen. Collapsing the two into one alert would lose exactly that.
+rule_files:
+  - teamspeak.rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  # The exporter stops answering. `container="metrics"` is what separates the sidecar's own target
+  # from the server container's, and a rule that dropped it would fire on either.
+  - interval: 1m
+    input_series:
+      - series: 'up{namespace="rules-test", pod="teamspeak-0", container="metrics", job="teamspeak"}'
+        values: '0x20'
+    promql_expr_test:
+      - expr: ALERTS{alertname="TeamSpeakExporterDown", alertstate="firing"}
+        eval_time: 15m
+        exp_samples:
+          - labels: 'ALERTS{alertname="TeamSpeakExporterDown", alertstate="firing", namespace="rules-test", pod="teamspeak-0", container="metrics", job="teamspeak", severity="critical"}'
+            value: 1
+
+  # A healthy exporter, and the server container's own target failing beside it. Only the sidecar
+  # is this alert's business — a dead server container is `KubePodCrashLooping`, which the
+  # Prometheus Operator already ships and which knows the restart count this chart does not.
+  - interval: 1m
+    input_series:
+      - series: 'up{namespace="rules-test", pod="teamspeak-0", container="metrics", job="teamspeak"}'
+        values: '1x20'
+      - series: 'up{namespace="rules-test", pod="teamspeak-0", container="teamspeak", job="teamspeak"}'
+        values: '0x20'
+    promql_expr_test:
+      - expr: ALERTS{alertname="TeamSpeakExporterDown", alertstate="firing"}
+        eval_time: 15m
+        exp_samples: []
+
+  # Reachable over ServerQuery, reporting itself offline: the licence case.
+  - interval: 1m
+    input_series:
+      - series: 'ts3_serverinfo_online{namespace="rules-test", pod="teamspeak-0", virtualserver="1"}'
+        values: '0x20'
+    promql_expr_test:
+      - expr: ALERTS{alertname="TeamSpeakServerOffline", alertstate="firing"}
+        eval_time: 10m
+        exp_samples:
+          - labels: 'ALERTS{alertname="TeamSpeakServerOffline", alertstate="firing", namespace="rules-test", pod="teamspeak-0", virtualserver="1", severity="critical"}'
+            value: 1
+
+  # Two virtual servers on one instance, one of them stopped. Only the stopped one may alert:
+  # the metric is per virtual server and so is the alert, which is what makes the runbook's
+  # `{{ $labels.virtualserver }}` mean anything.
+  - interval: 1m
+    input_series:
+      - series: 'ts3_serverinfo_online{namespace="rules-test", pod="teamspeak-0", virtualserver="1"}'
+        values: '1x20'
+      - series: 'ts3_serverinfo_online{namespace="rules-test", pod="teamspeak-0", virtualserver="2"}'
+        values: '0x20'
+    promql_expr_test:
+      - expr: ALERTS{alertname="TeamSpeakServerOffline", alertstate="firing"}
+        eval_time: 10m
+        exp_samples:
+          - labels: 'ALERTS{alertname="TeamSpeakServerOffline", alertstate="firing", namespace="rules-test", pod="teamspeak-0", virtualserver="2", severity="critical"}'
+            value: 1
+
+  # A restart, seen as low uptime. `for: 0m` is deliberate — the condition is already a statement
+  # about a window rather than an instant, and waiting on it would mostly guarantee the alert
+  # resolves before it fires.
+  - interval: 1m
+    input_series:
+      - series: 'ts3_serverinfo_uptime{namespace="rules-test", pod="teamspeak-0", virtualserver="1"}'
+        values: '30+60x20'
+    promql_expr_test:
+      - expr: ALERTS{alertname="TeamSpeakServerRestarted", alertstate="firing"}
+        eval_time: 2m
+        exp_samples:
+          - labels: 'ALERTS{alertname="TeamSpeakServerRestarted", alertstate="firing", namespace="rules-test", pod="teamspeak-0", virtualserver="1", severity="info"}'
+            value: 1
+      # And clears itself once the server has been up past the threshold, rather than latching.
+      - expr: ALERTS{alertname="TeamSpeakServerRestarted", alertstate="firing"}
+        eval_time: 10m
+        exp_samples: []
+
+  # A server that has been up for days does not fire, which is the assertion that would catch a
+  # comparison flipped the wrong way round.
+  - interval: 1m
+    input_series:
+      - series: 'ts3_serverinfo_uptime{namespace="rules-test", pod="teamspeak-0", virtualserver="1"}'
+        values: '400000+60x20'
+    promql_expr_test:
+      - expr: ALERTS{alertname="TeamSpeakServerRestarted", alertstate="firing"}
+        eval_time: 15m
+        exp_samples: []
+
+  # ServerQuery commands failing steadily. One per minute is well past the default of three in
+  # fifteen, and the alert carries the pod its runbook tells you to pull logs from.
+  - interval: 1m
+    input_series:
+      - series: 'ts3_client_commands_failed_total{namespace="rules-test", pod="teamspeak-0", container="metrics"}'
+        values: '0+1x60'
+    promql_expr_test:
+      - expr: ALERTS{alertname="TeamSpeakQueryCommandFailures", alertstate="firing"}
+        eval_time: 40m
+        exp_samples:
+          - labels: 'ALERTS{alertname="TeamSpeakQueryCommandFailures", alertstate="firing", namespace="rules-test", pod="teamspeak-0", severity="warning"}'
+            value: 1
+
+  # A single failure during a reconnect. This is the case the old inline rule got wrong: it
+  # compared a *rate* against zero, so one failed command kept the rate above zero for the whole
+  # fifteen-minute window and paged. Counting instead, three in fifteen minutes is still quiet.
+  - interval: 1m
+    input_series:
+      - series: 'ts3_client_commands_failed_total{namespace="rules-test", pod="teamspeak-0", container="metrics"}'
+        values: '0 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1'
+    promql_expr_test:
+      - expr: ALERTS{alertname="TeamSpeakQueryCommandFailures"}
+        eval_time: 40m
+        exp_samples: []

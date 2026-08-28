@@ -1571,23 +1571,87 @@
           "title": "channelMetrics",
           "type": "boolean"
         },
-        "dashboards": {
+        "dashboard": {
           "additionalProperties": true,
-          "description": "Grafana dashboards, shipped as ConfigMaps for the Grafana sidecar dashboard loader.",
+          "description": "Grafana dashboards, shipped as a labelled ConfigMap and optionally as\n`GrafanaDashboard` custom resources.",
           "properties": {
-            "annotations": {
-              "additionalProperties": true,
-              "description": "Extra annotations, e.g. `grafana_folder` to place the dashboard in a folder.",
-              "required": [],
-              "title": "annotations",
-              "type": "object"
-            },
             "enabled": {
               "default": false,
-              "description": "Create the dashboard ConfigMap.",
+              "description": "Create the dashboard ConfigMap for the Grafana sidecar to discover.",
               "required": [],
               "title": "enabled",
               "type": "boolean"
+            },
+            "folder": {
+              "default": "",
+              "description": "Grafana folder to file the dashboard under, for both delivery mechanisms: the sidecar\nreads it from a `grafana_folder` annotation on the ConfigMap and the operator from a field\non its own resource. Empty leaves each to its default.",
+              "required": [],
+              "title": "folder",
+              "type": "string"
+            },
+            "grafanaOperator": {
+              "additionalProperties": true,
+              "description": "grafana-operator v5 delivery, which — unlike the sidecar — can be granted\ncross-namespace import from this side.",
+              "properties": {
+                "allowCrossNamespaceImport": {
+                  "default": true,
+                  "description": "Allow a Grafana in another namespace to import these dashboards.",
+                  "required": [],
+                  "title": "allowCrossNamespaceImport",
+                  "type": "boolean"
+                },
+                "enabled": {
+                  "default": false,
+                  "description": "Also create one `GrafanaDashboard` per dashboard file. Requires\n`metrics.dashboard.enabled`, because the custom resources reference the ConfigMap rather\nthan inlining the JSON.",
+                  "required": [],
+                  "title": "enabled",
+                  "type": "boolean"
+                },
+                "folder": {
+                  "default": "",
+                  "description": "Grafana folder to file the dashboards under, for the operator path only. Overrides\n`folder` when set; empty falls back to it.",
+                  "required": [],
+                  "title": "folder",
+                  "type": "string"
+                },
+                "instanceSelector": {
+                  "additionalProperties": true,
+                  "description": "Which Grafana instances import them. An empty selector matches none, so the\ndashboards would be created and then ignored.",
+                  "properties": {
+                    "matchLabels": {
+                      "additionalProperties": false,
+                      "description": "Labels every Grafana custom resource to import into has to carry.",
+                      "properties": {
+                        "dashboards": {
+                          "default": "grafana",
+                          "required": [],
+                          "title": "dashboards",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "dashboards"
+                      ],
+                      "title": "matchLabels",
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "matchLabels"
+                  ],
+                  "title": "instanceSelector",
+                  "type": "object"
+                },
+                "resyncPeriod": {
+                  "default": "5m",
+                  "description": "How often the operator re-applies them.",
+                  "required": [],
+                  "title": "resyncPeriod",
+                  "type": "string"
+                }
+              },
+              "required": [],
+              "title": "grafanaOperator"
             },
             "label": {
               "default": "grafana_dashboard",
@@ -1605,14 +1669,14 @@
             },
             "namespace": {
               "default": "",
-              "description": "Namespace for the ConfigMap. Empty uses the release namespace. It has to be a\nnamespace the Grafana sidecar watches.",
+              "description": "Namespace for the ConfigMap and, when enabled, the `GrafanaDashboard` resources beside\nit. Empty uses the release namespace. Which namespaces the sidecar watches is configured on\nthe *Grafana* release and cannot be reached from here, so putting the ConfigMap where it is\nalready looking is the only cross-namespace move the sidecar path has. The custom resources\nmove with it, because `configMapRef` resolves in their own namespace.",
               "required": [],
               "title": "namespace",
               "type": "string"
             }
           },
           "required": [],
-          "title": "dashboards"
+          "title": "dashboard"
         },
         "enabled": {
           "default": false,
@@ -1734,15 +1798,83 @@
         },
         "prometheusRule": {
           "additionalProperties": true,
-          "description": "PrometheusRule carrying the alerting rules below.",
+          "description": "The PrometheusRule carrying this chart's alerting and recording rules.",
           "properties": {
-            "additionalRules": {
-              "description": "Additional rules appended to the generated group, in Prometheus rule syntax.",
+            "additionalRuleGroups": {
+              "description": "Extra rule groups, appended to the ones this chart ships. Each entry is a Prometheus rule\ngroup — a `name`, a list of `rules`, optionally an `interval` — emitted as written: they are\nnot passed through Helm's template engine, so a `$labels` reference in an annotation reaches\nPrometheus intact instead of being resolved to an empty string on the way past. That also\nmeans no `{{ .Release.Name }}` in them.\n\n`additionalRuleLabels` does reach these, because it describes the release rather than the\nrules — skipping them would route exactly the alerts you wrote yourself back into the\nrotation you were keeping this install out of. Precedence flips: a label you set on your own\nrule wins, since it is already you speaking rather than a default of the chart's.\n\nThis is what makes `disabledAlerts` honest: switch a shipped rule off and write your own\nwith the arithmetic you wanted. A group whose name collides with a shipped one is refused,\nbecause Prometheus rejects the whole object rather than the duplicate.",
               "items": {
+                "properties": {
+                  "interval": {
+                    "pattern": "^([0-9]+(ms|[smhdwy]))+$",
+                    "required": [],
+                    "type": "string"
+                  },
+                  "limit": {
+                    "minimum": 0,
+                    "required": [],
+                    "type": "integer"
+                  },
+                  "name": {
+                    "minLength": 1,
+                    "required": [],
+                    "type": "string"
+                  },
+                  "rules": {
+                    "items": {
+                      "required": [],
+                      "type": "object"
+                    },
+                    "minItems": 1,
+                    "required": [],
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "name",
+                  "rules"
+                ],
+                "type": "object"
+              },
+              "required": [],
+              "title": "additionalRuleGroups",
+              "type": "array"
+            },
+            "additionalRuleLabels": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "description": "Labels merged into every alert this chart ships, for Alertmanager routing. This is how a\ntest server keeps itself out of the on-call rotation. Applied to alerting rules only: a\nlabel on a recording rule changes the identity of the series it records, and every\ndashboard panel and expression reading it would silently stop matching.\n\nThese beat the labels in the rule files, which is the point of them, and lose to\n`severityOverrides`, which is more specific.\n\nExample: `{team: platform, tier: staging}`",
+              "required": [],
+              "title": "additionalRuleLabels",
+              "type": "object"
+            },
+            "disabledAlerts": {
+              "description": "Alerts to drop, by name. Refused when the name is not one this chart ships — a typo here\nis the one failure the whole feature must not produce, because it leaves the values file\nsaying an alert is off while it still pages. The rules stay in `rules/` and stay tested;\nonly the rendered object loses them.\n\nExample: `[TeamSpeakServerRestarted]`",
+              "items": {
+                "enum": [
+                  "TeamSpeakExporterDown",
+                  "TeamSpeakQueryCommandFailures",
+                  "TeamSpeakServerOffline",
+                  "TeamSpeakServerRestarted",
+                  "TeamSpeakSlotsNearlyFull"
+                ],
                 "required": []
               },
               "required": [],
-              "title": "additionalRules",
+              "title": "disabledAlerts",
+              "type": "array"
+            },
+            "disabledGroups": {
+              "description": "Rule groups to drop entirely, by name. Refused when the name is not one this chart\nships, and refused for a group holding recording rules: the alerts and the dashboard read\nthe series those produce, so dropping one leaves panels blank and expressions matching\nnothing, and neither reports an error. Use `disabledAlerts` for the alerts instead.\n\nExample: `[teamspeak-capacity]`",
+              "items": {
+                "enum": [
+                  "teamspeak-availability",
+                  "teamspeak-capacity"
+                ],
+                "required": []
+              },
+              "required": [],
+              "title": "disabledGroups",
               "type": "array"
             },
             "enabled": {
@@ -1752,189 +1884,177 @@
               "title": "enabled",
               "type": "boolean"
             },
+            "forOverrides": {
+              "additionalProperties": false,
+              "description": "Per-alert `for` duration, keyed by alert name — how long the condition must hold before\nthe alert fires. A Prometheus duration such as `30s`, `15m` or `1h30m`; write zero as `0m`\nso YAML keeps it a string. Anything Prometheus cannot parse is refused here, because it\nwould otherwise be refused at load time and take the alert's whole rule group down with it.\n\nExample: `{TeamSpeakExporterDown: 5m}`",
+              "properties": {
+                "TeamSpeakExporterDown": {
+                  "pattern": "^([0-9]+(ms|[smhdwy]))+$",
+                  "required": [],
+                  "type": "string"
+                },
+                "TeamSpeakQueryCommandFailures": {
+                  "pattern": "^([0-9]+(ms|[smhdwy]))+$",
+                  "required": [],
+                  "type": "string"
+                },
+                "TeamSpeakServerOffline": {
+                  "pattern": "^([0-9]+(ms|[smhdwy]))+$",
+                  "required": [],
+                  "type": "string"
+                },
+                "TeamSpeakServerRestarted": {
+                  "pattern": "^([0-9]+(ms|[smhdwy]))+$",
+                  "required": [],
+                  "type": "string"
+                },
+                "TeamSpeakSlotsNearlyFull": {
+                  "pattern": "^([0-9]+(ms|[smhdwy]))+$",
+                  "required": [],
+                  "type": "string"
+                }
+              },
+              "required": [],
+              "title": "forOverrides",
+              "type": "object"
+            },
             "labels": {
               "additionalProperties": true,
-              "description": "Extra labels for the PrometheusRule, e.g. the `release` label a Prometheus Operator\ninstance selects on.",
+              "description": "Extra labels for the PrometheusRule, e.g. the `release` label a Prometheus Operator\ninstance selects rules on. Without the one your instance selects, the object is created\nand never loaded.",
               "required": [],
               "title": "labels",
               "type": "object"
             },
             "namespace": {
               "default": "",
-              "description": "Namespace for the PrometheusRule. Empty uses the release namespace.",
+              "description": "Namespace for the PrometheusRule. Empty uses the release namespace. A Prometheus loads\nrules from whichever namespaces its `ruleNamespaceSelector` names, which this chart cannot\nreach; landing the object in one of them is the move that is left. The rules stay scoped to\nthis release either way — `scope` is derived from the release, not from where the object\nlands.",
               "required": [],
               "title": "namespace",
               "type": "string"
             },
-            "rules": {
-              "additionalProperties": true,
-              "description": "Built-in alerting rules. Each one can be switched off individually and carries its\nown threshold, severity and `for` duration.",
+            "scope": {
+              "default": "release",
+              "description": "How far the rules are scoped. A PrometheusRule is not confined to its own namespace, so\n`none` makes this release alert on every other TeamSpeak in the cluster as well.\n`namespace` rewrites every selector to match only this release's namespace; `release`\nnarrows that further to this release's own pods, which is what you want when two TeamSpeak\nservers share a namespace.",
+              "enum": [
+                "release",
+                "namespace",
+                "none"
+              ],
+              "required": [],
+              "title": "scope"
+            },
+            "severityOverrides": {
+              "additionalProperties": false,
+              "description": "Per-alert `severity` label, keyed by alert name. The most specific setting there is, so\nit beats both the rule file and `additionalRuleLabels`. Refused for an alert this chart\ndoes not ship, and for one the same values disable.\n\nExample: `{TeamSpeakSlotsNearlyFull: critical}`",
               "properties": {
-                "exporterDown": {
-                  "additionalProperties": true,
-                  "description": "Fires when Prometheus cannot scrape the exporter at all — the pod is gone, the\nsidecar crashed, or the network policy is wrong.",
-                  "properties": {
-                    "enabled": {
-                      "default": true,
-                      "description": "Enable the rule.",
-                      "required": [],
-                      "title": "enabled",
-                      "type": "boolean"
-                    },
-                    "for": {
-                      "default": "10m",
-                      "description": "How long the condition must hold before the alert fires.",
-                      "required": [],
-                      "title": "for",
-                      "type": "string"
-                    },
-                    "severity": {
-                      "default": "critical",
-                      "description": "Alert severity label.",
-                      "required": [],
-                      "title": "severity",
-                      "type": "string"
-                    }
-                  },
+                "TeamSpeakExporterDown": {
+                  "minLength": 1,
                   "required": [],
-                  "title": "exporterDown"
+                  "type": "string"
                 },
-                "queryCommandFailures": {
-                  "additionalProperties": true,
-                  "description": "Fires when ServerQuery commands start failing, which normally means the exporter's\ncredentials went stale or it is being flood-limited — the metrics are lying by then.",
-                  "properties": {
-                    "enabled": {
-                      "default": true,
-                      "description": "Enable the rule.",
-                      "required": [],
-                      "title": "enabled",
-                      "type": "boolean"
-                    },
-                    "for": {
-                      "default": "15m",
-                      "description": "How long the condition must hold before the alert fires.",
-                      "required": [],
-                      "title": "for",
-                      "type": "string"
-                    },
-                    "severity": {
-                      "default": "warning",
-                      "description": "Alert severity label.",
-                      "required": [],
-                      "title": "severity",
-                      "type": "string"
-                    }
-                  },
+                "TeamSpeakQueryCommandFailures": {
+                  "minLength": 1,
                   "required": [],
-                  "title": "queryCommandFailures"
+                  "type": "string"
                 },
-                "serverOffline": {
-                  "additionalProperties": true,
-                  "description": "Fires when the exporter is reachable but the virtual server itself reports offline.",
-                  "properties": {
-                    "enabled": {
-                      "default": true,
-                      "description": "Enable the rule.",
-                      "required": [],
-                      "title": "enabled",
-                      "type": "boolean"
-                    },
-                    "for": {
-                      "default": "5m",
-                      "description": "How long the condition must hold before the alert fires.",
-                      "required": [],
-                      "title": "for",
-                      "type": "string"
-                    },
-                    "severity": {
-                      "default": "critical",
-                      "description": "Alert severity label.",
-                      "required": [],
-                      "title": "severity",
-                      "type": "string"
-                    }
-                  },
+                "TeamSpeakServerOffline": {
+                  "minLength": 1,
                   "required": [],
-                  "title": "serverOffline"
+                  "type": "string"
                 },
-                "serverRestarted": {
-                  "additionalProperties": true,
-                  "description": "Fires when the server restarted recently. On a server whose state lives on an\nemptyDir this also means the identity and all permissions were just lost.",
-                  "properties": {
-                    "enabled": {
-                      "default": true,
-                      "description": "Enable the rule.",
-                      "required": [],
-                      "title": "enabled",
-                      "type": "boolean"
-                    },
-                    "for": {
-                      "default": "0m",
-                      "description": "How long the condition must hold before the alert fires.",
-                      "required": [],
-                      "title": "for",
-                      "type": "string"
-                    },
-                    "severity": {
-                      "default": "info",
-                      "description": "Alert severity label.",
-                      "required": [],
-                      "title": "severity",
-                      "type": "string"
-                    },
-                    "thresholdSeconds": {
-                      "default": 300,
-                      "description": "Uptime below this many seconds counts as a restart.",
-                      "minimum": 1,
-                      "required": [],
-                      "title": "thresholdSeconds",
-                      "type": "integer"
-                    }
-                  },
+                "TeamSpeakServerRestarted": {
+                  "minLength": 1,
                   "required": [],
-                  "title": "serverRestarted"
+                  "type": "string"
                 },
-                "slotsNearlyFull": {
-                  "additionalProperties": true,
-                  "description": "Fires when the virtual server is running out of slots, so it can be resized before\nclients start getting turned away.",
-                  "properties": {
-                    "enabled": {
-                      "default": true,
-                      "description": "Enable the rule.",
-                      "required": [],
-                      "title": "enabled",
-                      "type": "boolean"
-                    },
-                    "for": {
-                      "default": "15m",
-                      "description": "How long the condition must hold before the alert fires.",
-                      "required": [],
-                      "title": "for",
-                      "type": "string"
-                    },
-                    "severity": {
-                      "default": "warning",
-                      "description": "Alert severity label.",
-                      "required": [],
-                      "title": "severity",
-                      "type": "string"
-                    },
-                    "threshold": {
-                      "default": 0.9,
-                      "description": "Fraction of the slot limit that counts as nearly full.",
-                      "maximum": 1,
-                      "minimum": 0,
-                      "required": [],
-                      "title": "threshold",
-                      "type": "number"
-                    }
-                  },
+                "TeamSpeakSlotsNearlyFull": {
+                  "minLength": 1,
                   "required": [],
-                  "title": "slotsNearlyFull"
+                  "type": "string"
                 }
               },
               "required": [],
-              "title": "rules"
+              "title": "severityOverrides",
+              "type": "object"
+            },
+            "thresholds": {
+              "additionalProperties": false,
+              "description": "Threshold overrides, keyed by alert name and then by tunable name. Only the thresholds\nthis chart declares in [`rules/tunables.yaml`](rules/tunables.yaml) can be moved, and that\nfile says what each one means and what it is bounded by; setting anything else is refused\nwith the list of names that would have worked.\n\nNot every number in a rule is a threshold somebody chose. `TeamSpeakExporterDown` and\n`TeamSpeakServerOffline` compare against zero, which is structural rather than a judgement,\nso neither is offered here. Disable the alert and re-add your own through\n`additionalRuleGroups` if you need different arithmetic.\n\nExample: `{TeamSpeakSlotsNearlyFull: {ratio: 0.8}}`",
+              "properties": {
+                "TeamSpeakQueryCommandFailures": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "failures": {
+                      "anyOf": [
+                        {
+                          "minimum": 0,
+                          "required": [],
+                          "type": "integer"
+                        },
+                        {
+                          "pattern": "^-?[0-9]+(\\.[0-9]+)?([eE][-+]?[0-9]+)?$",
+                          "required": [],
+                          "type": "string"
+                        }
+                      ],
+                      "default": 3,
+                      "required": []
+                    }
+                  },
+                  "required": [],
+                  "type": "object"
+                },
+                "TeamSpeakServerRestarted": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "seconds": {
+                      "anyOf": [
+                        {
+                          "minimum": 1,
+                          "required": [],
+                          "type": "integer"
+                        },
+                        {
+                          "pattern": "^-?[0-9]+(\\.[0-9]+)?([eE][-+]?[0-9]+)?$",
+                          "required": [],
+                          "type": "string"
+                        }
+                      ],
+                      "default": 300,
+                      "required": []
+                    }
+                  },
+                  "required": [],
+                  "type": "object"
+                },
+                "TeamSpeakSlotsNearlyFull": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "ratio": {
+                      "anyOf": [
+                        {
+                          "maximum": 1,
+                          "minimum": 0,
+                          "required": [],
+                          "type": "number"
+                        },
+                        {
+                          "pattern": "^-?[0-9]+(\\.[0-9]+)?([eE][-+]?[0-9]+)?$",
+                          "required": [],
+                          "type": "string"
+                        }
+                      ],
+                      "default": 0.9,
+                      "required": []
+                    }
+                  },
+                  "required": [],
+                  "type": "object"
+                }
+              },
+              "required": [],
+              "title": "thresholds",
+              "type": "object"
             }
           },
           "required": [],

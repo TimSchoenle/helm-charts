@@ -1,0 +1,26 @@
+# Dashboard delivery through grafana-operator v5, which — unlike the sidecar ConfigMap — carries
+# the cross-namespace import grant on the dashboard itself.
+#
+# Named without the `-values` suffix, so `ct install` skips it: `grafana.integreatly.org/v1beta1`
+# is not registered on the CI cluster, and the chart refuses to render without it rather than
+# creating dashboards nothing will ever import.
+license:
+  accept: true
+
+serverQuery:
+  adminPassword: ci-serveradmin-password
+
+metrics:
+  enabled: true
+  dashboard:
+    enabled: true
+    # Set on the dashboard rather than on the operator, so this fixture also covers the fallback:
+    # `grafanaOperator.folder` is empty and the custom resource has to pick this one up.
+    folder: Voice
+    grafanaOperator:
+      enabled: true
+      allowCrossNamespaceImport: true
+      instanceSelector:
+        matchLabels:
+          dashboards: grafana
+      resyncPeriod: 10m

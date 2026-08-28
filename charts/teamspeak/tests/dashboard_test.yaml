@@ -1,13 +1,14 @@
 suite: test grafana dashboards
 templates:
   - dashboard-configmap.yaml
+  - grafanadashboard.yaml
 set:
   license.accept: true
   serverQuery.adminPassword: hunter2
 tests:
   - it: renders nothing while the exporter is not running
     set:
-      metrics.dashboards.enabled: true
+      metrics.dashboard.enabled: true
     asserts:
       - hasDocuments:
           count: 0
@@ -20,9 +21,10 @@ tests:
           count: 0
 
   - it: ships the dashboard under the label the Grafana sidecar selects on
+    template: dashboard-configmap.yaml
     set:
       metrics.enabled: true
-      metrics.dashboards.enabled: true
+      metrics.dashboard.enabled: true
     asserts:
       - isKind:
           of: ConfigMap
@@ -38,36 +40,88 @@ tests:
   # Grafana's legend syntax uses the same delimiters as Helm, which is why the JSON is read
   # from a file rather than written into a template.
   - it: leaves Grafana's own templating intact
+    template: dashboard-configmap.yaml
     set:
       metrics.enabled: true
-      metrics.dashboards.enabled: true
+      metrics.dashboard.enabled: true
     asserts:
       - matchRegex:
           path: data["teamspeak.json"]
           pattern: '\{\{virtualserver\}\}'
 
-  - it: follows a custom sidecar label and folder
+  - it: follows a custom sidecar label
+    template: dashboard-configmap.yaml
     set:
       metrics.enabled: true
-      metrics.dashboards.enabled: true
-      metrics.dashboards.label: grafana_dashboards
-      metrics.dashboards.labelValue: teamspeak
-      metrics.dashboards.annotations:
-        grafana_folder: TeamSpeak
+      metrics.dashboard.enabled: true
+      metrics.dashboard.label: grafana_dashboards
+      metrics.dashboard.labelValue: teamspeak
     asserts:
       - equal:
           path: metadata.labels.grafana_dashboards
           value: teamspeak
+
+  # The sidecar files a dashboard by annotation and the operator by a field on its own resource;
+  # one value drives both, because an operator who asked for a folder meant it of whichever
+  # mechanism is installed.
+  - it: files the ConfigMap under a folder for the sidecar
+    template: dashboard-configmap.yaml
+    set:
+      metrics.enabled: true
+      metrics.dashboard.enabled: true
+      metrics.dashboard.folder: TeamSpeak
+    asserts:
       - equal:
           path: metadata.annotations.grafana_folder
           value: TeamSpeak
 
   - it: can live in the namespace the Grafana sidecar watches
+    template: dashboard-configmap.yaml
     set:
       metrics.enabled: true
-      metrics.dashboards.enabled: true
-      metrics.dashboards.namespace: monitoring
+      metrics.dashboard.enabled: true
+      metrics.dashboard.namespace: monitoring
     asserts:
       - equal:
           path: metadata.namespace
           value: monitoring
+
+  - it: adds a GrafanaDashboard for clusters running the operator
+    template: grafanadashboard.yaml
+    capabilities:
+      apiVersions:
+        - grafana.integreatly.org/v1beta1
+    set:
+      metrics.enabled: true
+      metrics.dashboard.enabled: true
+      metrics.dashboard.grafanaOperator.enabled: true
+      metrics.dashboard.folder: TeamSpeak
+    asserts:
+      - isKind:
+          of: GrafanaDashboard
+      - equal:
+          path: spec.allowCrossNamespaceImport
+          value: true
+      - equal:
+          path: spec.folder
+          value: TeamSpeak
+      # The JSON is referenced rather than duplicated, so the two carriers cannot drift apart.
+      - equal:
+          path: spec.configMapRef.name
+          value: RELEASE-NAME-teamspeak-dashboards
+      - equal:
+          path: spec.configMapRef.key
+          value: teamspeak.json
+
+  - it: refuses the operator path without the ConfigMap it references
+    template: grafanadashboard.yaml
+    capabilities:
+      apiVersions:
+        - grafana.integreatly.org/v1beta1
+    set:
+      metrics.enabled: true
+      metrics.dashboard.enabled: false
+      metrics.dashboard.grafanaOperator.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 0

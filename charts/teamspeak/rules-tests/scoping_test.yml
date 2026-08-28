@@ -1,0 +1,83 @@
+# Scoping, evaluated against the rules as a cluster actually receives them.
+#
+# The other files here run the rules as committed, carrying the `teamspeak_scope=~".*"`
+# placeholder. This one runs `rendered.rules.yml` — the `PrometheusRule` as `helm template`
+# produces it, with the placeholder replaced by `namespace="rules-test", pod=~"teamspeak-.*"` —
+# because the substitution rewrites every expression in the chart and is therefore a different
+# string from the one the other tests exercise. Validating only the committed form would leave
+# the mechanism that rewrites it completely untested.
+#
+# `just test-rules` renders into the `rules-test` namespace under the release name `teamspeak`,
+# and `render-values.yaml` leaves `scope` at its default; the three must agree.
+#
+# What this proves is the property the default scope exists for, and it is a stronger property
+# than the other charts here need. A TeamSpeak server is small enough that two of them share a
+# namespace routinely — a public one and a private one — so `namespace` alone would still have
+# them alerting on each other. `release` narrows to this release's own pods.
+rule_files:
+  - rendered.rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  # The same outage in two releases, one of them in another namespace entirely. Only this
+  # release's own may alert.
+  - interval: 1m
+    input_series:
+      - series: 'up{namespace="rules-test", pod="teamspeak-0", container="metrics", job="teamspeak"}'
+        values: '0x20'
+      - series: 'up{namespace="someone-elses-namespace", pod="teamspeak-0", container="metrics", job="teamspeak"}'
+        values: '0x20'
+    promql_expr_test:
+      - expr: ALERTS{alertname="TeamSpeakExporterDown", alertstate="firing"}
+        eval_time: 15m
+        exp_samples:
+          - labels: 'ALERTS{alertname="TeamSpeakExporterDown", alertstate="firing", namespace="rules-test", pod="teamspeak-0", container="metrics", job="teamspeak", severity="critical"}'
+            value: 1
+
+  # A second TeamSpeak release *in this same namespace*, offline. This is the assertion that
+  # `scope: namespace` would fail: the neighbour's pods carry a different name prefix and nothing
+  # here may fire for them.
+  - interval: 1m
+    input_series:
+      - series: 'ts3_serverinfo_online{namespace="rules-test", pod="private-teamspeak-0", virtualserver="1"}'
+        values: '0x30'
+      - series: 'ts3_serverinfo_uptime{namespace="rules-test", pod="private-teamspeak-0", virtualserver="1"}'
+        values: '30+60x30'
+      - series: 'ts3_client_commands_failed_total{namespace="rules-test", pod="private-teamspeak-0", container="metrics"}'
+        values: '0+5x60'
+      # This release, entirely healthy, so what remains under test is purely whether the
+      # neighbour's outage leaks in.
+      - series: 'up{namespace="rules-test", pod="teamspeak-0", container="metrics", job="teamspeak"}'
+        values: '1x30'
+      - series: 'ts3_serverinfo_online{namespace="rules-test", pod="teamspeak-0", virtualserver="1"}'
+        values: '1x30'
+    promql_expr_test:
+      - expr: ALERTS
+        eval_time: 25m
+        exp_samples: []
+
+  # Scoping must not leak into the recording rules either. Both releases run a `virtualserver="1"`
+  # — they always will, it is the first virtual server on every instance — so an unscoped
+  # aggregation would fold the neighbour's clients into this release's ratio and alert on a
+  # server that is half empty.
+  - interval: 1m
+    input_series:
+      - series: 'ts3_serverinfo_clients_online{namespace="rules-test", pod="teamspeak-0", virtualserver="1"}'
+        values: '50x30'
+      - series: 'ts3_serverinfo_max_clients{namespace="rules-test", pod="teamspeak-0", virtualserver="1"}'
+        values: '100x30'
+      - series: 'ts3_serverinfo_clients_online{namespace="rules-test", pod="private-teamspeak-0", virtualserver="1"}'
+        values: '99x30'
+      - series: 'ts3_serverinfo_max_clients{namespace="rules-test", pod="private-teamspeak-0", virtualserver="1"}'
+        values: '100x30'
+    promql_expr_test:
+      - expr: namespace_virtualserver:ts3_slots_used:ratio
+        eval_time: 20m
+        exp_samples:
+          # Half full, not 74.5% — the neighbour contributes to neither side of the division.
+          - labels: 'namespace_virtualserver:ts3_slots_used:ratio{namespace="rules-test", virtualserver="1"}'
+            value: 0.5
+      - expr: ALERTS{alertname="TeamSpeakSlotsNearlyFull"}
+        eval_time: 20m
+        exp_samples: []

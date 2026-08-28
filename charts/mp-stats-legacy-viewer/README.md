@@ -1,6 +1,6 @@
 # mp-stats-legacy-viewer
 
-![Version: 3.3.1](https://img.shields.io/badge/Version-3.3.1-informational?style=flat-square) ![AppVersion: v0.19.0](https://img.shields.io/badge/AppVersion-v0.19.0-informational?style=flat-square)
+![Version: 3.3.2](https://img.shields.io/badge/Version-3.3.2-informational?style=flat-square) ![AppVersion: v0.19.0](https://img.shields.io/badge/AppVersion-v0.19.0-informational?style=flat-square)
 
 MP Stats Legacy Viewer
 

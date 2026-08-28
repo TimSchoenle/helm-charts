@@ -273,6 +273,13 @@ groups:
           sum by (namespace, provider, scan, outcome) (
             rate(scan_tasks_settled_total{tankovault_scope=~".*"}[15m]))
 
+      # The denominator of the failure ratio below, recorded in its own right: a ratio is only
+      # meaningful above some volume, and the alert that reads it needs the same series to say so.
+      - record: namespace_provider_scan:scan_tasks_settled:rate15m
+        expr: >-
+          sum by (namespace, provider, scan) (
+            rate(scan_tasks_settled_total{tankovault_scope=~".*"}[15m]))
+
       # `requeued` is excluded from the numerator on purpose: a requeue is the retry mechanism
       # working, and a task that keeps being requeued eventually settles as `failed` and is
       # counted then. Including it would double-count the same failing task.
@@ -453,9 +460,18 @@ groups:
         expr: >-
           sum by (namespace) (rate(notifications_created_total{tankovault_scope=~".*"}[15m]))
 
+      - record: namespace:notification_events:rate15m
+        expr: >-
+          sum by (namespace) (rate(notification_events_total{tankovault_scope=~".*"}[15m]))
+
       - record: namespace_channel_result:notifications_delivered:rate15m
         expr: >-
           sum by (namespace, channel, result) (
+            rate(notifications_delivered_total{tankovault_scope=~".*"}[15m]))
+
+      - record: namespace_channel:notifications_delivered:rate15m
+        expr: >-
+          sum by (namespace, channel) (
             rate(notifications_delivered_total{tankovault_scope=~".*"}[15m]))
 
       # `skipped` stays in the denominator: a channel a user has not configured is skipped, and
@@ -477,6 +493,11 @@ groups:
       - record: namespace_job:sse_streams_active:sum
         expr: sum by (namespace, job) (sse_streams_active{tankovault_scope=~".*"})
 
+      - record: namespace_job:sse_events_pushed:rate15m
+        expr: >-
+          sum by (namespace, job) (
+            rate(sse_events_pushed_total{tankovault_scope=~".*"}[15m]))
+
       # `undecodable` counts alongside `error`: from a subscriber's point of view a frame that
       # could not be decoded and a frame that could not be sent are the same missing notification.
       - record: namespace_job:sse_events_pushed_errors:ratio_rate15m
@@ -497,6 +518,11 @@ groups:
           sum by (namespace, job, result) (
             rate(solve_attempts_total{tankovault_scope=~".*"}[5m]))
 
+      - record: namespace_job:solve_attempts:rate15m
+        expr: >-
+          sum by (namespace, job) (
+            rate(solve_attempts_total{tankovault_scope=~".*"}[15m]))
+
       - record: namespace_job:solve_attempts_errors:ratio_rate15m
         expr: >-
           sum by (namespace, job) (
@@ -508,6 +534,11 @@ groups:
         expr: >-
           sum by (namespace, job, result) (
             rate(render_requests_total{tankovault_scope=~".*"}[5m]))
+
+      - record: namespace_job:render_requests:rate15m
+        expr: >-
+          sum by (namespace, job) (
+            rate(render_requests_total{tankovault_scope=~".*"}[15m]))
 
       - record: namespace_job:render_requests_errors:ratio_rate15m
         expr: >-
@@ -598,6 +629,10 @@ groups:
         expr: >-
           sum by (namespace, operation, result) (
             rate(anilist_requests_total{tankovault_scope=~".*"}[15m]))
+
+      - record: namespace:anilist_requests:rate15m
+        expr: >-
+          sum by (namespace) (rate(anilist_requests_total{tankovault_scope=~".*"}[15m]))
 
       - record: namespace:anilist_requests_rate_limited:ratio_rate15m
         expr: >-

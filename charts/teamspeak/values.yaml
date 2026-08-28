@@ -628,7 +628,7 @@ metrics:
   # @schema
   # additionalProperties: true
   # @schema
-  # -- PrometheusRule carrying the alerting rules below.
+  # -- The PrometheusRule carrying this chart's alerting and recording rules.
   prometheusRule:
     # @schema
     # type: boolean
@@ -639,179 +639,228 @@ metrics:
     # @schema
     # type: string
     # @schema
-    # -- Namespace for the PrometheusRule. Empty uses the release namespace.
+    # -- Namespace for the PrometheusRule. Empty uses the release namespace. A Prometheus loads
+    # rules from whichever namespaces its `ruleNamespaceSelector` names, which this chart cannot
+    # reach; landing the object in one of them is the move that is left. The rules stay scoped to
+    # this release either way — `scope` is derived from the release, not from where the object
+    # lands.
     namespace: ""
+
+    # @schema
+    # enum: [release, namespace, none]
+    # @schema
+    # -- How far the rules are scoped. A PrometheusRule is not confined to its own namespace, so
+    # `none` makes this release alert on every other TeamSpeak in the cluster as well.
+    # `namespace` rewrites every selector to match only this release's namespace; `release`
+    # narrows that further to this release's own pods, which is what you want when two TeamSpeak
+    # servers share a namespace.
+    scope: release
 
     # @schema
     # type: object
     # additionalProperties: true
     # @schema
     # -- Extra labels for the PrometheusRule, e.g. the `release` label a Prometheus Operator
-    # instance selects on.
+    # instance selects rules on. Without the one your instance selects, the object is created
+    # and never loaded.
     labels: {}
 
     # @schema
-    # additionalProperties: true
+    # type: array
+    # items:
+    #   enum: [teamspeak-availability, teamspeak-capacity]
     # @schema
-    # -- Built-in alerting rules. Each one can be switched off individually and carries its
-    # own threshold, severity and `for` duration.
-    rules:
-      # @schema
-      # additionalProperties: true
-      # @schema
-      # -- Fires when Prometheus cannot scrape the exporter at all — the pod is gone, the
-      # sidecar crashed, or the network policy is wrong.
-      exporterDown:
-        # @schema
-        # type: boolean
-        # @schema
-        # -- Enable the rule.
-        enabled: true
-
-        # @schema
-        # type: string
-        # @schema
-        # -- How long the condition must hold before the alert fires.
-        for: 10m
-
-        # @schema
-        # type: string
-        # @schema
-        # -- Alert severity label.
-        severity: critical
-
-      # @schema
-      # additionalProperties: true
-      # @schema
-      # -- Fires when the exporter is reachable but the virtual server itself reports offline.
-      serverOffline:
-        # @schema
-        # type: boolean
-        # @schema
-        # -- Enable the rule.
-        enabled: true
-
-        # @schema
-        # type: string
-        # @schema
-        # -- How long the condition must hold before the alert fires.
-        for: 5m
-
-        # @schema
-        # type: string
-        # @schema
-        # -- Alert severity label.
-        severity: critical
-
-      # @schema
-      # additionalProperties: true
-      # @schema
-      # -- Fires when the server restarted recently. On a server whose state lives on an
-      # emptyDir this also means the identity and all permissions were just lost.
-      serverRestarted:
-        # @schema
-        # type: boolean
-        # @schema
-        # -- Enable the rule.
-        enabled: true
-
-        # @schema
-        # type: integer
-        # minimum: 1
-        # @schema
-        # -- Uptime below this many seconds counts as a restart.
-        thresholdSeconds: 300
-
-        # @schema
-        # type: string
-        # @schema
-        # -- How long the condition must hold before the alert fires.
-        for: 0m
-
-        # @schema
-        # type: string
-        # @schema
-        # -- Alert severity label.
-        severity: info
-
-      # @schema
-      # additionalProperties: true
-      # @schema
-      # -- Fires when the virtual server is running out of slots, so it can be resized before
-      # clients start getting turned away.
-      slotsNearlyFull:
-        # @schema
-        # type: boolean
-        # @schema
-        # -- Enable the rule.
-        enabled: true
-
-        # @schema
-        # type: number
-        # minimum: 0
-        # maximum: 1
-        # @schema
-        # -- Fraction of the slot limit that counts as nearly full.
-        threshold: 0.9
-
-        # @schema
-        # type: string
-        # @schema
-        # -- How long the condition must hold before the alert fires.
-        for: 15m
-
-        # @schema
-        # type: string
-        # @schema
-        # -- Alert severity label.
-        severity: warning
-
-      # @schema
-      # additionalProperties: true
-      # @schema
-      # -- Fires when ServerQuery commands start failing, which normally means the exporter's
-      # credentials went stale or it is being flood-limited — the metrics are lying by then.
-      queryCommandFailures:
-        # @schema
-        # type: boolean
-        # @schema
-        # -- Enable the rule.
-        enabled: true
-
-        # @schema
-        # type: string
-        # @schema
-        # -- How long the condition must hold before the alert fires.
-        for: 15m
-
-        # @schema
-        # type: string
-        # @schema
-        # -- Alert severity label.
-        severity: warning
+    # -- Rule groups to drop entirely, by name. Refused when the name is not one this chart
+    # ships, and refused for a group holding recording rules: the alerts and the dashboard read
+    # the series those produce, so dropping one leaves panels blank and expressions matching
+    # nothing, and neither reports an error. Use `disabledAlerts` for the alerts instead.
+    #
+    # Example: `[teamspeak-capacity]`
+    disabledGroups: []
 
     # @schema
     # type: array
+    # items:
+    #   enum: [
+    #       TeamSpeakExporterDown, TeamSpeakQueryCommandFailures, TeamSpeakServerOffline, TeamSpeakServerRestarted,
+    #       TeamSpeakSlotsNearlyFull
+    #     ]
     # @schema
-    # -- Additional rules appended to the generated group, in Prometheus rule syntax.
-    additionalRules: []
+    # -- Alerts to drop, by name. Refused when the name is not one this chart ships — a typo here
+    # is the one failure the whole feature must not produce, because it leaves the values file
+    # saying an alert is off while it still pages. The rules stay in `rules/` and stay tested;
+    # only the rendered object loses them.
+    #
+    # Example: `[TeamSpeakServerRestarted]`
+    disabledAlerts: []
+
+    # @schema
+    # type: object
+    # additionalProperties:
+    #   type: string
+    # @schema
+    # -- Labels merged into every alert this chart ships, for Alertmanager routing. This is how a
+    # test server keeps itself out of the on-call rotation. Applied to alerting rules only: a
+    # label on a recording rule changes the identity of the series it records, and every
+    # dashboard panel and expression reading it would silently stop matching.
+    #
+    # These beat the labels in the rule files, which is the point of them, and lose to
+    # `severityOverrides`, which is more specific.
+    #
+    # Example: `{team: platform, tier: staging}`
+    additionalRuleLabels: {}
+
+    # @schema
+    # type: object
+    # additionalProperties: false
+    # properties:
+    #   TeamSpeakExporterDown:
+    #     type: string
+    #     minLength: 1
+    #   TeamSpeakQueryCommandFailures:
+    #     type: string
+    #     minLength: 1
+    #   TeamSpeakServerOffline:
+    #     type: string
+    #     minLength: 1
+    #   TeamSpeakServerRestarted:
+    #     type: string
+    #     minLength: 1
+    #   TeamSpeakSlotsNearlyFull:
+    #     type: string
+    #     minLength: 1
+    # @schema
+    # -- Per-alert `severity` label, keyed by alert name. The most specific setting there is, so
+    # it beats both the rule file and `additionalRuleLabels`. Refused for an alert this chart
+    # does not ship, and for one the same values disable.
+    #
+    # Example: `{TeamSpeakSlotsNearlyFull: critical}`
+    severityOverrides: {}
+
+    # @schema
+    # type: object
+    # additionalProperties: false
+    # properties:
+    #   TeamSpeakExporterDown:
+    #     type: string
+    #     pattern: '^([0-9]+(ms|[smhdwy]))+$'
+    #   TeamSpeakQueryCommandFailures:
+    #     type: string
+    #     pattern: '^([0-9]+(ms|[smhdwy]))+$'
+    #   TeamSpeakServerOffline:
+    #     type: string
+    #     pattern: '^([0-9]+(ms|[smhdwy]))+$'
+    #   TeamSpeakServerRestarted:
+    #     type: string
+    #     pattern: '^([0-9]+(ms|[smhdwy]))+$'
+    #   TeamSpeakSlotsNearlyFull:
+    #     type: string
+    #     pattern: '^([0-9]+(ms|[smhdwy]))+$'
+    # @schema
+    # -- Per-alert `for` duration, keyed by alert name — how long the condition must hold before
+    # the alert fires. A Prometheus duration such as `30s`, `15m` or `1h30m`; write zero as `0m`
+    # so YAML keeps it a string. Anything Prometheus cannot parse is refused here, because it
+    # would otherwise be refused at load time and take the alert's whole rule group down with it.
+    #
+    # Example: `{TeamSpeakExporterDown: 5m}`
+    forOverrides: {}
+
+    # @schema
+    # type: object
+    # additionalProperties: false
+    # properties:
+    #   TeamSpeakQueryCommandFailures:
+    #     type: object
+    #     additionalProperties: false
+    #     properties:
+    #       failures:
+    #         default: 3
+    #         anyOf: [{type: integer, minimum: 0}, {type: string, pattern: '^-?[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?$'}]
+    #   TeamSpeakServerRestarted:
+    #     type: object
+    #     additionalProperties: false
+    #     properties:
+    #       seconds:
+    #         default: 300
+    #         anyOf: [{type: integer, minimum: 1}, {type: string, pattern: '^-?[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?$'}]
+    #   TeamSpeakSlotsNearlyFull:
+    #     type: object
+    #     additionalProperties: false
+    #     properties:
+    #       ratio:
+    #         default: 0.9
+    #         anyOf: [{type: number, minimum: 0, maximum: 1}, {type: string, pattern: '^-?[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?$'}]
+    # @schema
+    # -- Threshold overrides, keyed by alert name and then by tunable name. Only the thresholds
+    # this chart declares in [`rules/tunables.yaml`](rules/tunables.yaml) can be moved, and that
+    # file says what each one means and what it is bounded by; setting anything else is refused
+    # with the list of names that would have worked.
+    #
+    # Not every number in a rule is a threshold somebody chose. `TeamSpeakExporterDown` and
+    # `TeamSpeakServerOffline` compare against zero, which is structural rather than a judgement,
+    # so neither is offered here. Disable the alert and re-add your own through
+    # `additionalRuleGroups` if you need different arithmetic.
+    #
+    # Example: `{TeamSpeakSlotsNearlyFull: {ratio: 0.8}}`
+    thresholds: {}
+
+    # @schema
+    # type: array
+    # items:
+    #   type: object
+    #   required: [name, rules]
+    #   properties:
+    #     name:
+    #       type: string
+    #       minLength: 1
+    #     interval:
+    #       type: string
+    #       pattern: '^([0-9]+(ms|[smhdwy]))+$'
+    #     limit:
+    #       type: integer
+    #       minimum: 0
+    #     rules:
+    #       type: array
+    #       minItems: 1
+    #       items:
+    #         type: object
+    # @schema
+    # -- Extra rule groups, appended to the ones this chart ships. Each entry is a Prometheus rule
+    # group — a `name`, a list of `rules`, optionally an `interval` — emitted as written: they are
+    # not passed through Helm's template engine, so a `$labels` reference in an annotation reaches
+    # Prometheus intact instead of being resolved to an empty string on the way past. That also
+    # means no `{{ .Release.Name }}` in them.
+    #
+    # `additionalRuleLabels` does reach these, because it describes the release rather than the
+    # rules — skipping them would route exactly the alerts you wrote yourself back into the
+    # rotation you were keeping this install out of. Precedence flips: a label you set on your own
+    # rule wins, since it is already you speaking rather than a default of the chart's.
+    #
+    # This is what makes `disabledAlerts` honest: switch a shipped rule off and write your own
+    # with the arithmetic you wanted. A group whose name collides with a shipped one is refused,
+    # because Prometheus rejects the whole object rather than the duplicate.
+    additionalRuleGroups: []
 
   # @schema
   # additionalProperties: true
   # @schema
-  # -- Grafana dashboards, shipped as ConfigMaps for the Grafana sidecar dashboard loader.
-  dashboards:
+  # -- Grafana dashboards, shipped as a labelled ConfigMap and optionally as
+  # `GrafanaDashboard` custom resources.
+  dashboard:
     # @schema
     # type: boolean
     # @schema
-    # -- Create the dashboard ConfigMap.
+    # -- Create the dashboard ConfigMap for the Grafana sidecar to discover.
     enabled: false
 
     # @schema
     # type: string
     # @schema
-    # -- Namespace for the ConfigMap. Empty uses the release namespace. It has to be a
-    # namespace the Grafana sidecar watches.
+    # -- Namespace for the ConfigMap and, when enabled, the `GrafanaDashboard` resources beside
+    # it. Empty uses the release namespace. Which namespaces the sidecar watches is configured on
+    # the *Grafana* release and cannot be reached from here, so putting the ConfigMap where it is
+    # already looking is the only cross-namespace move the sidecar path has. The custom resources
+    # move with it, because `configMapRef` resolves in their own namespace.
     namespace: ""
 
     # @schema
@@ -827,11 +876,56 @@ metrics:
     labelValue: "1"
 
     # @schema
-    # type: object
+    # type: string
+    # @schema
+    # -- Grafana folder to file the dashboard under, for both delivery mechanisms: the sidecar
+    # reads it from a `grafana_folder` annotation on the ConfigMap and the operator from a field
+    # on its own resource. Empty leaves each to its default.
+    folder: ""
+
+    # @schema
     # additionalProperties: true
     # @schema
-    # -- Extra annotations, e.g. `grafana_folder` to place the dashboard in a folder.
-    annotations: {}
+    # -- grafana-operator v5 delivery, which — unlike the sidecar — can be granted
+    # cross-namespace import from this side.
+    grafanaOperator:
+      # @schema
+      # type: boolean
+      # @schema
+      # -- Also create one `GrafanaDashboard` per dashboard file. Requires
+      # `metrics.dashboard.enabled`, because the custom resources reference the ConfigMap rather
+      # than inlining the JSON.
+      enabled: false
+
+      # @schema
+      # type: boolean
+      # @schema
+      # -- Allow a Grafana in another namespace to import these dashboards.
+      allowCrossNamespaceImport: true
+
+      # @schema
+      # type: object
+      # additionalProperties: true
+      # @schema
+      # -- Which Grafana instances import them. An empty selector matches none, so the
+      # dashboards would be created and then ignored.
+      instanceSelector:
+        # -- Labels every Grafana custom resource to import into has to carry.
+        matchLabels:
+          dashboards: grafana
+
+      # @schema
+      # type: string
+      # @schema
+      # -- Grafana folder to file the dashboards under, for the operator path only. Overrides
+      # `folder` when set; empty falls back to it.
+      folder: ""
+
+      # @schema
+      # type: string
+      # @schema
+      # -- How often the operator re-applies them.
+      resyncPeriod: 5m
 
 # @schema
 # additionalProperties: true

@@ -131,8 +131,64 @@ between values rather than properties of one.
 {{- $messages = append $messages "  - persistence.data.existingClaim is set but persistence.data.enabled is false, so the claim would be ignored and the server would run on an emptyDir." -}}
 {{- end -}}
 
+{{- /* Observability. */ -}}
+{{- if .Values.metrics.enabled -}}
+{{- if .Values.metrics.prometheusRule.enabled -}}
+{{- with (include "common.prometheus.rules.errors" (dict
+      "ctx" .
+      "values" .Values.metrics.prometheusRule
+      "feature" "metrics.prometheusRule.enabled"
+      "scopePlaceholder" (include "teamspeak.rules.scopePlaceholder" .)
+      "scopeMatcher" (include "teamspeak.rules.scopeMatcher" .))) -}}
+{{- range splitList "\n" . -}}
+{{- $messages = append $messages (printf "  - %s" .) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- with (include "common.grafana.dashboard.errors" (dict "ctx" . "values" .Values.metrics.dashboard)) -}}
+{{- range splitList "\n" . -}}
+{{- $messages = append $messages (printf "  - %s" .) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
 {{- if $messages -}}
 {{- fail (printf "\n\nVALUES VALIDATION FAILED for chart %q:\n%s\n" .Chart.Name (join "\n" $messages)) -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+The scope placeholder every selector in `rules/*.yml` carries, and what it is replaced with.
+
+A PrometheusRule is not confined to the namespace it lives in, so an unscoped
+`ts3_serverinfo_online{...}` matches every other TeamSpeak in the cluster and two installs alert
+on each other's outages. The rule files therefore carry `teamspeak_scope=~".*"` — an always-true
+matcher on a label nothing emits — which `common.prometheus.rules.*` swaps for a real one. See
+the library's `_prometheus.tpl` for why the substitution runs in that direction rather than
+rewriting PromQL from a Go template.
+
+Three settings rather than the two the other charts offer, because this chart is small enough to
+be installed twice in one namespace — a public server and a private one — and `namespace` alone
+would let the two alert on each other:
+
+  release    namespace *and* the pod-name prefix, which is what the inline rules this replaced
+             matched on. Targets are selected by `pod` rather than by `job` because the `job`
+             label a PodMonitor produces depends on operator configuration this chart does not
+             control, while `namespace` and `pod` are always present on a PodMonitor target.
+  namespace  every TeamSpeak in this namespace, which is what a single install per namespace
+             wants and what the other charts here mean by scoping.
+  none       no matcher at all. The placeholder is already a no-op, so the rules install as the
+             committed files.
+*/}}
+{{- define "teamspeak.rules.scopePlaceholder" -}}
+teamspeak_scope=~".*"
+{{- end -}}
+
+{{- define "teamspeak.rules.scopeMatcher" -}}
+{{- if eq .Values.metrics.prometheusRule.scope "release" -}}
+{{- printf "namespace=%q, pod=~%q" (include "common.namespace" .) (printf "%s-.*" (include "common.fullname" .)) -}}
+{{- else if eq .Values.metrics.prometheusRule.scope "namespace" -}}
+{{- printf "namespace=%q" (include "common.namespace" .) -}}
 {{- end -}}
 {{- end -}}
 

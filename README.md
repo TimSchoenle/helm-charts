@@ -166,7 +166,7 @@ Everything else belongs to the individual chart, whose README lists every value 
 | | Supported |
 | --- | --- |
 | Helm | 3 and 4 |
-| Library chart | `common` 2.1.0 |
+| Library chart | `common` 2.2.0 |
 | Kubernetes | No chart declares a `kubeVersion`. The render, validation and install matrices in [.github/workflows/ci.yaml](.github/workflows/ci.yaml) state what is tested. |
 
 ## Documentation

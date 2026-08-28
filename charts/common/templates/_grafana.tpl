@@ -23,16 +23,33 @@ not.
 Value contract (the `values` argument), matching what consuming charts expose:
 
   enabled: false                    # create the sidecar ConfigMap
+  namespace: ""                     # where to put the objects; empty means the release's own
   label: grafana_dashboard          # label the sidecar selects on
   labelValue: "1"
+  folder: ""                        # Grafana folder, for both delivery mechanisms
   grafanaOperator:
     enabled: false                  # additionally create one GrafanaDashboard per file
     allowCrossNamespaceImport: true
     instanceSelector:
       matchLabels:
         dashboards: grafana
-    folder: ""
+    folder: ""                      # overrides `folder` for the operator path only
     resyncPeriod: 5m
+
+Foldering, and why one key drives two mechanisms
+------------------------------------------------
+The two carriers file a dashboard in a folder by unrelated means: the sidecar reads a
+`grafana_folder` *annotation* on the ConfigMap, the operator reads `spec.folder` on the custom
+resource. An operator who wants their dashboards in a folder means it of whichever carrier is
+running, so `folder` sets both. `grafanaOperator.folder` stays available for the case where the
+two must differ, and wins for the operator path when set.
+
+Namespace, and why it is worth an override
+-------------------------------------------
+The sidecar's search namespace is configured on the *Grafana* release and defaults to Grafana's
+own. A chart cannot reach that, so the only move left on this side is to put the ConfigMap where
+the sidecar is already looking. `namespace` does that, and the GrafanaDashboard resources follow
+it, since `configMapRef` resolves within the custom resource's own namespace.
 
 Arguments shared by every partial below:
   ctx     (required) root context
@@ -48,6 +65,27 @@ it resolve the name through this, so the two cannot drift apart.
 */}}
 {{- define "common.grafana.dashboard.configMapName" -}}
 {{- include "common.fullname.suffixed" (dict "ctx" .ctx "suffix" (.suffix | default "dashboards")) -}}
+{{- end -}}
+
+{{/*
+Where the dashboard objects go. Resolved through one partial for the same reason the name is:
+a `configMapRef` is resolved in the custom resource's own namespace, so a ConfigMap and a
+GrafanaDashboard that disagree produce an import that silently never happens.
+*/}}
+{{- define "common.grafana.dashboard.namespace" -}}
+{{- $values := .values | default dict -}}
+{{- $values.namespace | default (include "common.namespace" .ctx) -}}
+{{- end -}}
+
+{{/*
+The Grafana folder for one delivery mechanism, falling back to the shared `folder`.
+
+Arguments:
+  values     the dashboard config
+  override   the mechanism's own folder key, which wins when set
+*/}}
+{{- define "common.grafana.dashboard.folder" -}}
+{{- .override | default (.values.folder | default "") -}}
 {{- end -}}
 
 {{/*
@@ -106,15 +144,21 @@ The sidecar ConfigMap: every matching dashboard file under one object, labelled 
 {{- if not $dashboards -}}
 {{- fail (printf "chart %q enables Grafana dashboards but ships no files matching %q" $ctx.Chart.Name (.glob | default "dashboards/*.json")) -}}
 {{- end -}}
+{{- /* The sidecar files a dashboard by annotation; the operator by a field on its own CR. */ -}}
+{{- $folder := include "common.grafana.dashboard.folder" (dict "values" $values) -}}
+{{- $annotations := dict -}}
+{{- if $folder -}}
+{{- $annotations = dict "grafana_folder" $folder -}}
+{{- end -}}
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: {{ include "common.grafana.dashboard.configMapName" . }}
-  namespace: {{ include "common.namespace" $ctx }}
+  namespace: {{ include "common.grafana.dashboard.namespace" . }}
   labels:
     {{- include "common.labels" $ctx | nindent 4 }}
     {{ $values.label | default "grafana_dashboard" }}: {{ $values.labelValue | default "1" | quote }}
-  {{- with (include "common.annotations" $ctx) }}
+  {{- with (include "common.tplvalues.merge" (dict "values" (list $annotations $ctx.Values.commonAnnotations) "context" $ctx)) }}
   annotations:
     {{- . | nindent 4 }}
   {{- end }}
@@ -131,8 +175,10 @@ One GrafanaDashboard per dashboard file. Separate objects rather than one per ch
 dashboard.
 */}}
 {{- define "common.grafana.dashboard.customResources" -}}
+{{- $args := . -}}
 {{- $ctx := .ctx -}}
 {{- $operator := .values.grafanaOperator -}}
+{{- $folder := include "common.grafana.dashboard.folder" (dict "values" .values "override" $operator.folder) -}}
 {{- $configMap := include "common.grafana.dashboard.configMapName" . -}}
 {{- $allowCrossNamespaceImport := true -}}
 {{- if hasKey $operator "allowCrossNamespaceImport" -}}
@@ -150,7 +196,7 @@ apiVersion: grafana.integreatly.org/v1beta1
 kind: GrafanaDashboard
 metadata:
   name: {{ include "common.fullname.suffixed" (dict "ctx" $ctx "suffix" $slug) }}
-  namespace: {{ include "common.namespace" $ctx }}
+  namespace: {{ include "common.grafana.dashboard.namespace" $args }}
   labels:
     {{- include "common.labels" $ctx | nindent 4 }}
   {{- with (include "common.annotations" $ctx) }}
@@ -164,7 +210,7 @@ spec:
   {{- with $operator.resyncPeriod }}
   resyncPeriod: {{ . | quote }}
   {{- end }}
-  {{- with $operator.folder }}
+  {{- with $folder }}
   folder: {{ . | quote }}
   {{- end }}
   configMapRef:

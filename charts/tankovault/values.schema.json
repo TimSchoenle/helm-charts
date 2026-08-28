@@ -2948,6 +2948,13 @@
               "title": "enabled",
               "type": "boolean"
             },
+            "folder": {
+              "default": "",
+              "description": "Grafana folder to file the dashboards under, for both delivery mechanisms: the sidecar\nreads it from a `grafana_folder` annotation on the ConfigMap and the operator from a field\non its own resource. Empty leaves each to its default.",
+              "required": [],
+              "title": "folder",
+              "type": "string"
+            },
             "grafanaOperator": {
               "additionalProperties": true,
               "description": "The grafana-operator v5 path, rendered in addition to the ConfigMap rather than instead\nof it.",
@@ -2968,7 +2975,7 @@
                 },
                 "folder": {
                   "default": "",
-                  "description": "Folder to file the dashboards under. Empty leaves them at the Grafana root.",
+                  "description": "Folder to file the dashboards under, for the operator path only. Overrides `folder`\nwhen set; empty falls back to it.",
                   "required": [],
                   "title": "folder",
                   "type": "string"
@@ -3024,6 +3031,13 @@
               "description": "Value for that label.",
               "required": [],
               "title": "labelValue",
+              "type": "string"
+            },
+            "namespace": {
+              "default": "",
+              "description": "Namespace for the ConfigMap and, when enabled, the `GrafanaDashboard` resources beside\nit. Empty uses the release namespace. Which namespaces the sidecar watches is configured on\nthe *Grafana* release and cannot be reached from here, so putting the ConfigMap where it is\nalready looking is the only cross-namespace move the sidecar path has. The custom resources\nmove with it, because `configMapRef` resolves in their own namespace.",
+              "required": [],
+              "title": "namespace",
               "type": "string"
             }
           },
@@ -3442,6 +3456,13 @@
               "title": "labels",
               "type": "object"
             },
+            "namespace": {
+              "default": "",
+              "description": "Namespace for the PrometheusRule. Empty uses the release namespace. A Prometheus loads\nrules from whichever namespaces its `ruleNamespaceSelector` names, which this chart cannot\nreach; landing the object in one of them is the move that is left. The rules stay scoped to\nthis release either way — `scope` is derived from the release, not from where the object\nlands.",
+              "required": [],
+              "title": "namespace",
+              "type": "string"
+            },
             "scope": {
               "default": "namespace",
               "description": "Confine the rules to this release's namespace. A `PrometheusRule` is not scoped to the\nnamespace it lives in, so an unscoped `up{job=\"api\"} == 0` matches an `api` job anywhere\nPrometheus can see — a second TankoVault release, or anyone else's service that happens to\nproduce the same `job` label, and the two then alert on each other. `namespace` rewrites\nevery rule expression to match only series from this namespace; `none` installs them as\nwritten, which is correct when a Prometheus already sets `enforcedNamespaceLabel` and would\ndo the same rewrite itself, and wrong otherwise. Two releases of this chart in *one*\nnamespace cannot be told apart by either mechanism.",
@@ -3668,6 +3689,22 @@
                 "TankoVaultAniListRateLimited": {
                   "additionalProperties": false,
                   "properties": {
+                    "floor": {
+                      "anyOf": [
+                        {
+                          "minimum": 0,
+                          "required": [],
+                          "type": "number"
+                        },
+                        {
+                          "pattern": "^-?[0-9]+(\\.[0-9]+)?([eE][-+]?[0-9]+)?$",
+                          "required": [],
+                          "type": "string"
+                        }
+                      ],
+                      "default": 0.01,
+                      "required": []
+                    },
                     "ratio": {
                       "anyOf": [
                         {
@@ -3755,6 +3792,22 @@
                 "TankoVaultChallengeSolvingFailing": {
                   "additionalProperties": false,
                   "properties": {
+                    "floor": {
+                      "anyOf": [
+                        {
+                          "minimum": 0,
+                          "required": [],
+                          "type": "number"
+                        },
+                        {
+                          "pattern": "^-?[0-9]+(\\.[0-9]+)?([eE][-+]?[0-9]+)?$",
+                          "required": [],
+                          "type": "string"
+                        }
+                      ],
+                      "default": 0.005,
+                      "required": []
+                    },
                     "ratio": {
                       "anyOf": [
                         {
@@ -3903,9 +3956,71 @@
                   "required": [],
                   "type": "object"
                 },
+                "TankoVaultLatencyCritical": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "floor": {
+                      "anyOf": [
+                        {
+                          "minimum": 0,
+                          "required": [],
+                          "type": "number"
+                        },
+                        {
+                          "pattern": "^-?[0-9]+(\\.[0-9]+)?([eE][-+]?[0-9]+)?$",
+                          "required": [],
+                          "type": "string"
+                        }
+                      ],
+                      "default": 0.05,
+                      "required": []
+                    }
+                  },
+                  "required": [],
+                  "type": "object"
+                },
+                "TankoVaultLatencyDegraded": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "floor": {
+                      "anyOf": [
+                        {
+                          "minimum": 0,
+                          "required": [],
+                          "type": "number"
+                        },
+                        {
+                          "pattern": "^-?[0-9]+(\\.[0-9]+)?([eE][-+]?[0-9]+)?$",
+                          "required": [],
+                          "type": "string"
+                        }
+                      ],
+                      "default": 0.05,
+                      "required": []
+                    }
+                  },
+                  "required": [],
+                  "type": "object"
+                },
                 "TankoVaultNotificationDeliveryFailing": {
                   "additionalProperties": false,
                   "properties": {
+                    "floor": {
+                      "anyOf": [
+                        {
+                          "minimum": 0,
+                          "required": [],
+                          "type": "number"
+                        },
+                        {
+                          "pattern": "^-?[0-9]+(\\.[0-9]+)?([eE][-+]?[0-9]+)?$",
+                          "required": [],
+                          "type": "string"
+                        }
+                      ],
+                      "default": 0.005,
+                      "required": []
+                    },
                     "ratio": {
                       "anyOf": [
                         {
@@ -3930,6 +4045,22 @@
                 "TankoVaultNotificationEventsFailing": {
                   "additionalProperties": false,
                   "properties": {
+                    "floor": {
+                      "anyOf": [
+                        {
+                          "minimum": 0,
+                          "required": [],
+                          "type": "number"
+                        },
+                        {
+                          "pattern": "^-?[0-9]+(\\.[0-9]+)?([eE][-+]?[0-9]+)?$",
+                          "required": [],
+                          "type": "string"
+                        }
+                      ],
+                      "default": 0.005,
+                      "required": []
+                    },
                     "ratio": {
                       "anyOf": [
                         {
@@ -4056,6 +4187,22 @@
                 "TankoVaultRenderTierFailing": {
                   "additionalProperties": false,
                   "properties": {
+                    "floor": {
+                      "anyOf": [
+                        {
+                          "minimum": 0,
+                          "required": [],
+                          "type": "number"
+                        },
+                        {
+                          "pattern": "^-?[0-9]+(\\.[0-9]+)?([eE][-+]?[0-9]+)?$",
+                          "required": [],
+                          "type": "string"
+                        }
+                      ],
+                      "default": 0.005,
+                      "required": []
+                    },
                     "ratio": {
                       "anyOf": [
                         {
@@ -4233,6 +4380,22 @@
                 "TankoVaultScanTasksFailing": {
                   "additionalProperties": false,
                   "properties": {
+                    "floor": {
+                      "anyOf": [
+                        {
+                          "minimum": 0,
+                          "required": [],
+                          "type": "number"
+                        },
+                        {
+                          "pattern": "^-?[0-9]+(\\.[0-9]+)?([eE][-+]?[0-9]+)?$",
+                          "required": [],
+                          "type": "string"
+                        }
+                      ],
+                      "default": 0.01,
+                      "required": []
+                    },
                     "ratio": {
                       "anyOf": [
                         {
@@ -4297,6 +4460,22 @@
                 "TankoVaultSseEventsUndeliverable": {
                   "additionalProperties": false,
                   "properties": {
+                    "floor": {
+                      "anyOf": [
+                        {
+                          "minimum": 0,
+                          "required": [],
+                          "type": "number"
+                        },
+                        {
+                          "pattern": "^-?[0-9]+(\\.[0-9]+)?([eE][-+]?[0-9]+)?$",
+                          "required": [],
+                          "type": "string"
+                        }
+                      ],
+                      "default": 0.01,
+                      "required": []
+                    },
                     "ratio": {
                       "anyOf": [
                         {

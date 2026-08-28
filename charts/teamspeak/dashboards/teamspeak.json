@@ -1,13 +1,36 @@
 {
-  "annotations": { "list": [] },
-  "editable": true,
+  "annotations": {
+    "list": [
+      {
+        "name": "Firing alerts",
+        "enable": true,
+        "iconColor": "red",
+        "datasource": { "type": "prometheus", "uid": "${datasource}" },
+        "expr": "ALERTS{alertstate=\"firing\", alertname=~\"TeamSpeak.*\", namespace=\"$namespace\"}",
+        "titleFormat": "{{alertname}}",
+        "textFormat": "{{severity}}"
+      }
+    ]
+  },
+  "editable": false,
   "graphTooltip": 1,
-  "links": [],
+  "links": [
+    {
+      "title": "TeamSpeak dashboards",
+      "type": "dashboards",
+      "tags": ["teamspeak"],
+      "asDropdown": true,
+      "includeVars": true,
+      "keepTime": true,
+      "icon": "external link",
+      "targetBlank": false
+    }
+  ],
   "refresh": "1m",
   "schemaVersion": 39,
   "tags": ["teamspeak"],
   "time": { "from": "now-6h", "to": "now" },
-  "timezone": "",
+  "timezone": "browser",
   "title": "TeamSpeak 3",
   "uid": "teamspeak-ts3exporter",
   "version": 1,
@@ -123,6 +146,7 @@
       "id": 3,
       "type": "stat",
       "title": "Channels",
+      "description": "Channels on the virtual server, permanent and temporary. Without persistence this resets to the default channel on every restart.",
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "gridPos": { "h": 4, "w": 5, "x": 9, "y": 0 },
       "fieldConfig": {
@@ -174,6 +198,7 @@
       "id": 5,
       "type": "stat",
       "title": "Server online",
+      "description": "Whether the virtual server reports itself running. Reachable over ServerQuery but offline usually means an expired licence or an admin stop.",
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "gridPos": { "h": 4, "w": 5, "x": 19, "y": 0 },
       "fieldConfig": {
@@ -208,6 +233,7 @@
       "id": 6,
       "type": "timeseries",
       "title": "Clients",
+      "description": "Voice clients, query clients and the slot limit on one axis, so a server filling up is visible against the ceiling rather than in isolation.",
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
       "fieldConfig": {
@@ -265,13 +291,13 @@
         {
           "refId": "A",
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
-          "expr": "rate(ts3_serverinfo_bytes_send_total{namespace=\"$namespace\", virtualserver=~\"$virtualserver\"}[5m])",
+          "expr": "rate(ts3_serverinfo_bytes_send_total{namespace=\"$namespace\", virtualserver=~\"$virtualserver\"}[$__rate_interval])",
           "legendFormat": "sent - {{virtualserver}}"
         },
         {
           "refId": "B",
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
-          "expr": "rate(ts3_serverinfo_bytes_received_total{namespace=\"$namespace\", virtualserver=~\"$virtualserver\"}[5m])",
+          "expr": "rate(ts3_serverinfo_bytes_received_total{namespace=\"$namespace\", virtualserver=~\"$virtualserver\"}[$__rate_interval])",
           "legendFormat": "received - {{virtualserver}}"
         }
       ]
@@ -298,13 +324,13 @@
         {
           "refId": "A",
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
-          "expr": "rate(ts3_serverinfo_speech_bytes_sent_total{namespace=\"$namespace\", virtualserver=~\"$virtualserver\"}[5m])",
+          "expr": "rate(ts3_serverinfo_speech_bytes_sent_total{namespace=\"$namespace\", virtualserver=~\"$virtualserver\"}[$__rate_interval])",
           "legendFormat": "sent - {{virtualserver}}"
         },
         {
           "refId": "B",
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
-          "expr": "rate(ts3_serverinfo_speech_bytes_received_total{namespace=\"$namespace\", virtualserver=~\"$virtualserver\"}[5m])",
+          "expr": "rate(ts3_serverinfo_speech_bytes_received_total{namespace=\"$namespace\", virtualserver=~\"$virtualserver\"}[$__rate_interval])",
           "legendFormat": "received - {{virtualserver}}"
         }
       ]
@@ -313,6 +339,7 @@
       "id": 9,
       "type": "timeseries",
       "title": "File transfer throughput",
+      "description": "Traffic on the file transfer port only: avatars, icons and channel uploads. Unlike speech, this is bursty by nature.",
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "gridPos": { "h": 8, "w": 8, "x": 8, "y": 12 },
       "fieldConfig": {
@@ -330,13 +357,13 @@
         {
           "refId": "A",
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
-          "expr": "rate(ts3_serverinfo_file_transfer_bytes_sent_total{namespace=\"$namespace\", virtualserver=~\"$virtualserver\"}[5m])",
+          "expr": "rate(ts3_serverinfo_file_transfer_bytes_sent_total{namespace=\"$namespace\", virtualserver=~\"$virtualserver\"}[$__rate_interval])",
           "legendFormat": "sent - {{virtualserver}}"
         },
         {
           "refId": "B",
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
-          "expr": "rate(ts3_serverinfo_file_transfer_bytes_received_total{namespace=\"$namespace\", virtualserver=~\"$virtualserver\"}[5m])",
+          "expr": "rate(ts3_serverinfo_file_transfer_bytes_received_total{namespace=\"$namespace\", virtualserver=~\"$virtualserver\"}[$__rate_interval])",
           "legendFormat": "received - {{virtualserver}}"
         }
       ]
@@ -368,19 +395,19 @@
         {
           "refId": "A",
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
-          "expr": "rate(ts3_client_commands_successful_total{namespace=\"$namespace\"}[5m])",
+          "expr": "rate(ts3_client_commands_successful_total{namespace=\"$namespace\"}[$__rate_interval])",
           "legendFormat": "successful"
         },
         {
           "refId": "B",
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
-          "expr": "rate(ts3_client_commands_failed_total{namespace=\"$namespace\"}[5m])",
+          "expr": "rate(ts3_client_commands_failed_total{namespace=\"$namespace\"}[$__rate_interval])",
           "legendFormat": "failed"
         },
         {
           "refId": "C",
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
-          "expr": "rate(ts3_exporter_data_model_refresh_errors_total{namespace=\"$namespace\"}[5m])",
+          "expr": "rate(ts3_exporter_data_model_refresh_errors_total{namespace=\"$namespace\"}[$__rate_interval])",
           "legendFormat": "refresh errors - {{collector}}"
         }
       ]

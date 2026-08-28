@@ -104,6 +104,11 @@ tests:
         values: '0+100x60'
       - series: 'http_request_duration_seconds_bucket{namespace="tv", job="api", method="GET", route="/v1/series", le="+Inf"}'
         values: '0+100x60'
+      # The histogram alone is not enough any more: both latency alerts carry a traffic floor,
+      # because a p99 over four requests is the slowest of those four rather than a quantile.
+      # 100 requests a minute is 1.67/s, comfortably past the 0.05 floor.
+      - series: 'http_requests_total{namespace="tv", job="api", method="GET", route="/v1/series", status="200"}'
+        values: '0+100x60'
     promql_expr_test:
       - expr: namespace_job:http_request_duration_seconds:p99_5m
         eval_time: 30m
@@ -135,6 +140,11 @@ tests:
       - series: 'http_request_duration_seconds_bucket{namespace="tv", job="api", method="GET", route="/v1/series", le="10"}'
         values: '0x60'
       - series: 'http_request_duration_seconds_bucket{namespace="tv", job="api", method="GET", route="/v1/series", le="+Inf"}'
+        values: '0+100x60'
+      # The histogram alone is not enough any more: both latency alerts carry a traffic floor,
+      # because a p99 over four requests is the slowest of those four rather than a quantile.
+      # 100 requests a minute is 1.67/s, comfortably past the 0.05 floor.
+      - series: 'http_requests_total{namespace="tv", job="api", method="GET", route="/v1/series", status="200"}'
         values: '0+100x60'
     promql_expr_test:
       - expr: namespace_job:http_request_duration_seconds:p99_5m

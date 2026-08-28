@@ -19,6 +19,7 @@ failure behaviour: a missing CRD stops the render instead of silently dropping t
 Value contract (the `values` argument):
 
   enabled: false
+  namespace: ""              # where to put the object; empty means the release's own namespace
   labels: {}                 # merged into metadata.labels, and templated — what a ruleSelector matches on
 
   # Presets. Every one of these is refused loudly when it names something the chart does not
@@ -599,11 +600,17 @@ The PrometheusRule itself: one object per release, holding every group that surv
 {{- if not $groups -}}
 {{- fail (printf "chart %q would render a PrometheusRule with no groups. Either it ships no rule files, or the presets disabled every group in them; the API server rejects an empty `spec.groups` either way." $ctx.Chart.Name) -}}
 {{- end -}}
+{{- /*
+A Prometheus loads rules from whichever namespaces its `ruleNamespaceSelector` names, which a
+chart cannot reach; putting the object in a namespace already selected is the one move left on
+this side. The rules stay scoped to the release's own series regardless, because `scopeMatcher`
+is derived from the release rather than from where the object lands.
+*/ -}}
 apiVersion: {{ include "common.prometheus.apiVersion" . }}
 kind: PrometheusRule
 metadata:
   name: {{ include "common.fullname" $ctx }}
-  namespace: {{ include "common.namespace" $ctx }}
+  namespace: {{ $values.namespace | default (include "common.namespace" $ctx) }}
   labels:
     {{- include "common.labels" $ctx | nindent 4 }}
     {{- with $values.labels }}

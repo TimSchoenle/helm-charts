@@ -28,12 +28,17 @@ tests:
       - matchSnapshot: {}
 
   - it: matches the committed snapshot with observability and network policies on
+    # The PrometheusRule refuses to render without the operator's CRDs rather than dropping
+    # itself, so an offline render has to declare them.
+    capabilities:
+      apiVersions:
+        - monitoring.coreos.com/v1
     set:
       serverQuery.adminPassword: hunter2
       metrics.enabled: true
       metrics.image.tag: v0.0.0@sha256:1111111111111111111111111111111111111111111111111111111111111111
       metrics.prometheusRule.enabled: true
-      metrics.dashboards.enabled: false
+      metrics.dashboard.enabled: false
       networkPolicy.enabled: true
       networkPolicy.ingress.query.enabled: true
       networkPolicy.ingress.query.cidrs:

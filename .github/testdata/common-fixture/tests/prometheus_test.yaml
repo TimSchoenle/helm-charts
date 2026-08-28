@@ -44,6 +44,20 @@ tests:
               - expr: sum by (job) (rate(http_requests_total{fixture_scope=~".*"}[5m]))
                 record: job:http_requests:rate5m
 
+  - it: puts the object where the values say, defaulting to the release's namespace
+    # A Prometheus loads rules from the namespaces its `ruleNamespaceSelector` names, and a chart
+    # cannot reach that setting; landing the object in a selected namespace is the move left.
+    capabilities:
+      apiVersions:
+        - monitoring.coreos.com/v1
+    set:
+      prometheusRule.enabled: true
+      prometheusRule.namespace: monitoring
+    asserts:
+      - equal:
+          path: metadata.namespace
+          value: monitoring
+
   - it: leaves Prometheus' own templating untouched
     # Go would either fail on the `$labels` reference or, worse, resolve it to an empty string and
     # leave every alert with an annotation that names nothing.

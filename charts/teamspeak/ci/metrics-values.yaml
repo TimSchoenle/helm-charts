@@ -1,6 +1,10 @@
 # Full observability stack: exporter sidecar, PodMonitor, alerting rules and the Grafana
 # dashboard. The exporter authenticates against ServerQuery, so a known admin password is
 # mandatory here.
+#
+# `metrics.dashboard.grafanaOperator` is deliberately left off: its CRDs are not installed on the
+# CI cluster, and the chart refuses to render rather than dropping the objects silently. The
+# render-only `ci/grafana-operator.yaml` fixture covers that path instead.
 license:
   accept: true
 
@@ -21,17 +25,36 @@ metrics:
       release: kube-prometheus-stack
   prometheusRule:
     enabled: true
+    scope: release
     labels:
       release: kube-prometheus-stack
-    additionalRules:
-      - alert: TeamSpeakCustomProbe
-        expr: ts3_serverinfo_online == 0
-        for: 1h
-        labels:
-          severity: none
-        annotations:
-          summary: Placeholder rule proving additionalRules render
-  dashboards:
+    # Every preset at once, so the API server validates an object the presets have rewritten
+    # rather than the defaults.
+    disabledAlerts:
+      - TeamSpeakServerRestarted
+    additionalRuleLabels:
+      team: voice
+      tier: ci
+    severityOverrides:
+      TeamSpeakSlotsNearlyFull: critical
+    forOverrides:
+      TeamSpeakExporterDown: 5m
+    thresholds:
+      TeamSpeakSlotsNearlyFull:
+        ratio: 0.75
+      TeamSpeakQueryCommandFailures:
+        failures: 10
+    additionalRuleGroups:
+      - name: teamspeak-ci-site
+        rules:
+          - alert: TeamSpeakCiSiteRule
+            expr: ts3_serverinfo_online == 0
+            for: 1h
+            labels:
+              severity: info
+            annotations:
+              summary: "{{ $labels.virtualserver }} is offline, per site policy"
+              description: Stands in for a rule an operator wrote themselves.
+  dashboard:
     enabled: true
-    annotations:
-      grafana_folder: TeamSpeak
+    folder: TeamSpeak

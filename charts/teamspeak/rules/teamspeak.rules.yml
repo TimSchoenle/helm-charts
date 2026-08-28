@@ -1,0 +1,136 @@
+# Alerting and recording rules for the ts3exporter sidecar, written against the metrics it
+# actually publishes (https://github.com/hikhvar/ts3exporter) and against a Kubernetes deployment
+# of this chart.
+#
+# These used to be written inline in `templates/prometheusrule.yaml`, one `{{ if }}` per alert.
+# Rules that live in a Go template are rules `promtool` never sees: the repository's rule gate
+# discovers suites by `charts/<chart>/rules/*.yml`, so the whole file was skipped by
+# `just test-rules` and reported as "0 alerts" by `just audit-observability`. Moving them here
+# buys the syntax check, the evaluation tests, the runbook-label audit and the whole preset
+# surface — `disabledAlerts`, `severityOverrides`, `forOverrides` and `thresholds` — that the
+# other charts in this repository already have.
+#
+# `teamspeak_scope=~".*"` is the scope placeholder. It is a genuine no-op matcher: nothing carries
+# a `teamspeak_scope` label, so `=~".*"` matches every series. At render time
+# `metrics.prometheusRule.scope` swaps it for a real matcher, which is what keeps one release's
+# rules off another release's series. Every selector added here must carry one, and
+# `just audit-observability` fails the build for any that does not.
+#
+# Nothing kube-state-metrics already alerts on is repeated here. The Prometheus Operator this
+# chart already requires ships `KubePersistentVolumeFillingUp`, `KubePodCrashLooping` and
+# `KubeContainerWaiting`, all of which apply to this workload as they stand and all of which know
+# things — a PVC's capacity, a Deployment's desired replica count — that nothing this chart emits
+# does.
+
+groups:
+  - name: teamspeak-recording
+    interval: 30s
+    rules:
+      # Slot occupancy per virtual server. Recorded rather than written into the alert so the
+      # number the alert fires on and the number an operator reads are the same one.
+      - record: namespace_virtualserver:ts3_slots_used:ratio
+        expr: >-
+          sum by (namespace, virtualserver) (
+            ts3_serverinfo_clients_online{teamspeak_scope=~".*"})
+            / sum by (namespace, virtualserver) (
+                ts3_serverinfo_max_clients{teamspeak_scope=~".*"})
+
+      # Failed ServerQuery commands, aggregated to the pod so the alert below carries a label its
+      # runbook can hand to `kubectl`. `increase` rather than `rate`: the question is how many
+      # commands failed, and a per-second rate of a handful of failures an hour is a number
+      # nobody can act on.
+      - record: namespace_pod:ts3_client_commands_failed:increase15m
+        expr: >-
+          sum by (namespace, pod) (
+            increase(ts3_client_commands_failed_total{teamspeak_scope=~".*"}[15m]))
+
+  - name: teamspeak-availability
+    rules:
+      # The one alert every other alert here depends on: the exporter is the only thing that can
+      # see a TeamSpeak server at all, so while it is down the rest of this file is blind rather
+      # than quiet.
+      - alert: TeamSpeakExporterDown
+        expr: up{teamspeak_scope=~".*", container="metrics"} == 0
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "TeamSpeak metrics exporter is unreachable"
+          description: >-
+            Prometheus cannot scrape the ts3exporter sidecar in
+            {{ $labels.namespace }}/{{ $labels.pod }}. Either the pod is gone, the sidecar is
+            crash-looping, or a NetworkPolicy is blocking the scrape:
+            `kubectl -n {{ $labels.namespace }} logs {{ $labels.pod }} -c metrics --tail=50`
+            says which. Every other alert in this file is blind until it recovers, so treat a
+            silent dashboard during this window as unknown rather than healthy.
+
+      # Reachable over ServerQuery and reporting itself offline. The exporter is fine — this is
+      # the server itself refusing to serve.
+      - alert: TeamSpeakServerOffline
+        expr: ts3_serverinfo_online{teamspeak_scope=~".*"} == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "TeamSpeak virtual server {{ $labels.virtualserver }} is offline"
+          description: >-
+            The virtual server answers ServerQuery and reports itself offline. The usual causes
+            are an expired or unreachable licence — the server needs outbound TCP 2008 to
+            accounting.teamspeak.com and stops serving without it — or a virtual server an admin
+            stopped. `kubectl -n {{ $labels.namespace }} logs {{ $labels.pod }} --tail=100`
+            carries the licence error verbatim when it is that.
+
+      # Not a fault on its own; it is a fault when this chart runs without persistence, and that
+      # is exactly when nobody finds out until they try to connect.
+      - alert: TeamSpeakServerRestarted
+        expr: ts3_serverinfo_uptime{teamspeak_scope=~".*"} < 300
+        for: 0m
+        labels:
+          severity: info
+        annotations:
+          summary: "TeamSpeak virtual server {{ $labels.virtualserver }} restarted"
+          description: >-
+            Uptime is under five minutes, so the server came back within the last few minutes.
+            With `persistence.enabled` it came back as itself. Without it, it came back as a
+            brand new server — new unique ID, new admin token, no channels and no permissions —
+            and every client will refuse to reconnect on the changed identity. Check
+            `kubectl -n {{ $labels.namespace }} logs {{ $labels.pod }} --tail=200` for the new
+            token if that is what happened.
+
+      # The exporter authenticates over ServerQuery on every scrape. When those commands are
+      # refused it keeps publishing whatever it last read, so the failure looks like healthy but
+      # frozen metrics rather than an absent target — which is why this is its own alert and not
+      # a variation on the one above.
+      - alert: TeamSpeakQueryCommandFailures
+        expr: namespace_pod:ts3_client_commands_failed:increase15m{teamspeak_scope=~".*"} > 3
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "TeamSpeak ServerQuery commands are failing"
+          description: >-
+            The exporter's ServerQuery commands are being rejected, so the metrics on the
+            dashboard are stale or partial while this holds — including the ones the other alerts
+            here read. Usually the admin password no longer matches the one in the Secret, or the
+            exporter's source address dropped out of `query_ip_allowlist.txt` and is now being
+            flood-limited; `metrics.ignoreFloodLimits` covers the second.
+            `kubectl -n {{ $labels.namespace }} logs {{ $labels.pod }} -c metrics --tail=50`
+            names which.
+
+  - name: teamspeak-capacity
+    rules:
+      # Slots are licensed, so running out is a purchase rather than a scale-up, and the lead
+      # time on that is the reason this warns well before the limit rather than at it.
+      - alert: TeamSpeakSlotsNearlyFull
+        expr: namespace_virtualserver:ts3_slots_used:ratio{teamspeak_scope=~".*"} > 0.9
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "TeamSpeak virtual server {{ $labels.virtualserver }} is nearly full"
+          description: >-
+            Most of the slot limit is in use, and clients are turned away outright once it is
+            reached rather than queued. Raise `virtualServer.maxClients` if the licence has room,
+            or raise the licence. The dashboard's "Clients" panel separates voice clients from
+            query clients, which matters here: a query client from a monitoring integration
+            occupies no slot but does show up in the client count.

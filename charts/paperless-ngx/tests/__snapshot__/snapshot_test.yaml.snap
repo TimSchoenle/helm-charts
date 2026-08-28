@@ -1993,11 +1993,36 @@ matches the committed snapshot for the full stack behind an Ingress:
           "tags": ["paperless-ngx", "documents"],
           "schemaVersion": 39,
           "version": 1,
-          "editable": true,
+          "editable": false,
           "graphTooltip": 1,
+          "timezone": "browser",
           "time": { "from": "now-24h", "to": "now" },
           "refresh": "1m",
-          "annotations": { "list": [] },
+          "links": [
+            {
+              "title": "paperless-ngx dashboards",
+              "type": "dashboards",
+              "tags": ["paperless-ngx"],
+              "asDropdown": true,
+              "includeVars": true,
+              "keepTime": true,
+              "icon": "external link",
+              "targetBlank": false
+            }
+          ],
+          "annotations": {
+            "list": [
+              {
+                "name": "Firing alerts",
+                "enable": true,
+                "iconColor": "red",
+                "datasource": { "type": "prometheus", "uid": "${datasource}" },
+                "expr": "ALERTS{alertstate=\"firing\", alertname=~\"PaperlessNgx.*\", namespace=~\"$namespace\"}",
+                "titleFormat": "{{alertname}}",
+                "textFormat": "{{severity}}"
+              }
+            ]
+          },
           "templating": {
             "list": [
               {
@@ -2218,7 +2243,7 @@ matches the committed snapshot for the full stack behind an Ingress:
                 {
                   "refId": "A",
                   "datasource": { "type": "prometheus", "uid": "${datasource}" },
-                  "expr": "sum by (pod) (rate(container_cpu_usage_seconds_total{namespace=~\"$namespace\", pod=~\".*paperless-ngx.*\", container!=\"\"}[5m]))",
+                  "expr": "sum by (pod) (rate(container_cpu_usage_seconds_total{namespace=~\"$namespace\", pod=~\".*paperless-ngx.*\", container!=\"\"}[$__rate_interval]))",
                   "legendFormat": "{{pod}}"
                 }
               ]

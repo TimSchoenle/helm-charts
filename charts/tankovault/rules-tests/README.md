@@ -59,6 +59,7 @@ matters about them — that every `{{ $labels.X }}` names a label the alert can 
 | `edge_policy_test.yml` | rate limiting, feature gating, authentication, the database pool |
 | `scan_pipeline_test.yml` | scheduling, throughput, backlog, providers, content |
 | `delivery_test.yml` | notifications, SSE, the fetch tier, AniList |
+| `volume_floor_test.yml` | the traffic floor under every ratio and quantile alert |
 | `scoping_test.yml` | namespace isolation, against the **rendered** rules |
 
 Test files are `*_test.yml`. Anything else in this directory is configuration, not a suite.

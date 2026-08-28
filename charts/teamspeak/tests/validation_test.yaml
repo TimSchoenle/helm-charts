@@ -82,6 +82,46 @@ tests:
         failedTemplate:
           errorPattern: persistence.data.existingClaim is set but
 
+  # Rendering regardless would produce a manifest the API server rejects at apply time, and a
+  # capability guard that dropped the object instead would install cleanly with no alerts at all.
+  - it: refuses the alerting rules without the Prometheus Operator CRDs
+    set:
+      license.accept: true
+      serverQuery.adminPassword: hunter2
+      metrics.enabled: true
+      metrics.prometheusRule.enabled: true
+    asserts:
+      - template: deployment.yaml
+        failedTemplate:
+          errorPattern: "registers no `monitoring.coreos.com/v1` API"
+
+  - it: refuses the dashboards without the grafana-operator CRDs
+    set:
+      license.accept: true
+      serverQuery.adminPassword: hunter2
+      metrics.enabled: true
+      metrics.dashboard.enabled: true
+      metrics.dashboard.grafanaOperator.enabled: true
+    asserts:
+      - template: deployment.yaml
+        failedTemplate:
+          errorPattern: "registers no `grafana.integreatly.org/v1beta1` API"
+
+  - it: refuses the operator dashboards without the ConfigMap they reference
+    set:
+      license.accept: true
+      serverQuery.adminPassword: hunter2
+      metrics.enabled: true
+      metrics.dashboard.enabled: false
+      metrics.dashboard.grafanaOperator.enabled: true
+    capabilities:
+      apiVersions:
+        - grafana.integreatly.org/v1beta1
+    asserts:
+      - template: deployment.yaml
+        failedTemplate:
+          errorPattern: "need the dashboard ConfigMap as well"
+
   - it: reports every mistake in one go
     set:
       database.plugin: ts3db_mariadb

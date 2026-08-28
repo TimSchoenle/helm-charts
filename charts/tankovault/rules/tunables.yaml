@@ -32,11 +32,43 @@
 #     function cannot return more than that boundary, so every larger threshold is a critical
 #     alert that reads plausibly and can never fire.
 #
+# Both latency alerts do expose their traffic `floor`, which is a site's judgement about how much
+# traffic makes a quantile mean anything and is unrelated to where the buckets fall.
+#
+# Floors, and why every ratio has one
+# ------------------------------------
+# A ratio over a counter is undefined below some volume: one failed delivery out of two is 50%
+# and says nothing. Every alert here that compares a ratio therefore also compares that ratio's
+# own denominator against a `floor`, recorded as a series in its own right so the two read alike.
+# The defaults are deliberately low - this chart is installed at household scale as often as not -
+# and they are the first thing to raise on an install that pages on quiet lanes.
+#
 # The last two are the reason this file exists rather than a rule that exposes every literal it
 # can find: both would look entirely reasonable as a value, and both would silently disarm paging.
 # `disabledAlerts` plus `additionalRuleGroups` remains the way to replace either outright.
 tunables:
   # --- HTTP -------------------------------------------------------------------------------------
+  TankoVaultLatencyDegraded:
+    floor:
+      # -- Request rate below which the p99 comparison is too noisy to alert on.
+      description: >-
+        Requests per second under which the latency comparison is ignored. The 2.5s boundary
+        itself is not tunable - see the header - but how much traffic makes a p99 mean anything
+        is a site's own judgement.
+      type: number
+      default: 0.05
+      minimum: 0
+      anchor: 'namespace_job:http_requests:rate5m{tankovault_scope=~".*"} > 0.05'
+
+  TankoVaultLatencyCritical:
+    floor:
+      # -- Request rate below which the p99 comparison is too noisy to alert on.
+      description: Requests per second under which the latency comparison is ignored.
+      type: number
+      default: 0.05
+      minimum: 0
+      anchor: 'namespace_job:http_requests:rate5m{tankovault_scope=~".*"} > 0.05'
+
   TankoVaultHighServerErrorRatio:
     ratio:
       # -- Server-error ratio at or above which the warning fires.
@@ -177,6 +209,17 @@ tunables:
       maximum: 1
       anchor: 'namespace_provider_scan:scan_tasks_failed:ratio_rate15m{tankovault_scope=~".*"} > 0.5'
 
+    floor:
+      # -- Settled-task rate below which the ratio above is too noisy to alert on.
+      description: >-
+        Tasks settling per second under which the ratio is ignored - the default is roughly nine
+        tasks across the ratio's own fifteen-minute window. A lane quieter than that reads as
+        entirely broken on one unlucky task.
+      type: number
+      default: 0.01
+      minimum: 0
+      anchor: 'namespace_provider_scan:scan_tasks_settled:rate15m{tankovault_scope=~".*"} > 0.01'
+
   TankoVaultScanPaceBound:
     paceRatio:
       # -- Fraction of scan-task time spent waiting on the pacer that counts as pace-bound.
@@ -294,6 +337,16 @@ tunables:
       # The metric name wraps onto the line above the comparison; this is the only `> 0.5` here.
       anchor: '> 0.5'
 
+    floor:
+      # -- Delivery rate below which the ratio above is too noisy to alert on.
+      description: >-
+        Deliveries attempted per second, per channel, under which the ratio is ignored. A channel
+        with two subscribers produces a ratio that swings between 0 and 1 on a single failure.
+      type: number
+      default: 0.005
+      minimum: 0
+      anchor: 'namespace_channel:notifications_delivered:rate15m{tankovault_scope=~".*"} > 0.005'
+
   TankoVaultNotificationEventsFailing:
     ratio:
       # -- Fraction of notification events erroring that counts as broken.
@@ -303,6 +356,16 @@ tunables:
       minimum: 0
       maximum: 1
       anchor: 'namespace:notification_events_errors:ratio_rate15m{tankovault_scope=~".*"} > 0.1'
+
+    floor:
+      # -- Event rate below which the ratio above is too noisy to alert on.
+      description: >-
+        Notification events processed per second under which the ratio is ignored. The threshold
+        it guards is low by design, so without a floor one failed event pages.
+      type: number
+      default: 0.005
+      minimum: 0
+      anchor: 'namespace:notification_events:rate15m{tankovault_scope=~".*"} > 0.005'
 
   TankoVaultSseEventsUndeliverable:
     ratio:
@@ -316,6 +379,16 @@ tunables:
       maximum: 1
       anchor: 'namespace_job:sse_events_pushed_errors:ratio_rate15m{tankovault_scope=~".*"} > 0.25'
 
+    floor:
+      # -- Push rate below which the ratio above is too noisy to alert on.
+      description: >-
+        Frames pushed per second under which the ratio is ignored. One signed-in reader on a flaky
+        connection is not a broken push path.
+      type: number
+      default: 0.01
+      minimum: 0
+      anchor: 'namespace_job:sse_events_pushed:rate15m{tankovault_scope=~".*"} > 0.01'
+
   TankoVaultChallengeSolvingFailing:
     ratio:
       # -- Fraction of challenge-solve attempts failing that counts as broken.
@@ -326,6 +399,16 @@ tunables:
       maximum: 1
       anchor: 'namespace_job:solve_attempts_errors:ratio_rate15m{tankovault_scope=~".*"} > 0.5'
 
+    floor:
+      # -- Solve-attempt rate below which the ratio above is too noisy to alert on.
+      description: >-
+        Solve attempts per second under which the ratio is ignored. Only challenge-protected
+        providers reach this tier at all, so an install that follows none of them sits at zero.
+      type: number
+      default: 0.005
+      minimum: 0
+      anchor: 'namespace_job:solve_attempts:rate15m{tankovault_scope=~".*"} > 0.005'
+
   TankoVaultRenderTierFailing:
     ratio:
       # -- Fraction of headless render requests failing that counts as broken.
@@ -335,6 +418,14 @@ tunables:
       minimum: 0
       maximum: 1
       anchor: 'namespace_job:render_requests_errors:ratio_rate15m{tankovault_scope=~".*"} > 0.5'
+
+    floor:
+      # -- Render rate below which the ratio above is too noisy to alert on.
+      description: Render requests per second under which the ratio is ignored.
+      type: number
+      default: 0.005
+      minimum: 0
+      anchor: 'namespace_job:render_requests:rate15m{tankovault_scope=~".*"} > 0.005'
 
   # --- Recommendations and AniList ---------------------------------------------------------------
   TankoVaultRecsysShelvesEmpty:
@@ -369,3 +460,14 @@ tunables:
       minimum: 0
       maximum: 1
       anchor: 'namespace:anilist_requests_rate_limited:ratio_rate15m{tankovault_scope=~".*"} > 0.25'
+
+    floor:
+      # -- Request rate below which the ratio above is too noisy to alert on.
+      description: >-
+        AniList calls per second under which the ratio is ignored. `sync` is idle between polls on
+        a deployment with few connected accounts, and two throttled calls out of four is not a
+        budget problem.
+      type: number
+      default: 0.01
+      minimum: 0
+      anchor: 'namespace:anilist_requests:rate15m{tankovault_scope=~".*"} > 0.01'

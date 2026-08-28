@@ -1,119 +1,215 @@
+# The PrometheusRule this chart renders from `rules/*.yml`.
+#
+# What the rules *say* is not tested here — that is `rules-tests/`, evaluated by promtool against
+# synthetic series. This file covers the part promtool cannot see: that the right groups reach the
+# object, that the presets reach the rules they name and nothing else, and that the scope
+# substitution produces the matcher it claims to.
 suite: test prometheusrule
 templates:
   - prometheusrule.yaml
 set:
   license.accept: true
   serverQuery.adminPassword: hunter2
+  metrics.enabled: true
+  metrics.prometheusRule.enabled: true
 tests:
   - it: renders nothing while the exporter is not running
     set:
-      metrics.prometheusRule.enabled: true
+      metrics.enabled: false
     asserts:
       - hasDocuments:
           count: 0
 
   - it: is opt-in even with the exporter running
     set:
-      metrics.enabled: true
+      metrics.prometheusRule.enabled: false
     asserts:
       - hasDocuments:
           count: 0
 
-  - it: ships the five built-in alerts
-    set:
-      metrics.enabled: true
-      metrics.prometheusRule.enabled: true
+  - it: ships every group in the rule files
+    capabilities:
+      apiVersions:
+        - monitoring.coreos.com/v1
     asserts:
       - isKind:
           of: PrometheusRule
       - lengthEqual:
           path: spec.groups
-          count: 1
-      - lengthEqual:
-          path: spec.groups[0].rules
-          count: 5
-      - equal:
-          path: spec.groups[0].rules[0].alert
-          value: TeamSpeakExporterDown
+          count: 3
+      - contains:
+          path: spec.groups
+          content:
+            name: teamspeak-capacity
+          any: true
 
-  # The `job` label a PodMonitor produces depends on operator configuration this chart does
-  # not control; namespace and pod are always there.
-  - it: scopes every expression to this release
-    set:
-      metrics.enabled: true
-      metrics.prometheusRule.enabled: true
+  # A TeamSpeak instance is small enough that two of them share a namespace routinely, so the
+  # default narrows to this release's own pods rather than to the namespace.
+  - it: scopes every expression to this release by default
+    capabilities:
+      apiVersions:
+        - monitoring.coreos.com/v1
     asserts:
       - matchRegex:
           path: spec.groups[0].rules[0].expr
           pattern: 'namespace="NAMESPACE", pod=~"RELEASE-NAME-teamspeak-\.\*"'
-      - matchRegex:
-          path: spec.groups[0].rules[1].expr
-          pattern: '^ts3_serverinfo_online\{namespace="NAMESPACE"'
 
-  - it: applies the configured thresholds and severities
+  - it: can widen the scope to the whole namespace
     set:
-      metrics.enabled: true
-      metrics.prometheusRule.enabled: true
-      metrics.prometheusRule.rules.slotsNearlyFull.threshold: 0.75
-      metrics.prometheusRule.rules.slotsNearlyFull.severity: critical
-      metrics.prometheusRule.rules.serverRestarted.thresholdSeconds: 600
+      metrics.prometheusRule.scope: namespace
+    capabilities:
+      apiVersions:
+        - monitoring.coreos.com/v1
     asserts:
       - matchRegex:
-          path: spec.groups[0].rules[2].expr
-          pattern: "< 600$"
+          path: spec.groups[0].rules[0].expr
+          pattern: 'namespace="NAMESPACE"\}'
+      - notMatchRegex:
+          path: spec.groups[0].rules[0].expr
+          pattern: 'pod=~'
+
+  # The placeholder is already an always-true matcher, so unscoped rules are the committed files
+  # unchanged rather than a second rendering path.
+  - it: leaves the placeholder in place when scoping is off
+    set:
+      metrics.prometheusRule.scope: none
+    capabilities:
+      apiVersions:
+        - monitoring.coreos.com/v1
+    asserts:
       - matchRegex:
-          path: spec.groups[0].rules[3].expr
+          path: spec.groups[0].rules[0].expr
+          pattern: 'teamspeak_scope=~"\.\*"'
+
+  - it: moves a declared threshold, and only that one
+    set:
+      metrics.prometheusRule.thresholds:
+        TeamSpeakSlotsNearlyFull:
+          ratio: 0.75
+    capabilities:
+      apiVersions:
+        - monitoring.coreos.com/v1
+    asserts:
+      - matchRegex:
+          path: spec.groups[2].rules[0].expr
           pattern: "> 0.75$"
       - equal:
-          path: spec.groups[0].rules[3].labels.severity
-          value: critical
+          path: spec.groups[2].rules[0].alert
+          value: TeamSpeakSlotsNearlyFull
 
-  - it: drops the rules that were switched off
+  - it: refuses a threshold on an alert that declares none
     set:
-      metrics.enabled: true
-      metrics.prometheusRule.enabled: true
-      metrics.prometheusRule.rules.serverRestarted.enabled: false
-      metrics.prometheusRule.rules.slotsNearlyFull.enabled: false
+      metrics.prometheusRule.thresholds:
+        TeamSpeakExporterDown:
+          ratio: 0.5
+    capabilities:
+      apiVersions:
+        - monitoring.coreos.com/v1
     asserts:
+      - failedTemplate:
+          errorPattern: "TeamSpeakExporterDown"
+
+  - it: drops the alerts that were switched off
+    set:
+      metrics.prometheusRule.disabledAlerts:
+        - TeamSpeakServerRestarted
+        - TeamSpeakSlotsNearlyFull
+    capabilities:
+      apiVersions:
+        - monitoring.coreos.com/v1
+    asserts:
+      # `teamspeak-capacity` held only the one alert, so the group goes with it rather than
+      # rendering empty.
       - lengthEqual:
-          path: spec.groups[0].rules
+          path: spec.groups
+          count: 2
+      - lengthEqual:
+          path: spec.groups[1].rules
           count: 3
 
-  - it: appends additional rules
+  - it: reroutes every alert without touching the recording rules
     set:
-      metrics.enabled: true
-      metrics.prometheusRule.enabled: true
-      metrics.prometheusRule.additionalRules:
-        - alert: TeamSpeakCustom
-          expr: vector(1)
-          labels:
-            severity: none
+      metrics.prometheusRule.additionalRuleLabels:
+        tier: staging
+    capabilities:
+      apiVersions:
+        - monitoring.coreos.com/v1
+    asserts:
+      - equal:
+          path: spec.groups[1].rules[0].labels.tier
+          value: staging
+      # A label on a recording rule changes the identity of the series it records, so the
+      # dashboards and the alerts reading it would silently stop matching.
+      - notExists:
+          path: spec.groups[0].rules[0].labels
+
+  - it: takes a per-alert severity and `for`
+    set:
+      metrics.prometheusRule.severityOverrides:
+        TeamSpeakSlotsNearlyFull: critical
+      metrics.prometheusRule.forOverrides:
+        TeamSpeakSlotsNearlyFull: 45m
+    capabilities:
+      apiVersions:
+        - monitoring.coreos.com/v1
+    asserts:
+      - equal:
+          path: spec.groups[2].rules[0].labels.severity
+          value: critical
+      - equal:
+          path: spec.groups[2].rules[0]["for"]
+          value: 45m
+
+  - it: refuses a `for` Prometheus cannot parse
+    set:
+      metrics.prometheusRule.forOverrides:
+        TeamSpeakSlotsNearlyFull: 45 minutes
+    capabilities:
+      apiVersions:
+        - monitoring.coreos.com/v1
+    asserts:
+      - failedTemplate:
+          errorPattern: "45 minutes"
+
+  - it: appends rule groups of the operator's own
+    set:
+      metrics.prometheusRule.additionalRuleGroups:
+        - name: teamspeak-site
+          rules:
+            - alert: TeamSpeakCustom
+              expr: vector(1)
+              labels:
+                severity: none
+    capabilities:
+      apiVersions:
+        - monitoring.coreos.com/v1
     asserts:
       - lengthEqual:
-          path: spec.groups[0].rules
-          count: 6
+          path: spec.groups
+          count: 4
       - equal:
-          path: spec.groups[0].rules[5].alert
+          path: spec.groups[3].rules[0].alert
           value: TeamSpeakCustom
 
   # Helm and Prometheus share the {{ }} delimiters, so the $labels references have to survive
   # rendering as literals.
   - it: leaves Prometheus' own annotation templating intact
-    set:
-      metrics.enabled: true
-      metrics.prometheusRule.enabled: true
+    capabilities:
+      apiVersions:
+        - monitoring.coreos.com/v1
     asserts:
       - matchRegex:
-          path: spec.groups[0].rules[1].annotations.summary
+          path: spec.groups[1].rules[1].annotations.summary
           pattern: '\{\{ \$labels\.virtualserver \}\}'
 
   - it: can be placed in another namespace and labelled for a specific Prometheus
     set:
-      metrics.enabled: true
-      metrics.prometheusRule.enabled: true
       metrics.prometheusRule.namespace: monitoring
       metrics.prometheusRule.labels:
         release: kube-prometheus-stack
+    capabilities:
+      apiVersions:
+        - monitoring.coreos.com/v1
     asserts:
       - equal:
           path: metadata.namespace

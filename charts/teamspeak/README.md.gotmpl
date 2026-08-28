@@ -6,6 +6,13 @@
 
 {{ template "chart.description" . }}
 
+> [!IMPORTANT]
+> **Upgrading an existing release?** Read
+> [UPGRADING.md](https://github.com/TimSchoenle/helm-charts/blob/main/charts/teamspeak/UPGRADING.md)
+> first. 3.0.0 renames `metrics.dashboards` to `metrics.dashboard` and replaces the per-alert
+> `metrics.prometheusRule.rules` block with the preset surface the other charts here use; a values
+> file carrying either fails the render with the offending path named.
+
 Three things decide whether an install works, and all three are covered below: the server has
 to be reached on the exact port it listens on ([Exposing the server](#exposing-the-server)),
 its data volume *is* the server's identity ([Persistence](#persistence)), and the admin token
@@ -122,8 +129,9 @@ a sidecar that cannot authenticate.
 | --- | --- |
 | `metrics.enabled` | the exporter sidecar, on port 9189 |
 | `metrics.podMonitor.enabled` | a `PodMonitor` (the metrics port is deliberately absent from the Service) |
-| `metrics.prometheusRule.enabled` | five alerting rules, each individually switchable |
-| `metrics.dashboards.enabled` | a labelled ConfigMap the Grafana sidecar loads |
+| `metrics.prometheusRule.enabled` | a `PrometheusRule` with five alerts and two recording rules |
+| `metrics.dashboard.enabled` | a labelled ConfigMap the Grafana sidecar loads |
+| `metrics.dashboard.grafanaOperator.enabled` | one `GrafanaDashboard` per file, for grafana-operator v5 |
 
 ```yaml
 license:
@@ -142,10 +150,9 @@ metrics:
     enabled: true
     labels:
       release: kube-prometheus-stack
-  dashboards:
+  dashboard:
     enabled: true
-    annotations:
-      grafana_folder: TeamSpeak
+    folder: TeamSpeak
 ```
 
 The `labels` are not decoration: a Prometheus Operator selects PodMonitors and rules by label,
@@ -158,6 +165,79 @@ Two behaviours worth expecting:
 - The exporter exits if it cannot log in at startup, so on a cold start it restarts a couple of
   times while the server finishes booting. That is self-correcting; a sidecar *still* restarting
   after a minute or two means the password is wrong.
+
+### What the alerts cover
+
+The rules live in [`rules/`](rules) as plain Prometheus rule files, so `promtool` evaluates every
+one of them against synthetic series in CI — in both the committed form and the scoped form a
+cluster actually receives.
+
+| Alert | Fires when |
+| --- | --- |
+| `TeamSpeakExporterDown` | the sidecar cannot be scraped. Every other alert here is blind while it holds |
+| `TeamSpeakServerOffline` | ServerQuery answers and the virtual server reports itself stopped — usually the licence |
+| `TeamSpeakServerRestarted` | uptime is under five minutes. Informational, unless `persistence` is off, in which case the server came back with a new identity |
+| `TeamSpeakQueryCommandFailures` | ServerQuery commands are being refused, so the metrics are stale rather than absent |
+| `TeamSpeakSlotsNearlyFull` | a virtual server is past 90% of its licensed slot limit |
+
+Nothing kube-state-metrics already covers is repeated: `KubePersistentVolumeFillingUp`,
+`KubePodCrashLooping` and `KubeContainerWaiting` all apply to this workload as they stand, and all
+of them know things — a PVC's capacity, a desired replica count — that nothing this chart emits
+does.
+
+`metrics.prometheusRule.scope` decides which series the rules match, and its default is stricter
+here than in the other charts in this repository. A `PrometheusRule` is not confined to the
+namespace it lives in, and a TeamSpeak server is small enough that two of them share a namespace
+routinely — a public one and a private one — so `namespace` alone would still have the two
+alerting on each other. `release`, the default, narrows to this release's own pods; `namespace`
+and `none` widen it.
+
+### Turning alerts off, retuning them, and adding your own
+
+The rules ship with defaults that suit most installs and no install exactly, so seven presets sit
+under `metrics.prometheusRule`. Every one of them is checked against the rules the chart actually
+ships, and a name that matches nothing fails the render rather than being ignored — a values file
+that says an alert is off while it still pages at 3am is the one outcome this whole surface exists
+to prevent.
+
+| Preset | What it does |
+| --- | --- |
+| `disabledAlerts` | drops alerts by name |
+| `disabledGroups` | drops whole rule groups by name |
+| `additionalRuleLabels` | adds labels to every alert, for Alertmanager routing |
+| `severityOverrides` | sets one alert's `severity` |
+| `forOverrides` | sets one alert's `for` — how long the condition must hold |
+| `thresholds` | moves a declared threshold inside a rule expression |
+| `additionalRuleGroups` | appends rule groups of your own |
+
+```yaml
+metrics:
+  prometheusRule:
+    enabled: true
+    # A licence with room to grow, so warn later than the default.
+    thresholds:
+      TeamSpeakSlotsNearlyFull:
+        ratio: 0.95
+    # A restart is expected on a server that runs without persistence by design.
+    disabledAlerts:
+      - TeamSpeakServerRestarted
+    additionalRuleLabels:
+      team: voice
+```
+
+Labels resolve most-specific-last: the rule file's own labels lose to `additionalRuleLabels`,
+which loses to `severityOverrides`. Recording rules are out of reach of all of it —
+`disabledGroups` refuses a group that holds any, and labels are never attached to one, because a
+label changes the identity of the series a recording rule produces and every dashboard panel and
+expression reading it would silently stop matching.
+
+**Not every number in a rule is a threshold somebody chose**, which is why `thresholds` is opt-in
+per alert rather than a search-and-replace over the expressions. Only what
+[`rules/tunables.yaml`](rules/tunables.yaml) declares can be moved; that file names each tunable,
+says what it means, and bounds it. `TeamSpeakExporterDown` and `TeamSpeakServerOffline` are
+absent from it on purpose: both compare against zero, which is structural rather than a judgement
+about how much is too much. Replace either through `disabledAlerts` plus `additionalRuleGroups`
+if you want different arithmetic.
 
 ## Network policies
 

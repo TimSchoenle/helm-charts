@@ -11,6 +11,13 @@
 # `tankovault_scope=~".*"` is the scope placeholder; see the header of the recording rules for
 # what it is and why every new selector must carry one.
 #
+# Every alert here that compares a ratio or a quantile also compares that ratio's own denominator
+# against a floor, because neither means anything below some volume: one failed delivery out of
+# two is 50%, and a p99 over four requests is the slowest of those four. The denominators are
+# recorded as series in their own right so the two halves read alike, the floors are tunable, and
+# `rules-tests/volume_floor_test.yml` pins each alert staying quiet just under its own. A new
+# ratio alert added without one belongs in that file too.
+#
 # Two things are deliberately *not* alerted on here, because the Prometheus Operator this chart
 # already requires ships them done properly:
 #
@@ -184,10 +191,17 @@ groups:
       # histogram_quantile interpolates within a bucket, so an off-boundary threshold alerts on an
       # interpolated number rather than an observed one. `frontend` is excluded: its one route
       # (/v1/{*rest}) can't separate a server-closed SSE stream from real latency.
+      #
+      # The traffic floor is the same one the 5xx ratios carry, and for a sharper reason: a p99
+      # over four requests in five minutes *is* the slowest of those four, and one cold cache
+      # miss on an idle instance would page as a latency regression. The conjunct needs no job
+      # filter — `and` matches on the full label set, so it can only keep jobs the left side
+      # already selected.
       - alert: TankoVaultLatencyDegraded
         expr: >-
           namespace_job:http_request_duration_seconds:p99_5m{tankovault_scope=~".*",
                                                              job=~"api|control-plane|sync"} > 2.5
+            and namespace_job:http_requests:rate5m{tankovault_scope=~".*"} > 0.05
         for: 15m
         labels:
           severity: warning
@@ -216,6 +230,7 @@ groups:
         expr: >-
           namespace_job:http_request_duration_seconds:p99_5m{tankovault_scope=~".*",
                                                              job=~"api|control-plane|sync"} >= 10
+            and namespace_job:http_requests:rate5m{tankovault_scope=~".*"} > 0.05
         for: 5m
         labels:
           severity: critical
@@ -444,6 +459,7 @@ groups:
       - alert: TankoVaultScanTasksFailing
         expr: >-
           namespace_provider_scan:scan_tasks_failed:ratio_rate15m{tankovault_scope=~".*"} > 0.5
+            and namespace_provider_scan:scan_tasks_settled:rate15m{tankovault_scope=~".*"} > 0.01
         for: 30m
         labels:
           severity: warning
@@ -665,6 +681,7 @@ groups:
         expr: >-
           namespace_channel:notifications_delivered_errors:ratio_rate15m{tankovault_scope=~".*"}
             > 0.5
+            and namespace_channel:notifications_delivered:rate15m{tankovault_scope=~".*"} > 0.005
         for: 15m
         labels:
           severity: warning
@@ -682,7 +699,9 @@ groups:
       # all, so nothing is written and no channel is attempted. A much lower threshold is right,
       # because unlike a flaky third-party endpoint there is no benign cause.
       - alert: TankoVaultNotificationEventsFailing
-        expr: namespace:notification_events_errors:ratio_rate15m{tankovault_scope=~".*"} > 0.1
+        expr: >-
+          namespace:notification_events_errors:ratio_rate15m{tankovault_scope=~".*"} > 0.1
+            and namespace:notification_events:rate15m{tankovault_scope=~".*"} > 0.005
         for: 15m
         labels:
           severity: warning
@@ -699,6 +718,7 @@ groups:
       - alert: TankoVaultSseEventsUndeliverable
         expr: >-
           namespace_job:sse_events_pushed_errors:ratio_rate15m{tankovault_scope=~".*"} > 0.25
+            and namespace_job:sse_events_pushed:rate15m{tankovault_scope=~".*"} > 0.01
         for: 15m
         labels:
           severity: info
@@ -717,7 +737,9 @@ groups:
       # failing to launch), which shows as near-100% errors, not drift — 0.5 clears provider
       # quirks.
       - alert: TankoVaultChallengeSolvingFailing
-        expr: namespace_job:solve_attempts_errors:ratio_rate15m{tankovault_scope=~".*"} > 0.5
+        expr: >-
+          namespace_job:solve_attempts_errors:ratio_rate15m{tankovault_scope=~".*"} > 0.5
+            and namespace_job:solve_attempts:rate15m{tankovault_scope=~".*"} > 0.005
         for: 15m
         labels:
           severity: warning
@@ -733,7 +755,9 @@ groups:
             still sized, since Chrome fails in confusing ways with a small `/dev/shm`.
 
       - alert: TankoVaultRenderTierFailing
-        expr: namespace_job:render_requests_errors:ratio_rate15m{tankovault_scope=~".*"} > 0.5
+        expr: >-
+          namespace_job:render_requests_errors:ratio_rate15m{tankovault_scope=~".*"} > 0.5
+            and namespace_job:render_requests:rate15m{tankovault_scope=~".*"} > 0.005
         for: 15m
         labels:
           severity: warning
@@ -833,6 +857,7 @@ groups:
       - alert: TankoVaultAniListRateLimited
         expr: >-
           namespace:anilist_requests_rate_limited:ratio_rate15m{tankovault_scope=~".*"} > 0.25
+            and namespace:anilist_requests:rate15m{tankovault_scope=~".*"} > 0.01
         for: 30m
         labels:
           severity: warning

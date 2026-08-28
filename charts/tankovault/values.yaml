@@ -3524,6 +3524,16 @@ metrics:
     labels: {}
 
     # @schema
+    # type: string
+    # @schema
+    # -- Namespace for the PrometheusRule. Empty uses the release namespace. A Prometheus loads
+    # rules from whichever namespaces its `ruleNamespaceSelector` names, which this chart cannot
+    # reach; landing the object in one of them is the move that is left. The rules stay scoped to
+    # this release either way — `scope` is derived from the release, not from where the object
+    # lands.
+    namespace: ""
+
+    # @schema
     # enum: [namespace, none]
     # @schema
     # -- Confine the rules to this release's namespace. A `PrometheusRule` is not scoped to the
@@ -3866,6 +3876,9 @@ metrics:
     #     type: object
     #     additionalProperties: false
     #     properties:
+    #       floor:
+    #         default: 0.01
+    #         anyOf: [{type: number, minimum: 0}, {type: string, pattern: '^-?[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?$'}]
     #       ratio:
     #         default: 0.25
     #         anyOf: [{type: number, minimum: 0, maximum: 1}, {type: string, pattern: '^-?[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?$'}]
@@ -3890,6 +3903,9 @@ metrics:
     #     type: object
     #     additionalProperties: false
     #     properties:
+    #       floor:
+    #         default: 0.005
+    #         anyOf: [{type: number, minimum: 0}, {type: string, pattern: '^-?[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?$'}]
     #       ratio:
     #         default: 0.5
     #         anyOf: [{type: number, minimum: 0, maximum: 1}, {type: string, pattern: '^-?[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?$'}]
@@ -3927,10 +3943,27 @@ metrics:
     #       ratio:
     #         default: 0.05
     #         anyOf: [{type: number, minimum: 0, maximum: 1}, {type: string, pattern: '^-?[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?$'}]
+    #   TankoVaultLatencyCritical:
+    #     type: object
+    #     additionalProperties: false
+    #     properties:
+    #       floor:
+    #         default: 0.05
+    #         anyOf: [{type: number, minimum: 0}, {type: string, pattern: '^-?[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?$'}]
+    #   TankoVaultLatencyDegraded:
+    #     type: object
+    #     additionalProperties: false
+    #     properties:
+    #       floor:
+    #         default: 0.05
+    #         anyOf: [{type: number, minimum: 0}, {type: string, pattern: '^-?[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?$'}]
     #   TankoVaultNotificationDeliveryFailing:
     #     type: object
     #     additionalProperties: false
     #     properties:
+    #       floor:
+    #         default: 0.005
+    #         anyOf: [{type: number, minimum: 0}, {type: string, pattern: '^-?[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?$'}]
     #       ratio:
     #         default: 0.5
     #         anyOf: [{type: number, minimum: 0, maximum: 1}, {type: string, pattern: '^-?[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?$'}]
@@ -3938,6 +3971,9 @@ metrics:
     #     type: object
     #     additionalProperties: false
     #     properties:
+    #       floor:
+    #         default: 0.005
+    #         anyOf: [{type: number, minimum: 0}, {type: string, pattern: '^-?[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?$'}]
     #       ratio:
     #         default: 0.1
     #         anyOf: [{type: number, minimum: 0, maximum: 1}, {type: string, pattern: '^-?[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?$'}]
@@ -3972,6 +4008,9 @@ metrics:
     #     type: object
     #     additionalProperties: false
     #     properties:
+    #       floor:
+    #         default: 0.005
+    #         anyOf: [{type: number, minimum: 0}, {type: string, pattern: '^-?[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?$'}]
     #       ratio:
     #         default: 0.5
     #         anyOf: [{type: number, minimum: 0, maximum: 1}, {type: string, pattern: '^-?[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?$'}]
@@ -4015,6 +4054,9 @@ metrics:
     #     type: object
     #     additionalProperties: false
     #     properties:
+    #       floor:
+    #         default: 0.01
+    #         anyOf: [{type: number, minimum: 0}, {type: string, pattern: '^-?[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?$'}]
     #       ratio:
     #         default: 0.5
     #         anyOf: [{type: number, minimum: 0, maximum: 1}, {type: string, pattern: '^-?[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?$'}]
@@ -4032,6 +4074,9 @@ metrics:
     #     type: object
     #     additionalProperties: false
     #     properties:
+    #       floor:
+    #         default: 0.01
+    #         anyOf: [{type: number, minimum: 0}, {type: string, pattern: '^-?[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?$'}]
     #       ratio:
     #         default: 0.25
     #         anyOf: [{type: number, minimum: 0, maximum: 1}, {type: string, pattern: '^-?[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?$'}]
@@ -4179,6 +4224,16 @@ metrics:
     # @schema
     # type: string
     # @schema
+    # -- Namespace for the ConfigMap and, when enabled, the `GrafanaDashboard` resources beside
+    # it. Empty uses the release namespace. Which namespaces the sidecar watches is configured on
+    # the *Grafana* release and cannot be reached from here, so putting the ConfigMap where it is
+    # already looking is the only cross-namespace move the sidecar path has. The custom resources
+    # move with it, because `configMapRef` resolves in their own namespace.
+    namespace: ""
+
+    # @schema
+    # type: string
+    # @schema
     # -- Label a Grafana sidecar watches for dashboard ConfigMaps. The sidecar only picks the
     # ConfigMap up if Grafana is configured to look in this namespace — its own by default.
     # Either set `sidecar.dashboards.searchNamespace` to `ALL` on the Grafana release, or use
@@ -4190,6 +4245,14 @@ metrics:
     # @schema
     # -- Value for that label.
     labelValue: "1"
+
+    # @schema
+    # type: string
+    # @schema
+    # -- Grafana folder to file the dashboards under, for both delivery mechanisms: the sidecar
+    # reads it from a `grafana_folder` annotation on the ConfigMap and the operator from a field
+    # on its own resource. Empty leaves each to its default.
+    folder: ""
 
     # @schema
     # additionalProperties: true
@@ -4231,7 +4294,8 @@ metrics:
       # @schema
       # type: string
       # @schema
-      # -- Folder to file the dashboards under. Empty leaves them at the Grafana root.
+      # -- Folder to file the dashboards under, for the operator path only. Overrides `folder`
+      # when set; empty falls back to it.
       folder: ""
 
       # @schema

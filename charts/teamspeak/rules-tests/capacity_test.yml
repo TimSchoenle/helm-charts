@@ -1,0 +1,65 @@
+# Slot occupancy: the one resource on a TeamSpeak server that cannot be scaled by adding
+# replicas, because the limit is licensed rather than provisioned.
+#
+# The ratio is recorded rather than written into the alert, so both halves are tested here: that
+# the recorded series carries the label set its level prefix advertises, and that the alert reads
+# it per virtual server rather than across them.
+rule_files:
+  - teamspeak.rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  # Ninety-five of a hundred slots taken.
+  - interval: 1m
+    input_series:
+      - series: 'ts3_serverinfo_clients_online{namespace="rules-test", pod="teamspeak-0", virtualserver="1"}'
+        values: '95x30'
+      - series: 'ts3_serverinfo_max_clients{namespace="rules-test", pod="teamspeak-0", virtualserver="1"}'
+        values: '100x30'
+    promql_expr_test:
+      # `pod` is aggregated away on purpose: the question is how full the virtual server is, and
+      # the level prefix says exactly which labels survive.
+      - expr: namespace_virtualserver:ts3_slots_used:ratio
+        eval_time: 20m
+        exp_samples:
+          - labels: 'namespace_virtualserver:ts3_slots_used:ratio{namespace="rules-test", virtualserver="1"}'
+            value: 0.95
+      - expr: ALERTS{alertname="TeamSpeakSlotsNearlyFull", alertstate="firing"}
+        eval_time: 20m
+        exp_samples:
+          - labels: 'ALERTS{alertname="TeamSpeakSlotsNearlyFull", alertstate="firing", namespace="rules-test", virtualserver="1", severity="warning"}'
+            value: 1
+
+  # A busy virtual server beside a quiet one. Summing across the two would read as 55% full and
+  # miss the one that is actually about to turn people away, which is why the recording rule
+  # keeps `virtualserver` and the alert is per server.
+  - interval: 1m
+    input_series:
+      - series: 'ts3_serverinfo_clients_online{namespace="rules-test", pod="teamspeak-0", virtualserver="1"}'
+        values: '95x30'
+      - series: 'ts3_serverinfo_max_clients{namespace="rules-test", pod="teamspeak-0", virtualserver="1"}'
+        values: '100x30'
+      - series: 'ts3_serverinfo_clients_online{namespace="rules-test", pod="teamspeak-0", virtualserver="2"}'
+        values: '15x30'
+      - series: 'ts3_serverinfo_max_clients{namespace="rules-test", pod="teamspeak-0", virtualserver="2"}'
+        values: '100x30'
+    promql_expr_test:
+      - expr: ALERTS{alertname="TeamSpeakSlotsNearlyFull", alertstate="firing"}
+        eval_time: 20m
+        exp_samples:
+          - labels: 'ALERTS{alertname="TeamSpeakSlotsNearlyFull", alertstate="firing", namespace="rules-test", virtualserver="1", severity="warning"}'
+            value: 1
+
+  # Exactly at the threshold. `> 0.9` and not `>=`, so ninety of a hundred is not yet an alert —
+  # pinned because a tuned threshold is most often set to the number somebody wants to sit at.
+  - interval: 1m
+    input_series:
+      - series: 'ts3_serverinfo_clients_online{namespace="rules-test", pod="teamspeak-0", virtualserver="1"}'
+        values: '90x30'
+      - series: 'ts3_serverinfo_max_clients{namespace="rules-test", pod="teamspeak-0", virtualserver="1"}'
+        values: '100x30'
+    promql_expr_test:
+      - expr: ALERTS{alertname="TeamSpeakSlotsNearlyFull"}
+        eval_time: 20m
+        exp_samples: []

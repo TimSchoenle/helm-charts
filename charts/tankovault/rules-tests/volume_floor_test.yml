@@ -1,0 +1,157 @@
+# The traffic floors under every ratio and quantile alert, in one file because they are one idea.
+#
+# A ratio over a counter is undefined below some volume. One failed delivery out of two is 50%,
+# a p99 over four requests *is* the slowest of those four, and a lane that settled three tasks in
+# fifteen minutes says nothing about whether its provider is broken. Every such alert this chart
+# ships therefore carries a conjunct comparing the ratio's own denominator against a `floor`, and
+# what this file pins is the half nothing else would notice: that the alert stays **quiet** on a
+# quiet deployment.
+#
+# That case matters more here than the firing one. This chart is installed at household scale as
+# often as at any other, and an alert that fires on the only three scan tasks of the afternoon is
+# an alert an operator silences — after which the real outage is silent too.
+#
+# Every test below drives the ratio to 1.0, well past its threshold, and the volume just under its
+# floor. The floor is therefore the only thing keeping the alert quiet, and removing one conjunct
+# fails exactly one test here. Where the same signal is also tested at real volume, the pair is
+# what makes the quiet assertion a statement about the floor rather than about the metric.
+rule_files:
+  - tankovault-recording.rules.yml
+  - tankovault-alerts.rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  # p99 latency at 0.033 req/s — two requests a minute, under the 0.05 floor. Every one of them
+  # lands in the top bucket, so the quantile is pinned at 10s and both latency alerts would fire
+  # without the conjunct.
+  - interval: 1m
+    input_series:
+      - series: 'http_request_duration_seconds_bucket{namespace="tv", job="api", pod="api-1", le="10"}'
+        values: '0x90'
+      - series: 'http_request_duration_seconds_bucket{namespace="tv", job="api", pod="api-1", le="+Inf"}'
+        values: '0+2x90'
+      - series: 'http_requests_total{namespace="tv", job="api", pod="api-1", method="GET", route="/v1/series", status="200"}'
+        values: '0+2x90'
+    promql_expr_test:
+      # The quantile really is at the top bucket; it is the floor and nothing else holding the
+      # alerts back.
+      - expr: namespace_job:http_request_duration_seconds:p99_5m
+        eval_time: 60m
+        exp_samples:
+          - labels: 'namespace_job:http_request_duration_seconds:p99_5m{namespace="tv", job="api"}'
+            value: 10
+      - expr: ALERTS{alertname="TankoVaultLatencyDegraded"}
+        eval_time: 60m
+        exp_samples: []
+      - expr: ALERTS{alertname="TankoVaultLatencyCritical"}
+        eval_time: 60m
+        exp_samples: []
+
+  # The same latency at ten times the traffic, which clears the floor.
+  - interval: 1m
+    input_series:
+      - series: 'http_request_duration_seconds_bucket{namespace="tv", job="api", pod="api-1", le="10"}'
+        values: '0x90'
+      - series: 'http_request_duration_seconds_bucket{namespace="tv", job="api", pod="api-1", le="+Inf"}'
+        values: '0+20x90'
+      - series: 'http_requests_total{namespace="tv", job="api", pod="api-1", method="GET", route="/v1/series", status="200"}'
+        values: '0+20x90'
+    promql_expr_test:
+      - expr: ALERTS{alertname="TankoVaultLatencyCritical", alertstate="firing"}
+        eval_time: 60m
+        exp_samples:
+          - labels: 'ALERTS{alertname="TankoVaultLatencyCritical", alertstate="firing", namespace="tv", job="api", severity="critical"}'
+            value: 1
+
+  # A scan lane settling one task every two minutes, all of them failed: a ratio of 1.0 against a
+  # threshold of 0.5, at 0.0083 tasks/s against a floor of 0.01.
+  - interval: 2m
+    input_series:
+      - series: 'scan_tasks_settled_total{namespace="tv", job="worker", pod="w-1", provider="alpha", scan="chapters", outcome="failed"}'
+        values: '0+1x60'
+    promql_expr_test:
+      - expr: namespace_provider_scan:scan_tasks_failed:ratio_rate15m
+        eval_time: 60m
+        exp_samples:
+          - labels: 'namespace_provider_scan:scan_tasks_failed:ratio_rate15m{namespace="tv", provider="alpha", scan="chapters"}'
+            value: 1
+      - expr: ALERTS{alertname="TankoVaultScanTasksFailing"}
+        eval_time: 60m
+        exp_samples: []
+
+  # A busy lane failing at exactly the same ratio does fire.
+  - interval: 1m
+    input_series:
+      - series: 'scan_tasks_settled_total{namespace="tv", job="worker", pod="w-1", provider="alpha", scan="chapters", outcome="failed"}'
+        values: '0+2x90'
+    promql_expr_test:
+      - expr: ALERTS{alertname="TankoVaultScanTasksFailing", alertstate="firing"}
+        eval_time: 60m
+        exp_samples:
+          - labels: 'ALERTS{alertname="TankoVaultScanTasksFailing", alertstate="firing", namespace="tv", provider="alpha", scan="chapters", severity="warning"}'
+            value: 1
+
+  # A notification channel with one subscriber, whose deliveries all fail. Without the floor this
+  # is a channel "failing 100% of deliveries", which is true and useless.
+  - interval: 4m
+    input_series:
+      - series: 'notifications_delivered_total{namespace="tv", job="notifier", pod="nf-1", channel="email", result="error"}'
+        values: '0+1x40'
+    promql_expr_test:
+      - expr: ALERTS{alertname="TankoVaultNotificationDeliveryFailing"}
+        eval_time: 60m
+        exp_samples: []
+
+  # The notifier erroring on the handful of events it sees an hour. This threshold is a tenth
+  # rather than a half, because the loss is permanent — which is why it needs the floor most.
+  - interval: 4m
+    input_series:
+      - series: 'notification_events_total{namespace="tv", job="notifier", pod="nf-1", result="error"}'
+        values: '0+1x40'
+    promql_expr_test:
+      - expr: ALERTS{alertname="TankoVaultNotificationEventsFailing"}
+        eval_time: 60m
+        exp_samples: []
+
+  # One signed-in reader on a connection that keeps dropping frames.
+  - interval: 2m
+    input_series:
+      - series: 'sse_events_pushed_total{namespace="tv", job="api", pod="api-1", result="error"}'
+        values: '0+1x60'
+    promql_expr_test:
+      - expr: ALERTS{alertname="TankoVaultSseEventsUndeliverable"}
+        eval_time: 60m
+        exp_samples: []
+
+  # An install following one challenge-protected provider, whose few solve attempts all failed.
+  # TRAWL being wholly broken shows up at real volume; this is not that.
+  - interval: 4m
+    input_series:
+      - series: 'solve_attempts_total{namespace="tv", job="challenge-solver", pod="cs-1", result="error"}'
+        values: '0+1x40'
+    promql_expr_test:
+      - expr: ALERTS{alertname="TankoVaultChallengeSolvingFailing"}
+        eval_time: 60m
+        exp_samples: []
+
+  # The same, for the headless render tier.
+  - interval: 4m
+    input_series:
+      - series: 'render_requests_total{namespace="tv", job="render", pod="rd-1", result="error"}'
+        values: '0+1x40'
+    promql_expr_test:
+      - expr: ALERTS{alertname="TankoVaultRenderTierFailing"}
+        eval_time: 60m
+        exp_samples: []
+
+  # `sync` polling AniList a few times an hour, throttled every time. A budget problem is a
+  # sustained share of real traffic, not two calls out of four.
+  - interval: 2m
+    input_series:
+      - series: 'anilist_requests_total{namespace="tv", job="sync", pod="sy-1", operation="pull", result="rate_limited"}'
+        values: '0+1x60'
+    promql_expr_test:
+      - expr: ALERTS{alertname="TankoVaultAniListRateLimited"}
+        eval_time: 60m
+        exp_samples: []

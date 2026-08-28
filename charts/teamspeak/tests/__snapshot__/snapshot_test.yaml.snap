@@ -745,11 +745,24 @@ matches the committed snapshot with observability and network policies on:
       namespace: NAMESPACE
     spec:
       groups:
-        - name: RELEASE-NAME-teamspeak
+        - interval: 30s
+          name: teamspeak-recording
+          rules:
+            - expr: |-
+                sum by (namespace, virtualserver) (
+                  ts3_serverinfo_clients_online{namespace="NAMESPACE", pod=~"RELEASE-NAME-teamspeak-.*"})
+                  / sum by (namespace, virtualserver) (
+                      ts3_serverinfo_max_clients{namespace="NAMESPACE", pod=~"RELEASE-NAME-teamspeak-.*"})
+              record: namespace_virtualserver:ts3_slots_used:ratio
+            - expr: |-
+                sum by (namespace, pod) (
+                  increase(ts3_client_commands_failed_total{namespace="NAMESPACE", pod=~"RELEASE-NAME-teamspeak-.*"}[15m]))
+              record: namespace_pod:ts3_client_commands_failed:increase15m
+        - name: teamspeak-availability
           rules:
             - alert: TeamSpeakExporterDown
               annotations:
-                description: Prometheus cannot scrape the ts3exporter sidecar in NAMESPACE/RELEASE-NAME-teamspeak. Either the pod is gone, the sidecar is crash-looping, or the NetworkPolicy is blocking the scrape. Every other alert in this group is blind until it recovers.
+                description: 'Prometheus cannot scrape the ts3exporter sidecar in {{ $labels.namespace }}/{{ $labels.pod }}. Either the pod is gone, the sidecar is crash-looping, or a NetworkPolicy is blocking the scrape: `kubectl -n {{ $labels.namespace }} logs {{ $labels.pod }} -c metrics --tail=50` says which. Every other alert in this file is blind until it recovers, so treat a silent dashboard during this window as unknown rather than healthy.'
                 summary: TeamSpeak metrics exporter is unreachable
               expr: up{namespace="NAMESPACE", pod=~"RELEASE-NAME-teamspeak-.*", container="metrics"} == 0
               for: 10m
@@ -757,7 +770,7 @@ matches the committed snapshot with observability and network policies on:
                 severity: critical
             - alert: TeamSpeakServerOffline
               annotations:
-                description: The virtual server is reachable over ServerQuery but reports itself offline. The usual causes are an expired or unreachable licence — outbound TCP 2008 to accounting.teamspeak.com — or a virtual server that was stopped by an admin.
+                description: The virtual server answers ServerQuery and reports itself offline. The usual causes are an expired or unreachable licence — the server needs outbound TCP 2008 to accounting.teamspeak.com and stops serving without it — or a virtual server an admin stopped. `kubectl -n {{ $labels.namespace }} logs {{ $labels.pod }} --tail=100` carries the licence error verbatim when it is that.
                 summary: TeamSpeak virtual server {{ $labels.virtualserver }} is offline
               expr: ts3_serverinfo_online{namespace="NAMESPACE", pod=~"RELEASE-NAME-teamspeak-.*"} == 0
               for: 5m
@@ -765,25 +778,27 @@ matches the committed snapshot with observability and network policies on:
                 severity: critical
             - alert: TeamSpeakServerRestarted
               annotations:
-                description: Uptime is below 300s, so the server restarted within the last few minutes. If this deployment runs without persistence, it also came back with a new identity, a new admin token and no channels.
+                description: Uptime is under five minutes, so the server came back within the last few minutes. With `persistence.enabled` it came back as itself. Without it, it came back as a brand new server — new unique ID, new admin token, no channels and no permissions — and every client will refuse to reconnect on the changed identity. Check `kubectl -n {{ $labels.namespace }} logs {{ $labels.pod }} --tail=200` for the new token if that is what happened.
                 summary: TeamSpeak virtual server {{ $labels.virtualserver }} restarted
               expr: ts3_serverinfo_uptime{namespace="NAMESPACE", pod=~"RELEASE-NAME-teamspeak-.*"} < 300
               for: 0m
               labels:
                 severity: info
-            - alert: TeamSpeakSlotsNearlyFull
+            - alert: TeamSpeakQueryCommandFailures
               annotations:
-                description: More than 90% of the slot limit is in use. New clients are turned away once it is reached; raise the limit or the licence before that happens.
-                summary: TeamSpeak virtual server {{ $labels.virtualserver }} is nearly full
-              expr: ts3_serverinfo_clients_online{namespace="NAMESPACE", pod=~"RELEASE-NAME-teamspeak-.*"} / ts3_serverinfo_max_clients{namespace="NAMESPACE", pod=~"RELEASE-NAME-teamspeak-.*"} > 0.9
+                description: The exporter's ServerQuery commands are being rejected, so the metrics on the dashboard are stale or partial while this holds — including the ones the other alerts here read. Usually the admin password no longer matches the one in the Secret, or the exporter's source address dropped out of `query_ip_allowlist.txt` and is now being flood-limited; `metrics.ignoreFloodLimits` covers the second. `kubectl -n {{ $labels.namespace }} logs {{ $labels.pod }} -c metrics --tail=50` names which.
+                summary: TeamSpeak ServerQuery commands are failing
+              expr: namespace_pod:ts3_client_commands_failed:increase15m{namespace="NAMESPACE", pod=~"RELEASE-NAME-teamspeak-.*"} > 3
               for: 15m
               labels:
                 severity: warning
-            - alert: TeamSpeakQueryCommandFailures
+        - name: teamspeak-capacity
+          rules:
+            - alert: TeamSpeakSlotsNearlyFull
               annotations:
-                description: The exporter's ServerQuery commands are being rejected. Usually the admin password no longer matches the one in the Secret, or the exporter's source address dropped out of query_ip_allowlist.txt and is now flood-limited. The metrics from this server are stale or partial while this fires.
-                summary: TeamSpeak ServerQuery commands are failing
-              expr: rate(ts3_client_commands_failed_total{namespace="NAMESPACE", pod=~"RELEASE-NAME-teamspeak-.*"}[15m]) > 0
+                description: 'Most of the slot limit is in use, and clients are turned away outright once it is reached rather than queued. Raise `virtualServer.maxClients` if the licence has room, or raise the licence. The dashboard''s "Clients" panel separates voice clients from query clients, which matters here: a query client from a monitoring integration occupies no slot but does show up in the client count.'
+                summary: TeamSpeak virtual server {{ $labels.virtualserver }} is nearly full
+              expr: namespace_virtualserver:ts3_slots_used:ratio{namespace="NAMESPACE", pod=~"RELEASE-NAME-teamspeak-.*"} > 0.9
               for: 15m
               labels:
                 severity: warning

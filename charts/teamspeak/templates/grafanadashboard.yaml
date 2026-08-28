@@ -1,0 +1,12 @@
+{{- /*
+The cross-namespace half of the dashboard story: one `GrafanaDashboard` per dashboard file, for
+clusters running grafana-operator v5.
+
+Unlike the sidecar ConfigMap next door, whose search namespace is configured on the *Grafana*
+release and is out of reach from here, these carry the cross-namespace grant themselves. See
+`common.grafana.dashboard.*` for the full reasoning; validation of this block lives in
+`teamspeak.validateValues`.
+*/ -}}
+{{- if and .Values.metrics.enabled .Values.metrics.dashboard.enabled .Values.metrics.dashboard.grafanaOperator.enabled }}
+{{- include "common.grafana.dashboard.customResources" (dict "ctx" . "values" .Values.metrics.dashboard) }}
+{{- end }}

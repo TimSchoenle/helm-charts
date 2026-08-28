@@ -118,6 +118,122 @@ tests:
           path: spec.folder
           value: Fixtures
 
+  - it: files the sidecar's ConfigMap under the shared folder
+    # The sidecar reads an annotation and the operator a field; an operator who asked for a
+    # folder meant it of whichever one is installed, so one key drives both.
+    template: grafana.yaml
+    capabilities:
+      apiVersions:
+        - grafana.integreatly.org/v1beta1
+    documentSelector:
+      path: kind
+      value: ConfigMap
+    set:
+      grafanaDashboard.enabled: true
+      grafanaDashboard.grafanaOperator.enabled: true
+      grafanaDashboard.folder: Shared
+    asserts:
+      - equal:
+          path: metadata.annotations["grafana_folder"]
+          value: Shared
+
+  - it: files the operator's custom resource under the same shared folder
+    template: grafana.yaml
+    capabilities:
+      apiVersions:
+        - grafana.integreatly.org/v1beta1
+    documentSelector:
+      path: kind
+      value: GrafanaDashboard
+    set:
+      grafanaDashboard.enabled: true
+      grafanaDashboard.grafanaOperator.enabled: true
+      grafanaDashboard.folder: Shared
+    asserts:
+      - equal:
+          path: spec.folder
+          value: Shared
+
+  - it: lets the operator path take a folder of its own
+    template: grafana.yaml
+    capabilities:
+      apiVersions:
+        - grafana.integreatly.org/v1beta1
+    documentSelector:
+      path: kind
+      value: GrafanaDashboard
+    set:
+      grafanaDashboard.enabled: true
+      grafanaDashboard.grafanaOperator.enabled: true
+      grafanaDashboard.folder: Shared
+      grafanaDashboard.grafanaOperator.folder: OperatorOnly
+    asserts:
+      - equal:
+          path: spec.folder
+          value: OperatorOnly
+
+  - it: leaves the sidecar on the shared folder when the operator overrides its own
+    template: grafana.yaml
+    capabilities:
+      apiVersions:
+        - grafana.integreatly.org/v1beta1
+    documentSelector:
+      path: kind
+      value: ConfigMap
+    set:
+      grafanaDashboard.enabled: true
+      grafanaDashboard.grafanaOperator.enabled: true
+      grafanaDashboard.folder: Shared
+      grafanaDashboard.grafanaOperator.folder: OperatorOnly
+    asserts:
+      - equal:
+          path: metadata.annotations["grafana_folder"]
+          value: Shared
+
+  - it: carries no folder annotation when no folder is set
+    template: grafana.yaml
+    set:
+      grafanaDashboard.enabled: true
+    asserts:
+      - notExists:
+          path: metadata.annotations["grafana_folder"]
+
+  - it: puts the ConfigMap in the namespace the values name
+    # `configMapRef` resolves in the custom resource's own namespace, so the two have to move
+    # together or the operator imports nothing.
+    template: grafana.yaml
+    capabilities:
+      apiVersions:
+        - grafana.integreatly.org/v1beta1
+    documentSelector:
+      path: kind
+      value: ConfigMap
+    set:
+      grafanaDashboard.enabled: true
+      grafanaDashboard.grafanaOperator.enabled: true
+      grafanaDashboard.namespace: observability
+    asserts:
+      - equal:
+          path: metadata.namespace
+          value: observability
+
+  - it: moves the custom resources with it
+    template: grafana.yaml
+    capabilities:
+      apiVersions:
+        - grafana.integreatly.org/v1beta1
+    documentSelector:
+      path: kind
+      value: GrafanaDashboard
+    set:
+      grafanaDashboard.enabled: true
+      grafanaDashboard.grafanaOperator.enabled: true
+      grafanaDashboard.namespace: observability
+    asserts:
+      - equal:
+          path: metadata.namespace
+          value: observability
+
   - it: omits the folder when it is empty
     template: grafana.yaml
     capabilities:

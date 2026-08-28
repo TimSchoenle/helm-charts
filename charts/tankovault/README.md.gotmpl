@@ -906,7 +906,43 @@ mistake that looks fine in review:
   one. `TankoVaultLatencyCritical` compares against `10`, the top finite bucket, with `>=` —
   the function cannot return more than that boundary, so `> 12` would be a critical alert that
   reads perfectly reasonably and can never fire. Both would be inviting as values and both would
-  quietly disarm paging, so neither is offered.
+  quietly disarm paging, so neither is offered. Their traffic `floor` is offered, because how much
+  traffic makes a quantile mean anything is a site's own judgement.
+
+### Every ratio has a floor, and household installs are why
+
+A ratio over a counter is undefined below some volume. One failed delivery out of two is 50%, a
+p99 over four requests *is* the slowest of those four, and a scan lane that settled three tasks in
+fifteen minutes says nothing about whether its provider is broken. Every ratio and quantile alert
+this chart ships therefore carries a second conjunct comparing the ratio's own denominator against
+a `floor`, recorded as a series in its own right so the alert reads as one thought:
+
+```promql
+namespace_channel:notifications_delivered_errors:ratio_rate15m{...} > 0.5
+  and namespace_channel:notifications_delivered:rate15m{...} > 0.005
+```
+
+The defaults are deliberately low — this chart is installed for one household as often as for
+anything larger — and every one of them is a tunable. They are the first thing to raise on an
+install that pages on quiet lanes, and the first thing to lower on a large one that wants to hear
+about a channel with few subscribers:
+
+```yaml
+metrics:
+  prometheusRule:
+    thresholds:
+      # A busy deployment: ignore a lane doing less than a task a minute.
+      TankoVaultScanTasksFailing:
+        floor: 0.017
+      # A single-user install that still wants to know its one email channel is broken.
+      TankoVaultNotificationDeliveryFailing:
+        floor: 0
+```
+
+`rules-tests/volume_floor_test.yml` pins the half that is easy to lose: each of these alerts
+staying **quiet** while its ratio sits at 1.0 and its volume sits just under the floor. An alert
+that fires on the only three scan tasks of the afternoon is one an operator silences, and after
+that the real outage is silent too.
 
 Anything the chart will not tune, you can still replace outright: switch the shipped rule off with
 `disabledAlerts` and write your own through `additionalRuleGroups`. Groups appended that way are

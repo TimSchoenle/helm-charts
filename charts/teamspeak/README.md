@@ -1,8 +1,15 @@
 # teamspeak
 
-![Version: 2.0.2](https://img.shields.io/badge/Version-2.0.2-informational?style=flat-square) ![AppVersion: 3.13.8](https://img.shields.io/badge/AppVersion-3.13.8-informational?style=flat-square)
+![Version: 3.0.0](https://img.shields.io/badge/Version-3.0.0-informational?style=flat-square) ![AppVersion: 3.13.8](https://img.shields.io/badge/AppVersion-3.13.8-informational?style=flat-square)
 
 This chart deploys a TeamSpeak 3 server hardened to the restricted Pod Security Standard, with optional persistence, an optional Prometheus metrics exporter sidecar, Grafana dashboards and Prometheus alerting rules.
+
+> [!IMPORTANT]
+> **Upgrading an existing release?** Read
+> [UPGRADING.md](https://github.com/TimSchoenle/helm-charts/blob/main/charts/teamspeak/UPGRADING.md)
+> first. 3.0.0 renames `metrics.dashboards` to `metrics.dashboard` and replaces the per-alert
+> `metrics.prometheusRule.rules` block with the preset surface the other charts here use; a values
+> file carrying either fails the render with the offending path named.
 
 Three things decide whether an install works, and all three are covered below: the server has
 to be reached on the exact port it listens on ([Exposing the server](#exposing-the-server)),
@@ -120,8 +127,9 @@ a sidecar that cannot authenticate.
 | --- | --- |
 | `metrics.enabled` | the exporter sidecar, on port 9189 |
 | `metrics.podMonitor.enabled` | a `PodMonitor` (the metrics port is deliberately absent from the Service) |
-| `metrics.prometheusRule.enabled` | five alerting rules, each individually switchable |
-| `metrics.dashboards.enabled` | a labelled ConfigMap the Grafana sidecar loads |
+| `metrics.prometheusRule.enabled` | a `PrometheusRule` with five alerts and two recording rules |
+| `metrics.dashboard.enabled` | a labelled ConfigMap the Grafana sidecar loads |
+| `metrics.dashboard.grafanaOperator.enabled` | one `GrafanaDashboard` per file, for grafana-operator v5 |
 
 ```yaml
 license:
@@ -140,10 +148,9 @@ metrics:
     enabled: true
     labels:
       release: kube-prometheus-stack
-  dashboards:
+  dashboard:
     enabled: true
-    annotations:
-      grafana_folder: TeamSpeak
+    folder: TeamSpeak
 ```
 
 The `labels` are not decoration: a Prometheus Operator selects PodMonitors and rules by label,
@@ -156,6 +163,79 @@ Two behaviours worth expecting:
 - The exporter exits if it cannot log in at startup, so on a cold start it restarts a couple of
   times while the server finishes booting. That is self-correcting; a sidecar *still* restarting
   after a minute or two means the password is wrong.
+
+### What the alerts cover
+
+The rules live in [`rules/`](rules) as plain Prometheus rule files, so `promtool` evaluates every
+one of them against synthetic series in CI — in both the committed form and the scoped form a
+cluster actually receives.
+
+| Alert | Fires when |
+| --- | --- |
+| `TeamSpeakExporterDown` | the sidecar cannot be scraped. Every other alert here is blind while it holds |
+| `TeamSpeakServerOffline` | ServerQuery answers and the virtual server reports itself stopped — usually the licence |
+| `TeamSpeakServerRestarted` | uptime is under five minutes. Informational, unless `persistence` is off, in which case the server came back with a new identity |
+| `TeamSpeakQueryCommandFailures` | ServerQuery commands are being refused, so the metrics are stale rather than absent |
+| `TeamSpeakSlotsNearlyFull` | a virtual server is past 90% of its licensed slot limit |
+
+Nothing kube-state-metrics already covers is repeated: `KubePersistentVolumeFillingUp`,
+`KubePodCrashLooping` and `KubeContainerWaiting` all apply to this workload as they stand, and all
+of them know things — a PVC's capacity, a desired replica count — that nothing this chart emits
+does.
+
+`metrics.prometheusRule.scope` decides which series the rules match, and its default is stricter
+here than in the other charts in this repository. A `PrometheusRule` is not confined to the
+namespace it lives in, and a TeamSpeak server is small enough that two of them share a namespace
+routinely — a public one and a private one — so `namespace` alone would still have the two
+alerting on each other. `release`, the default, narrows to this release's own pods; `namespace`
+and `none` widen it.
+
+### Turning alerts off, retuning them, and adding your own
+
+The rules ship with defaults that suit most installs and no install exactly, so seven presets sit
+under `metrics.prometheusRule`. Every one of them is checked against the rules the chart actually
+ships, and a name that matches nothing fails the render rather than being ignored — a values file
+that says an alert is off while it still pages at 3am is the one outcome this whole surface exists
+to prevent.
+
+| Preset | What it does |
+| --- | --- |
+| `disabledAlerts` | drops alerts by name |
+| `disabledGroups` | drops whole rule groups by name |
+| `additionalRuleLabels` | adds labels to every alert, for Alertmanager routing |
+| `severityOverrides` | sets one alert's `severity` |
+| `forOverrides` | sets one alert's `for` — how long the condition must hold |
+| `thresholds` | moves a declared threshold inside a rule expression |
+| `additionalRuleGroups` | appends rule groups of your own |
+
+```yaml
+metrics:
+  prometheusRule:
+    enabled: true
+    # A licence with room to grow, so warn later than the default.
+    thresholds:
+      TeamSpeakSlotsNearlyFull:
+        ratio: 0.95
+    # A restart is expected on a server that runs without persistence by design.
+    disabledAlerts:
+      - TeamSpeakServerRestarted
+    additionalRuleLabels:
+      team: voice
+```
+
+Labels resolve most-specific-last: the rule file's own labels lose to `additionalRuleLabels`,
+which loses to `severityOverrides`. Recording rules are out of reach of all of it —
+`disabledGroups` refuses a group that holds any, and labels are never attached to one, because a
+label changes the identity of the series a recording rule produces and every dashboard panel and
+expression reading it would silently stop matching.
+
+**Not every number in a rule is a threshold somebody chose**, which is why `thresholds` is opt-in
+per alert rather than a search-and-replace over the expressions. Only what
+[`rules/tunables.yaml`](rules/tunables.yaml) declares can be moved; that file names each tunable,
+says what it means, and bounds it. `TeamSpeakExporterDown` and `TeamSpeakServerOffline` are
+absent from it on purpose: both compare against zero, which is structural rather than a judgement
+about how much is too much. Replace either through `disabledAlerts` plus `additionalRuleGroups`
+if you want different arithmetic.
 
 ## Network policies
 
@@ -359,14 +439,21 @@ Cilium's DNS proxy saw returned for the name, so the DNS rule has to observe the
 | livenessProbe.tcpSocket | object | `{"port":"filetransfer"}` | TCP handler for the probe. |
 | livenessProbe.tcpSocket.port | string | `"filetransfer"` | Named container port to probe. |
 | livenessProbe.timeoutSeconds | int | `5` | Probe timeout. |
-| metrics | object | `{"channelMetrics":false,"dashboards":{"annotations":{},"enabled":false,"label":"grafana_dashboard","labelValue":"1","namespace":""},"enabled":false,"ignoreFloodLimits":true,"image":{"pullPolicy":"","registry":"","repository":"ricardbejarano/ts3exporter","tag":"0.0.7@sha256:3f3e2fceb82365320446728474502b1dd26de1123e6eb9ffcc0626003c743d0e"},"podMonitor":{"enabled":true,"interval":"1m","labels":{},"metricRelabelings":[],"relabelings":[],"scrapeTimeout":"30s"},"port":9189,"prometheusRule":{"additionalRules":[],"enabled":false,"labels":{},"namespace":"","rules":{"exporterDown":{"enabled":true,"for":"10m","severity":"critical"},"queryCommandFailures":{"enabled":true,"for":"15m","severity":"warning"},"serverOffline":{"enabled":true,"for":"5m","severity":"critical"},"serverRestarted":{"enabled":true,"for":"0m","severity":"info","thresholdSeconds":300},"slotsNearlyFull":{"enabled":true,"for":"15m","severity":"warning","threshold":0.9}}},"resources":{"limits":{"memory":"64Mi"},"requests":{"cpu":"10m","memory":"24Mi"}},"user":"serveradmin"}` | The Prometheus exporter sidecar and the PodMonitor that scrapes it. |
+| metrics | object | `{"channelMetrics":false,"dashboard":{"enabled":false,"folder":"","grafanaOperator":{"allowCrossNamespaceImport":true,"enabled":false,"folder":"","instanceSelector":{"matchLabels":{"dashboards":"grafana"}},"resyncPeriod":"5m"},"label":"grafana_dashboard","labelValue":"1","namespace":""},"enabled":false,"ignoreFloodLimits":true,"image":{"pullPolicy":"","registry":"","repository":"ricardbejarano/ts3exporter","tag":"0.0.7@sha256:3f3e2fceb82365320446728474502b1dd26de1123e6eb9ffcc0626003c743d0e"},"podMonitor":{"enabled":true,"interval":"1m","labels":{},"metricRelabelings":[],"relabelings":[],"scrapeTimeout":"30s"},"port":9189,"prometheusRule":{"additionalRuleGroups":[],"additionalRuleLabels":{},"disabledAlerts":[],"disabledGroups":[],"enabled":false,"forOverrides":{},"labels":{},"namespace":"","scope":"release","severityOverrides":{},"thresholds":{}},"resources":{"limits":{"memory":"64Mi"},"requests":{"cpu":"10m","memory":"24Mi"}},"user":"serveradmin"}` | The Prometheus exporter sidecar and the PodMonitor that scrapes it. |
 | metrics.channelMetrics | bool | `false` | Collect per-channel metrics. Each scrape then costs `(2 + channels) * virtualservers` ServerQuery commands, so leave this off on servers with many channels. |
-| metrics.dashboards | object | `{"annotations":{},"enabled":false,"label":"grafana_dashboard","labelValue":"1","namespace":""}` | Grafana dashboards, shipped as ConfigMaps for the Grafana sidecar dashboard loader. |
-| metrics.dashboards.annotations | object | `{}` | Extra annotations, e.g. `grafana_folder` to place the dashboard in a folder. |
-| metrics.dashboards.enabled | bool | `false` | Create the dashboard ConfigMap. |
-| metrics.dashboards.label | string | `"grafana_dashboard"` | Label the Grafana sidecar selects dashboards on. |
-| metrics.dashboards.labelValue | string | `"1"` | Value for that label. |
-| metrics.dashboards.namespace | string | `""` | Namespace for the ConfigMap. Empty uses the release namespace. It has to be a namespace the Grafana sidecar watches. |
+| metrics.dashboard | object | `{"enabled":false,"folder":"","grafanaOperator":{"allowCrossNamespaceImport":true,"enabled":false,"folder":"","instanceSelector":{"matchLabels":{"dashboards":"grafana"}},"resyncPeriod":"5m"},"label":"grafana_dashboard","labelValue":"1","namespace":""}` | Grafana dashboards, shipped as a labelled ConfigMap and optionally as `GrafanaDashboard` custom resources. |
+| metrics.dashboard.enabled | bool | `false` | Create the dashboard ConfigMap for the Grafana sidecar to discover. |
+| metrics.dashboard.folder | string | `""` | Grafana folder to file the dashboard under, for both delivery mechanisms: the sidecar reads it from a `grafana_folder` annotation on the ConfigMap and the operator from a field on its own resource. Empty leaves each to its default. |
+| metrics.dashboard.grafanaOperator | object | `{"allowCrossNamespaceImport":true,"enabled":false,"folder":"","instanceSelector":{"matchLabels":{"dashboards":"grafana"}},"resyncPeriod":"5m"}` | grafana-operator v5 delivery, which — unlike the sidecar — can be granted cross-namespace import from this side. |
+| metrics.dashboard.grafanaOperator.allowCrossNamespaceImport | bool | `true` | Allow a Grafana in another namespace to import these dashboards. |
+| metrics.dashboard.grafanaOperator.enabled | bool | `false` | Also create one `GrafanaDashboard` per dashboard file. Requires `metrics.dashboard.enabled`, because the custom resources reference the ConfigMap rather than inlining the JSON. |
+| metrics.dashboard.grafanaOperator.folder | string | `""` | Grafana folder to file the dashboards under, for the operator path only. Overrides `folder` when set; empty falls back to it. |
+| metrics.dashboard.grafanaOperator.instanceSelector | object | `{"matchLabels":{"dashboards":"grafana"}}` | Which Grafana instances import them. An empty selector matches none, so the dashboards would be created and then ignored. |
+| metrics.dashboard.grafanaOperator.instanceSelector.matchLabels | object | `{"dashboards":"grafana"}` | Labels every Grafana custom resource to import into has to carry. |
+| metrics.dashboard.grafanaOperator.resyncPeriod | string | `"5m"` | How often the operator re-applies them. |
+| metrics.dashboard.label | string | `"grafana_dashboard"` | Label the Grafana sidecar selects dashboards on. |
+| metrics.dashboard.labelValue | string | `"1"` | Value for that label. |
+| metrics.dashboard.namespace | string | `""` | Namespace for the ConfigMap and, when enabled, the `GrafanaDashboard` resources beside it. Empty uses the release namespace. Which namespaces the sidecar watches is configured on the *Grafana* release and cannot be reached from here, so putting the ConfigMap where it is already looking is the only cross-namespace move the sidecar path has. The custom resources move with it, because `configMapRef` resolves in their own namespace. |
 | metrics.enabled | bool | `false` | Run the Prometheus exporter sidecar. It talks ServerQuery over the pod loopback interface, which the server allowlists by default, so no query port has to leave the pod. Requires a known ServerQuery admin password (`serverQuery.adminPassword` or `existingSecret`). |
 | metrics.ignoreFloodLimits | bool | `true` | Skip the exporter's client-side flood limiter. Correct for the sidecar: the server exempts loopback connections from flood control anyway, and the limiter would otherwise stretch a scrape past its timeout. |
 | metrics.image | object | `{"pullPolicy":"","registry":"","repository":"ricardbejarano/ts3exporter","tag":"0.0.7@sha256:3f3e2fceb82365320446728474502b1dd26de1123e6eb9ffcc0626003c743d0e"}` | Exporter image, composed as `registry/repository:tag`. |
@@ -382,34 +469,18 @@ Cilium's DNS proxy saw returned for the name, so the DNS rule has to observe the
 | metrics.podMonitor.relabelings | list | `[]` | Relabeling rules applied to discovered targets. |
 | metrics.podMonitor.scrapeTimeout | string | `"30s"` | Timeout for metrics scraping. Keep it comfortably above the ServerQuery round trip; channel metrics in particular are slow. |
 | metrics.port | int | `9189` | Port the exporter serves `/metrics` on. Never published on the Service — scraping goes through the PodMonitor. |
-| metrics.prometheusRule | object | `{"additionalRules":[],"enabled":false,"labels":{},"namespace":"","rules":{"exporterDown":{"enabled":true,"for":"10m","severity":"critical"},"queryCommandFailures":{"enabled":true,"for":"15m","severity":"warning"},"serverOffline":{"enabled":true,"for":"5m","severity":"critical"},"serverRestarted":{"enabled":true,"for":"0m","severity":"info","thresholdSeconds":300},"slotsNearlyFull":{"enabled":true,"for":"15m","severity":"warning","threshold":0.9}}}` | PrometheusRule carrying the alerting rules below. |
-| metrics.prometheusRule.additionalRules | list | `[]` | Additional rules appended to the generated group, in Prometheus rule syntax. |
+| metrics.prometheusRule | object | `{"additionalRuleGroups":[],"additionalRuleLabels":{},"disabledAlerts":[],"disabledGroups":[],"enabled":false,"forOverrides":{},"labels":{},"namespace":"","scope":"release","severityOverrides":{},"thresholds":{}}` | The PrometheusRule carrying this chart's alerting and recording rules. |
+| metrics.prometheusRule.additionalRuleGroups | list | `[]` | Extra rule groups, appended to the ones this chart ships. Each entry is a Prometheus rule group — a `name`, a list of `rules`, optionally an `interval` — emitted as written: they are not passed through Helm's template engine, so a `$labels` reference in an annotation reaches Prometheus intact instead of being resolved to an empty string on the way past. That also means no `{{ .Release.Name }}` in them.  `additionalRuleLabels` does reach these, because it describes the release rather than the rules — skipping them would route exactly the alerts you wrote yourself back into the rotation you were keeping this install out of. Precedence flips: a label you set on your own rule wins, since it is already you speaking rather than a default of the chart's.  This is what makes `disabledAlerts` honest: switch a shipped rule off and write your own with the arithmetic you wanted. A group whose name collides with a shipped one is refused, because Prometheus rejects the whole object rather than the duplicate. |
+| metrics.prometheusRule.additionalRuleLabels | object | `{}` | Labels merged into every alert this chart ships, for Alertmanager routing. This is how a test server keeps itself out of the on-call rotation. Applied to alerting rules only: a label on a recording rule changes the identity of the series it records, and every dashboard panel and expression reading it would silently stop matching.  These beat the labels in the rule files, which is the point of them, and lose to `severityOverrides`, which is more specific.  Example: `{team: platform, tier: staging}` |
+| metrics.prometheusRule.disabledAlerts | list | `[]` | Alerts to drop, by name. Refused when the name is not one this chart ships — a typo here is the one failure the whole feature must not produce, because it leaves the values file saying an alert is off while it still pages. The rules stay in `rules/` and stay tested; only the rendered object loses them.  Example: `[TeamSpeakServerRestarted]` |
+| metrics.prometheusRule.disabledGroups | list | `[]` | Rule groups to drop entirely, by name. Refused when the name is not one this chart ships, and refused for a group holding recording rules: the alerts and the dashboard read the series those produce, so dropping one leaves panels blank and expressions matching nothing, and neither reports an error. Use `disabledAlerts` for the alerts instead.  Example: `[teamspeak-capacity]` |
 | metrics.prometheusRule.enabled | bool | `false` | Create the PrometheusRule. Requires the Prometheus Operator CRDs. |
-| metrics.prometheusRule.labels | object | `{}` | Extra labels for the PrometheusRule, e.g. the `release` label a Prometheus Operator instance selects on. |
-| metrics.prometheusRule.namespace | string | `""` | Namespace for the PrometheusRule. Empty uses the release namespace. |
-| metrics.prometheusRule.rules | object | `{"exporterDown":{"enabled":true,"for":"10m","severity":"critical"},"queryCommandFailures":{"enabled":true,"for":"15m","severity":"warning"},"serverOffline":{"enabled":true,"for":"5m","severity":"critical"},"serverRestarted":{"enabled":true,"for":"0m","severity":"info","thresholdSeconds":300},"slotsNearlyFull":{"enabled":true,"for":"15m","severity":"warning","threshold":0.9}}` | Built-in alerting rules. Each one can be switched off individually and carries its own threshold, severity and `for` duration. |
-| metrics.prometheusRule.rules.exporterDown | object | `{"enabled":true,"for":"10m","severity":"critical"}` | Fires when Prometheus cannot scrape the exporter at all — the pod is gone, the sidecar crashed, or the network policy is wrong. |
-| metrics.prometheusRule.rules.exporterDown.enabled | bool | `true` | Enable the rule. |
-| metrics.prometheusRule.rules.exporterDown.for | string | `"10m"` | How long the condition must hold before the alert fires. |
-| metrics.prometheusRule.rules.exporterDown.severity | string | `"critical"` | Alert severity label. |
-| metrics.prometheusRule.rules.queryCommandFailures | object | `{"enabled":true,"for":"15m","severity":"warning"}` | Fires when ServerQuery commands start failing, which normally means the exporter's credentials went stale or it is being flood-limited — the metrics are lying by then. |
-| metrics.prometheusRule.rules.queryCommandFailures.enabled | bool | `true` | Enable the rule. |
-| metrics.prometheusRule.rules.queryCommandFailures.for | string | `"15m"` | How long the condition must hold before the alert fires. |
-| metrics.prometheusRule.rules.queryCommandFailures.severity | string | `"warning"` | Alert severity label. |
-| metrics.prometheusRule.rules.serverOffline | object | `{"enabled":true,"for":"5m","severity":"critical"}` | Fires when the exporter is reachable but the virtual server itself reports offline. |
-| metrics.prometheusRule.rules.serverOffline.enabled | bool | `true` | Enable the rule. |
-| metrics.prometheusRule.rules.serverOffline.for | string | `"5m"` | How long the condition must hold before the alert fires. |
-| metrics.prometheusRule.rules.serverOffline.severity | string | `"critical"` | Alert severity label. |
-| metrics.prometheusRule.rules.serverRestarted | object | `{"enabled":true,"for":"0m","severity":"info","thresholdSeconds":300}` | Fires when the server restarted recently. On a server whose state lives on an emptyDir this also means the identity and all permissions were just lost. |
-| metrics.prometheusRule.rules.serverRestarted.enabled | bool | `true` | Enable the rule. |
-| metrics.prometheusRule.rules.serverRestarted.for | string | `"0m"` | How long the condition must hold before the alert fires. |
-| metrics.prometheusRule.rules.serverRestarted.severity | string | `"info"` | Alert severity label. |
-| metrics.prometheusRule.rules.serverRestarted.thresholdSeconds | int | `300` | Uptime below this many seconds counts as a restart. |
-| metrics.prometheusRule.rules.slotsNearlyFull | object | `{"enabled":true,"for":"15m","severity":"warning","threshold":0.9}` | Fires when the virtual server is running out of slots, so it can be resized before clients start getting turned away. |
-| metrics.prometheusRule.rules.slotsNearlyFull.enabled | bool | `true` | Enable the rule. |
-| metrics.prometheusRule.rules.slotsNearlyFull.for | string | `"15m"` | How long the condition must hold before the alert fires. |
-| metrics.prometheusRule.rules.slotsNearlyFull.severity | string | `"warning"` | Alert severity label. |
-| metrics.prometheusRule.rules.slotsNearlyFull.threshold | float | `0.9` | Fraction of the slot limit that counts as nearly full. |
+| metrics.prometheusRule.forOverrides | object | `{}` | Per-alert `for` duration, keyed by alert name — how long the condition must hold before the alert fires. A Prometheus duration such as `30s`, `15m` or `1h30m`; write zero as `0m` so YAML keeps it a string. Anything Prometheus cannot parse is refused here, because it would otherwise be refused at load time and take the alert's whole rule group down with it.  Example: `{TeamSpeakExporterDown: 5m}` |
+| metrics.prometheusRule.labels | object | `{}` | Extra labels for the PrometheusRule, e.g. the `release` label a Prometheus Operator instance selects rules on. Without the one your instance selects, the object is created and never loaded. |
+| metrics.prometheusRule.namespace | string | `""` | Namespace for the PrometheusRule. Empty uses the release namespace. A Prometheus loads rules from whichever namespaces its `ruleNamespaceSelector` names, which this chart cannot reach; landing the object in one of them is the move that is left. The rules stay scoped to this release either way — `scope` is derived from the release, not from where the object lands. |
+| metrics.prometheusRule.scope | string | `"release"` | How far the rules are scoped. A PrometheusRule is not confined to its own namespace, so `none` makes this release alert on every other TeamSpeak in the cluster as well. `namespace` rewrites every selector to match only this release's namespace; `release` narrows that further to this release's own pods, which is what you want when two TeamSpeak servers share a namespace. |
+| metrics.prometheusRule.severityOverrides | object | `{}` | Per-alert `severity` label, keyed by alert name. The most specific setting there is, so it beats both the rule file and `additionalRuleLabels`. Refused for an alert this chart does not ship, and for one the same values disable.  Example: `{TeamSpeakSlotsNearlyFull: critical}` |
+| metrics.prometheusRule.thresholds | object | `{}` | Threshold overrides, keyed by alert name and then by tunable name. Only the thresholds this chart declares in [`rules/tunables.yaml`](rules/tunables.yaml) can be moved, and that file says what each one means and what it is bounded by; setting anything else is refused with the list of names that would have worked.  Not every number in a rule is a threshold somebody chose. `TeamSpeakExporterDown` and `TeamSpeakServerOffline` compare against zero, which is structural rather than a judgement, so neither is offered here. Disable the alert and re-add your own through `additionalRuleGroups` if you need different arithmetic.  Example: `{TeamSpeakSlotsNearlyFull: {ratio: 0.8}}` |
 | metrics.resources | object | `{"limits":{"memory":"64Mi"},"requests":{"cpu":"10m","memory":"24Mi"}}` | Resource requests and limits for the exporter sidecar. |
 | metrics.resources.limits | object | `{"memory":"64Mi"}` | Resource limits for the exporter. |
 | metrics.resources.limits.memory | string | `"64Mi"` | Maximum allowed memory usage. |

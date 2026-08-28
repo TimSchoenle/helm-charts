@@ -1,105 +1,22 @@
 {{- /*
-Alerting rules for the exporter's metrics.
+The alerting and recording rules under `rules/`.
 
-Targets are scoped by namespace and pod name rather than by `job`, because the `job` label a
-PodMonitor produces depends on operator configuration this chart does not control, while
-`namespace` and `pod` are always present on a PodMonitor target.
+These used to be written inline here, one `{{ if }}` block per alert with a `for` and a
+`severity` value each. That shape had two costs and no benefit: rules that live in a Go template
+never reach `promtool`, so neither the syntax check nor the evaluation tests in `just test-rules`
+ever saw them; and every knob had to be invented and documented again per alert instead of coming
+from the preset surface every other chart in this repository shares.
 
-Prometheus' own annotation templating uses the same delimiters as Helm, so every `$labels`
-reference is emitted as a literal string.
+Which *series* the rules then match is a separate problem with a separate answer: see
+`teamspeak.rules.scopePlaceholder` for why every selector in the files carries a placeholder
+matcher, and `common.prometheus.rules.*` for why the files are parsed rather than templated —
+briefly, Prometheus renders annotations with the same `{{ }}` delimiters Helm uses, so a
+`$labels` reference has to reach it as file data rather than through the template engine.
 */ -}}
 {{- if and .Values.metrics.enabled .Values.metrics.prometheusRule.enabled }}
-{{- $rules := .Values.metrics.prometheusRule.rules -}}
-{{- $selector := printf "namespace=%q, pod=~%q" (include "common.namespace" .) (printf "%s-.*" (include "common.fullname" .)) -}}
-apiVersion: monitoring.coreos.com/v1
-kind: PrometheusRule
-metadata:
-  name: {{ include "common.fullname" . }}
-  namespace: {{ .Values.metrics.prometheusRule.namespace | default (include "common.namespace" .) }}
-  labels:
-    {{- include "common.labels" . | nindent 4 }}
-    {{- with .Values.metrics.prometheusRule.labels }}
-    {{- include "common.tplvalues.render" (dict "value" . "context" $) | nindent 4 }}
-    {{- end }}
-  {{- with (include "common.annotations" .) }}
-  annotations:
-    {{- . | nindent 4 }}
-  {{- end }}
-spec:
-  groups:
-    - name: {{ include "common.fullname" . }}
-      rules:
-        {{- if $rules.exporterDown.enabled }}
-        - alert: TeamSpeakExporterDown
-          expr: up{{ printf "{%s, container=\"metrics\"}" $selector }} == 0
-          for: {{ index $rules.exporterDown "for" }}
-          labels:
-            severity: {{ $rules.exporterDown.severity | quote }}
-          annotations:
-            summary: "TeamSpeak metrics exporter is unreachable"
-            description: >-
-              Prometheus cannot scrape the ts3exporter sidecar in
-              {{ include "common.namespace" . }}/{{ include "common.fullname" . }}. Either the
-              pod is gone, the sidecar is crash-looping, or the NetworkPolicy is blocking the
-              scrape. Every other alert in this group is blind until it recovers.
-        {{- end }}
-        {{- if $rules.serverOffline.enabled }}
-        - alert: TeamSpeakServerOffline
-          expr: ts3_serverinfo_online{{ printf "{%s}" $selector }} == 0
-          for: {{ index $rules.serverOffline "for" }}
-          labels:
-            severity: {{ $rules.serverOffline.severity | quote }}
-          annotations:
-            summary: "TeamSpeak virtual server {{ "{{ $labels.virtualserver }}" }} is offline"
-            description: >-
-              The virtual server is reachable over ServerQuery but reports itself offline.
-              The usual causes are an expired or unreachable licence — outbound TCP 2008 to
-              accounting.teamspeak.com — or a virtual server that was stopped by an admin.
-        {{- end }}
-        {{- if $rules.serverRestarted.enabled }}
-        - alert: TeamSpeakServerRestarted
-          expr: ts3_serverinfo_uptime{{ printf "{%s}" $selector }} < {{ $rules.serverRestarted.thresholdSeconds }}
-          for: {{ index $rules.serverRestarted "for" }}
-          labels:
-            severity: {{ $rules.serverRestarted.severity | quote }}
-          annotations:
-            summary: "TeamSpeak virtual server {{ "{{ $labels.virtualserver }}" }} restarted"
-            description: >-
-              Uptime is below {{ $rules.serverRestarted.thresholdSeconds }}s, so the server
-              restarted within the last few minutes. If this deployment runs without
-              persistence, it also came back with a new identity, a new admin token and no
-              channels.
-        {{- end }}
-        {{- if $rules.slotsNearlyFull.enabled }}
-        - alert: TeamSpeakSlotsNearlyFull
-          expr: >-
-            ts3_serverinfo_clients_online{{ printf "{%s}" $selector }}
-            / ts3_serverinfo_max_clients{{ printf "{%s}" $selector }} > {{ $rules.slotsNearlyFull.threshold }}
-          for: {{ index $rules.slotsNearlyFull "for" }}
-          labels:
-            severity: {{ $rules.slotsNearlyFull.severity | quote }}
-          annotations:
-            summary: "TeamSpeak virtual server {{ "{{ $labels.virtualserver }}" }} is nearly full"
-            description: >-
-              More than {{ mulf $rules.slotsNearlyFull.threshold 100 }}% of the slot limit is
-              in use. New clients are turned away once it is reached; raise the limit or the
-              licence before that happens.
-        {{- end }}
-        {{- if $rules.queryCommandFailures.enabled }}
-        - alert: TeamSpeakQueryCommandFailures
-          expr: rate(ts3_client_commands_failed_total{{ printf "{%s}" $selector }}[15m]) > 0
-          for: {{ index $rules.queryCommandFailures "for" }}
-          labels:
-            severity: {{ $rules.queryCommandFailures.severity | quote }}
-          annotations:
-            summary: "TeamSpeak ServerQuery commands are failing"
-            description: >-
-              The exporter's ServerQuery commands are being rejected. Usually the admin
-              password no longer matches the one in the Secret, or the exporter's source
-              address dropped out of query_ip_allowlist.txt and is now flood-limited. The
-              metrics from this server are stale or partial while this fires.
-        {{- end }}
-        {{- with .Values.metrics.prometheusRule.additionalRules }}
-        {{- include "common.tplvalues.render" (dict "value" . "context" $) | nindent 8 }}
-        {{- end }}
+{{- include "common.prometheus.rules.prometheusRule" (dict
+      "ctx" .
+      "values" .Values.metrics.prometheusRule
+      "scopePlaceholder" (include "teamspeak.rules.scopePlaceholder" .)
+      "scopeMatcher" (include "teamspeak.rules.scopeMatcher" .)) }}
 {{- end }}

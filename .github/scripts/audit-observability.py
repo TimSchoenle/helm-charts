@@ -23,7 +23,19 @@ catches the ways a rule set rots quietly, and all of these have been real in thi
 5. **A selector that escapes namespace scoping** by omitting the chart's scope placeholder, so one
    release's rules evaluate against every namespace in the cluster.
 
-6. **A tunable threshold whose anchor no longer matches its rule.** `rules/tunables.yaml` names,
+   The dashboard half of that is its own defect and was its own bug here: an `ALERTS` overlay
+   written without a namespace matcher draws a staging release's alert markers across production's
+   graphs, on a dashboard whose every other query is scoped by the `$namespace` variable.
+
+6. **A panel nobody can read.** A description is where a panel says what it means and what to do
+   about it, and it is the only documentation a dashboard carries. Cheap to write while the query
+   is fresh, and never written afterwards.
+
+7. **A dashboard an operator can edit.** Both delivery mechanisms re-apply the JSON from the chart,
+   so an edit made in Grafana is discarded on the next reload with no message. `editable: false`
+   is the honest spelling.
+
+8. **A tunable threshold whose anchor no longer matches its rule.** `rules/tunables.yaml` names,
    per alert, the exact substring of an expression an operator's `metrics.prometheusRule.thresholds`
    override rewrites. Edit the rule and the anchor silently stops matching — or worse, starts
    matching a different comparison — and the override becomes a no-op, or moves the wrong number.
@@ -449,6 +461,12 @@ BUILTIN_VARIABLES = {
 VARIABLE_REF = re.compile(r"\$(?:\{(\w+)(?::[^}]*)?\}|(\w+))")
 LEGEND_LABEL = re.compile(r"\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}")
 
+# An `ALERTS` selector, and the namespace matcher it has to carry. `ALERTS` is Prometheus' own
+# series about every firing alert in the cluster, so it is the one query on a dashboard that is
+# unscoped by default rather than by omission.
+ALERTS_SELECTOR = re.compile(r"\bALERTS(?:_FOR_STATE)?\s*\{([^}]*)\}")
+NAMESPACE_MATCHER = re.compile(r'\bnamespace\s*(?:=~?|!~?|!=)\s*"')
+
 
 def walk_datasources(node, path="$"):
     """Every `datasource` field in a dashboard, wherever it is nested."""
@@ -542,6 +560,45 @@ def audit_dashboards(chart: Chart) -> list[str]:
                     f"{where}: {title!r} uses `${name}`, which is not a template variable on "
                     f"this dashboard. Grafana sends it to Prometheus verbatim, where it matches "
                     f"nothing."
+                )
+
+        # (c2) A dashboard is re-applied from the chart by both delivery mechanisms, so an edit
+        #      made in Grafana survives until the sidecar's next reload and then vanishes without
+        #      a message. Better to say so than to offer an edit that cannot last.
+        if doc.get("editable"):
+            problems.append(
+                f"{where}: `editable` is true, but both delivery mechanisms re-apply this JSON "
+                f"from the chart — an edit made in Grafana is discarded on the next reload with "
+                f"no message. Set it to false."
+            )
+
+        # (c3) Every panel needs a description. It is the only place a dashboard explains what a
+        #      panel means, and it is written while the query is fresh or never.
+        for panel in doc.get("panels", []):
+            if panel.get("type") == "row":
+                continue
+            if not panel.get("description"):
+                problems.append(
+                    f"{where}: panel {panel.get('title', '?')!r} has no `description`. That is "
+                    f"the only documentation a dashboard carries, and the reader of a panel is "
+                    f"rarely the author of its query."
+                )
+
+        # (c4) `ALERTS` is Prometheus' own series about every alert firing anywhere in the
+        #      cluster. Unlike a chart's own metrics it carries no scope of its own, so an overlay
+        #      written without a namespace matcher draws a neighbouring release's alerts over
+        #      these graphs — on a dashboard whose every other query is scoped by `$namespace`.
+        for filename_, title, expr in chart.dashboard_exprs():
+            if filename_ != filename:
+                continue
+            for match in ALERTS_SELECTOR.finditer(expr):
+                if NAMESPACE_MATCHER.search(match.group(1)):
+                    continue
+                problems.append(
+                    f"{where}: {title!r} queries `ALERTS` without a namespace matcher, so it "
+                    f"shows alerts from every release of this chart in the cluster rather than "
+                    f"the one this dashboard is scoped to. Add `namespace=\"$namespace\"` to "
+                    f"the selector."
                 )
 
         # (d) A legend placeholder naming a label the query cannot produce renders as an empty

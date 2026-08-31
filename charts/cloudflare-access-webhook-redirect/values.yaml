@@ -227,11 +227,18 @@ telemetry:
   # leaves the process.
   #
   # Two things the chart deliberately does not do for you. It never reads the DSN, so it cannot
-  # name the ingest host in the NetworkPolicies; a deployment that narrowed the egress rules has
-  # to name that endpoint itself, and getting it wrong is silent, because an SDK that cannot
-  # reach its endpoint queues events and then discards them — which reads as "no errors". And it
-  # configures nothing inside Sentry: the project, its quota and its server-side data-scrubbing
-  # rules are yours.
+  # name the ingest host in the NetworkPolicies. The defaults do reach it —
+  # `networkPolicy.egress.https` permits TCP/443 to `0.0.0.0/0` minus private space, and the
+  # Cilium dialect carries that same rule over as a `toCIDRSet` — so a deployment that left the
+  # egress rules alone needs nothing here. One that narrowed `networkPolicy.egress.cidr` or
+  # turned `egress.https` off has to name the endpoint itself, and **`networkPolicy.extraEgress`
+  # is not translated into the Cilium dialect**: under `networkPolicy.engine: cilium` or `both`
+  # the hole has to be opened again under `networkPolicy.cilium.egress.toFQDNs`, whose names must
+  # also be covered by `networkPolicy.egress.dns` — Cilium enforces an FQDN rule against what its
+  # DNS proxy saw returned, so a narrowed `dnsMatchPatterns` denies the lookup as well. Getting
+  # any of it wrong is silent, because an SDK that cannot reach its endpoint queues events and
+  # then discards them — which reads as "no errors". And it configures nothing inside Sentry: the
+  # project, its quota and its server-side data-scrubbing rules are yours.
   #
   # Unlike the rest of this chart's configuration, the block is read once as the process boots
   # rather than re-read when the kubelet refreshes the mount, so a change to it takes effect on

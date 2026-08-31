@@ -220,10 +220,166 @@ telemetry:
   logLevel: info
 
   # @schema
-  # type: string
+  # additionalProperties: true
   # @schema
-  # -- Sentry DSN (`telemetry.sentry_dsn`). Empty disables Sentry entirely.
-  sentryDsn: ""
+  # -- Sentry error reporting and request tracing. **Off**, and wholly inert while it is: no
+  # client, no panic hook, no subscriber layer and no HTTP middleware is installed, and nothing
+  # leaves the process.
+  #
+  # Two things the chart deliberately does not do for you. It never reads the DSN, so it cannot
+  # name the ingest host in the NetworkPolicies; a deployment that narrowed the egress rules has
+  # to name that endpoint itself, and getting it wrong is silent, because an SDK that cannot
+  # reach its endpoint queues events and then discards them — which reads as "no errors". And it
+  # configures nothing inside Sentry: the project, its quota and its server-side data-scrubbing
+  # rules are yours.
+  #
+  # Unlike the rest of this chart's configuration, the block is read once as the process boots
+  # rather than re-read when the kubelet refreshes the mount, so a change to it takes effect on
+  # the next restart. `configMount.rolloutOnChange` is what turns one into a rollout.
+  sentry:
+    # @schema
+    # type: boolean
+    # @schema
+    # -- Initialise the Sentry client (`telemetry.sentry.enabled`). Off, every other key here is
+    # inert. On, the proxy refuses to boot without a DSN rather than starting with a reporter
+    # that reports nowhere, so this and `dsn` are set together.
+    enabled: false
+
+    # @schema
+    # type: string
+    # @schema
+    # -- Ingest URL, `https://<key>@<host>/<project>`. A credential — the embedded key is a
+    # bearer token for the project's ingest endpoint — so it is delivered as a file in
+    # `WEBHOOK_REDIRECT_SECRETS_DIR` under `telemetry__sentry__dsn`, alongside the Cloudflare
+    # Access service token, and never written into the ConfigMap. Leave it empty and put that
+    # key in the Secret named by `existingSecret` to keep it out of `helm get values` entirely.
+    dsn: ""
+
+    # @schema
+    # type: string
+    # @schema
+    # -- Environment tag on every event (`telemetry.sentry.environment`). Empty falls to the
+    # image's own default of `production`. The proxy always sends one, so `SENTRY_ENVIRONMENT` —
+    # a channel that would bypass the layered loader and its shadow-key rejection entirely — is
+    # never consulted.
+    environment: ""
+
+    # @schema
+    # type: string
+    # @schema
+    # -- Release tag on every event (`telemetry.sentry.release`). Empty uses the crate name and
+    # version the binary was built from, which is what makes a regression attributable to a
+    # deploy — set this only to match a release you create in Sentry under a name of your own.
+    release: ""
+
+    # @schema
+    # type: string
+    # @schema
+    # -- Host tag on every event (`telemetry.sentry.server_name`). Empty reports none, which is
+    # the right answer here: the value would be one replica's pod name, gone by the time anyone
+    # reads the issue.
+    serverName: ""
+
+    # @schema
+    # type: number
+    # minimum: 0
+    # maximum: 1
+    # @schema
+    # -- Fraction of captured events actually sent (`telemetry.sentry.sample_rate`). A blunt
+    # volume cap — it drops whole issues, not repetitions of one, so a rare error is exactly what
+    # it loses — so leave it at `1` unless a quota forces otherwise.
+    sampleRate: 1.0
+
+    # @schema
+    # type: number
+    # minimum: 0
+    # maximum: 1
+    # @schema
+    # -- Fraction of traces this proxy **starts** that are recorded
+    # (`telemetry.sentry.traces_sample_rate`). `0` starts none, which is what makes the feature
+    # free to switch on for error reporting alone. It does not take the proxy out of a trace that
+    # reaches it already sampled: an inbound `sentry-trace` header is continued whatever this
+    # says, and rewritten onto the forwarded request, which is what keeps one webhook delivery
+    # readable across the caller, this hop and the protected service behind it.
+    tracesSampleRate: 0.0
+
+    # @schema
+    # enum: ["off", error, warn, info, debug, trace]
+    # @schema
+    # -- Least severe `tracing` level reported as a Sentry issue
+    # (`telemetry.sentry.capture_level`). Quote `"off"` — unquoted, YAML reads it as the boolean
+    # `false`. Bounded from above by `logLevel`: the Sentry layer sits under the same filter the
+    # console log does, so a record that level drops is never reported either.
+    captureLevel: error
+
+    # @schema
+    # enum: ["off", error, warn, info, debug, trace]
+    # @schema
+    # -- Least severe `tracing` level kept as a breadcrumb, the trail attached to the next issue
+    # (`telemetry.sentry.breadcrumb_level`). Records at or above `captureLevel` become issues
+    # instead. Quote `"off"`.
+    breadcrumbLevel: info
+
+    # @schema
+    # type: integer
+    # minimum: 0
+    # @schema
+    # -- How many breadcrumbs one event carries (`telemetry.sentry.max_breadcrumbs`).
+    maxBreadcrumbs: 100
+
+    # @schema
+    # type: boolean
+    # @schema
+    # -- Attach a stack trace to events that carry none of their own
+    # (`telemetry.sentry.attach_stacktraces`, plural — `s3-bucket-perma-link` spells the same
+    # setting singular, and the wrong spelling is a key this image does not read).
+    attachStacktraces: true
+
+    # @schema
+    # type: boolean
+    # @schema
+    # -- Send personally identifying data with every event: the client IP, the whole request
+    # header set, and request bodies of a known content type
+    # (`telemetry.sentry.send_default_pii`). **Off, and worth leaving off** — every header this
+    # proxy receives is forwarded to the protected service, so the header set of a webhook
+    # delivery routinely carries the caller's own signing secret, which is exactly what a crash
+    # report does not need in order to be actionable. It is two controls rather than one,
+    # besides: off is also what keeps the HTTP middleware redacting sensitive headers.
+    sendDefaultPii: false
+
+    # @schema
+    # type: boolean
+    # @schema
+    # -- Record one transaction per request, named by the method and the matched path
+    # (`telemetry.sentry.http_transactions`). Whether a started transaction is kept is
+    # `tracesSampleRate`'s decision; this is the switch for a deployment that wants error
+    # reporting and no performance data at all.
+    httpTransactions: true
+
+    # @schema
+    # type: boolean
+    # @schema
+    # -- Copy `tracing` span fields onto the Sentry span as attributes
+    # (`telemetry.sentry.span_attributes`). Off: the request span this proxy opens carries the
+    # full request path, and a transaction is retained for longer than a log line.
+    spanAttributes: false
+
+    # @schema
+    # type: integer
+    # minimum: 0
+    # @schema
+    # -- How long process exit waits for queued events to drain
+    # (`telemetry.sentry.shutdown_timeout_secs`). Paid on every pod shutdown, so it is time added
+    # to every rollout; keep it well inside `terminationGracePeriodSeconds`. `0` discards
+    # whatever is still queued.
+    shutdownTimeoutSecs: 2
+
+    # @schema
+    # type: boolean
+    # @schema
+    # -- Print the SDK's own diagnostics to stderr (`telemetry.sentry.debug`). For proving a DSN
+    # works, not for running.
+    debug: false
 
 # @schema
 # additionalProperties: true
@@ -249,11 +405,12 @@ cloudflare:
 # @schema
 # type: string
 # @schema
-# -- Name of an existing Secret holding the Cloudflare Access credentials, which keeps them out
-# of `values.yaml` and out of the Helm release object. **Its keys are the configuration paths,
-# not free-form names**: `cloudflare__client_id` and `cloudflare__client_secret`, because the
-# file name is what the loader parses. Set, the chart renders no Secret of its own and
-# `cloudflare.clientId` / `cloudflare.clientSecret` are ignored.
+# -- Name of an existing Secret holding this proxy's credentials, which keeps them out of
+# `values.yaml` and out of the Helm release object. **Its keys are the configuration paths, not
+# free-form names**: `cloudflare__client_id`, `cloudflare__client_secret` and, once
+# `telemetry.sentry.enabled` is set, `telemetry__sentry__dsn` — because the file name is what
+# the loader parses. Set, the chart renders no Secret of its own and `cloudflare.clientId`,
+# `cloudflare.clientSecret` and `telemetry.sentry.dsn` are ignored.
 existingSecret: ""
 
 # @schema

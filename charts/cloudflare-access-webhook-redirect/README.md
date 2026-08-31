@@ -1,6 +1,9 @@
 # cloudflare-access-webhook-redirect
 
-![Version: 5.1.4](https://img.shields.io/badge/Version-5.1.4-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: v1.2.1](https://img.shields.io/badge/AppVersion-v1.2.1-informational?style=flat-square)
+
+
+
+![Version: 6.0.0](https://img.shields.io/badge/Version-6.0.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: v1.2.1](https://img.shields.io/badge/AppVersion-v1.2.1-informational?style=flat-square) 
 
 A Helm chart for deploying the Cloudflare Access Webhook Redirect service. This service acts as an authentication proxy that validates requests using Cloudflare Access Service Auth tokens before forwarding them to target backend services.
 
@@ -65,6 +68,17 @@ cluster, not for anything real. `existingSecret` wins if both are set.
 Either way the credentials arrive as files in a projected volume, which the proxy watches: a
 rotated Secret is picked up in place, with no rollout and no window in which the pod is serving
 on a credential you have already revoked.
+
+The Sentry DSN travels the same channel once `telemetry.sentry.enabled` is set, under
+`telemetry__sentry__dsn` — the key it embeds is a bearer credential for the project's ingest
+endpoint, so it never reaches the ConfigMap. Add it to the same Secret:
+
+```shell
+kubectl create secret generic cloudflare-access-secret   --namespace [NAMESPACE]   --from-literal=cloudflare__client_id='...'   --from-literal=cloudflare__client_secret='...'   --from-literal=telemetry__sentry__dsn='https://<key>@<host>/<project>'
+```
+
+Unlike the credentials above, this one is read once as the process boots rather than re-read on
+a mount change, so rotating it takes effect on the next restart.
 
 ## Configuration
 
@@ -212,6 +226,36 @@ the cloud instance metadata endpoint at `169.254.169.254`.
 
 ## Upgrading
 
+### 5.x to 6.0
+
+Chart 6.0 tracks the service's 2.0 release, which moved Sentry behind a `[telemetry.sentry]`
+section and gave it request tracing. The single `telemetry.sentryDsn` value is gone, and a
+`helm upgrade` still setting it fails schema validation naming the key rather than starting a
+pod with error reporting silently switched off.
+
+| Before | After |
+|---|---|
+| `telemetry.sentryDsn: <dsn>` | `telemetry.sentry.enabled: true` **and** the DSN in the Secret |
+
+Two things changed beyond the rename.
+
+**The switch is separate from the DSN, and both are required.** A DSN alone no longer enables
+anything, and `enabled` without a DSN is refused at render time — upstream refuses to boot
+rather than installing a reporter that reports nowhere, so the chart rejects the pair instead of
+letting it become a CrashLoopBackOff.
+
+**The DSN is a Secret key now, not a ConfigMap value.** It moved to `telemetry__sentry__dsn`
+alongside the Cloudflare Access service token, because the key it embeds is a bearer credential
+for the project's ingest endpoint and a ConfigMap is readable by anything that can read the
+namespace. Set `telemetry.sentry.dsn` to have the chart render it, or put that key in the Secret
+named by `existingSecret`.
+
+The thirteen other keys under `telemetry.sentry` are new and all optional; the defaults report
+errors and start no traces of their own. `telemetry.sentry.tracesSampleRate` is what turns
+tracing on, and `telemetry.sentry.sendDefaultPii` is worth reading before it is turned on — this
+proxy forwards every header it receives, so the header set of a webhook delivery routinely
+carries the caller's own signing secret.
+
 ### 4.x to 5.0
 
 `resourcesPreset` is gone. `resources` is the only sizing knob left, and it already ships with
@@ -238,6 +282,7 @@ The same release also documents the `networkPolicy` knobs the `common` library a
 but this chart never listed: `networkPolicy.extraIngress`, `networkPolicy.extraEgress`,
 `networkPolicy.ingress.monitoring.namespaceSelector`, and a `ports` list on the monitoring and
 controller rules. They are additions — nothing that worked before behaves differently.
+
 
 ### 3.x to 4.0
 
@@ -449,7 +494,7 @@ policy pointing at the wrong Gateway looks correct and blocks everything.
 | configMount.configDir | string | `"/etc/cloudflare-access-webhook-redirect/config"` | Directory the rendered `config.toml` is mounted at, passed as `WEBHOOK_REDIRECT_CONFIG`. |
 | configMount.rolloutOnChange | bool | `false` | Add `checksum/*` pod annotations so a configuration change rolls the Deployment. Off by default, and deliberately so: the proxy watches the directories its configuration came from and rebuilds its client, path patterns, credentials and listener in place when the kubelet updates the mounted ConfigMap or Secret, which is strictly better than a rollout. Turn this on only if you want configuration changes to behave like an ordinary image bump. `telemetry.*` is installed once per process and needs a restart either way. |
 | configMount.secretsDir | string | `"/etc/cloudflare-access-webhook-redirect/secrets"` | Directory the credential files are mounted at, passed as `WEBHOOK_REDIRECT_SECRETS_DIR`. |
-| existingSecret | string | `""` | Name of an existing Secret holding the Cloudflare Access credentials, which keeps them out of `values.yaml` and out of the Helm release object. **Its keys are the configuration paths, not free-form names**: `cloudflare__client_id` and `cloudflare__client_secret`, because the file name is what the loader parses. Set, the chart renders no Secret of its own and `cloudflare.clientId` / `cloudflare.clientSecret` are ignored. |
+| existingSecret | string | `""` | Name of an existing Secret holding this proxy's credentials, which keeps them out of `values.yaml` and out of the Helm release object. **Its keys are the configuration paths, not free-form names**: `cloudflare__client_id`, `cloudflare__client_secret` and, once `telemetry.sentry.enabled` is set, `telemetry__sentry__dsn` — because the file name is what the loader parses. Set, the chart renders no Secret of its own and `cloudflare.clientId`, `cloudflare.clientSecret` and `telemetry.sentry.dsn` are ignored. |
 | extraEnv | list | `[]` | Additional environment variables for the application container. |
 | extraVolumeMounts | list | `[]` | Additional volume mounts (e.g., /cache) |
 | extraVolumes | list | `[]` | Additional volumes (e.g., cache, tmp) |
@@ -615,9 +660,25 @@ policy pointing at the wrong Gateway looks correct and blocks everything.
 | startupProbe.successThreshold | int | `1` | Success threshold |
 | startupProbe.timeoutSeconds | int | `3` | Probe timeout |
 | strategy | object | `{}` | Deployment update strategy. Empty uses the Kubernetes default rolling update. |
-| telemetry | object | `{"logLevel":"info","sentryDsn":""}` | Logging and error reporting. Installed once when the process starts, so a change here needs a restart even though the rest of the configuration reloads in place. |
+| telemetry | object | `{"logLevel":"info","sentry":{"attachStacktraces":true,"breadcrumbLevel":"info","captureLevel":"error","debug":false,"dsn":"","enabled":false,"environment":"","httpTransactions":true,"maxBreadcrumbs":100,"release":"","sampleRate":1,"sendDefaultPii":false,"serverName":"","shutdownTimeoutSecs":2,"spanAttributes":false,"tracesSampleRate":0}}` | Logging and error reporting. Installed once when the process starts, so a change here needs a restart even though the rest of the configuration reloads in place. |
 | telemetry.logLevel | string | `"info"` | Log level (`telemetry.log_level`). |
-| telemetry.sentryDsn | string | `""` | Sentry DSN (`telemetry.sentry_dsn`). Empty disables Sentry entirely. |
+| telemetry.sentry | object | `{"attachStacktraces":true,"breadcrumbLevel":"info","captureLevel":"error","debug":false,"dsn":"","enabled":false,"environment":"","httpTransactions":true,"maxBreadcrumbs":100,"release":"","sampleRate":1,"sendDefaultPii":false,"serverName":"","shutdownTimeoutSecs":2,"spanAttributes":false,"tracesSampleRate":0}` | Sentry error reporting and request tracing. **Off**, and wholly inert while it is: no client, no panic hook, no subscriber layer and no HTTP middleware is installed, and nothing leaves the process.  Two things the chart deliberately does not do for you. It never reads the DSN, so it cannot name the ingest host in the NetworkPolicies; a deployment that narrowed the egress rules has to name that endpoint itself, and getting it wrong is silent, because an SDK that cannot reach its endpoint queues events and then discards them — which reads as "no errors". And it configures nothing inside Sentry: the project, its quota and its server-side data-scrubbing rules are yours.  Unlike the rest of this chart's configuration, the block is read once as the process boots rather than re-read when the kubelet refreshes the mount, so a change to it takes effect on the next restart. `configMount.rolloutOnChange` is what turns one into a rollout. |
+| telemetry.sentry.attachStacktraces | bool | `true` | Attach a stack trace to events that carry none of their own (`telemetry.sentry.attach_stacktraces`, plural — `s3-bucket-perma-link` spells the same setting singular, and the wrong spelling is a key this image does not read). |
+| telemetry.sentry.breadcrumbLevel | string | `"info"` | Least severe `tracing` level kept as a breadcrumb, the trail attached to the next issue (`telemetry.sentry.breadcrumb_level`). Records at or above `captureLevel` become issues instead. Quote `"off"`. |
+| telemetry.sentry.captureLevel | string | `"error"` | Least severe `tracing` level reported as a Sentry issue (`telemetry.sentry.capture_level`). Quote `"off"` — unquoted, YAML reads it as the boolean `false`. Bounded from above by `logLevel`: the Sentry layer sits under the same filter the console log does, so a record that level drops is never reported either. |
+| telemetry.sentry.debug | bool | `false` | Print the SDK's own diagnostics to stderr (`telemetry.sentry.debug`). For proving a DSN works, not for running. |
+| telemetry.sentry.dsn | string | `""` | Ingest URL, `https://<key>@<host>/<project>`. A credential — the embedded key is a bearer token for the project's ingest endpoint — so it is delivered as a file in `WEBHOOK_REDIRECT_SECRETS_DIR` under `telemetry__sentry__dsn`, alongside the Cloudflare Access service token, and never written into the ConfigMap. Leave it empty and put that key in the Secret named by `existingSecret` to keep it out of `helm get values` entirely. |
+| telemetry.sentry.enabled | bool | `false` | Initialise the Sentry client (`telemetry.sentry.enabled`). Off, every other key here is inert. On, the proxy refuses to boot without a DSN rather than starting with a reporter that reports nowhere, so this and `dsn` are set together. |
+| telemetry.sentry.environment | string | `""` | Environment tag on every event (`telemetry.sentry.environment`). Empty falls to the image's own default of `production`. The proxy always sends one, so `SENTRY_ENVIRONMENT` — a channel that would bypass the layered loader and its shadow-key rejection entirely — is never consulted. |
+| telemetry.sentry.httpTransactions | bool | `true` | Record one transaction per request, named by the method and the matched path (`telemetry.sentry.http_transactions`). Whether a started transaction is kept is `tracesSampleRate`'s decision; this is the switch for a deployment that wants error reporting and no performance data at all. |
+| telemetry.sentry.maxBreadcrumbs | int | `100` | How many breadcrumbs one event carries (`telemetry.sentry.max_breadcrumbs`). |
+| telemetry.sentry.release | string | `""` | Release tag on every event (`telemetry.sentry.release`). Empty uses the crate name and version the binary was built from, which is what makes a regression attributable to a deploy — set this only to match a release you create in Sentry under a name of your own. |
+| telemetry.sentry.sampleRate | float | `1` | Fraction of captured events actually sent (`telemetry.sentry.sample_rate`). A blunt volume cap — it drops whole issues, not repetitions of one, so a rare error is exactly what it loses — so leave it at `1` unless a quota forces otherwise. |
+| telemetry.sentry.sendDefaultPii | bool | `false` | Send personally identifying data with every event: the client IP, the whole request header set, and request bodies of a known content type (`telemetry.sentry.send_default_pii`). **Off, and worth leaving off** — every header this proxy receives is forwarded to the protected service, so the header set of a webhook delivery routinely carries the caller's own signing secret, which is exactly what a crash report does not need in order to be actionable. It is two controls rather than one, besides: off is also what keeps the HTTP middleware redacting sensitive headers. |
+| telemetry.sentry.serverName | string | `""` | Host tag on every event (`telemetry.sentry.server_name`). Empty reports none, which is the right answer here: the value would be one replica's pod name, gone by the time anyone reads the issue. |
+| telemetry.sentry.shutdownTimeoutSecs | int | `2` | How long process exit waits for queued events to drain (`telemetry.sentry.shutdown_timeout_secs`). Paid on every pod shutdown, so it is time added to every rollout; keep it well inside `terminationGracePeriodSeconds`. `0` discards whatever is still queued. |
+| telemetry.sentry.spanAttributes | bool | `false` | Copy `tracing` span fields onto the Sentry span as attributes (`telemetry.sentry.span_attributes`). Off: the request span this proxy opens carries the full request path, and a transaction is retained for longer than a log line. |
+| telemetry.sentry.tracesSampleRate | float | `0` | Fraction of traces this proxy **starts** that are recorded (`telemetry.sentry.traces_sample_rate`). `0` starts none, which is what makes the feature free to switch on for error reporting alone. It does not take the proxy out of a trace that reaches it already sampled: an inbound `sentry-trace` header is continued whatever this says, and rewritten onto the forwarded request, which is what keeps one webhook delivery readable across the caller, this hop and the protected service behind it. |
 | terminationGracePeriodSeconds | int | `30` | Grace period for pod shutdown. |
 | tolerations | list | `[]` | Tolerations for taints |
 | topologySpreadConstraints | list | `[]` | Pod topology spread constraints for availability |
@@ -635,6 +696,7 @@ policy pointing at the wrong Gateway looks correct and blocks everything.
 | Name | Email | Url |
 | ---- | ------ | --- |
 | Tim Schönle |  | <https://github.com/TimSchoenle> |
+
 
 ----------------------------------------------
 Autogenerated from chart metadata using [helm-docs v1.14.2](https://github.com/norwoodj/helm-docs/releases/v1.14.2)

@@ -1392,7 +1392,7 @@
     },
     "existingSecret": {
       "default": "",
-      "description": "Name of an existing Secret holding the Cloudflare Access credentials, which keeps them out\nof `values.yaml` and out of the Helm release object. **Its keys are the configuration paths,\nnot free-form names**: `cloudflare__client_id` and `cloudflare__client_secret`, because the\nfile name is what the loader parses. Set, the chart renders no Secret of its own and\n`cloudflare.clientId` / `cloudflare.clientSecret` are ignored.",
+      "description": "Name of an existing Secret holding this proxy's credentials, which keeps them out of\n`values.yaml` and out of the Helm release object. **Its keys are the configuration paths, not\nfree-form names**: `cloudflare__client_id`, `cloudflare__client_secret` and, once\n`telemetry.sentry.enabled` is set, `telemetry__sentry__dsn` — because the file name is what\nthe loader parses. Set, the chart renders no Secret of its own and `cloudflare.clientId`,\n`cloudflare.clientSecret` and `telemetry.sentry.dsn` are ignored.",
       "required": [],
       "title": "existingSecret",
       "type": "string"
@@ -2695,12 +2695,145 @@
           "required": [],
           "title": "logLevel"
         },
-        "sentryDsn": {
-          "default": "",
-          "description": "Sentry DSN (`telemetry.sentry_dsn`). Empty disables Sentry entirely.",
+        "sentry": {
+          "additionalProperties": true,
+          "description": "Sentry error reporting and request tracing. **Off**, and wholly inert while it is: no\nclient, no panic hook, no subscriber layer and no HTTP middleware is installed, and nothing\nleaves the process.\n\nTwo things the chart deliberately does not do for you. It never reads the DSN, so it cannot\nname the ingest host in the NetworkPolicies; a deployment that narrowed the egress rules has\nto name that endpoint itself, and getting it wrong is silent, because an SDK that cannot\nreach its endpoint queues events and then discards them — which reads as \"no errors\". And it\nconfigures nothing inside Sentry: the project, its quota and its server-side data-scrubbing\nrules are yours.\n\nUnlike the rest of this chart's configuration, the block is read once as the process boots\nrather than re-read when the kubelet refreshes the mount, so a change to it takes effect on\nthe next restart. `configMount.rolloutOnChange` is what turns one into a rollout.",
+          "properties": {
+            "attachStacktraces": {
+              "default": true,
+              "description": "Attach a stack trace to events that carry none of their own\n(`telemetry.sentry.attach_stacktraces`, plural — `s3-bucket-perma-link` spells the same\nsetting singular, and the wrong spelling is a key this image does not read).",
+              "required": [],
+              "title": "attachStacktraces",
+              "type": "boolean"
+            },
+            "breadcrumbLevel": {
+              "default": "info",
+              "description": "Least severe `tracing` level kept as a breadcrumb, the trail attached to the next issue\n(`telemetry.sentry.breadcrumb_level`). Records at or above `captureLevel` become issues\ninstead. Quote `\"off\"`.",
+              "enum": [
+                "off",
+                "error",
+                "warn",
+                "info",
+                "debug",
+                "trace"
+              ],
+              "required": [],
+              "title": "breadcrumbLevel"
+            },
+            "captureLevel": {
+              "default": "error",
+              "description": "Least severe `tracing` level reported as a Sentry issue\n(`telemetry.sentry.capture_level`). Quote `\"off\"` — unquoted, YAML reads it as the boolean\n`false`. Bounded from above by `logLevel`: the Sentry layer sits under the same filter the\nconsole log does, so a record that level drops is never reported either.",
+              "enum": [
+                "off",
+                "error",
+                "warn",
+                "info",
+                "debug",
+                "trace"
+              ],
+              "required": [],
+              "title": "captureLevel"
+            },
+            "debug": {
+              "default": false,
+              "description": "Print the SDK's own diagnostics to stderr (`telemetry.sentry.debug`). For proving a DSN\nworks, not for running.",
+              "required": [],
+              "title": "debug",
+              "type": "boolean"
+            },
+            "dsn": {
+              "default": "",
+              "description": "Ingest URL, `https://\u003ckey\u003e@\u003chost\u003e/\u003cproject\u003e`. A credential — the embedded key is a\nbearer token for the project's ingest endpoint — so it is delivered as a file in\n`WEBHOOK_REDIRECT_SECRETS_DIR` under `telemetry__sentry__dsn`, alongside the Cloudflare\nAccess service token, and never written into the ConfigMap. Leave it empty and put that\nkey in the Secret named by `existingSecret` to keep it out of `helm get values` entirely.",
+              "required": [],
+              "title": "dsn",
+              "type": "string"
+            },
+            "enabled": {
+              "default": false,
+              "description": "Initialise the Sentry client (`telemetry.sentry.enabled`). Off, every other key here is\ninert. On, the proxy refuses to boot without a DSN rather than starting with a reporter\nthat reports nowhere, so this and `dsn` are set together.",
+              "required": [],
+              "title": "enabled",
+              "type": "boolean"
+            },
+            "environment": {
+              "default": "",
+              "description": "Environment tag on every event (`telemetry.sentry.environment`). Empty falls to the\nimage's own default of `production`. The proxy always sends one, so `SENTRY_ENVIRONMENT` —\na channel that would bypass the layered loader and its shadow-key rejection entirely — is\nnever consulted.",
+              "required": [],
+              "title": "environment",
+              "type": "string"
+            },
+            "httpTransactions": {
+              "default": true,
+              "description": "Record one transaction per request, named by the method and the matched path\n(`telemetry.sentry.http_transactions`). Whether a started transaction is kept is\n`tracesSampleRate`'s decision; this is the switch for a deployment that wants error\nreporting and no performance data at all.",
+              "required": [],
+              "title": "httpTransactions",
+              "type": "boolean"
+            },
+            "maxBreadcrumbs": {
+              "default": 100,
+              "description": "How many breadcrumbs one event carries (`telemetry.sentry.max_breadcrumbs`).",
+              "minimum": 0,
+              "required": [],
+              "title": "maxBreadcrumbs",
+              "type": "integer"
+            },
+            "release": {
+              "default": "",
+              "description": "Release tag on every event (`telemetry.sentry.release`). Empty uses the crate name and\nversion the binary was built from, which is what makes a regression attributable to a\ndeploy — set this only to match a release you create in Sentry under a name of your own.",
+              "required": [],
+              "title": "release",
+              "type": "string"
+            },
+            "sampleRate": {
+              "default": 1,
+              "description": "Fraction of captured events actually sent (`telemetry.sentry.sample_rate`). A blunt\nvolume cap — it drops whole issues, not repetitions of one, so a rare error is exactly what\nit loses — so leave it at `1` unless a quota forces otherwise.",
+              "maximum": 1,
+              "minimum": 0,
+              "required": [],
+              "title": "sampleRate",
+              "type": "number"
+            },
+            "sendDefaultPii": {
+              "default": false,
+              "description": "Send personally identifying data with every event: the client IP, the whole request\nheader set, and request bodies of a known content type\n(`telemetry.sentry.send_default_pii`). **Off, and worth leaving off** — every header this\nproxy receives is forwarded to the protected service, so the header set of a webhook\ndelivery routinely carries the caller's own signing secret, which is exactly what a crash\nreport does not need in order to be actionable. It is two controls rather than one,\nbesides: off is also what keeps the HTTP middleware redacting sensitive headers.",
+              "required": [],
+              "title": "sendDefaultPii",
+              "type": "boolean"
+            },
+            "serverName": {
+              "default": "",
+              "description": "Host tag on every event (`telemetry.sentry.server_name`). Empty reports none, which is\nthe right answer here: the value would be one replica's pod name, gone by the time anyone\nreads the issue.",
+              "required": [],
+              "title": "serverName",
+              "type": "string"
+            },
+            "shutdownTimeoutSecs": {
+              "default": 2,
+              "description": "How long process exit waits for queued events to drain\n(`telemetry.sentry.shutdown_timeout_secs`). Paid on every pod shutdown, so it is time added\nto every rollout; keep it well inside `terminationGracePeriodSeconds`. `0` discards\nwhatever is still queued.",
+              "minimum": 0,
+              "required": [],
+              "title": "shutdownTimeoutSecs",
+              "type": "integer"
+            },
+            "spanAttributes": {
+              "default": false,
+              "description": "Copy `tracing` span fields onto the Sentry span as attributes\n(`telemetry.sentry.span_attributes`). Off: the request span this proxy opens carries the\nfull request path, and a transaction is retained for longer than a log line.",
+              "required": [],
+              "title": "spanAttributes",
+              "type": "boolean"
+            },
+            "tracesSampleRate": {
+              "default": 0,
+              "description": "Fraction of traces this proxy **starts** that are recorded\n(`telemetry.sentry.traces_sample_rate`). `0` starts none, which is what makes the feature\nfree to switch on for error reporting alone. It does not take the proxy out of a trace that\nreaches it already sampled: an inbound `sentry-trace` header is continued whatever this\nsays, and rewritten onto the forwarded request, which is what keeps one webhook delivery\nreadable across the caller, this hop and the protected service behind it.",
+              "maximum": 1,
+              "minimum": 0,
+              "required": [],
+              "title": "tracesSampleRate",
+              "type": "number"
+            }
+          },
           "required": [],
-          "title": "sentryDsn",
-          "type": "string"
+          "title": "sentry"
         }
       },
       "required": [],

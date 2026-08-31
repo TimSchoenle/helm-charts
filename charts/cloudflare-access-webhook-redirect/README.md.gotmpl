@@ -68,6 +68,17 @@ Either way the credentials arrive as files in a projected volume, which the prox
 rotated Secret is picked up in place, with no rollout and no window in which the pod is serving
 on a credential you have already revoked.
 
+The Sentry DSN travels the same channel once `telemetry.sentry.enabled` is set, under
+`telemetry__sentry__dsn` — the key it embeds is a bearer credential for the project's ingest
+endpoint, so it never reaches the ConfigMap. Add it to the same Secret:
+
+```shell
+kubectl create secret generic cloudflare-access-secret   --namespace [NAMESPACE]   --from-literal=cloudflare__client_id='...'   --from-literal=cloudflare__client_secret='...'   --from-literal=telemetry__sentry__dsn='https://<key>@<host>/<project>'
+```
+
+Unlike the credentials above, this one is read once as the process boots rather than re-read on
+a mount change, so rotating it takes effect on the next restart.
+
 ## Configuration
 
 Everything the service reads is rendered into one `config.toml`, mounted as a ConfigMap and
@@ -213,6 +224,36 @@ restriction — the NetworkPolicy API reads a missing `to` as *any destination*,
 the cloud instance metadata endpoint at `169.254.169.254`.
 
 ## Upgrading
+
+### 5.x to 6.0
+
+Chart 6.0 tracks the service's 2.0 release, which moved Sentry behind a `[telemetry.sentry]`
+section and gave it request tracing. The single `telemetry.sentryDsn` value is gone, and a
+`helm upgrade` still setting it fails schema validation naming the key rather than starting a
+pod with error reporting silently switched off.
+
+| Before | After |
+|---|---|
+| `telemetry.sentryDsn: <dsn>` | `telemetry.sentry.enabled: true` **and** the DSN in the Secret |
+
+Two things changed beyond the rename.
+
+**The switch is separate from the DSN, and both are required.** A DSN alone no longer enables
+anything, and `enabled` without a DSN is refused at render time — upstream refuses to boot
+rather than installing a reporter that reports nowhere, so the chart rejects the pair instead of
+letting it become a CrashLoopBackOff.
+
+**The DSN is a Secret key now, not a ConfigMap value.** It moved to `telemetry__sentry__dsn`
+alongside the Cloudflare Access service token, because the key it embeds is a bearer credential
+for the project's ingest endpoint and a ConfigMap is readable by anything that can read the
+namespace. Set `telemetry.sentry.dsn` to have the chart render it, or put that key in the Secret
+named by `existingSecret`.
+
+The thirteen other keys under `telemetry.sentry` are new and all optional; the defaults report
+errors and start no traces of their own. `telemetry.sentry.tracesSampleRate` is what turns
+tracing on, and `telemetry.sentry.sendDefaultPii` is worth reading before it is turned on — this
+proxy forwards every header it receives, so the header set of a webhook delivery routinely
+carries the caller's own signing secret.
 
 ### 4.x to 5.0
 

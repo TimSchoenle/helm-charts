@@ -42,21 +42,13 @@ tests:
           path: data["config.toml"]
           pattern: '"/public/\.\*" = \["GET","POST"\]'
 
-  # An empty optional value is still a *supplied* value to the loader, and "Sentry configured
-  # with a blank DSN" is not what leaving it unset meant.
-  - it: omits an unset Sentry DSN rather than writing it empty
+  # Off has to mean *absent*, not "present and false": every key under the block is inert while
+  # the switch is down. `tests/sentry_test.yaml` is where the block itself is exercised.
+  - it: writes no Sentry block while the switch is off
     asserts:
       - notMatchRegex:
           path: data["config.toml"]
-          pattern: 'sentry_dsn'
-
-  - it: writes the Sentry DSN once it is set
-    set:
-      telemetry.sentryDsn: https://key@sentry.example.invalid/1
-    asserts:
-      - matchRegex:
-          path: data["config.toml"]
-          pattern: 'sentry_dsn = "https://key@sentry\.example\.invalid/1"'
+          pattern: 'sentry'
 
   - it: merges the raw config tree over the derived values
     set:

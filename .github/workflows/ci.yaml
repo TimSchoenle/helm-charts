@@ -64,6 +64,13 @@ jobs:
       - name: Repin Kubernetes schema references
         run: just sync-kube-refs
 
+      # The same, for the values shaped by a custom resource rather than by the Kubernetes API
+      # surface — the Gateway API sub-objects `gateway.*` is written into. Those definitions come
+      # from the community CRD catalog `kubeconform` already reads, pinned to `crd_catalog_ref`,
+      # and are repinned here for the same reason and in the same window as the ones above.
+      - name: Repin CRD schema references
+        run: just sync-crd-refs
+
       - name: Build Helm dependencies
         run: just deps
 
@@ -615,9 +622,9 @@ jobs:
 
       # The generated round-trip suites, against the contracts they were generated from.
       #
-      # `just check` carries this recipe and its two siblings — `check-contracts` and
-      # `check-kube-refs` — do not, because those two are repaired by the Documentation job on the
-      # pull request itself. Nothing regenerates the contract suites, deliberately, so a contract
+      # `just check` carries this recipe and its three siblings — `check-contracts`,
+      # `check-kube-refs` and `check-crd-refs` — do not, because those are repaired by the
+      # Documentation job on the pull request itself. Nothing regenerates the contract suites, deliberately, so a contract
       # that gained a key leaves its suite silently short of it unless something says so.
       #
       # Nothing said so here. CI runs the recipes as parallel jobs rather than running

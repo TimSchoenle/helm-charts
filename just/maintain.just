@@ -50,6 +50,46 @@ check-kube-refs version=kube_version:
     "$python" {{ scripts }}/kube-schema-refs.py '{{ version }}' --charts {{ charts }} --check
 
 # --------------------------------------------------------------------------------------------
+# CRD schema references
+# --------------------------------------------------------------------------------------------
+#
+# The same derivation as above, for the values that are shaped by a *custom* resource rather than
+# by the Kubernetes API surface — the Gateway API `HTTPRoute` and `Gateway` sub-objects a chart's
+# `gateway.*` values are written into. Those definitions are not in the Kubernetes catalog, because
+# a CRD is not part of the API surface, so they come from the community catalog `kubeconform`
+# already reads and are pinned to the same `crd_catalog_ref` — one state of the catalog for both,
+# so the schema a *value* is checked against cannot come from a different day than the schema the
+# rendered *object* is checked against.
+#
+# The bump is a different kind of act from a Kubernetes one, which is why it is a separate pair
+# rather than a second pattern in the same script: `v1.34.0` names one immutable document, while a
+# catalog commit names whatever the catalog said that day. The script's header says what to read
+# before moving it.
+#
+# `check-crd-refs` is out of `just check` for the reason `check-kube-refs` is: the Documentation
+# job repairs the drift on the pull request itself, so failing a contributor for it would be
+# failing them for something the automation is about to fix.
+
+# Repin every CRD `$ref` in the charts to the pinned catalog commit.
+[doc("Repin every CRD $ref in the charts to the pinned catalog commit")]
+[group('maintain')]
+sync-crd-refs ref=crd_catalog_ref:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    {{ resolve_python }}
+    "$python" {{ scripts }}/crd-schema-refs.py '{{ ref }}' --charts {{ charts }}
+
+# Report every CRD `$ref` in the charts that is not pinned to the wanted catalog commit, and fail
+# if any is not. Reads only what is checked in, unlike the rewrite.
+[doc("Report every CRD $ref in the charts not pinned to the wanted catalog commit")]
+[group('maintain')]
+check-crd-refs ref=crd_catalog_ref:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    {{ resolve_python }}
+    "$python" {{ scripts }}/crd-schema-refs.py '{{ ref }}' --charts {{ charts }} --check
+
+# --------------------------------------------------------------------------------------------
 # The chart chassis
 # --------------------------------------------------------------------------------------------
 #

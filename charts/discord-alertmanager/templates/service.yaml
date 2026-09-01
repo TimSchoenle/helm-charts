@@ -1,0 +1,29 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "common.fullname" . }}
+  namespace: {{ include "common.namespace" . }}
+  labels:
+    {{- include "common.labels" . | nindent 4 }}
+  {{- with (include "common.tplvalues.merge" (dict "values" (list .Values.service.annotations .Values.commonAnnotations) "context" $)) }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    {{- /*
+      One port, not two. `/metrics` is served on the ingest listener beside `/webhook`,
+      `/healthz` and `/readyz` — there is no second bind address in the image's configuration
+      surface — so a separate `metrics` port would be a Service port pointing at a container port
+      nothing listens on.
+
+      `targetPort: http` rather than the number: the container port is derived from
+      `ingest.bind`, and naming it keeps the two from being written down twice.
+    */}}
+    - port: {{ .Values.service.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "common.selectorLabels" . | nindent 4 }}

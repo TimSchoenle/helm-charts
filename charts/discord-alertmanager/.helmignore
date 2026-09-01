@@ -1,0 +1,41 @@
+# Patterns excluded when the chart is packaged.
+#
+# Two things worth knowing before adding to this file, because both are easy to get wrong and
+# neither fails loudly:
+#
+#   1. `.helmignore` also filters `.Files`. A template that reads a file through `.Files.Get` or
+#      `.Files.Glob` sees nothing if that path is ignored — so `rules/` and `dashboards/`, which
+#      are loaded into the PrometheusRule and the dashboard ConfigMap at render time, must never
+#      appear here. They would not error; the objects would simply come out empty.
+#   2. Everything below is development-time material that nothing reads at install or upgrade
+#      time. Shipping it makes every published package larger and invites the assumption that a
+#      chart's tests are part of its contract.
+
+# Version control and editor droppings
+.git/
+.gitignore
+.DS_Store
+*.swp
+*.bak
+*.tmp
+*.orig
+*~
+.idea/
+.vscode/
+.project
+.settings/
+
+# Test material. `helm unittest`, `ct` and `.github/scripts/test-rules.sh` all read these from the
+# working tree, never from a packaged chart.
+tests/
+ci/
+rules-tests/
+
+# helm-docs input. `README.md` is generated from it and is what a consumer reads.
+README.md.gotmpl
+
+# Configuration contracts. `config-contract.yaml` declares what this chart's rendered
+# configuration must satisfy and `contracts/` vendors the documents its images publish; both are
+# read from the working tree by `just check-config`, never at install or upgrade time.
+config-contract.yaml
+contracts/

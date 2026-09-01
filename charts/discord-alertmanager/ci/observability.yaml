@@ -1,0 +1,75 @@
+# The three Prometheus Operator objects, and the whole AlertmanagerConfig surface.
+#
+# Named without the `-values` suffix on purpose: `ct` globs `ci/*-values.yaml` for `ct install`,
+# while the render and kubeconform recipes glob `ci/*.yaml`. The kind cluster CI installs into
+# carries only the `prometheusrules` and `podmonitors` CRDs, so a ServiceMonitor or an
+# AlertmanagerConfig would be rejected at apply time; this keeps render, schema-validation and
+# policy-scan coverage without asking chart-testing to install something that cannot work.
+#
+# The AlertmanagerConfig here is the release-namespace form, which is the one that needs nothing
+# changed on the Alertmanager custom resource and which the operator confines to this namespace's
+# own alerts. The cluster-wide form differs only in `namespace` and `auth.secretName`, both of
+# which the render covers through `validateValues` rather than through a fixture.
+
+discord:
+  token: ci-not-a-real-token
+
+alertmanager:
+  endpoints:
+    - http://alertmanager.ci.invalid:9093
+
+ingest:
+  webhookToken: ci-webhook-token
+
+observability:
+  metricsEnabled: true
+  adminChannelId: 111111111111111111
+
+metrics:
+  serviceMonitor:
+    enabled: true
+    interval: 15s
+    scrapeTimeout: 10s
+    labels:
+      release: kube-prometheus-stack
+    metricRelabelings:
+      - sourceLabels: [__name__]
+        regex: dam_.*
+        action: keep
+
+  prometheusRule:
+    enabled: true
+    labels:
+      release: kube-prometheus-stack
+    additionalRuleLabels:
+      team: platform
+    severityOverrides:
+      DiscordAlertmanagerRendersSkipped: critical
+    forOverrides:
+      DiscordAlertmanagerOutboxBacklog: 30m
+    thresholds:
+      DiscordAlertmanagerOutboxBacklog:
+        rows: 250
+      DiscordAlertmanagerWebhooksFailing:
+        ratio: 0.02
+    disabledAlerts:
+      - DiscordAlertmanagerNeverReceivedAWebhook
+
+alertmanagerConfig:
+  enabled: true
+  labels:
+    alertmanagerConfig: platform
+  sendResolved: true
+  maxAlerts: 100
+  timeout: 10s
+  route:
+    groupBy:
+      - alertname
+      - namespace
+      - severity
+    repeatInterval: 12h
+    matchers:
+      - name: severity
+        value: info
+        matchType: "!="
+    continue: true

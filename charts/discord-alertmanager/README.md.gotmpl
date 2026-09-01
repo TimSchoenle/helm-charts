@@ -1,0 +1,382 @@
+{{ template "chart.header" . }}
+
+{{ template "chart.deprecationWarning" . }}
+
+{{ template "chart.badgesSection" . }}
+
+{{ template "chart.description" . }}
+
+Alertmanager posts an alert to a webhook. This service turns it into a live status card in a
+Discord channel and lets an operator acknowledge it, mute it, silence it or open its graph without
+leaving the client. A silence goes to Alertmanager and stops every receiver, the pager included.
+An ignore is bot-local and stops only Discord, which is what "stop pinging #ops at 3am but keep
+paging" actually asks for.
+
+## Prerequisites
+
+- Kubernetes 1.19+
+- Helm 3.0+
+- A Discord bot token, and a channel or forum for it to post in
+- At least one reachable Alertmanager endpoint — the bot refuses to start without one
+- The Prometheus Operator CRDs, if `metrics.serviceMonitor`, `metrics.prometheusRule` or
+  `alertmanagerConfig` is enabled
+- The Gateway API CRDs and a `Gateway` to attach to, if `gateway.enabled=true`
+- Cilium 1.16+, if `networkPolicy.engine` is `cilium` or `both`
+
+## Quick start
+
+```shell
+helm repo add timschoenle https://timschoenle.github.io/helm-charts
+helm repo update
+
+helm install [RELEASE_NAME] timschoenle/{{ template "chart.name" . }} \
+  --namespace [NAMESPACE] --create-namespace \
+  --values values.yaml
+```
+
+with `values.yaml`:
+
+```yaml
+existingSecret: discord-alertmanager
+
+alertmanager:
+  endpoints:
+    - http://alertmanager-operated.monitoring.svc:9093
+
+routes:
+  - name: platform
+    guild_id: 123456789012345678
+    matchers: 'severity=~"warning|critical"'
+    target:
+      kind: channel
+      id: 234567890123456789
+```
+
+Upgrade with `helm upgrade [RELEASE_NAME] timschoenle/{{ template "chart.name" . }} -n [NAMESPACE]`,
+remove with `helm uninstall [RELEASE_NAME] -n [NAMESPACE]`.
+
+Two settings have no working default and the chart refuses to render without them. Both are
+constructed in `main` before the listener binds, so a release missing either is a
+CrashLoopBackOff rather than a degraded feature:
+
+| Setting | Why |
+|---|---|
+| `discord.token` (or `existingSecret`) | the gateway client is built at boot |
+| `alertmanager.endpoints` | `AlertmanagerClient::new` refuses an empty peer list |
+
+## Credentials
+
+Create the Secret yourself and reference it by name. **The keys are the configuration paths the
+service reads, not free-form names** — the loader takes each credential out of the file name, so
+`discord__token` is required and `token` is not read at all:
+
+```shell
+kubectl create secret generic discord-alertmanager \
+  --namespace [NAMESPACE] \
+  --from-literal=discord__token='...' \
+  --from-literal=ingest__webhook_token="$(openssl rand -hex 32)"
+```
+
+```yaml
+existingSecret: discord-alertmanager
+```
+
+The five keys this chart knows how to consume:
+
+| Key | Setting | When |
+|---|---|---|
+| `discord__token` | `discord.token` | always |
+| `ingest__webhook_token` | `ingest.webhookToken` | to authenticate the webhook |
+| `alertmanager__bearer_token` | `alertmanager.bearerToken` | Alertmanager behind bearer auth |
+| `alertmanager__basic_password` | `alertmanager.basicPassword` | Alertmanager behind basic auth |
+| `storage__postgres__url` | `storage.postgres.url` | `storage.backend: postgres` |
+
+The matching chart values are accepted as an alternative and make the chart render the Secret
+itself. That puts the credentials into `values.yaml` and into the Helm release object, where
+anyone who can run `helm get values` can read them — use it for a throwaway cluster, not for
+anything real. `existingSecret` wins if both are set.
+
+`just config-secrets {{ template "chart.name" . }}` prints the same list from the vendored
+contract rather than from this table, which is the copy that cannot go stale.
+
+## Configuration
+
+Everything the service reads is rendered into one `config.toml`, mounted as a ConfigMap and
+pointed at by `DAM_CONFIG`. Nothing is passed as an environment variable, and that is deliberate:
+the loader **fails the boot on a key supplied by both the environment and a file** rather than
+resolving it by precedence, and a value that lives in a file is one the kubelet can rotate under
+a running process.
+
+The values cover the whole documented surface — 58 settings, one chart value each. `config` takes
+the raw TOML tree for anything they do not, merged over the derived one:
+
+```yaml
+config:
+  engine:
+    dispatchers: 8
+```
+
+and `configExtraToml` is appended verbatim for what the renderer cannot express.
+
+```shell
+just explain {{ template "chart.name" . }}
+```
+
+prints the mapping: every key the image reads, which chart value feeds it, and how.
+
+## Routes
+
+A route is "which alerts go to which Discord channel, and who gets mentioned". Routes declared in
+`routes` are the file's and cannot be edited or deleted from Discord, which is what makes a
+deployment reproducible from its manifests. `/route add` writes the other kind, which lives only
+in the database.
+
+```yaml
+routes:
+  - name: platform-critical
+    guild_id: 123456789012345678
+    matchers: 'severity="critical", namespace=~"prod-.*"'
+    min_severity: critical
+    target:
+      kind: forum
+      id: 234567890123456789
+    group_strategy: alert
+    mentions:
+      roles: [345678901234567890]
+      min_severity: critical
+    escalation:
+      after_secs: 900
+      users: [456789012345678901]
+    priority: 10
+    continue_to_next: true
+    enabled: true
+```
+
+`matchers` uses Alertmanager's own operators — `=`, `!=`, `=~`, `!~` — and a regex is fully
+anchored. A route removed from this list is disabled rather than deleted, so the cards it created
+keep their history.
+
+> [!NOTE]
+> `routes` is an array of tables. It is rendered through the chart's TOML writer like everything
+> else, but a route needing a shape the writer cannot express belongs in `configExtraToml`, which
+> is appended verbatim.
+
+## Wiring Alertmanager to it
+
+Two ways, and the second is the one this chart exists to make easy.
+
+### By hand
+
+```yaml
+receivers:
+  - name: discord-alertmanager
+    webhook_configs:
+      - url: http://discord-alertmanager.monitoring.svc:80/webhook
+        send_resolved: true
+```
+
+### As an AlertmanagerConfig
+
+`alertmanagerConfig.enabled` ships the receiver and its route as a Prometheus Operator object, the
+same way `metrics.prometheusRule` ships the alerts. The URL is derived from this release's own
+Service and `ingest.webhookPath`, and the bearer token is a reference to the Secret the chart
+already renders — so neither can drift from what the listener actually serves.
+
+```yaml
+ingest:
+  webhookToken: ""          # or existingSecret carrying ingest__webhook_token
+
+alertmanagerConfig:
+  enabled: true
+  labels:
+    alertmanagerConfig: platform   # what alertmanagerConfigSelector matches
+  route:
+    groupBy: [alertname, namespace]
+    repeatInterval: 4h
+    continue: true
+```
+
+**`continue: true` is the default and is the point.** It makes this bot an additional surface
+rather than a replacement: the alert gets a Discord card *and* still reaches the pager. Setting it
+to `false` makes Discord the only receiver for everything the route matches.
+
+#### The namespace matcher, which is the thing that catches people out
+
+The Prometheus Operator injects a `namespace = <the object's namespace>` matcher into every route
+it grafts from an `AlertmanagerConfig`. By default, therefore, **this route only ever matches
+alerts whose `namespace` label equals the namespace the object lives in.** The object is accepted,
+the receiver exists, and for a cluster-wide receiver nothing arrives.
+
+There are three answers, and which one is right depends on what the release is for:
+
+| Want | Do |
+|---|---|
+| A bot watching its own namespace | nothing; the default is correct |
+| A cluster-wide bot | `spec.alertmanagerConfigMatcherStrategy.type: None` on the Alertmanager |
+| A cluster-wide bot, one config | `spec.alertmanagerConfiguration.name: <this object>`, and set `alertmanagerConfig.namespace` to Alertmanager's namespace |
+
+The last form is documented by the operator as one where it "will not enforce a `namespace` label
+for routes and inhibition rules". It also replaces the Alertmanager's whole configuration rather
+than adding to it, so it is a decision about the monitoring stack and not only about this chart.
+
+Both of the first two are fields on the Alertmanager custom resource, which this chart cannot
+reach — it can only create the object and say so. `NOTES.txt` repeats this after every install
+that enables it, and `DiscordAlertmanagerNeverReceivedAWebhook` is in the shipped rule set for
+exactly the case where it was missed.
+
+> [!NOTE]
+> Alertmanager has had a native `discordConfigs` receiver since 0.25, and it is not this. That one
+> posts a message. This one posts a card an operator can acknowledge, ignore, silence and open a
+> graph from. Both can be routed to at once.
+
+#### When Alertmanager is outside the cluster
+
+Set `alertmanagerConfig.url` to the address it can actually reach, and publish the listener with
+`ingress` or `gateway`. Set `ingest.webhookToken` before you do — the webhook path accepts any
+well-formed envelope without one.
+
+## Storage
+
+`storage.backend` is a configuration key, not a build flag, and one binary answers both.
+
+**`sqlite` (default)** keeps one file on one volume. The container runs with a read-only root
+filesystem, so the file has to live under `persistence.data.mountPath`; `storage.sqlite.path`
+defaults to a path inside it and the render is refused if it is moved outside. A
+`ReadWriteOnce` claim also forces the Deployment to `Recreate`, because a rolling update would
+deadlock on the volume.
+
+**`postgres`** is what a release above one replica needs. The outbox lease that lets several
+dispatchers work in parallel is `FOR UPDATE SKIP LOCKED` there and `BEGIN IMMEDIATE` on SQLite,
+and only the first is safe across processes — so the chart refuses `replicaCount > 1` and
+`autoscaling.enabled` while the backend is SQLite, rather than corrupting a database to find out.
+A PostgreSQL release renders no PersistentVolumeClaim at all.
+
+```yaml
+storage:
+  backend: postgres
+  postgres:
+    url: ""      # existingSecret, under storage__postgres__url
+
+replicaCount: 3
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 2
+```
+
+A PodDisruptionBudget with `minAvailable` equal to `replicaCount` blocks node drains
+indefinitely — keep it at least one below.
+
+Turning persistence off puts SQLite on an `emptyDir`, which loses every card, thread link,
+acknowledgement and ignore on each restart and re-posts alerts that are still firing. It is for
+test installs.
+
+## Observability
+
+The listener serves `/metrics` beside `/webhook` — there is no second port. `metrics.serviceMonitor`
+scrapes it and `metrics.prometheusRule` installs the alerting rules under `rules/`. The image's
+own `observability.metricsEnabled` decides whether the path answers at all, and the chart refuses
+a ServiceMonitor pointed at a listener that would serve 404.
+
+```yaml
+observability:
+  metricsEnabled: true
+  adminChannelId: 123456789012345678   # deadman and route-health notices
+
+metrics:
+  serviceMonitor:
+    enabled: true
+    labels:
+      release: kube-prometheus-stack
+  prometheusRule:
+    enabled: true
+    labels:
+      release: kube-prometheus-stack
+```
+
+Nine alerts ship, covering the bot being unscrapeable, webhooks being refused, the outbox not
+draining, Discord rate-limiting, and the reconciler having quietly become the delivery mechanism.
+`disabledAlerts`, `severityOverrides`, `forOverrides` and `thresholds` tune them, and every one of
+those is validated against the rules actually shipped — a name that matches nothing is refused
+rather than leaving the values file claiming an alert is off while it pages.
+
+**They are deliberately not routed through this bot.** A bot that has stopped delivering cannot
+deliver the card that says so. Pair `DiscordAlertmanagerDown` with a receiver that does not depend
+on it, and pair the bot's own deadman — `observability.adminChannelId`, which fires when no
+webhook has arrived inside its window *and* Alertmanager is unreachable — with a `Watchdog` alert
+in Prometheus, so that silence on one side is always noise on the other.
+
+## Network policy
+
+The interesting half here is ingress, and it is not the usual one. Two different things reach this
+pod on the same port: Alertmanager posting webhooks, and Prometheus scraping `/metrics`. The
+`monitoring` rule is therefore half the access control rather than an observability nicety.
+
+The egress `https` rule carves RFC1918 and link-local out of its CIDR, so **an in-cluster
+Alertmanager is not reachable until you add a rule for it** — without one the pod starts, the
+reconciler never polls, and `/readyz` stays red.
+
+```yaml
+networkPolicy:
+  enabled: true
+  ingress:
+    monitoring:
+      enabled: true
+      namespace: monitoring
+  egress:
+    customRules:
+      - ports:
+          - port: 9093
+            protocol: TCP
+        to:
+          - namespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: monitoring
+            podSelector:
+              matchLabels:
+                app.kubernetes.io/name: alertmanager
+```
+
+Every rule you add must carry its own `to:`. A rule that lists only `ports:` is not a restriction —
+the NetworkPolicy API reads a missing `to` as *any destination*, which includes the cloud instance
+metadata endpoint at `169.254.169.254`.
+
+`networkPolicy.engine: cilium` writes the same rules as a `CiliumNetworkPolicy`, where the bot's
+egress can be stated as what it actually is — Discord's API and gateway, and one Alertmanager —
+instead of as "the whole public internet on 443":
+
+```yaml
+networkPolicy:
+  enabled: true
+  engine: cilium
+  egress:
+    https:
+      enabled: false
+  cilium:
+    egress:
+      toFQDNs:
+        - matchName: discord.com
+        - matchPattern: "*.discord.gg"
+      dnsMatchPatterns:
+        - matchPattern: "*.discord.com"
+        - matchPattern: "*.discord.gg"
+```
+
+## Probes
+
+| Probe | Path | Why |
+|---|---|---|
+| startup, liveness | `/healthz` | asks nothing of the database or Alertmanager — wiring liveness to a dependency turns an outage into a restart loop that cannot fix it |
+| readiness | `/readyz` | 503 while the store is unreachable or the Alertmanager poll has gone stale |
+
+A failing readiness probe takes the pod out of the Service, which makes Alertmanager's delivery
+fail and be retried rather than accepted and dropped. That is the intended behaviour, and it is
+also why a pod that cannot reach Alertmanager never becomes ready — check the egress policy first.
+
+{{ template "chart.valuesSection" . }}
+
+{{ template "chart.sourcesSection" . }}
+
+{{ template "chart.maintainersSection" . }}
+
+{{ template "helm-docs.versionFooter" . }}

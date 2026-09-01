@@ -1,0 +1,249 @@
+# Alerting rules for discord-alertmanager, written against the metrics the image actually
+# publishes and against a Kubernetes deployment of this chart.
+#
+# The metric catalogue is small and every series in it is emitted from exactly one place in the
+# source, so these are written against names rather than against a documented contract:
+#
+#   dam_webhook_requests_total{result}     ingest/src/router.rs — accepted, unauthorized,
+#                                          malformed, bad_version, invalid_alert, unavailable,
+#                                          rejected, error
+#   dam_webhook_duplicates_total           an alert that arrived twice inside one batch
+#   dam_webhook_truncated_total            Alertmanager said it dropped alerts from the envelope
+#   dam_outbox_depth{kind}                 rows waiting for a dispatcher, by outbox row kind
+#   dam_reconcile_repairs_total{kind}      changed | resolved — state the poll fixed that the
+#                                          push path should have delivered
+#   dam_escalations_total                  cards escalated for going unacknowledged
+#   dam_render_skipped_total               a card the renderer declined to send
+#   dam_discord_rate_limited_total         Discord answered 429
+#
+# A counter that has never been incremented is not exported at all, which is what makes
+# `absent()` usable below as "this has never happened" rather than as "the target is gone".
+#
+# ## These alerts are deliberately not delivered by this bot
+#
+# Every rule here is about the bot itself, and a bot that has stopped delivering cannot deliver
+# the card that says so. They are meant for whatever receiver Alertmanager already had — the
+# pager, email, a second Discord channel through `discordConfigs`. Routing them through this
+# release's own `AlertmanagerConfig` would make the outage silent, which is the failure the file
+# exists to prevent.
+#
+# ## The scope placeholder
+#
+# `discord_alertmanager_scope=~".*"` is a genuine no-op matcher: nothing carries a `discord_alertmanager_scope` label, so `=~".*"`
+# matches every series. At render time `metrics.prometheusRule.scope` swaps it for a real
+# matcher, which is what keeps one release's rules off another release's series. Every selector
+# added here must carry one, and `just audit-observability` fails the build for any that does
+# not.
+#
+# ## What is not repeated here
+#
+# Nothing kube-state-metrics and the Prometheus Operator's own rules already cover.
+# `KubePodCrashLooping`, `KubeContainerWaiting` and `KubePersistentVolumeFillingUp` all apply to
+# this workload as they stand and all know things — a PVC's capacity, a Deployment's desired
+# replica count — that nothing this image emits does.
+
+groups:
+  - name: discord-alertmanager-availability
+    rules:
+      # The one alert every other alert here depends on. While the process is unscrapeable the
+      # rest of this file is blind rather than quiet, so a silent dashboard during this window
+      # means unknown and not healthy.
+      - alert: DiscordAlertmanagerDown
+        expr: up{discord_alertmanager_scope=~".*", job=~".*discord-alertmanager.*"} == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "discord-alertmanager is unreachable"
+          description: >-
+            Prometheus cannot scrape discord-alertmanager in {{ $labels.namespace }}. Alerts are
+            still being evaluated and still reach every other receiver, but nothing is arriving
+            in Discord and no acknowledgement or silence made there is being applied.
+            `kubectl -n {{ $labels.namespace }} logs deploy/discord-alertmanager --tail=100` and
+            `kubectl -n {{ $labels.namespace }} get endpoints` say whether this is the process or
+            the network path to it.
+          runbook_url: https://github.com/TimSchoenle/discord-alertmanager#operations
+
+      # The target vanished rather than failing. A readiness probe that goes red takes the pod
+      # out of the Service, which takes it out of the ServiceMonitor's endpoint list — so an
+      # unready pod stops producing `up` at all rather than producing `up == 0`. This is also
+      # what fires when the ServiceMonitor selects nothing, which is the usual outcome of a
+      # `serviceMonitorSelector` the release's labels do not match.
+      - alert: DiscordAlertmanagerAbsent
+        expr: absent(up{discord_alertmanager_scope=~".*", job=~".*discord-alertmanager.*"})
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: "discord-alertmanager has no scrape target"
+          # No `$labels` reference, deliberately. `absent()` returns a single series carrying only
+          # the equality matchers from its argument, and the scope placeholder is a regex — so as
+          # committed this expression produces no `namespace` at all, and Prometheus renders a
+          # missing label as an empty string. The runbook would ship `kubectl -n ` with a hole in
+          # it. The release's own namespace is named by the object the alert came from instead.
+          description: >-
+            Prometheus has no target for discord-alertmanager at all. Either every pod has failed
+            its readiness probe long enough to be dropped from the Service — `/readyz` answers
+            503 while the database is unreachable or the Alertmanager poll has gone stale — or
+            the ServiceMonitor is not selected by this Prometheus. In the namespace this
+            PrometheusRule was installed into, `kubectl get servicemonitor,endpoints -l
+            app.kubernetes.io/name=discord-alertmanager` distinguishes the two.
+          runbook_url: https://github.com/TimSchoenle/discord-alertmanager#operations
+
+  - name: discord-alertmanager-ingest
+    rules:
+      # Alertmanager is posting and the listener is refusing. `unauthorized` is called out on its
+      # own because it is the one failure the chart's own automation can create: the
+      # AlertmanagerConfig references `ingest__webhook_token` from a Secret, and a token rotated
+      # on one side only produces exactly this — every delivery refused, nothing in Discord, and
+      # no error anywhere Alertmanager surfaces.
+      - alert: DiscordAlertmanagerWebhooksUnauthorized
+        expr: >-
+          sum by (namespace) (
+            rate(dam_webhook_requests_total{discord_alertmanager_scope=~".*", result="unauthorized"}[5m])) > 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "discord-alertmanager is rejecting webhooks as unauthenticated"
+          description: >-
+            Something is posting to the webhook path without the bearer token the listener
+            requires, and every one of those deliveries is being dropped. The usual cause is
+            `ingest.webhookToken` having been rotated without the sender following: check that
+            the Secret key `ingest__webhook_token` in {{ $labels.namespace }} is the one
+            Alertmanager's receiver references. The other possibility is that something which is
+            not Alertmanager has found the endpoint.
+          runbook_url: https://github.com/TimSchoenle/discord-alertmanager#operations
+
+      # Everything else that is not an accepted delivery, as a share of all of them. A malformed
+      # body, an unsupported envelope version or an alert the engine refused all land here, and
+      # all of them mean alerts that reached Alertmanager are not reaching Discord.
+      - alert: DiscordAlertmanagerWebhooksFailing
+        expr: >-
+          sum by (namespace) (
+            rate(dam_webhook_requests_total{discord_alertmanager_scope=~".*", result!="accepted"}[5m]))
+            / sum by (namespace) (
+                rate(dam_webhook_requests_total{discord_alertmanager_scope=~".*"}[5m])) > 0.05
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "discord-alertmanager is refusing more than 5% of webhook deliveries"
+          description: >-
+            More than five percent of the webhook deliveries reaching {{ $labels.namespace }} are
+            being refused. `sum by (result) (rate(dam_webhook_requests_total[5m]))` says which
+            kind: `bad_version` means the Alertmanager sending them is newer than this image
+            implements, `malformed` and `invalid_alert` mean something other than Alertmanager is
+            posting, and `unavailable` or `error` mean the bot's own storage is failing.
+          runbook_url: https://github.com/TimSchoenle/discord-alertmanager#operations
+
+      # The canary for a receiver that was wired up and never connected.
+      #
+      # A counter with no increments is not exported, so this fires only while the process has
+      # been up and has never seen a single webhook. That is the exact signature of the
+      # AlertmanagerConfig namespace-matcher trap: the object is accepted, the receiver exists,
+      # and the enforced `namespace` matcher means no alert ever takes the route. It is also what
+      # a brand new install looks like on a quiet cluster, which is why it is informational and
+      # why the window is long.
+      - alert: DiscordAlertmanagerNeverReceivedAWebhook
+        expr: >-
+          absent(dam_webhook_requests_total{discord_alertmanager_scope=~".*"})
+            and on () (sum(up{discord_alertmanager_scope=~".*", job=~".*discord-alertmanager.*"}) > 0)
+        for: 24h
+        labels:
+          severity: info
+        annotations:
+          summary: "discord-alertmanager has never received a webhook"
+          description: >-
+            The process has been scrapeable for a day and has not been posted to once. On a
+            cluster that has fired no alerts at all this is correct and can be ignored. Otherwise
+            Alertmanager is not routing here: if the receiver came from this chart's
+            AlertmanagerConfig, check that the Alertmanager custom resource selects the object
+            (`alertmanagerConfigSelector`) and that its `alertmanagerConfigMatcherStrategy` is
+            not confining the route to the object's own namespace, which is the default and which
+            silently matches nothing for a cluster-wide receiver.
+          runbook_url: https://github.com/TimSchoenle/discord-alertmanager#operations
+
+  - name: discord-alertmanager-delivery
+    rules:
+      # Rows are being written faster than the dispatchers drain them. Nothing is lost — the
+      # outbox is durable — but the cards in Discord are behind the alerts they describe, which
+      # for an operator watching a channel is indistinguishable from them not arriving.
+      - alert: DiscordAlertmanagerOutboxBacklog
+        expr: sum by (namespace) (dam_outbox_depth{discord_alertmanager_scope=~".*"}) > 100
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "discord-alertmanager's outbox is not draining"
+          description: >-
+            {{ $value | printf "%.0f" }} rows are waiting for a dispatcher in
+            {{ $labels.namespace }}, and have been for fifteen minutes. Either Discord is
+            refusing the requests — check `dam_discord_rate_limited_total` — or there are not
+            enough workers for the volume: `engine.dispatchers` and `engine.outboxBatchSize` are
+            the two knobs, and raising the first past what Discord's per-channel limits allow
+            makes the rate limiting worse rather than better.
+          runbook_url: https://github.com/TimSchoenle/discord-alertmanager#operations
+
+      # Discord is answering 429. Sustained, this is what turns a working bot into one whose
+      # cards arrive minutes late, and it is usually a storm threshold set too high rather than
+      # anything wrong with the deployment.
+      - alert: DiscordAlertmanagerRateLimited
+        expr: >-
+          sum by (namespace) (
+            rate(dam_discord_rate_limited_total{discord_alertmanager_scope=~".*"}[15m])) > 0.05
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Discord is rate-limiting discord-alertmanager"
+          description: >-
+            Discord has been answering 429 steadily for half an hour in {{ $labels.namespace }}.
+            The per-channel limits are strict enough that an unthrottled storm produces rate-limit
+            responses rather than notifications; `engine.storm.threshold` and
+            `engine.storm.forumThreshold` are what decide when the bot switches to one rolling
+            digest card instead of one card per alert, and this firing usually means both are set
+            higher than the channel can absorb.
+          runbook_url: https://github.com/TimSchoenle/discord-alertmanager#operations
+
+      # The reconciler exists because the push path can lose a webhook to a restart, a partition
+      # or a receiver that never sent `send_resolved`. Repairing occasionally is it working.
+      # Repairing continuously means the push path is not delivering and the poll is carrying the
+      # whole service, at the reconciler's cadence rather than at a webhook's.
+      - alert: DiscordAlertmanagerReconcilingConstantly
+        expr: >-
+          sum by (namespace) (
+            rate(dam_reconcile_repairs_total{discord_alertmanager_scope=~".*"}[1h])) > 0.05
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "discord-alertmanager is repairing state the webhook path should have delivered"
+          description: >-
+            The reconciler has been correcting alert state continuously for an hour in
+            {{ $labels.namespace }}, which means the webhook path is not carrying it. Cards are
+            still eventually right, but they lag by up to `engine.reconcileIntervalSecs` instead
+            of arriving as the alert fires. Check that Alertmanager's receiver still points at
+            this release and that `sendResolved` is on — a receiver that never sends the resolved
+            notification produces exactly this, with `kind="resolved"` dominating.
+          runbook_url: https://github.com/TimSchoenle/discord-alertmanager#operations
+
+      # A card the renderer declined to send. Every one of these is an alert that fired and
+      # produced nothing in Discord, which is the failure mode this whole service exists to avoid.
+      - alert: DiscordAlertmanagerRendersSkipped
+        expr: >-
+          sum by (namespace) (
+            rate(dam_render_skipped_total{discord_alertmanager_scope=~".*"}[15m])) > 0
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "discord-alertmanager is skipping card renders"
+          description: >-
+            The renderer is declining to send cards in {{ $labels.namespace }}. The common causes
+            are a route pointing at a channel the bot has lost permission in, or a channel that
+            has been deleted; the bot posts a route-health notice to
+            `observability.adminChannelId` when it can, which is the fastest way to find out
+            which route. `kubectl -n {{ $labels.namespace }} logs deploy/discord-alertmanager
+            --tail=100` names the route otherwise.
+          runbook_url: https://github.com/TimSchoenle/discord-alertmanager#operations

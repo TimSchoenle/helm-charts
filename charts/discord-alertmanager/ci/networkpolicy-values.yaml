@@ -1,0 +1,59 @@
+# The portable `networking.k8s.io/v1` policy pair.
+#
+# The ingress side is the interesting half for this chart and is not the usual one. Two different
+# things reach this pod on the same port: Alertmanager posting webhooks, and Prometheus scraping
+# `/metrics` — there is no second listener to separate them onto. So the `monitoring` rule is not
+# an observability nicety here, it is half the access control, and `controller` covers the case
+# where Alertmanager arrives through the Ingress instead.
+#
+# The egress side is `https` only. The bot talks to Discord's API and gateway over TLS and to
+# Alertmanager over whatever the endpoint list names; the default `except` list carves RFC1918 and
+# link-local out of the allowed CIDR, so an in-cluster Alertmanager needs a rule of its own —
+# which is what `egress.customRules` below is.
+
+discord:
+  token: ci-not-a-real-token
+
+alertmanager:
+  endpoints:
+    - http://alertmanager-operated.monitoring.svc:9093
+
+ingest:
+  webhookToken: ci-webhook-token
+
+# `/readyz` answers 503 while the Alertmanager poll is stale and the Discord gateway is
+# unauthenticated, which in kind is always: the endpoint above resolves to nothing and the token
+# is not a real one. Left on, `helm install --wait` times out on a pod behaving exactly as
+# designed. `test-values.yaml` and `no-persistence-values.yaml` disable it for the same reason,
+# and this is the third and last fixture `ct` installs.
+readinessProbe:
+  enabled: false
+
+networkPolicy:
+  enabled: true
+  ingress:
+    enabled: true
+    monitoring:
+      enabled: true
+      namespace: monitoring
+    controller:
+      enabled: true
+      namespace: traefik
+  egress:
+    enabled: true
+    https:
+      enabled: true
+    customRules:
+      # Alertmanager itself, which the default `except` list deliberately excludes: it is in
+      # RFC1918 space, and a rule that let the bot reach every private address to get to it would
+      # be a much larger grant than the one it needs.
+      - ports:
+          - port: 9093
+            protocol: TCP
+        to:
+          - namespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: monitoring
+            podSelector:
+              matchLabels:
+                app.kubernetes.io/name: alertmanager

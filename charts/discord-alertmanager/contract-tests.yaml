@@ -1,0 +1,51 @@
+# vim: set ft=yaml:
+
+# Enrols this chart in the generated configuration round-trip suites, and states the chart values
+# every generated case has to carry before this chart will render at all.
+#
+# `just check-config` proves the rendered document satisfies the image's contract. It cannot prove
+# the round trip: that a setting written into `config` arrives in that document, at the path the
+# image reads it from, carrying the value that was asked for. A document missing a setting
+# entirely satisfies the contract perfectly — every key it does contain is legal — so a typo in a
+# template helper passes every gate and the container runs on a compiled default nobody chose.
+#
+# `just contract-tests` reads this file and `config-contract.yaml`, and writes one suite per
+# declared document under `tests/`. The presence of this file is the enrolment.
+documents:
+  - name: discord-alertmanager
+
+    # The chart values every generated case carries, without which there is no rendered document
+    # for any case to assert against.
+    #
+    # Flat dotted paths, exactly as the helm-unittest `set` block they become spells them. Nothing
+    # here may name a path under `config`: a prerequisite is never dropped for the case it
+    # collides with, the way a baseline is, so one written into the tree the cases probe could
+    # supply the very value a case exists to prove the chart delivered. The generator refuses one
+    # outright.
+    prerequisites:
+      values:
+        discord.token: render-prerequisite-token
+        alertmanager.endpoints:
+          - http://render-prerequisite.invalid:9093
+
+      reason: >-
+        `discord-alertmanager.validateValues` refuses a render that could only produce a
+        CrashLoopBackOff, and both of these are that case. `SerenitySink::from_token` and
+        `AlertmanagerClient::new` are constructed in `main` before the listener binds, and the
+        second returns `Config("no Alertmanager endpoint is configured")` for an empty list — so a
+        release missing either exits during startup rather than running degraded. The guard runs
+        from `configmap.yaml`, so without both there is no ConfigMap for any case to assert
+        against.
+
+        Neither is one this suite covers in any case. `discord.token` is a credential: it travels
+        the Secret under the file name `discord__token` and is never written into the
+        configuration document at all, so there is no document pair for a probe to check.
+        `alertmanager.endpoints` is `structured` in the contract and is refused a probe for that
+        reason, and is named in the generated file's skip list.
+
+        Supplied as the chart's own first-class values although the guard reads the effective tree
+        and would accept the endpoint list through `config` too: `config` is where every probe is
+        written, and a prerequisite there is refused. `.invalid` is reserved by RFC 2606 and can
+        never resolve, which keeps a value that looks like a deployment's real Alertmanager from
+        being mistaken for one. The chart merges `.Values.config` over everything it derives from
+        these values, so a probe still wins wherever the two would meet.

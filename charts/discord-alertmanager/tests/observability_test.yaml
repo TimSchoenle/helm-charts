@@ -1,0 +1,201 @@
+suite: ServiceMonitor, PrometheusRule and AlertmanagerConfig
+templates:
+  - servicemonitor.yaml
+  - prometheusrule.yaml
+  - alertmanagerconfig.yaml
+capabilities:
+  apiVersions:
+    - monitoring.coreos.com/v1
+    - monitoring.coreos.com/v1alpha1
+set:
+  discord.token: suite-token
+  alertmanager.endpoints:
+    - http://alertmanager.suite.invalid:9093
+  ingest.webhookToken: suite-webhook
+
+tests:
+  - it: creates none of the three by default
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  # `jobLabel` is what makes `job` the chart name rather than the Service name. Without it the
+  # operator derives `job` from the Service, which carries the release name — and every `job`
+  # matcher in `rules/` stops matching the moment the release is renamed.
+  - it: pins the job label to the chart name
+    templates:
+      - servicemonitor.yaml
+    set:
+      metrics.serviceMonitor.enabled: true
+    asserts:
+      - equal:
+          path: spec.jobLabel
+          value: app.kubernetes.io/name
+      - equal:
+          path: spec.endpoints[0].port
+          value: http
+      - equal:
+          path: spec.endpoints[0].path
+          value: /metrics
+
+  # The rules are not confined to the namespace the object lives in, so an unscoped
+  # `up{job="discord-alertmanager"} == 0` would match a second release elsewhere in the cluster
+  # and the two would alert on each other.
+  - it: scopes every rule expression to the release namespace
+    templates:
+      - prometheusrule.yaml
+    set:
+      metrics.prometheusRule.enabled: true
+    asserts:
+      - matchRegex:
+          path: spec.groups[0].rules[0].expr
+          pattern: 'namespace="NAMESPACE"'
+      - notMatchRegex:
+          path: spec.groups[0].rules[0].expr
+          pattern: 'discord_alertmanager_scope'
+
+  - it: leaves the rules unscoped when asked to
+    templates:
+      - prometheusrule.yaml
+    set:
+      metrics.prometheusRule.enabled: true
+      metrics.prometheusRule.scope: none
+    asserts:
+      - matchRegex:
+          path: spec.groups[0].rules[0].expr
+          pattern: 'discord_alertmanager_scope=~"\.\*"'
+
+  # The URL is derived from the Service and `ingest.webhookPath`, which is what stops the
+  # receiver pointing at a path the listener does not serve.
+  - it: derives the webhook URL from the Service and the ingest path
+    templates:
+      - alertmanagerconfig.yaml
+    set:
+      alertmanagerConfig.enabled: true
+      service.port: 8080
+      ingest.webhookPath: /alerts
+    asserts:
+      - equal:
+          path: spec.receivers[0].webhookConfigs[0].url
+          value: http://RELEASE-NAME-discord-alertmanager.NAMESPACE.svc:8080/alerts
+
+  - it: normalises a webhook path written without a leading slash
+    templates:
+      - alertmanagerconfig.yaml
+    set:
+      alertmanagerConfig.enabled: true
+      ingest.webhookPath: alerts
+    asserts:
+      - matchRegex:
+          path: spec.receivers[0].webhookConfigs[0].url
+          pattern: ':80/alerts$'
+
+  - it: takes an explicit URL when Alertmanager is somewhere else
+    templates:
+      - alertmanagerconfig.yaml
+    set:
+      alertmanagerConfig.enabled: true
+      alertmanagerConfig.url: https://alerts.example.com/webhook
+    asserts:
+      - equal:
+          path: spec.receivers[0].webhookConfigs[0].url
+          value: https://alerts.example.com/webhook
+
+  # A reference, never the value: the operator reads the token out of the Secret when it
+  # assembles the Alertmanager configuration, so it never appears in this object.
+  - it: references the token rather than carrying it
+    templates:
+      - alertmanagerconfig.yaml
+    set:
+      alertmanagerConfig.enabled: true
+    asserts:
+      - equal:
+          path: spec.receivers[0].webhookConfigs[0].httpConfig.authorization.type
+          value: Bearer
+      - equal:
+          path: spec.receivers[0].webhookConfigs[0].httpConfig.authorization.credentials.name
+          value: RELEASE-NAME-discord-alertmanager
+      - equal:
+          path: spec.receivers[0].webhookConfigs[0].httpConfig.authorization.credentials.key
+          value: ingest__webhook_token
+      - notMatchRegex:
+          path: spec.receivers[0].webhookConfigs[0].httpConfig.authorization.credentials.name
+          pattern: suite-webhook
+
+  - it: follows an existingSecret
+    templates:
+      - alertmanagerconfig.yaml
+    set:
+      alertmanagerConfig.enabled: true
+      existingSecret: dam-credentials
+    asserts:
+      - equal:
+          path: spec.receivers[0].webhookConfigs[0].httpConfig.authorization.credentials.name
+          value: dam-credentials
+
+  # `continue: true` is what makes this bot an additional surface rather than a replacement: the
+  # alert gets a Discord card *and* still reaches the pager. It is emitted unconditionally so the
+  # answer is never left to a default nobody wrote down.
+  - it: keeps routing past itself by default
+    templates:
+      - alertmanagerconfig.yaml
+    set:
+      alertmanagerConfig.enabled: true
+    asserts:
+      - equal:
+          path: spec.route.continue
+          value: true
+      - equal:
+          path: spec.route.receiver
+          value: discord-alertmanager
+
+  - it: still emits continue when it is false
+    templates:
+      - alertmanagerconfig.yaml
+    set:
+      alertmanagerConfig.enabled: true
+      alertmanagerConfig.route.continue: false
+    asserts:
+      - equal:
+          path: spec.route.continue
+          value: false
+
+  - it: declares the receiver without a route when asked to
+    templates:
+      - alertmanagerconfig.yaml
+    set:
+      alertmanagerConfig.enabled: true
+      alertmanagerConfig.route.enabled: false
+    asserts:
+      - notExists:
+          path: spec.route
+      - lengthEqual:
+          path: spec.receivers
+          count: 1
+
+  - it: lands in the namespace it is told to
+    templates:
+      - alertmanagerconfig.yaml
+    set:
+      alertmanagerConfig.enabled: true
+      alertmanagerConfig.namespace: monitoring
+      alertmanagerConfig.auth.secretName: dam-webhook
+    asserts:
+      - equal:
+          path: metadata.namespace
+          value: monitoring
+      - equal:
+          path: spec.receivers[0].webhookConfigs[0].httpConfig.authorization.credentials.name
+          value: dam-webhook
+
+  - it: carries the labels an alertmanagerConfigSelector matches on
+    templates:
+      - alertmanagerconfig.yaml
+    set:
+      alertmanagerConfig.enabled: true
+      alertmanagerConfig.labels:
+        alertmanagerConfig: platform
+    asserts:
+      - equal:
+          path: metadata.labels['alertmanagerConfig']
+          value: platform

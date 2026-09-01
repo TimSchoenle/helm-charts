@@ -1,0 +1,27 @@
+{{- /*
+  Rendered for a SQLite release only. A PostgreSQL one keeps its state in the database, so a
+  claim for it would be an empty volume left behind by a backend switch — provisioned, billed and
+  read by nothing.
+*/ -}}
+{{- if and (include "discord-alertmanager.usesSqlite" .) .Values.persistence.data.enabled (not .Values.persistence.data.existingClaim) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "common.fullname" . }}
+  namespace: {{ include "common.namespace" . }}
+  labels:
+    {{- include "common.labels" . | nindent 4 }}
+  {{- with (include "common.tplvalues.merge" (dict "values" (list .Values.persistence.data.annotations .Values.commonAnnotations) "context" $)) }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
+spec:
+  accessModes:
+    - {{ .Values.persistence.data.accessMode }}
+  {{- with .Values.persistence.data.storageClassName }}
+  storageClassName: {{ if (eq "-" .) }}""{{ else }}{{ . | quote }}{{ end }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.data.size }}
+{{- end }}

@@ -1,0 +1,55 @@
+suite: rendered manifest snapshot
+# Locks the full rendered output of the templates this chart's behaviour lives in. Any change to
+# the common library or to these templates that alters a manifest shows up here as a reviewable
+# diff; regenerate deliberately with `helm unittest -u charts/discord-alertmanager`.
+#
+# Regenerate after `just deps`, never during one: rebuilding `charts/common` mid-run leaves the
+# committed `.snap` empty and the next run reads as a regression it is not.
+templates:
+  - deployment.yaml
+  - configmap.yaml
+  - secret.yaml
+  - service.yaml
+  - persistentvolumeclaim.yaml
+  - alertmanagerconfig.yaml
+capabilities:
+  apiVersions:
+    - monitoring.coreos.com/v1
+    - monitoring.coreos.com/v1alpha1
+# Chart version, appVersion and the image coordinates are pinned to placeholders so a routine
+# version or image bump never invalidates the snapshot. That those fields are wired up correctly
+# is asserted in security_test.yaml; this suite guards the *shape* of the rendered manifests only.
+chart:
+  version: 0.0.0
+  appVersion: 0.0.0
+set:
+  discord.token: snapshot-token
+  alertmanager.endpoints:
+    - http://alertmanager.snapshot.invalid:9093
+  image.tag: v0.0.0@sha256:0000000000000000000000000000000000000000000000000000000000000000
+
+tests:
+  - it: matches the committed snapshot of a default SQLite release
+    asserts:
+      - matchSnapshot: {}
+
+  - it: matches the committed snapshot with the AlertmanagerConfig and network policies on
+    set:
+      ingest.webhookToken: snapshot-webhook
+      alertmanagerConfig.enabled: true
+      alertmanagerConfig.labels:
+        alertmanagerConfig: platform
+      networkPolicy.enabled: true
+      podAntiAffinity: soft
+      nodeSelector:
+        kubernetes.io/os: linux
+    asserts:
+      - matchSnapshot: {}
+
+  - it: matches the committed snapshot of a PostgreSQL release
+    set:
+      storage.backend: postgres
+      storage.postgres.url: postgres://dam:dam@postgres.snapshot.invalid:5432/dam
+      replicaCount: 3
+    asserts:
+      - matchSnapshot: {}

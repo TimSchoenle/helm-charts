@@ -1,0 +1,140 @@
+suite: deployment, storage and exposure
+templates:
+  - deployment.yaml
+  - configmap.yaml
+  - secret.yaml
+  - persistentvolumeclaim.yaml
+# The Deployment annotates a checksum of the ConfigMap and the Secret, so helm-unittest has to
+# render all three; the selector keeps the assertions on the object each test is about.
+set:
+  discord.token: suite-token
+  alertmanager.endpoints:
+    - http://alertmanager.suite.invalid:9093
+
+tests:
+  # The container port is the port half of `ingest.bind` and is written down nowhere else. A
+  # second `containerPort` value would be a second spelling of the same fact, and the failure it
+  # produces is silent: the Service, the probes and the NetworkPolicy would all agree with each
+  # other and disagree with the process.
+  - it: takes the container port from ingest.bind
+    documentSelector: { path: kind, value: Deployment }
+    set:
+      ingest.bind: "0.0.0.0:18080"
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].ports[0].containerPort
+          value: 18080
+      - equal:
+          path: spec.template.spec.containers[0].ports[0].name
+          value: http
+
+  - it: takes the port from a bracketed IPv6 bind address too
+    documentSelector: { path: kind, value: Deployment }
+    set:
+      ingest.bind: "[::]:9099"
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].ports[0].containerPort
+          value: 9099
+
+  # Configuration reaches the container as files and never as environment variables: the loader
+  # fails the boot on a key supplied by both. Only the two variables that decide what the file
+  # layers *are* may be passed, and neither can itself be file-sourced.
+  - it: passes only the two loader variables as environment
+    documentSelector: { path: kind, value: Deployment }
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].env
+          value:
+            - name: DAM_CONFIG
+              value: /etc/discord-alertmanager/config
+            - name: DAM_SECRETS_DIR
+              value: /etc/discord-alertmanager/secrets
+
+  # Not a hardening nicety: a precondition of the configuration contract. The kubelet injects
+  # seven variables per Service in the namespace, named after the release — so a release named
+  # for this chart would put them inside the `DAM_` namespace the loader owns, and the
+  # environment layer outranks the mounted file.
+  - it: switches off the service-link environment variables
+    documentSelector: { path: kind, value: Deployment }
+    asserts:
+      - equal:
+          path: spec.template.spec.enableServiceLinks
+          value: false
+
+  - it: mounts the SQLite volume from the chart's own claim
+    documentSelector: { path: kind, value: Deployment }
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: data
+            mountPath: /data
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: data
+            persistentVolumeClaim:
+              claimName: RELEASE-NAME-discord-alertmanager
+
+  - it: falls back to an emptyDir when persistence is off
+    documentSelector: { path: kind, value: Deployment }
+    set:
+      persistence.data.enabled: false
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: data
+            emptyDir: {}
+
+  # A ReadWriteOnce claim cannot be attached to the replacement pod while the outgoing pod still
+  # holds it, so a rolling update deadlocks.
+  - it: recreates rather than rolling while the claim is ReadWriteOnce
+    documentSelector: { path: kind, value: Deployment }
+    asserts:
+      - equal:
+          path: spec.strategy.type
+          value: Recreate
+
+  # A PostgreSQL release keeps its state in the database. A claim for it would be an empty volume
+  # left behind by a backend switch — provisioned, billed and read by nothing.
+  - it: renders no data volume for the PostgreSQL backend
+    documentSelector: { path: kind, value: Deployment }
+    set:
+      storage.backend: postgres
+      storage.postgres.url: postgres://suite
+    asserts:
+      - notContains:
+          path: spec.template.spec.volumes
+          content:
+            name: data
+
+  - it: renders no claim for the PostgreSQL backend
+    templates:
+      - persistentvolumeclaim.yaml
+    set:
+      storage.backend: postgres
+      storage.postgres.url: postgres://suite
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders no claim when the operator brings their own
+    templates:
+      - persistentvolumeclaim.yaml
+    set:
+      persistence.data.existingClaim: dam-data
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: drops the replica count while the autoscaler owns it
+    documentSelector: { path: kind, value: Deployment }
+    set:
+      storage.backend: postgres
+      storage.postgres.url: postgres://suite
+      autoscaling.enabled: true
+    asserts:
+      - notExists:
+          path: spec.replicas

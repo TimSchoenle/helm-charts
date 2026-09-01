@@ -1,0 +1,75 @@
+# Which thresholds in `rules/*.yml` an operator may move, and what each one means.
+#
+# Read by `common.prometheus.rules.*` and exposed as `metrics.prometheusRule.thresholds`. Outside
+# the `rules/*.yml` glob on purpose: promtool reads those files strictly and would reject an
+# unknown top-level key, and the PrometheusRule CRD would prune one. The full contract is in the
+# header of `charts/common/templates/_prometheus.tpl`.
+#
+# `anchor` is the substring of the alert's expression that contains the threshold and occurs in it
+# exactly once; substitution replaces the default inside the anchor, then the anchor inside the
+# expression. Both properties are checked at render time and by `just audit-observability`, so a
+# rule edit that makes an anchor ambiguous — or that moves the number it points at — fails the
+# chart rather than quietly retargeting the substitution.
+#
+# Four of the nine alerts do not appear here and cannot. `DiscordAlertmanagerDown`,
+# `DiscordAlertmanagerAbsent`, `DiscordAlertmanagerNeverReceivedAWebhook` and
+# `DiscordAlertmanagerWebhooksUnauthorized` compare against zero or against absence, which is
+# structural rather than a judgement about how much is too much. An operator who wants a
+# different condition wants a different rule, which `disabledAlerts` plus `additionalRuleGroups`
+# is for. `forOverrides` is the knob for the impatience half of those four, and it applies to
+# every alert unconditionally.
+tunables:
+  DiscordAlertmanagerWebhooksFailing:
+    ratio:
+      # -- Share of webhook deliveries that may be refused before this counts as a fault.
+      description: >-
+        Refused deliveries as a fraction of all of them. Every refusal is an alert that reached
+        Alertmanager and did not reach Discord, so this sits low; raise it only on a deployment
+        where something other than Alertmanager is known to probe the endpoint and produce
+        `malformed` responses that are not worth waking anyone for.
+      type: number
+      default: 0.05
+      minimum: 0
+      maximum: 1
+      # The expression carries `0.05` once, in the comparison. The two `rate(...)` selectors
+      # above it carry no literal, so the whole comparison is the smallest unique anchor.
+      anchor: 'rate(dam_webhook_requests_total{discord_alertmanager_scope=~".*"}[5m])) > 0.05'
+
+  DiscordAlertmanagerOutboxBacklog:
+    rows:
+      # -- Outbox rows waiting for a dispatcher that count as a backlog rather than a burst.
+      description: >-
+        A depth, not a rate, because that is the form the number is actionable in: it is how far
+        behind the cards in Discord are. It has to sit well above `engine.outboxBatchSize` times
+        `engine.dispatchers` or an ordinary burst trips it — the default is roughly a factor of
+        one and a half above the shipped defaults of those two.
+      type: integer
+      default: 100
+      minimum: 1
+      anchor: 'sum by (namespace) (dam_outbox_depth{discord_alertmanager_scope=~".*"}) > 100'
+
+  DiscordAlertmanagerRateLimited:
+    per_second:
+      # -- Rate of Discord 429 responses, per second, that counts as sustained throttling.
+      description: >-
+        Deliberately above zero. A single 429 during a burst is Discord's bucket working as
+        designed and the client backing off correctly; what matters is throttling that persists,
+        which is why this pairs a small rate with a long `for`. The default is roughly one 429
+        every twenty seconds averaged over a quarter of an hour.
+      type: number
+      default: 0.05
+      minimum: 0
+      anchor: 'rate(dam_discord_rate_limited_total{discord_alertmanager_scope=~".*"}[15m])) > 0.05'
+
+  DiscordAlertmanagerReconcilingConstantly:
+    per_second:
+      # -- Rate of reconciler repairs, per second, above which the poll is carrying the service.
+      description: >-
+        The reconciler repairing occasionally is it doing its job — the push path is allowed to
+        lose a webhook to a restart or a partition. This is the level at which it has stopped
+        being a backstop and become the delivery mechanism, at its own cadence rather than at a
+        webhook's. The default is roughly three repairs a minute averaged over an hour.
+      type: number
+      default: 0.05
+      minimum: 0
+      anchor: 'rate(dam_reconcile_repairs_total{discord_alertmanager_scope=~".*"}[1h])) > 0.05'

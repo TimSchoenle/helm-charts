@@ -1,0 +1,80 @@
+{{- $port := include "discord-alertmanager.ingestPort" . -}}
+{{- $webhook := include "discord-alertmanager.webhookPath" . -}}
+discord-alertmanager {{ .Chart.AppVersion }} is installed as {{ include "common.fullname" . }} in {{ include "common.namespace" . }}.
+
+The listener answers on port {{ $port }}:
+
+  {{ $webhook }}   the version-4 Alertmanager envelope
+  /healthz   {{ "" }}liveness; asks nothing of the database or of Alertmanager
+  /readyz    {{ "" }}readiness; 503 while the store is unreachable or the Alertmanager poll is stale
+{{- if .Values.observability.metricsEnabled }}
+  /metrics   {{ "" }}Prometheus exposition
+{{- end }}
+
+{{ if .Values.alertmanagerConfig.enabled -}}
+An AlertmanagerConfig was created as {{ include "common.fullname" . }} in {{ .Values.alertmanagerConfig.namespace | default (include "common.namespace" .) }}, pointing at:
+
+  {{ include "discord-alertmanager.webhookUrl" . }}
+
+Creating it is not the same as it being used, and both remaining steps are on the Alertmanager
+custom resource, which this chart cannot reach.
+
+  1. Alertmanager has to select the object. Check that its `alertmanagerConfigSelector` — and
+     `alertmanagerConfigNamespaceSelector`, if the object is not in Alertmanager's own namespace —
+     match the labels on it:
+
+       kubectl -n {{ .Values.alertmanagerConfig.namespace | default (include "common.namespace" .) }} get alertmanagerconfig {{ include "common.fullname" . }} --show-labels
+
+  2. The route is confined to one namespace unless you say otherwise. By default the operator
+     injects `namespace = {{ .Values.alertmanagerConfig.namespace | default (include "common.namespace" .) }}` into it, so only alerts carrying that
+     label will ever reach this bot. For a cluster-wide receiver, set on the Alertmanager
+     resource either:
+
+       spec.alertmanagerConfigMatcherStrategy.type: None
+
+     or name this object as the whole configuration, which is not namespace-enforced:
+
+       spec.alertmanagerConfiguration.name: {{ include "common.fullname" . }}
+
+     Leaving the default is right for a release that only watches its own namespace.
+
+Nothing arriving after both are done is `DiscordAlertmanagerNeverReceivedAWebhook`, which is in
+the rule set for exactly this.
+{{ else -}}
+No AlertmanagerConfig was created. Point Alertmanager at the bot yourself with a `webhook_config`:
+
+  receivers:
+    - name: discord-alertmanager
+      webhook_configs:
+        - url: {{ include "discord-alertmanager.webhookUrl" . }}
+          send_resolved: true
+{{- if .Values.ingest.webhookToken }}
+          http_config:
+            authorization:
+              type: Bearer
+              credentials_file: /etc/alertmanager/secrets/... # `ingest__webhook_token`
+{{- end }}
+
+Or set `alertmanagerConfig.enabled=true` to have this chart ship the receiver and route as a
+Prometheus Operator object instead. Read the value's documentation first: the operator confines
+such a route to one namespace by default, which is usually not what a cluster-wide receiver wants.
+{{ end }}
+{{- if not .Values.discord.devGuildId }}
+Slash commands are registered globally, which takes up to an hour to propagate. Set
+`discord.devGuildId` to register them into one guild instead, where they appear immediately.
+{{- end }}
+{{- if and (include "discord-alertmanager.usesSqlite" .) (not .Values.persistence.data.enabled) }}
+
+WARNING: persistence.data.enabled is false, so the SQLite database is on an emptyDir. Every card,
+thread link, acknowledgement and ignore is lost when the pod is replaced, and alerts that are
+still firing will be posted again as new. Set `persistence.data.enabled=true` for anything but a
+test install.
+{{- end }}
+{{- if and .Values.existingSecret (not .Values.discord.token) }}
+
+The credentials come from the Secret {{ .Values.existingSecret }}. Its keys are configuration
+paths with `__` for nesting, not free-form names — `discord__token`, `ingest__webhook_token`,
+`alertmanager__bearer_token`, `alertmanager__basic_password`, `storage__postgres__url` — because
+the loader reads each key out of the file *name*. A missing optional key is simply absent; a
+missing required one is a startup failure naming the key.
+{{- end }}

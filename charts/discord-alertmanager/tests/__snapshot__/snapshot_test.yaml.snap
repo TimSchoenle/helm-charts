@@ -1,0 +1,831 @@
+matches the committed snapshot of a PostgreSQL release:
+  1: |
+    apiVersion: v1
+    data:
+      config.toml: |
+        [alertmanager]
+        connect_timeout_secs = 2
+        endpoints = ["http://alertmanager.snapshot.invalid:9093"]
+        timeout_secs = 10
+
+        [alertmanager.retry]
+        initial_backoff_ms = 200
+        max_backoff_secs = 10
+        max_elapsed_secs = 45
+
+        [discord]
+
+        [discord.capabilities]
+        view = ["@everyone"]
+
+        [engine]
+        deadman_window_secs = 1800
+        dispatchers = 4
+        escalation_interval_secs = 15
+        outbox_batch_size = 16
+        outbox_lease_secs = 30
+        persist_events = true
+        prune_interval_secs = 3600
+        reconcile_interval_secs = 60
+        regroup_window_secs = 1800
+        silence_sync_interval_secs = 30
+
+        [engine.retention]
+        audit_days = 365
+        events_days = 30
+        resolved_days = 30
+
+        [engine.storm]
+        forum_threshold = 20
+        threshold = 50
+        window_secs = 60
+
+        [ingest]
+        bind = "0.0.0.0:9099"
+        body_limit_bytes = 1048576
+        max_concurrent_requests = 64
+        request_timeout_secs = 10
+        shutdown_drain_secs = 10
+        webhook_path = "/webhook"
+
+        [links]
+        window_lead_secs = 900
+        window_trail_secs = 300
+
+        [observability]
+        metrics_enabled = true
+
+        [render]
+        debounce_secs = 3
+        description_budget = 1500
+        key_labels = ["namespace","instance","job"]
+        show_fingerprint = true
+        thread_archive_after_minutes = 1440
+
+        [storage]
+        backend = "postgres"
+
+        [storage.postgres]
+        acquire_timeout_secs = 5
+        max_connections = 16
+        migrate_on_start = true
+
+        [storage.sqlite]
+        acquire_timeout_secs = 5
+        max_connections = 4
+        migrate_on_start = true
+        path = "/data/discord-alertmanager.db"
+    kind: ConfigMap
+    metadata:
+      labels:
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: discord-alertmanager
+        app.kubernetes.io/version: 0.0.0
+        helm.sh/chart: discord-alertmanager-0.0.0
+      name: RELEASE-NAME-discord-alertmanager
+      namespace: NAMESPACE
+  2: |
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      labels:
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: discord-alertmanager
+        app.kubernetes.io/version: 0.0.0
+        helm.sh/chart: discord-alertmanager-0.0.0
+      name: RELEASE-NAME-discord-alertmanager
+      namespace: NAMESPACE
+    spec:
+      replicas: 3
+      revisionHistoryLimit: 3
+      selector:
+        matchLabels:
+          app.kubernetes.io/instance: RELEASE-NAME
+          app.kubernetes.io/name: discord-alertmanager
+      template:
+        metadata:
+          annotations:
+            checksum/configmap: 7ac3f41d2c5942224a7c357c070489ac531815390f212842757dfbfad2e02319
+            checksum/secret: 8ba99b9de4217309eb1f5b5539eeba02eacfc661c2c2891eba3aab0776a746aa
+          labels:
+            app.kubernetes.io/instance: RELEASE-NAME
+            app.kubernetes.io/managed-by: Helm
+            app.kubernetes.io/name: discord-alertmanager
+            app.kubernetes.io/version: 0.0.0
+        spec:
+          automountServiceAccountToken: false
+          containers:
+            - env:
+                - name: DAM_CONFIG
+                  value: /etc/discord-alertmanager/config
+                - name: DAM_SECRETS_DIR
+                  value: /etc/discord-alertmanager/secrets
+              image: timschoenle/discord-alertmanager:v0.0.0@sha256:0000000000000000000000000000000000000000000000000000000000000000
+              imagePullPolicy: IfNotPresent
+              livenessProbe:
+                failureThreshold: 3
+                httpGet:
+                  path: /healthz
+                  port: http
+                initialDelaySeconds: 10
+                periodSeconds: 10
+                timeoutSeconds: 5
+              name: discord-alertmanager
+              ports:
+                - containerPort: 9099
+                  name: http
+                  protocol: TCP
+              readinessProbe:
+                failureThreshold: 3
+                httpGet:
+                  path: /readyz
+                  port: http
+                initialDelaySeconds: 5
+                periodSeconds: 5
+                timeoutSeconds: 3
+              resources:
+                limits:
+                  cpu: 500m
+                  memory: 256Mi
+                requests:
+                  cpu: 25m
+                  memory: 96Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
+                privileged: false
+                readOnlyRootFilesystem: true
+                runAsNonRoot: true
+              startupProbe:
+                failureThreshold: 30
+                httpGet:
+                  path: /healthz
+                  port: http
+                initialDelaySeconds: 2
+                periodSeconds: 5
+                timeoutSeconds: 3
+              volumeMounts:
+                - mountPath: /tmp
+                  name: tmp
+                - mountPath: /etc/discord-alertmanager/config
+                  name: config
+                  readOnly: true
+                - mountPath: /etc/discord-alertmanager/secrets
+                  name: secrets
+                  readOnly: true
+          enableServiceLinks: false
+          securityContext:
+            fsGroup: 1000
+            fsGroupChangePolicy: OnRootMismatch
+            runAsGroup: 1000
+            runAsNonRoot: true
+            runAsUser: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          serviceAccountName: RELEASE-NAME-discord-alertmanager
+          terminationGracePeriodSeconds: 30
+          volumes:
+            - emptyDir: {}
+              name: tmp
+            - configMap:
+                name: RELEASE-NAME-discord-alertmanager
+              name: config
+            - name: secrets
+              projected:
+                defaultMode: 256
+                sources:
+                  - secret:
+                      items:
+                        - key: discord__token
+                          path: discord__token
+                        - key: storage__postgres__url
+                          path: storage__postgres__url
+                      name: RELEASE-NAME-discord-alertmanager
+                      optional: true
+  3: |
+    apiVersion: v1
+    kind: Secret
+    metadata:
+      labels:
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: discord-alertmanager
+        app.kubernetes.io/version: 0.0.0
+        helm.sh/chart: discord-alertmanager-0.0.0
+      name: RELEASE-NAME-discord-alertmanager
+      namespace: NAMESPACE
+    stringData:
+      discord__token: snapshot-token
+      storage__postgres__url: postgres://dam:dam@postgres.snapshot.invalid:5432/dam
+    type: Opaque
+  4: |
+    apiVersion: v1
+    kind: Service
+    metadata:
+      labels:
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: discord-alertmanager
+        app.kubernetes.io/version: 0.0.0
+        helm.sh/chart: discord-alertmanager-0.0.0
+      name: RELEASE-NAME-discord-alertmanager
+      namespace: NAMESPACE
+    spec:
+      ports:
+        - name: http
+          port: 80
+          protocol: TCP
+          targetPort: http
+      selector:
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/name: discord-alertmanager
+      type: ClusterIP
+matches the committed snapshot of a default SQLite release:
+  1: |
+    apiVersion: v1
+    data:
+      config.toml: |
+        [alertmanager]
+        connect_timeout_secs = 2
+        endpoints = ["http://alertmanager.snapshot.invalid:9093"]
+        timeout_secs = 10
+
+        [alertmanager.retry]
+        initial_backoff_ms = 200
+        max_backoff_secs = 10
+        max_elapsed_secs = 45
+
+        [discord]
+
+        [discord.capabilities]
+        view = ["@everyone"]
+
+        [engine]
+        deadman_window_secs = 1800
+        dispatchers = 4
+        escalation_interval_secs = 15
+        outbox_batch_size = 16
+        outbox_lease_secs = 30
+        persist_events = true
+        prune_interval_secs = 3600
+        reconcile_interval_secs = 60
+        regroup_window_secs = 1800
+        silence_sync_interval_secs = 30
+
+        [engine.retention]
+        audit_days = 365
+        events_days = 30
+        resolved_days = 30
+
+        [engine.storm]
+        forum_threshold = 20
+        threshold = 50
+        window_secs = 60
+
+        [ingest]
+        bind = "0.0.0.0:9099"
+        body_limit_bytes = 1048576
+        max_concurrent_requests = 64
+        request_timeout_secs = 10
+        shutdown_drain_secs = 10
+        webhook_path = "/webhook"
+
+        [links]
+        window_lead_secs = 900
+        window_trail_secs = 300
+
+        [observability]
+        metrics_enabled = true
+
+        [render]
+        debounce_secs = 3
+        description_budget = 1500
+        key_labels = ["namespace","instance","job"]
+        show_fingerprint = true
+        thread_archive_after_minutes = 1440
+
+        [storage]
+        backend = "sqlite"
+
+        [storage.postgres]
+        acquire_timeout_secs = 5
+        max_connections = 16
+        migrate_on_start = true
+
+        [storage.sqlite]
+        acquire_timeout_secs = 5
+        max_connections = 4
+        migrate_on_start = true
+        path = "/data/discord-alertmanager.db"
+    kind: ConfigMap
+    metadata:
+      labels:
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: discord-alertmanager
+        app.kubernetes.io/version: 0.0.0
+        helm.sh/chart: discord-alertmanager-0.0.0
+      name: RELEASE-NAME-discord-alertmanager
+      namespace: NAMESPACE
+  2: |
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      labels:
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: discord-alertmanager
+        app.kubernetes.io/version: 0.0.0
+        helm.sh/chart: discord-alertmanager-0.0.0
+      name: RELEASE-NAME-discord-alertmanager
+      namespace: NAMESPACE
+    spec:
+      replicas: 1
+      revisionHistoryLimit: 3
+      selector:
+        matchLabels:
+          app.kubernetes.io/instance: RELEASE-NAME
+          app.kubernetes.io/name: discord-alertmanager
+      strategy:
+        type: Recreate
+      template:
+        metadata:
+          annotations:
+            checksum/configmap: e85d1ad74f004a98be45d73eccd2528401984fedc19972c7d5ce4fc5b676a252
+            checksum/secret: 8138be680b52b546a4e14df00d165026c18d1e5e08c5efdae0ced357405b6b2f
+          labels:
+            app.kubernetes.io/instance: RELEASE-NAME
+            app.kubernetes.io/managed-by: Helm
+            app.kubernetes.io/name: discord-alertmanager
+            app.kubernetes.io/version: 0.0.0
+        spec:
+          automountServiceAccountToken: false
+          containers:
+            - env:
+                - name: DAM_CONFIG
+                  value: /etc/discord-alertmanager/config
+                - name: DAM_SECRETS_DIR
+                  value: /etc/discord-alertmanager/secrets
+              image: timschoenle/discord-alertmanager:v0.0.0@sha256:0000000000000000000000000000000000000000000000000000000000000000
+              imagePullPolicy: IfNotPresent
+              livenessProbe:
+                failureThreshold: 3
+                httpGet:
+                  path: /healthz
+                  port: http
+                initialDelaySeconds: 10
+                periodSeconds: 10
+                timeoutSeconds: 5
+              name: discord-alertmanager
+              ports:
+                - containerPort: 9099
+                  name: http
+                  protocol: TCP
+              readinessProbe:
+                failureThreshold: 3
+                httpGet:
+                  path: /readyz
+                  port: http
+                initialDelaySeconds: 5
+                periodSeconds: 5
+                timeoutSeconds: 3
+              resources:
+                limits:
+                  cpu: 500m
+                  memory: 256Mi
+                requests:
+                  cpu: 25m
+                  memory: 96Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
+                privileged: false
+                readOnlyRootFilesystem: true
+                runAsNonRoot: true
+              startupProbe:
+                failureThreshold: 30
+                httpGet:
+                  path: /healthz
+                  port: http
+                initialDelaySeconds: 2
+                periodSeconds: 5
+                timeoutSeconds: 3
+              volumeMounts:
+                - mountPath: /tmp
+                  name: tmp
+                - mountPath: /etc/discord-alertmanager/config
+                  name: config
+                  readOnly: true
+                - mountPath: /etc/discord-alertmanager/secrets
+                  name: secrets
+                  readOnly: true
+                - mountPath: /data
+                  name: data
+          enableServiceLinks: false
+          securityContext:
+            fsGroup: 1000
+            fsGroupChangePolicy: OnRootMismatch
+            runAsGroup: 1000
+            runAsNonRoot: true
+            runAsUser: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          serviceAccountName: RELEASE-NAME-discord-alertmanager
+          terminationGracePeriodSeconds: 30
+          volumes:
+            - emptyDir: {}
+              name: tmp
+            - configMap:
+                name: RELEASE-NAME-discord-alertmanager
+              name: config
+            - name: secrets
+              projected:
+                defaultMode: 256
+                sources:
+                  - secret:
+                      items:
+                        - key: discord__token
+                          path: discord__token
+                      name: RELEASE-NAME-discord-alertmanager
+                      optional: true
+            - name: data
+              persistentVolumeClaim:
+                claimName: RELEASE-NAME-discord-alertmanager
+  3: |
+    apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata:
+      labels:
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: discord-alertmanager
+        app.kubernetes.io/version: 0.0.0
+        helm.sh/chart: discord-alertmanager-0.0.0
+      name: RELEASE-NAME-discord-alertmanager
+      namespace: NAMESPACE
+    spec:
+      accessModes:
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: 1Gi
+  4: |
+    apiVersion: v1
+    kind: Secret
+    metadata:
+      labels:
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: discord-alertmanager
+        app.kubernetes.io/version: 0.0.0
+        helm.sh/chart: discord-alertmanager-0.0.0
+      name: RELEASE-NAME-discord-alertmanager
+      namespace: NAMESPACE
+    stringData:
+      discord__token: snapshot-token
+    type: Opaque
+  5: |
+    apiVersion: v1
+    kind: Service
+    metadata:
+      labels:
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: discord-alertmanager
+        app.kubernetes.io/version: 0.0.0
+        helm.sh/chart: discord-alertmanager-0.0.0
+      name: RELEASE-NAME-discord-alertmanager
+      namespace: NAMESPACE
+    spec:
+      ports:
+        - name: http
+          port: 80
+          protocol: TCP
+          targetPort: http
+      selector:
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/name: discord-alertmanager
+      type: ClusterIP
+matches the committed snapshot with the AlertmanagerConfig and network policies on:
+  1: |
+    apiVersion: monitoring.coreos.com/v1alpha1
+    kind: AlertmanagerConfig
+    metadata:
+      labels:
+        alertmanagerConfig: platform
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: discord-alertmanager
+        app.kubernetes.io/version: 0.0.0
+        helm.sh/chart: discord-alertmanager-0.0.0
+      name: RELEASE-NAME-discord-alertmanager
+      namespace: NAMESPACE
+    spec:
+      receivers:
+        - name: discord-alertmanager
+          webhookConfigs:
+            - httpConfig:
+                authorization:
+                  credentials:
+                    key: ingest__webhook_token
+                    name: RELEASE-NAME-discord-alertmanager
+                  type: Bearer
+              sendResolved: true
+              url: http://RELEASE-NAME-discord-alertmanager.NAMESPACE.svc:80/webhook
+      route:
+        continue: true
+        groupBy:
+          - alertname
+          - namespace
+        groupInterval: 5m
+        groupWait: 30s
+        receiver: discord-alertmanager
+        repeatInterval: 4h
+  2: |
+    apiVersion: v1
+    data:
+      config.toml: |
+        [alertmanager]
+        connect_timeout_secs = 2
+        endpoints = ["http://alertmanager.snapshot.invalid:9093"]
+        timeout_secs = 10
+
+        [alertmanager.retry]
+        initial_backoff_ms = 200
+        max_backoff_secs = 10
+        max_elapsed_secs = 45
+
+        [discord]
+
+        [discord.capabilities]
+        view = ["@everyone"]
+
+        [engine]
+        deadman_window_secs = 1800
+        dispatchers = 4
+        escalation_interval_secs = 15
+        outbox_batch_size = 16
+        outbox_lease_secs = 30
+        persist_events = true
+        prune_interval_secs = 3600
+        reconcile_interval_secs = 60
+        regroup_window_secs = 1800
+        silence_sync_interval_secs = 30
+
+        [engine.retention]
+        audit_days = 365
+        events_days = 30
+        resolved_days = 30
+
+        [engine.storm]
+        forum_threshold = 20
+        threshold = 50
+        window_secs = 60
+
+        [ingest]
+        bind = "0.0.0.0:9099"
+        body_limit_bytes = 1048576
+        max_concurrent_requests = 64
+        request_timeout_secs = 10
+        shutdown_drain_secs = 10
+        webhook_path = "/webhook"
+
+        [links]
+        window_lead_secs = 900
+        window_trail_secs = 300
+
+        [observability]
+        metrics_enabled = true
+
+        [render]
+        debounce_secs = 3
+        description_budget = 1500
+        key_labels = ["namespace","instance","job"]
+        show_fingerprint = true
+        thread_archive_after_minutes = 1440
+
+        [storage]
+        backend = "sqlite"
+
+        [storage.postgres]
+        acquire_timeout_secs = 5
+        max_connections = 16
+        migrate_on_start = true
+
+        [storage.sqlite]
+        acquire_timeout_secs = 5
+        max_connections = 4
+        migrate_on_start = true
+        path = "/data/discord-alertmanager.db"
+    kind: ConfigMap
+    metadata:
+      labels:
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: discord-alertmanager
+        app.kubernetes.io/version: 0.0.0
+        helm.sh/chart: discord-alertmanager-0.0.0
+      name: RELEASE-NAME-discord-alertmanager
+      namespace: NAMESPACE
+  3: |
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      labels:
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: discord-alertmanager
+        app.kubernetes.io/version: 0.0.0
+        helm.sh/chart: discord-alertmanager-0.0.0
+      name: RELEASE-NAME-discord-alertmanager
+      namespace: NAMESPACE
+    spec:
+      replicas: 1
+      revisionHistoryLimit: 3
+      selector:
+        matchLabels:
+          app.kubernetes.io/instance: RELEASE-NAME
+          app.kubernetes.io/name: discord-alertmanager
+      strategy:
+        type: Recreate
+      template:
+        metadata:
+          annotations:
+            checksum/configmap: e85d1ad74f004a98be45d73eccd2528401984fedc19972c7d5ce4fc5b676a252
+            checksum/secret: 2ee970c152af78f75291c0951db33b9914cfd0def09902f8fb8cf58809794e50
+          labels:
+            app.kubernetes.io/instance: RELEASE-NAME
+            app.kubernetes.io/managed-by: Helm
+            app.kubernetes.io/name: discord-alertmanager
+            app.kubernetes.io/version: 0.0.0
+        spec:
+          affinity:
+            podAntiAffinity:
+              preferredDuringSchedulingIgnoredDuringExecution:
+                - podAffinityTerm:
+                    labelSelector:
+                      matchLabels:
+                        app.kubernetes.io/instance: RELEASE-NAME
+                        app.kubernetes.io/name: discord-alertmanager
+                    topologyKey: kubernetes.io/hostname
+                  weight: 100
+          automountServiceAccountToken: false
+          containers:
+            - env:
+                - name: DAM_CONFIG
+                  value: /etc/discord-alertmanager/config
+                - name: DAM_SECRETS_DIR
+                  value: /etc/discord-alertmanager/secrets
+              image: timschoenle/discord-alertmanager:v0.0.0@sha256:0000000000000000000000000000000000000000000000000000000000000000
+              imagePullPolicy: IfNotPresent
+              livenessProbe:
+                failureThreshold: 3
+                httpGet:
+                  path: /healthz
+                  port: http
+                initialDelaySeconds: 10
+                periodSeconds: 10
+                timeoutSeconds: 5
+              name: discord-alertmanager
+              ports:
+                - containerPort: 9099
+                  name: http
+                  protocol: TCP
+              readinessProbe:
+                failureThreshold: 3
+                httpGet:
+                  path: /readyz
+                  port: http
+                initialDelaySeconds: 5
+                periodSeconds: 5
+                timeoutSeconds: 3
+              resources:
+                limits:
+                  cpu: 500m
+                  memory: 256Mi
+                requests:
+                  cpu: 25m
+                  memory: 96Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
+                privileged: false
+                readOnlyRootFilesystem: true
+                runAsNonRoot: true
+              startupProbe:
+                failureThreshold: 30
+                httpGet:
+                  path: /healthz
+                  port: http
+                initialDelaySeconds: 2
+                periodSeconds: 5
+                timeoutSeconds: 3
+              volumeMounts:
+                - mountPath: /tmp
+                  name: tmp
+                - mountPath: /etc/discord-alertmanager/config
+                  name: config
+                  readOnly: true
+                - mountPath: /etc/discord-alertmanager/secrets
+                  name: secrets
+                  readOnly: true
+                - mountPath: /data
+                  name: data
+          enableServiceLinks: false
+          nodeSelector:
+            kubernetes.io/os: linux
+          securityContext:
+            fsGroup: 1000
+            fsGroupChangePolicy: OnRootMismatch
+            runAsGroup: 1000
+            runAsNonRoot: true
+            runAsUser: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          serviceAccountName: RELEASE-NAME-discord-alertmanager
+          terminationGracePeriodSeconds: 30
+          volumes:
+            - emptyDir: {}
+              name: tmp
+            - configMap:
+                name: RELEASE-NAME-discord-alertmanager
+              name: config
+            - name: secrets
+              projected:
+                defaultMode: 256
+                sources:
+                  - secret:
+                      items:
+                        - key: discord__token
+                          path: discord__token
+                        - key: ingest__webhook_token
+                          path: ingest__webhook_token
+                      name: RELEASE-NAME-discord-alertmanager
+                      optional: true
+            - name: data
+              persistentVolumeClaim:
+                claimName: RELEASE-NAME-discord-alertmanager
+  4: |
+    apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata:
+      labels:
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: discord-alertmanager
+        app.kubernetes.io/version: 0.0.0
+        helm.sh/chart: discord-alertmanager-0.0.0
+      name: RELEASE-NAME-discord-alertmanager
+      namespace: NAMESPACE
+    spec:
+      accessModes:
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: 1Gi
+  5: |
+    apiVersion: v1
+    kind: Secret
+    metadata:
+      labels:
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: discord-alertmanager
+        app.kubernetes.io/version: 0.0.0
+        helm.sh/chart: discord-alertmanager-0.0.0
+      name: RELEASE-NAME-discord-alertmanager
+      namespace: NAMESPACE
+    stringData:
+      discord__token: snapshot-token
+      ingest__webhook_token: snapshot-webhook
+    type: Opaque
+  6: |
+    apiVersion: v1
+    kind: Service
+    metadata:
+      labels:
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: discord-alertmanager
+        app.kubernetes.io/version: 0.0.0
+        helm.sh/chart: discord-alertmanager-0.0.0
+      name: RELEASE-NAME-discord-alertmanager
+      namespace: NAMESPACE
+    spec:
+      ports:
+        - name: http
+          port: 80
+          protocol: TCP
+          targetPort: http
+      selector:
+        app.kubernetes.io/instance: RELEASE-NAME
+        app.kubernetes.io/name: discord-alertmanager
+      type: ClusterIP

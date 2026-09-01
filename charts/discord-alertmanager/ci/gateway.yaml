@@ -1,0 +1,52 @@
+# Gateway API exposure, for the case where Alertmanager reaches this release from outside the
+# cluster.
+#
+# Named without the `-values` suffix on purpose: `ct` globs `ci/*-values.yaml` for `ct install`,
+# while the render and kubeconform recipes glob `ci/*.yaml`. The kind cluster CI installs into has
+# no Gateway API CRDs, so an install would fail; this keeps render, schema-validation and
+# policy-scan coverage without asking chart-testing to install something that cannot work.
+#
+# `alertmanagerConfig.url` is set alongside, because that is the pairing this fixture exists for:
+# once Alertmanager is outside the cluster, the derived `http://<service>.<namespace>.svc` address
+# is the wrong one and the receiver has to be told the external URL instead.
+
+discord:
+  token: ci-not-a-real-token
+
+alertmanager:
+  endpoints:
+    - https://alertmanager.ci.invalid
+
+ingest:
+  webhookToken: ci-webhook-token
+
+ingress:
+  enabled: false
+
+gateway:
+  enabled: true
+  create: true
+  gatewayClassName: cilium
+  hostnames:
+    - alerts.example.com
+  tls:
+    enabled: true
+    certificateRefs:
+      - name: discord-alertmanager-tls
+  httpsRedirect:
+    enabled: true
+  timeouts:
+    request: 30s
+
+alertmanagerConfig:
+  enabled: true
+  url: https://alerts.example.com/webhook
+  labels:
+    alertmanagerConfig: platform
+
+networkPolicy:
+  enabled: true
+  ingress:
+    enabled: true
+  egress:
+    enabled: true

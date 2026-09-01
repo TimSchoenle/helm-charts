@@ -1,0 +1,20 @@
+# Values `just test-rules` renders this chart with before extracting its `PrometheusRule`.
+#
+# Everything here exists to get exactly one PrometheusRule out of `helm template`: the switch
+# itself, plus the two settings `discord-alertmanager.validateValues` refuses to render without.
+# Nothing about the workload matters — the rendered rules are the only output the harness keeps.
+discord:
+  token: rules-test-token
+
+alertmanager:
+  endpoints:
+    - http://alertmanager.rules-test.invalid:9093
+
+metrics:
+  prometheusRule:
+    enabled: true
+    # Left at the default on purpose: `namespace` is the scope a real install gets, and
+    # `scoping_test.yml` asserts the property it exists for. The harness renders into the
+    # `rules-test` namespace, so the substituted matcher is `namespace="rules-test"` — which makes
+    # this value and that namespace one contract between the runner and that suite.
+    scope: namespace

@@ -1,0 +1,93 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "common.fullname" . }}
+  namespace: {{ include "common.namespace" . }}
+  labels:
+    {{- include "common.labels" . | nindent 4 }}
+  {{- with (include "common.annotations" .) }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  revisionHistoryLimit: {{ .Values.revisionHistoryLimit }}
+  {{- /*
+    A ReadWriteOnce claim cannot be attached to the replacement pod while the outgoing pod still
+    holds it, so a rolling update deadlocks. Fall back to Recreate — which for this workload is
+    also the only correct answer on its own terms: two processes must not open the same SQLite
+    file, and `validateValues` refuses a SQLite release above one replica for the same reason.
+  */}}
+  {{- $rwo := and
+        (include "discord-alertmanager.usesSqlite" .)
+        .Values.persistence.data.enabled
+        (eq .Values.persistence.data.accessMode "ReadWriteOnce") }}
+  {{- with (include "common.updateStrategy" (dict "ctx" . "rwo" $rwo)) }}
+  strategy:
+    {{- . | nindent 4 }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "common.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with (include "common.podAnnotations" (dict "ctx" $ "templates" (list "configmap.yaml" "secret.yaml"))) }}
+      annotations:
+        {{- . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "common.podLabels" . | nindent 8 }}
+    spec:
+      {{- include "common.podSpec.common" . | nindent 6 }}
+      {{- /*
+        Not a preference, and not a hardening nicety: a precondition of the configuration
+        contract this chart declares in `config-contract.yaml`.
+
+        Kubernetes injects `<SERVICE_NAME>_SERVICE_HOST`, `<SERVICE_NAME>_PORT` and five more per
+        Service in the namespace, and the service name is the *release* name — so a release named
+        for this chart puts seven variables inside the `DAM_` namespace the loader owns.
+        The environment layer outranks the mounted file, so one of them can *supply* a key this
+        chart wrote into the configuration document, and the deployment silently runs on the
+        wrong value.
+
+        Left as a literal rather than a value. The kubelet injects these at pod admission and
+        `helm template` does not, so a rendered manifest never carries one and no gate in this
+        repository could catch the regression — `just check-config` can only require the switch.
+      */}}
+      enableServiceLinks: false
+      containers:
+        {{- /*
+          Configuration reaches the container as files, never as environment variables: the
+          loader fails the boot on a key supplied by both, and a credential stays out of
+          `kubectl describe pod` and out of every child process's environment. The two
+          variables below decide what the file layers *are*, so they are the one thing that
+          cannot itself be file-sourced.
+        */}}
+        {{- $secretKeys := include "discord-alertmanager.secretKeys" . | fromYamlArray }}
+        {{- /*
+          One port. `/webhook`, `/healthz`, `/readyz` and `/metrics` are all served by the ingest
+          listener on `ingest.bind`, so the container port is derived from that key rather than
+          written down a second time.
+        */}}
+        {{- $ports := list (dict
+              "name" "http"
+              "containerPort" (int (include "discord-alertmanager.ingestPort" .))
+              "protocol" "TCP") }}
+        {{- $mounts := include "common.fileConfig.volumeMounts" (dict "ctx" $ "secretKeys" $secretKeys) | fromYamlArray }}
+        {{- if (include "discord-alertmanager.usesSqlite" .) }}
+        {{- $mounts = concat $mounts (list (dict "name" "data" "mountPath" .Values.persistence.data.mountPath)) }}
+        {{- end }}
+        {{- include "common.container" (dict
+              "ctx" $
+              "ports" $ports
+              "env" (include "common.fileConfig.env" (dict "ctx" $ "prefix" "DAM" "secretKeys" $secretKeys) | fromYamlArray)
+              "volumeMounts" $mounts
+            ) | nindent 8 }}
+      {{- $volumes := include "common.fileConfig.volumes" (dict "ctx" $ "secretKeys" $secretKeys) | fromYamlArray }}
+      {{- if (include "discord-alertmanager.usesSqlite" .) }}
+      {{- $volumes = concat $volumes (list (include "discord-alertmanager.dataVolume" . | fromYaml)) }}
+      {{- end }}
+      volumes:
+        {{- include "common.volumes" (dict "ctx" $ "volumes" $volumes) | nindent 8 }}

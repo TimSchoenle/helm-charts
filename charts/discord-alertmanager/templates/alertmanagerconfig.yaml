@@ -1,0 +1,112 @@
+{{- /*
+The receiver and route that make Alertmanager post here, shipped as an object rather than left as
+a paragraph in a README.
+
+This is the counterpart of `prometheusrule.yaml`. That one hands Prometheus the alerts it should
+evaluate; this one hands Alertmanager the receiver those alerts should reach. Both are Prometheus
+Operator CRDs, both are adopted by a selector on a custom resource this chart cannot see, and so
+both are offers rather than guarantees — the object is created, and the operator decides.
+
+Two things about this object are worth knowing before reading the values that shape it, and both
+are documented at length on `alertmanagerConfig` in values.yaml:
+
+  - The operator injects a `namespace = <this object's namespace>` matcher into the route unless
+    the Alertmanager custom resource says otherwise. A cluster-wide receiver therefore needs
+    either `spec.alertmanagerConfigMatcherStrategy.type: None` or the
+    `spec.alertmanagerConfiguration` form, neither of which is reachable from here.
+  - The credential reference is resolved in *this object's* namespace, not in the release's,
+    which is why `alertmanagerConfig.namespace` and `alertmanagerConfig.auth.secretName` are
+    checked against each other in `discord-alertmanager.validateValues`.
+
+The CRD is not probed here. A capability guard in a template can only *skip*, and skipping is the
+one behaviour that must not happen: a release that quietly drops this object installs cleanly and
+then never receives an alert. The check lives in `discord-alertmanager.validateValues`, where it
+can fail the render with a message that says what to do.
+*/ -}}
+{{- if .Values.alertmanagerConfig.enabled }}
+{{- $values := .Values.alertmanagerConfig }}
+{{- $route := $values.route }}
+apiVersion: monitoring.coreos.com/v1alpha1
+kind: AlertmanagerConfig
+metadata:
+  name: {{ include "common.fullname" . }}
+  namespace: {{ $values.namespace | default (include "common.namespace" .) }}
+  labels:
+    {{- include "common.labels" . | nindent 4 }}
+    {{- with $values.labels }}
+    {{- include "common.tplvalues.render" (dict "value" . "context" $) | nindent 4 }}
+    {{- end }}
+  {{- with (include "common.annotations" .) }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if $route.enabled }}
+  route:
+    receiver: {{ $values.receiverName | quote }}
+    {{- with $route.groupBy }}
+    groupBy:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- with $route.groupWait }}
+    groupWait: {{ . | quote }}
+    {{- end }}
+    {{- with $route.groupInterval }}
+    groupInterval: {{ . | quote }}
+    {{- end }}
+    {{- with $route.repeatInterval }}
+    repeatInterval: {{ . | quote }}
+    {{- end }}
+    {{- with $route.matchers }}
+    matchers:
+      {{- include "common.tplvalues.render" (dict "value" . "context" $) | nindent 6 }}
+    {{- end }}
+    {{- /*
+      Emitted unconditionally, unlike every other optional field above. `continue` decides
+      whether the alert also reaches the receivers it would have reached without this chart, and
+      the two answers are "Discord is an extra surface" and "Discord replaces the pager". Letting
+      that fall through to a default nobody wrote down is not a saving worth making.
+    */}}
+    continue: {{ $route.continue }}
+    {{- with $route.routes }}
+    routes:
+      {{- include "common.tplvalues.render" (dict "value" . "context" $) | nindent 6 }}
+    {{- end }}
+  {{- end }}
+  receivers:
+    - name: {{ $values.receiverName | quote }}
+      webhookConfigs:
+        - url: {{ include "discord-alertmanager.webhookUrl" . | quote }}
+          sendResolved: {{ $values.sendResolved }}
+          {{- with $values.maxAlerts }}
+          maxAlerts: {{ . }}
+          {{- end }}
+          {{- with $values.timeout }}
+          timeout: {{ . | quote }}
+          {{- end }}
+          {{- if $values.auth.enabled }}
+          {{- /*
+            `authorization` rather than the deprecated `bearerTokenSecret`, and a Secret
+            reference rather than a literal: the operator reads the value out of the Secret when
+            it assembles the Alertmanager configuration, so the token never appears in this
+            object and never reaches anyone with read access to it.
+          */}}
+          httpConfig:
+            authorization:
+              type: Bearer
+              credentials:
+                name: {{ $values.auth.secretName | default (include "common.secretName" .) }}
+                key: {{ $values.auth.secretKey | quote }}
+          {{- end }}
+    {{- with $values.extraReceivers }}
+    {{- include "common.tplvalues.render" (dict "value" . "context" $) | nindent 4 }}
+    {{- end }}
+  {{- with $values.inhibitRules }}
+  inhibitRules:
+    {{- include "common.tplvalues.render" (dict "value" . "context" $) | nindent 4 }}
+  {{- end }}
+  {{- with $values.muteTimeIntervals }}
+  muteTimeIntervals:
+    {{- include "common.tplvalues.render" (dict "value" . "context" $) | nindent 4 }}
+  {{- end }}
+{{- end }}

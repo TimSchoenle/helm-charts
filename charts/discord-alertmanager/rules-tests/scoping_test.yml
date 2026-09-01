@@ -1,0 +1,61 @@
+# Scoping, evaluated against the rules as a cluster actually receives them.
+#
+# The other files here run the rules as committed, carrying the
+# `discord_alertmanager_scope=~".*"` placeholder. This one runs `rendered.rules.yml` — the
+# `PrometheusRule` as `helm template` produces it, with the placeholder replaced by
+# `namespace="rules-test"` — because the substitution rewrites every expression in the chart and
+# is therefore a different string from the one the other tests exercise. Validating only the
+# committed form would leave the mechanism that rewrites it completely untested.
+#
+# `just test-rules` renders into the `rules-test` namespace, and `render-values.yaml` leaves
+# `scope` at its default; the two must agree.
+rule_files:
+  - rendered.rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  # The same outage in two releases, one of them in another namespace. Only this release's may
+  # alert — otherwise two installs of this chart in one cluster page each other, which is the
+  # whole reason a `PrometheusRule` needs a scope it cannot get from the namespace it lives in.
+  - interval: 1m
+    input_series:
+      - series: 'up{namespace="rules-test", job="discord-alertmanager"}'
+        values: '0x20'
+      - series: 'up{namespace="someone-elses-namespace", job="discord-alertmanager"}'
+        values: '0x20'
+    promql_expr_test:
+      - expr: ALERTS{alertname="DiscordAlertmanagerDown", alertstate="firing"}
+        eval_time: 15m
+        exp_samples:
+          - labels: 'ALERTS{alertname="DiscordAlertmanagerDown", alertstate="firing", namespace="rules-test", job="discord-alertmanager", severity="critical"}'
+            value: 1
+
+  # A neighbour drowning in refused webhooks while this release is healthy. The ratio is the
+  # expression most at risk here: an unscoped one would fold the neighbour's numerator into this
+  # release's denominator and alert on a service with nothing wrong with it.
+  - interval: 1m
+    input_series:
+      - series: 'up{namespace="rules-test", job="discord-alertmanager"}'
+        values: '1x60'
+      - series: 'dam_webhook_requests_total{namespace="rules-test", job="discord-alertmanager", result="accepted"}'
+        values: '0+100x60'
+      - series: 'dam_webhook_requests_total{namespace="someone-elses-namespace", job="discord-alertmanager", result="error"}'
+        values: '0+100x60'
+    promql_expr_test:
+      - expr: ALERTS
+        eval_time: 30m
+        exp_samples: []
+
+  # And the gauge. A neighbour's backlog must not be summed into this release's depth, which an
+  # unscoped `sum by (namespace)` would avoid by accident and an unscoped `sum` would not.
+  - interval: 1m
+    input_series:
+      - series: 'dam_outbox_depth{namespace="rules-test", job="discord-alertmanager", kind="card"}'
+        values: '50x40'
+      - series: 'dam_outbox_depth{namespace="someone-elses-namespace", job="discord-alertmanager", kind="card"}'
+        values: '5000x40'
+    promql_expr_test:
+      - expr: ALERTS{alertname="DiscordAlertmanagerOutboxBacklog"}
+        eval_time: 30m
+        exp_samples: []

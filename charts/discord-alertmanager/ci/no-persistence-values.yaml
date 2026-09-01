@@ -1,0 +1,21 @@
+# SQLite on an `emptyDir`, which is what a release gets when persistence is switched off.
+#
+# Worth one fixture of its own because the volume is the only thing that differs between the two
+# and the difference is invisible in every other gate: the mount path, the mount name and the
+# `storage.sqlite.path` guard are identical, and only the volume source changes. A regression that
+# dropped the `emptyDir` branch would otherwise render a Deployment referencing a claim this
+# release does not create.
+
+discord:
+  token: ci-not-a-real-token
+
+alertmanager:
+  endpoints:
+    - http://alertmanager.ci.invalid:9093
+
+readinessProbe:
+  enabled: false
+
+persistence:
+  data:
+    enabled: false

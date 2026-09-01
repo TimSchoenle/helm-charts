@@ -1,0 +1,41 @@
+# The PostgreSQL backend, which is also the only shape this chart will run above one replica in.
+#
+# Two things are being covered at once and they are not separable: `storage.backend: postgres` is
+# what stops `discord-alertmanager.validateValues` refusing `replicaCount: 2`, because the SQLite
+# database is one file on one ReadWriteOnce volume. The same switch is what stops the chart
+# rendering a PersistentVolumeClaim at all, so this fixture is also the proof that a PostgreSQL
+# release provisions no volume it will never read.
+#
+# The URL points at a host that cannot resolve, so nothing here connects. `open_store` opens the
+# pool during startup rather than lazily, so a real install of this fixture would crash-loop —
+# which is why the file is named without the `-values` suffix. `ct` globs `ci/*-values.yaml`
+# for `ct install`, while the render and kubeconform recipes glob `ci/*.yaml`, so this keeps
+# render, schema-validation and policy-scan coverage without asking chart-testing to install
+# something that cannot come up.
+
+discord:
+  token: ci-not-a-real-token
+
+alertmanager:
+  endpoints:
+    - http://alertmanager.ci.invalid:9093
+
+storage:
+  backend: postgres
+  postgres:
+    url: postgres://dam:dam@postgres.ci.invalid:5432/dam
+
+replicaCount: 2
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+  maxUnavailable: null
+
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: ScheduleAnyway
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/name: discord-alertmanager

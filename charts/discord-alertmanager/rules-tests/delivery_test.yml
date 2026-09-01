@@ -1,0 +1,122 @@
+# The Discord side: the outbox, the rate limiter, the reconciler and the renderer.
+rule_files:
+  - discord-alertmanager.rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  # Rows accumulating faster than the dispatchers drain them. Nothing is lost — the outbox is
+  # durable — but the cards are behind the alerts they describe, which for an operator watching a
+  # channel is indistinguishable from them not arriving.
+  - interval: 1m
+    input_series:
+      - series: 'dam_outbox_depth{namespace="rules-test", job="discord-alertmanager", kind="card"}'
+        values: '0+10x40'
+    promql_expr_test:
+      # Depth 100 at ten minutes: at the threshold, not over it, and the `for` has not started.
+      - expr: ALERTS{alertname="DiscordAlertmanagerOutboxBacklog", alertstate="firing"}
+        eval_time: 10m
+        exp_samples: []
+      - expr: ALERTS{alertname="DiscordAlertmanagerOutboxBacklog", alertstate="firing"}
+        eval_time: 30m
+        exp_samples:
+          - labels: 'ALERTS{alertname="DiscordAlertmanagerOutboxBacklog", alertstate="firing", namespace="rules-test", severity="warning"}'
+            value: 1
+
+  # The depth is summed across row kinds, not alerted on per kind. Three lanes at forty each is
+  # one backlog of a hundred and twenty, and a rule that compared each kind separately would stay
+  # quiet through it.
+  - interval: 1m
+    input_series:
+      - series: 'dam_outbox_depth{namespace="rules-test", job="discord-alertmanager", kind="card"}'
+        values: '40x40'
+      - series: 'dam_outbox_depth{namespace="rules-test", job="discord-alertmanager", kind="thread"}'
+        values: '40x40'
+      - series: 'dam_outbox_depth{namespace="rules-test", job="discord-alertmanager", kind="mention"}'
+        values: '40x40'
+    promql_expr_test:
+      - expr: ALERTS{alertname="DiscordAlertmanagerOutboxBacklog", alertstate="firing"}
+        eval_time: 30m
+        exp_samples:
+          - labels: 'ALERTS{alertname="DiscordAlertmanagerOutboxBacklog", alertstate="firing", namespace="rules-test", severity="warning"}'
+            value: 1
+
+  # A draining outbox. Bursts to eighty and back, never over the threshold.
+  - interval: 1m
+    input_series:
+      - series: 'dam_outbox_depth{namespace="rules-test", job="discord-alertmanager", kind="card"}'
+        values: '0+20x4 80-20x4 0x30'
+    promql_expr_test:
+      - expr: ALERTS{alertname="DiscordAlertmanagerOutboxBacklog"}
+        eval_time: 35m
+        exp_samples: []
+
+  # Sustained 429s: roughly one every ten seconds, which is well over the six-per-two-minutes the
+  # default threshold works out to.
+  - interval: 1m
+    input_series:
+      - series: 'dam_discord_rate_limited_total{namespace="rules-test", job="discord-alertmanager"}'
+        values: '0+6x90'
+    promql_expr_test:
+      - expr: ALERTS{alertname="DiscordAlertmanagerRateLimited", alertstate="firing"}
+        eval_time: 20m
+        exp_samples: []
+      - expr: ALERTS{alertname="DiscordAlertmanagerRateLimited", alertstate="firing"}
+        eval_time: 80m
+        exp_samples:
+          - labels: 'ALERTS{alertname="DiscordAlertmanagerRateLimited", alertstate="firing", namespace="rules-test", severity="warning"}'
+            value: 1
+
+  # A single 429 in an hour is Discord's bucket working as designed and the client backing off
+  # correctly. The threshold sits above zero for exactly this.
+  - interval: 1m
+    input_series:
+      - series: 'dam_discord_rate_limited_total{namespace="rules-test", job="discord-alertmanager"}'
+        values: '0x30 1x60'
+    promql_expr_test:
+      - expr: ALERTS{alertname="DiscordAlertmanagerRateLimited"}
+        eval_time: 85m
+        exp_samples: []
+
+  # The reconciler repairing continuously means the push path is not carrying the service and the
+  # poll is, at its own cadence rather than at a webhook's. Both label values count towards it:
+  # `changed` and `resolved` are two halves of the same lost delivery.
+  - interval: 1m
+    input_series:
+      - series: 'dam_reconcile_repairs_total{namespace="rules-test", job="discord-alertmanager", kind="changed"}'
+        values: '0+3x180'
+      - series: 'dam_reconcile_repairs_total{namespace="rules-test", job="discord-alertmanager", kind="resolved"}'
+        values: '0+3x180'
+    promql_expr_test:
+      - expr: ALERTS{alertname="DiscordAlertmanagerReconcilingConstantly", alertstate="firing"}
+        eval_time: 170m
+        exp_samples:
+          - labels: 'ALERTS{alertname="DiscordAlertmanagerReconcilingConstantly", alertstate="firing", namespace="rules-test", severity="warning"}'
+            value: 1
+
+  # An occasional repair is the reconciler doing its job. The push path is allowed to lose a
+  # webhook to a restart or a partition, and alerting on that would make the backstop the problem.
+  - interval: 1m
+    input_series:
+      - series: 'dam_reconcile_repairs_total{namespace="rules-test", job="discord-alertmanager", kind="changed"}'
+        values: '0x60 1x120'
+    promql_expr_test:
+      - expr: ALERTS{alertname="DiscordAlertmanagerReconcilingConstantly"}
+        eval_time: 175m
+        exp_samples: []
+
+  # Every skipped render is an alert that fired and produced nothing in Discord, so the threshold
+  # is zero — usually a route pointing at a channel the bot has lost permission in.
+  - interval: 1m
+    input_series:
+      - series: 'dam_render_skipped_total{namespace="rules-test", job="discord-alertmanager"}'
+        values: '0+1x90'
+    promql_expr_test:
+      - expr: ALERTS{alertname="DiscordAlertmanagerRendersSkipped", alertstate="firing"}
+        eval_time: 20m
+        exp_samples: []
+      - expr: ALERTS{alertname="DiscordAlertmanagerRendersSkipped", alertstate="firing"}
+        eval_time: 50m
+        exp_samples:
+          - labels: 'ALERTS{alertname="DiscordAlertmanagerRendersSkipped", alertstate="firing", namespace="rules-test", severity="warning"}'
+            value: 1

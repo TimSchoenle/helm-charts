@@ -1,0 +1,99 @@
+suite: discord-alertmanager configmap
+templates:
+  - configmap.yaml
+
+# The generated `contract_roundtrip_*_test.yaml` beside this file proves each contract key
+# arrives at the path the image reads it from. This file is for everything the contract cannot
+# say — the shape of the object, the layering between the chart's own values and `config`, and
+# the two settings the chart derives differently from what the image declares.
+#
+# `discord.token` and `alertmanager.endpoints` are set on the suite because
+# `discord-alertmanager.validateValues` refuses a render without them, and the guard runs from
+# this template.
+set:
+  discord.token: suite-token
+  alertmanager.endpoints:
+    - http://alertmanager.suite.invalid:9093
+
+tests:
+  - it: renders a ConfigMap carrying the configuration document
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: ConfigMap
+      - exists:
+          path: data['config.toml']
+
+  - it: writes the chart's own values into the document
+    set:
+      engine.dispatchers: 12
+      render.keyLabels: [cluster, namespace]
+    asserts:
+      - matchRegex:
+          path: data['config.toml']
+          pattern: 'dispatchers = 12'
+      - matchRegex:
+          path: data['config.toml']
+          pattern: 'key_labels = ."cluster","namespace".'
+
+  # The escape hatch is merged *over* everything the chart derives, so it can override a
+  # first-class value and not only extend the tree. A chart that merged the other way round
+  # would accept the value, render the derived one, and report nothing.
+  - it: lets config override a value the chart derives
+    set:
+      engine.dispatchers: 12
+      config:
+        engine:
+          dispatchers: 99
+    asserts:
+      - matchRegex:
+          path: data['config.toml']
+          pattern: 'dispatchers = 99'
+      - notMatchRegex:
+          path: data['config.toml']
+          pattern: 'dispatchers = 12'
+
+  - it: appends configExtraToml verbatim, after the rendered configuration
+    set:
+      configExtraToml: |
+        [scaffolded]
+        marker = "verbatim"
+    asserts:
+      - matchRegex:
+          path: data['config.toml']
+          pattern: "\[scaffolded\]"
+
+  # An optional setting left unset is omitted rather than written empty. To the loader an empty
+  # value is a *supplied* value, so writing one would configure the setting blank instead of
+  # leaving the binary on its compiled default.
+  - it: omits an unset optional setting rather than writing it blank
+    asserts:
+      - notMatchRegex:
+          path: data['config.toml']
+          pattern: 'admin_channel_id'
+      - notMatchRegex:
+          path: data['config.toml']
+          pattern: 'dev_guild_id'
+
+  # Never in the document, whatever else is. A ConfigMap is readable by anything that can read
+  # the namespace, and all five of these travel the Secret instead.
+  - it: keeps every credential out of the ConfigMap
+    set:
+      discord.token: suite-token
+      ingest.webhookToken: suite-webhook
+      alertmanager.bearerToken: suite-bearer
+      alertmanager.basicPassword: suite-password
+      storage.postgres.url: postgres://suite
+    asserts:
+      - notMatchRegex:
+          path: data['config.toml']
+          pattern: 'suite-token|suite-webhook|suite-bearer|suite-password|postgres://suite'
+
+  # Not the image's own default, which is the relative `discord-alertmanager.db` and resolves
+  # inside the read-only `/app` working directory.
+  - it: defaults the SQLite path into the mounted volume
+    asserts:
+      - matchRegex:
+          path: data['config.toml']
+          pattern: 'path = "/data/discord-alertmanager.db"'

@@ -1,0 +1,76 @@
+suite: service, service account and secret
+templates:
+  - service.yaml
+  - serviceaccount.yaml
+  - secret.yaml
+set:
+  discord.token: suite-token
+  alertmanager.endpoints:
+    - http://alertmanager.suite.invalid:9093
+
+tests:
+  # One port, and `targetPort` by name. `/metrics` is served on the ingest listener beside
+  # `/webhook` — there is no second bind address in the image's configuration surface — so a
+  # separate `metrics` port would point at a container port nothing listens on.
+  - it: publishes one named port pointing at the ingest listener
+    documentSelector: { path: kind, value: Service }
+    asserts:
+      - lengthEqual:
+          path: spec.ports
+          count: 1
+      - equal:
+          path: spec.ports[0].name
+          value: http
+      - equal:
+          path: spec.ports[0].targetPort
+          value: http
+      - equal:
+          path: spec.ports[0].port
+          value: 80
+
+  - it: keeps the ServiceAccount token off the filesystem
+    documentSelector: { path: kind, value: ServiceAccount }
+    asserts:
+      - equal:
+          path: automountServiceAccountToken
+          value: false
+
+  # Key names are configuration paths with `__` for nesting and no dots, because the loader reads
+  # the key out of the file *name* and refuses a `.` rather than treating it as a separator.
+  - it: names every credential after the configuration path that reads it
+    documentSelector: { path: kind, value: Secret }
+    set:
+      discord.token: a
+      ingest.webhookToken: b
+      alertmanager.bearerToken: c
+      alertmanager.basicPassword: d
+      storage.postgres.url: e
+    asserts:
+      - equal:
+          path: stringData
+          value:
+            discord__token: a
+            ingest__webhook_token: b
+            alertmanager__bearer_token: c
+            alertmanager__basic_password: d
+            storage__postgres__url: e
+
+  # An unset optional credential is omitted entirely rather than written as an empty file: an
+  # empty file is a *supplied* value to the loader, and a blank credential is not the same thing
+  # as an absent one.
+  - it: omits an unset credential rather than writing an empty file
+    documentSelector: { path: kind, value: Secret }
+    asserts:
+      - equal:
+          path: stringData
+          value:
+            discord__token: suite-token
+
+  - it: renders no Secret of its own when the operator supplies one
+    templates:
+      - secret.yaml
+    set:
+      existingSecret: dam-credentials
+    asserts:
+      - hasDocuments:
+          count: 0

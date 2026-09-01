@@ -1,0 +1,100 @@
+# vim: set ft=yaml:
+
+# What this chart's rendered configuration must satisfy, and which image decides that.
+#
+# Scaffolded by `just new-chart`. Per-chart and self-describing, so adding a chart never
+# edits a central file. `just check-config` reads this, unions the contracts of every
+# image listed, and validates the rendered ConfigMap, the container environment and the
+# mounted secret file names against the result.
+
+# Whether `just check-config-bindings` holds this chart's values against the keys below.
+#
+# Declared rather than inferred from the chart carrying markers: a chart that loses them
+# would otherwise drop out of that gate's report without a word.
+bindings: true
+
+# Contract keys no chart value binds, each group with the reason it does not.
+#
+# Chart-level: a key nothing surfaces is unsurfaced in every document that declares
+# it. `documents:` would narrow an entry where that is untrue.
+unbound:
+  - keys:
+      - alertmanager.basic_password
+    reason: >-
+      Delivered as a file in the secrets directory — from the Secret this chart renders, or from
+      `existingSecret` under the file name `alertmanager__basic_password` — and never written
+      into the configuration document, because a credential in a ConfigMap is readable by
+      anything that can read the namespace. `alertmanager.basicPassword` is the value that
+      carries it, so the binding does exist; it simply does not run through the document the
+      markers describe. `just check-config-secrets` is what reconciles that channel, and it does
+      it from the rendered manifests rather than from a comment.
+  - keys:
+      - alertmanager.bearer_token
+    reason: >-
+      Delivered as a file in the secrets directory — from the Secret this chart renders, or from
+      `existingSecret` under the file name `alertmanager__bearer_token` — and never written into
+      the configuration document, because a credential in a ConfigMap is readable by anything
+      that can read the namespace. `alertmanager.bearerToken` is the value that carries it, so
+      the binding does exist; it simply does not run through the document the markers describe.
+      `just check-config-secrets` is what reconciles that channel, and it does it from the
+      rendered manifests rather than from a comment.
+  - keys:
+      - discord.token
+    reason: >-
+      Delivered as a file in the secrets directory — from the Secret this chart renders, or from
+      `existingSecret` under the file name `discord__token` — and never written into the
+      configuration document, because a credential in a ConfigMap is readable by anything that
+      can read the namespace. `discord.token` is the value that carries it, so the binding does
+      exist; it simply does not run through the document the markers describe. `just
+      check-config-secrets` is what reconciles that channel, and it does it from the rendered
+      manifests rather than from a comment.
+  - keys:
+      - ingest.webhook_token
+    reason: >-
+      Delivered as a file in the secrets directory — from the Secret this chart renders, or from
+      `existingSecret` under the file name `ingest__webhook_token` — and never written into the
+      configuration document, because a credential in a ConfigMap is readable by anything that
+      can read the namespace. `ingest.webhookToken` is the value that carries it, so the binding
+      does exist; it simply does not run through the document the markers describe. `just
+      check-config-secrets` is what reconciles that channel, and it does it from the rendered
+      manifests rather than from a comment.
+  - keys:
+      - storage.postgres.url
+    reason: >-
+      Delivered as a file in the secrets directory — from the Secret this chart renders, or from
+      `existingSecret` under the file name `storage__postgres__url` — and never written into the
+      configuration document, because a credential in a ConfigMap is readable by anything that
+      can read the namespace. `storage.postgres.url` is the value that carries it, so the
+      binding does exist; it simply does not run through the document the markers describe.
+      `just check-config-secrets` is what reconciles that channel, and it does it from the
+      rendered manifests rather than from a comment.
+
+documents:
+  - name: discord-alertmanager
+
+    # Where the rendered document is, in the output of `helm template`.
+    #
+    # Matched by label rather than by rendered name, and by `app.kubernetes.io/instance`:
+    # that label is `.Release.Name`, the one identifier neither `nameOverride` nor
+    # `fullnameOverride` can move. `just render` names the release after the chart, so
+    # the value below is what every rendered pair carries. A selector matching zero or
+    # several objects is reported rather than resolved.
+    source:
+      kind: ConfigMap
+      selector: { app.kubernetes.io/instance: discord-alertmanager }
+      key: config.toml
+      format: toml
+
+    # Every binary that reads this document. One image here, so the union is the
+    # identity.
+    images:
+      - values: image
+        contract: contracts/discord-alertmanager.json
+
+    # The pods that mount it, for the environment and secret-file gates.
+    consumers:
+      - workload: { kind: Deployment, selector: { app.kubernetes.io/instance: discord-alertmanager } }
+        containers: [discord-alertmanager]
+
+    # Pairs this document is not fully checked for, each with a reason.
+    exempt: []

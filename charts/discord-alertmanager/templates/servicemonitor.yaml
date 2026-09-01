@@ -1,0 +1,61 @@
+{{- /*
+  The CRD is not probed here. A capability guard in a template can only *skip*, and skipping is
+  the one behaviour that must not happen: a release that quietly drops its ServiceMonitor
+  installs cleanly and is never scraped. The check lives in
+  `discord-alertmanager.validateValues`, via `common.prometheus.operatorErrors`, where it can
+  fail the render with an actionable message. CI renders declare the CRD APIs with
+  `--api-versions`.
+*/ -}}
+{{- if .Values.metrics.serviceMonitor.enabled }}
+apiVersion: {{ include "common.prometheus.apiVersion" . }}
+kind: ServiceMonitor
+metadata:
+  name: {{ include "common.fullname" . }}
+  namespace: {{ include "common.namespace" . }}
+  labels:
+    {{- include "common.labels" . | nindent 4 }}
+    {{- with .Values.metrics.serviceMonitor.labels }}
+    {{- include "common.tplvalues.render" (dict "value" . "context" $) | nindent 4 }}
+    {{- end }}
+  {{- with (include "common.annotations" .) }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- /*
+    Without this the Prometheus Operator sets `job` to the *Service* name, which carries the
+    release name — so `job` changes when the release is renamed, and the `job` matcher every rule
+    in `rules/` carries would stop matching. `app.kubernetes.io/name` is the chart name (or
+    `nameOverride`), which is the identity the rules are written against.
+  */}}
+  jobLabel: app.kubernetes.io/name
+  namespaceSelector:
+    matchNames:
+      - {{ include "common.namespace" . }}
+  selector:
+    matchLabels:
+      {{- include "common.selectorLabels" . | nindent 6 }}
+  endpoints:
+    {{- /*
+      The `http` port, not a `metrics` one. `/metrics` is served on the ingest listener beside
+      `/webhook`, and there is no second bind address in the image's configuration surface — so
+      the scrape shares the port the webhook arrives on, and the NetworkPolicy's `monitoring`
+      ingress rule is what keeps that from being an exposure.
+
+      `observability.metricsEnabled` decides whether the path answers at all; a ServiceMonitor
+      pointed at a listener serving 404 scrapes nothing and reports nothing, which is why
+      `validateValues` refuses that pair rather than rendering it.
+    */}}
+    - port: http
+      path: /metrics
+      interval: {{ .Values.metrics.serviceMonitor.interval }}
+      scrapeTimeout: {{ .Values.metrics.serviceMonitor.scrapeTimeout }}
+      {{- with .Values.metrics.serviceMonitor.relabelings }}
+      relabelings:
+        {{- include "common.tplvalues.render" (dict "value" . "context" $) | nindent 8 }}
+      {{- end }}
+      {{- with .Values.metrics.serviceMonitor.metricRelabelings }}
+      metricRelabelings:
+        {{- include "common.tplvalues.render" (dict "value" . "context" $) | nindent 8 }}
+      {{- end }}
+{{- end }}

@@ -1,0 +1,66 @@
+# Whether the bot can be seen at all, and the two different ways it stops being visible.
+#
+# Run against the rule files as committed, so the scope placeholder is still in place and matches
+# every series. `scoping_test.yml` covers the rendered form.
+rule_files:
+  - discord-alertmanager.rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  # The scrape fails while the target still exists. This is a process that is up enough to be a
+  # target and not up enough to answer — a crash loop between restarts, or a NetworkPolicy that
+  # blocks the scrape but not the endpoint.
+  - interval: 1m
+    input_series:
+      - series: 'up{namespace="rules-test", job="discord-alertmanager"}'
+        values: '0x20'
+    promql_expr_test:
+      # Four minutes in, still inside the five-minute `for`. Firing here would mean a single
+      # missed scrape pages someone.
+      - expr: ALERTS{alertname="DiscordAlertmanagerDown", alertstate="firing"}
+        eval_time: 4m
+        exp_samples: []
+      - expr: ALERTS{alertname="DiscordAlertmanagerDown", alertstate="firing"}
+        eval_time: 8m
+        exp_samples:
+          - labels: 'ALERTS{alertname="DiscordAlertmanagerDown", alertstate="firing", namespace="rules-test", job="discord-alertmanager", severity="critical"}'
+            value: 1
+      # `up == 0` is a target that exists. `absent()` must not also fire, or one outage pages
+      # twice.
+      - expr: ALERTS{alertname="DiscordAlertmanagerAbsent", alertstate="firing"}
+        eval_time: 20m
+        exp_samples: []
+
+  # A healthy release fires neither.
+  - interval: 1m
+    input_series:
+      - series: 'up{namespace="rules-test", job="discord-alertmanager"}'
+        values: '1x30'
+      - series: 'dam_webhook_requests_total{namespace="rules-test", job="discord-alertmanager", result="accepted"}'
+        values: '0+1x30'
+    promql_expr_test:
+      - expr: ALERTS
+        eval_time: 25m
+        exp_samples: []
+
+  # No target at all. A readiness probe that stays red takes the pod out of the Service, which
+  # takes it out of the ServiceMonitor's endpoint list — so an unready pod stops producing `up`
+  # rather than producing `up == 0`, and `DiscordAlertmanagerDown` alone would say nothing. This
+  # is also what a ServiceMonitor no Prometheus selects looks like.
+  - interval: 1m
+    input_series:
+      - series: 'some_unrelated_metric{namespace="rules-test"}'
+        values: '1x30'
+    promql_expr_test:
+      - expr: ALERTS{alertname="DiscordAlertmanagerAbsent", alertstate="firing"}
+        eval_time: 10m
+        exp_samples: []
+      - expr: ALERTS{alertname="DiscordAlertmanagerAbsent", alertstate="firing"}
+        eval_time: 20m
+        exp_samples:
+          - labels: 'ALERTS{alertname="DiscordAlertmanagerAbsent", alertstate="firing", severity="critical"}'
+            value: 1
+      - expr: ALERTS{alertname="DiscordAlertmanagerDown", alertstate="firing"}
+        eval_time: 20m
+        exp_samples: []

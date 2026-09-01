@@ -1,0 +1,48 @@
+# The fixture `ct install` actually deploys into kind, so everything here has to survive a cluster
+# with no Alertmanager, no Discord and no Prometheus Operator beyond the two CRDs CI applies.
+#
+# The bot tolerates the first two on its own: `SerenitySink::from_token` builds an HTTP client and
+# does not authenticate, and a gateway that cannot connect is logged rather than fatal — "dropping
+# alerts because Discord is unreachable would lose the alerts about Discord being unreachable".
+# The Alertmanager client is constructed from the endpoint list without contacting it, so a URL
+# that cannot resolve is a startup that succeeds and a poll that fails.
+#
+# What does not survive is the readiness probe, and correctly so: `/readyz` answers 503 while the
+# Alertmanager poll has gone stale, which in kind it always has. Left on, `helm install --wait`
+# would time out on a pod behaving exactly as designed. It is disabled here and nowhere else.
+
+discord:
+  token: ci-not-a-real-token
+
+alertmanager:
+  # RFC 2606 reserves `.invalid`, so this can never resolve and can never be mistaken for a real
+  # deployment's Alertmanager.
+  endpoints:
+    - http://alertmanager.ci.invalid:9093
+
+ingest:
+  webhookToken: ci-webhook-token
+
+readinessProbe:
+  enabled: false
+
+ingress:
+  enabled: true
+  hosts:
+    - host: discord-alertmanager.test.de
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: discord-alertmanager-tls
+      hosts:
+        - discord-alertmanager.test.de
+
+# The PrometheusRule is the one Prometheus Operator object this fixture can carry: CI applies the
+# `prometheusrules` and `podmonitors` CRDs to the kind cluster and no others, so the ServiceMonitor
+# and the AlertmanagerConfig are exercised by `observability.yaml`, which is never installed.
+metrics:
+  prometheusRule:
+    enabled: true
+    labels:
+      release: kube-prometheus-stack

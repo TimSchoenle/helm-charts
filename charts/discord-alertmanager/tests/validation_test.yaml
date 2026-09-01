@@ -1,0 +1,184 @@
+suite: values validation
+# Deliberately no `deployment.yaml` in this list. helm-unittest silently stops reporting a failed
+# render for a suite that names it, so every `failedTemplate` assertion in such a suite passes
+# vacuously. `configmap.yaml` is where `discord-alertmanager.validateValues` runs from and is the
+# whole surface these tests need.
+templates:
+  - configmap.yaml
+
+tests:
+  # Both settings are constructed in `main` before the listener binds, so a release missing
+  # either exits during startup. A rejected `helm upgrade` beats a CrashLoopBackOff.
+  - it: refuses a render with no Discord token and no Alertmanager endpoint
+    asserts:
+      - failedTemplate:
+          errorPattern: 'discord\.token is not set'
+      - failedTemplate:
+          errorPattern: 'alertmanager\.endpoints is empty'
+
+  # The chart cannot see inside an operator-supplied Secret, so naming one is taken as the answer.
+  - it: accepts an existingSecret in place of the token
+    set:
+      existingSecret: dam-credentials
+      alertmanager.endpoints: [http://am.invalid:9093]
+    asserts:
+      - notFailedTemplate: {}
+
+  - it: refuses a bind address with no port
+    set:
+      discord.token: t
+      alertmanager.endpoints: [http://am.invalid:9093]
+      ingest.bind: "0.0.0.0"
+    asserts:
+      - failedTemplate:
+          errorPattern: 'ingest\.bind \("0\.0\.0\.0"\) does not end in a port number'
+
+  # The container runs with a read-only root filesystem, so the database can only be created
+  # inside the mounted volume. The image's own default is relative and would land in `/app`.
+  - it: refuses a SQLite path outside the mounted volume
+    set:
+      discord.token: t
+      alertmanager.endpoints: [http://am.invalid:9093]
+      storage.sqlite.path: /srv/dam.db
+    asserts:
+      - failedTemplate:
+          errorPattern: 'storage\.sqlite\.path .* is not a file under persistence\.data\.mountPath'
+
+  - it: follows the mount path when it moves
+    set:
+      discord.token: t
+      alertmanager.endpoints: [http://am.invalid:9093]
+      persistence.data.mountPath: /srv
+      storage.sqlite.path: /srv/dam.db
+    asserts:
+      - notFailedTemplate: {}
+
+  # One file on one ReadWriteOnce volume, and an outbox lease that is only cross-process on
+  # PostgreSQL. Two pods would be a corrupted database found in production.
+  - it: refuses more than one replica on SQLite
+    set:
+      discord.token: t
+      alertmanager.endpoints: [http://am.invalid:9093]
+      replicaCount: 2
+    asserts:
+      - failedTemplate:
+          errorPattern: 'replicaCount is 2 while storage\.backend is `sqlite`'
+
+  - it: refuses the autoscaler on SQLite
+    set:
+      discord.token: t
+      alertmanager.endpoints: [http://am.invalid:9093]
+      autoscaling.enabled: true
+    asserts:
+      - failedTemplate:
+          errorPattern: 'autoscaling\.enabled is set while storage\.backend is `sqlite`'
+
+  - it: allows both on PostgreSQL
+    set:
+      discord.token: t
+      alertmanager.endpoints: [http://am.invalid:9093]
+      storage.backend: postgres
+      storage.postgres.url: postgres://dam
+      replicaCount: 3
+      autoscaling.enabled: true
+    asserts:
+      - notFailedTemplate: {}
+
+  - it: refuses the PostgreSQL backend with no connection URL
+    set:
+      discord.token: t
+      alertmanager.endpoints: [http://am.invalid:9093]
+      storage.backend: postgres
+    asserts:
+      - failedTemplate:
+          errorPattern: 'storage\.postgres\.url is not set'
+
+  # `/metrics` is not mounted at all while the image's switch is off and answers 404, so the
+  # ServiceMonitor would scrape nothing and report nothing.
+  - it: refuses a ServiceMonitor pointed at a listener serving 404
+    capabilities:
+      apiVersions: [monitoring.coreos.com/v1]
+    set:
+      discord.token: t
+      alertmanager.endpoints: [http://am.invalid:9093]
+      observability.metricsEnabled: false
+      metrics.serviceMonitor.enabled: true
+    asserts:
+      - failedTemplate:
+          errorPattern: 'metrics\.serviceMonitor\.enabled is set while observability\.metricsEnabled is false'
+
+  - it: refuses the Prometheus Operator objects when the CRDs are absent
+    set:
+      discord.token: t
+      alertmanager.endpoints: [http://am.invalid:9093]
+      metrics.serviceMonitor.enabled: true
+    asserts:
+      - failedTemplate:
+          errorPattern: 'metrics\.serviceMonitor\.enabled is enabled, but the cluster registers no `monitoring\.coreos\.com/v1` API'
+
+  - it: refuses an AlertmanagerConfig when the v1alpha1 CRD is absent
+    capabilities:
+      apiVersions: [monitoring.coreos.com/v1]
+    set:
+      discord.token: t
+      alertmanager.endpoints: [http://am.invalid:9093]
+      ingest.webhookToken: w
+      alertmanagerConfig.enabled: true
+    asserts:
+      - failedTemplate:
+          errorPattern: 'the cluster registers no `monitoring\.coreos\.com/v1alpha1` API'
+
+  # The operator resolves the credential in the AlertmanagerConfig's own namespace, so an object
+  # landing anywhere but beside this chart's Secret has to be told where the token is.
+  - it: refuses a cross-namespace AlertmanagerConfig with no Secret named
+    capabilities:
+      apiVersions: [monitoring.coreos.com/v1alpha1]
+    set:
+      discord.token: t
+      alertmanager.endpoints: [http://am.invalid:9093]
+      ingest.webhookToken: w
+      alertmanagerConfig.enabled: true
+      alertmanagerConfig.namespace: monitoring
+    asserts:
+      - failedTemplate:
+          errorPattern: 'alertmanagerConfig\.namespace \("monitoring"\) is not this release'
+
+  - it: accepts a cross-namespace AlertmanagerConfig that names one
+    capabilities:
+      apiVersions: [monitoring.coreos.com/v1alpha1]
+    set:
+      discord.token: t
+      alertmanager.endpoints: [http://am.invalid:9093]
+      ingest.webhookToken: w
+      alertmanagerConfig.enabled: true
+      alertmanagerConfig.namespace: monitoring
+      alertmanagerConfig.auth.secretName: dam-webhook
+    asserts:
+      - notFailedTemplate: {}
+
+  # The receiver would send an Authorization header referencing a Secret key nothing writes.
+  - it: refuses an authenticated receiver with no token to authenticate with
+    capabilities:
+      apiVersions: [monitoring.coreos.com/v1alpha1]
+    set:
+      discord.token: t
+      alertmanager.endpoints: [http://am.invalid:9093]
+      alertmanagerConfig.enabled: true
+    asserts:
+      - failedTemplate:
+          errorPattern: 'alertmanagerConfig\.auth\.enabled is set but no webhook token is available'
+
+  # The converse: the listener rejects an unauthenticated post with 401, so a receiver rendered
+  # without the header would fail every delivery.
+  - it: refuses an unauthenticated receiver while the listener requires a token
+    capabilities:
+      apiVersions: [monitoring.coreos.com/v1alpha1]
+    set:
+      discord.token: t
+      alertmanager.endpoints: [http://am.invalid:9093]
+      ingest.webhookToken: w
+      alertmanagerConfig.enabled: true
+      alertmanagerConfig.auth.enabled: false
+    asserts:
+      - failedTemplate:
+          errorPattern: 'ingest\.webhookToken is set while alertmanagerConfig\.auth\.enabled is false'

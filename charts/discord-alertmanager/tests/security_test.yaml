@@ -1,0 +1,171 @@
+suite: pod security baseline and image reference
+templates:
+  - deployment.yaml
+  - configmap.yaml
+  - secret.yaml
+# The Deployment annotates a checksum of the ConfigMap and the Secret, so helm-unittest has to
+# render all three; the selector keeps every assertion below on the Deployment.
+documentSelector:
+  path: kind
+  value: Deployment
+set:
+  discord.token: suite-token
+  alertmanager.endpoints:
+    - http://alertmanager.suite.invalid:9093
+
+tests:
+  - it: satisfies the restricted Pod Security Standard
+    documentSelector: { path: kind, value: Deployment }
+    asserts:
+      - equal:
+          path: spec.template.spec.securityContext.runAsNonRoot
+          value: true
+      - equal:
+          path: spec.template.spec.securityContext.seccompProfile.type
+          value: RuntimeDefault
+      - equal:
+          path: spec.template.spec.securityContext.fsGroupChangePolicy
+          value: OnRootMismatch
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.allowPrivilegeEscalation
+          value: false
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.privileged
+          value: false
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem
+          value: true
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.runAsNonRoot
+          value: true
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.capabilities.drop
+          value: [ALL]
+
+  # The ServiceAccount-level setting is ignored the moment a pod names a different account, so
+  # the pod-level one is what actually keeps the token off the container filesystem.
+  - it: keeps the ServiceAccount token out of the pod
+    documentSelector: { path: kind, value: Deployment }
+    asserts:
+      - equal:
+          path: spec.template.spec.automountServiceAccountToken
+          value: false
+
+  - it: provides a writable /tmp alongside the read-only root filesystem
+    documentSelector: { path: kind, value: Deployment }
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: tmp
+            mountPath: /tmp
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: tmp
+            emptyDir: {}
+
+  # Neither the config nor the secrets volume may ever be mounted with `subPath`: a subPath mount
+  # is resolved once at container start and never receives kubelet updates, which would turn
+  # every configuration change back into "restart the pod to pick it up".
+  - it: mounts configuration and credentials read-only and without subPath
+    documentSelector: { path: kind, value: Deployment }
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: config
+            mountPath: /etc/discord-alertmanager/config
+            readOnly: true
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: secrets
+            mountPath: /etc/discord-alertmanager/secrets
+            readOnly: true
+
+  # A projected volume, so the kubelet keeps it up to date in place and the loader observes a
+  # rotated credential without a restart. `optional: true` makes an absent optional credential
+  # simply absent rather than a mount failure.
+  - it: projects the credentials rather than mounting the Secret directly
+    documentSelector: { path: kind, value: Deployment }
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: secrets
+            projected:
+              defaultMode: 0400
+              sources:
+                - secret:
+                    name: RELEASE-NAME-discord-alertmanager
+                    optional: true
+                    items:
+                      - key: discord__token
+                        path: discord__token
+
+  - it: pins the image by digest
+    documentSelector: { path: kind, value: Deployment }
+    asserts:
+      - matchRegex:
+          path: spec.template.spec.containers[0].image
+          pattern: "@sha256:[0-9a-f]{64}$"
+
+  - it: builds the image reference from registry, repository and tag
+    documentSelector: { path: kind, value: Deployment }
+    set:
+      image.registry: ghcr.io
+      image.repository: timschoenle/discord-alertmanager
+      image.tag: v1.2.3
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: ghcr.io/timschoenle/discord-alertmanager:v1.2.3
+
+  - it: keeps the chart version out of the pod labels
+    documentSelector: { path: kind, value: Deployment }
+    asserts:
+      # helm.sh/chart embeds the chart version; carrying it on the pod template would force a
+      # rollout on every chart-only version bump.
+      - notExists:
+          path: spec.template.metadata.labels["helm.sh/chart"]
+      - exists:
+          path: metadata.labels["helm.sh/chart"]
+
+  - it: keeps the selector labels stable and minimal
+    documentSelector: { path: kind, value: Deployment }
+    asserts:
+      - equal:
+          path: spec.selector.matchLabels
+          value:
+            app.kubernetes.io/name: discord-alertmanager
+            app.kubernetes.io/instance: RELEASE-NAME
+
+  # `/healthz` for liveness and `/readyz` for readiness, never the other way round. A liveness
+  # probe wired to a dependency turns a database or Alertmanager outage into a restart loop that
+  # cannot fix it.
+  - it: probes liveness without asking anything of a dependency
+    documentSelector: { path: kind, value: Deployment }
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].startupProbe.httpGet.path
+          value: /healthz
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe.httpGet.path
+          value: /healthz
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.httpGet.path
+          value: /readyz
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.httpGet.port
+          value: http
+
+  # A configuration change reaches the running process through the mount, but the pod still has
+  # to be rolled for anything the loader reads only at boot, so the checksums stay on.
+  - it: rolls the pod when the configuration or the credentials change
+    documentSelector: { path: kind, value: Deployment }
+    asserts:
+      - exists:
+          path: spec.template.metadata.annotations["checksum/configmap"]
+      - exists:
+          path: spec.template.metadata.annotations["checksum/secret"]

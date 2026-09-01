@@ -1,0 +1,105 @@
+# The webhook path: deliveries refused, and the receiver that was wired up and never connected.
+rule_files:
+  - discord-alertmanager.rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  # A token rotated on one side only. This is the failure the chart's own AlertmanagerConfig can
+  # create, so it gets an alert of its own rather than being folded into the ratio below — where a
+  # steady stream of 401s beside healthy traffic would sit under the five percent threshold and
+  # never be seen.
+  - interval: 1m
+    input_series:
+      - series: 'up{namespace="rules-test", job="discord-alertmanager"}'
+        values: '1x60'
+      - series: 'dam_webhook_requests_total{namespace="rules-test", job="discord-alertmanager", result="unauthorized"}'
+        values: '0+1x60'
+      - series: 'dam_webhook_requests_total{namespace="rules-test", job="discord-alertmanager", result="accepted"}'
+        values: '0+100x60'
+    promql_expr_test:
+      - expr: ALERTS{alertname="DiscordAlertmanagerWebhooksUnauthorized", alertstate="firing"}
+        eval_time: 25m
+        exp_samples:
+          - labels: 'ALERTS{alertname="DiscordAlertmanagerWebhooksUnauthorized", alertstate="firing", namespace="rules-test", severity="warning"}'
+            value: 1
+      # Under one percent of deliveries. The ratio alert must stay quiet, which is what makes the
+      # dedicated one worth having.
+      - expr: ALERTS{alertname="DiscordAlertmanagerWebhooksFailing", alertstate="firing"}
+        eval_time: 25m
+        exp_samples: []
+
+  # A tenth of deliveries refused for a reason that is not authentication.
+  - interval: 1m
+    input_series:
+      - series: 'up{namespace="rules-test", job="discord-alertmanager"}'
+        values: '1x60'
+      - series: 'dam_webhook_requests_total{namespace="rules-test", job="discord-alertmanager", result="bad_version"}'
+        values: '0+10x60'
+      - series: 'dam_webhook_requests_total{namespace="rules-test", job="discord-alertmanager", result="accepted"}'
+        values: '0+90x60'
+    promql_expr_test:
+      - expr: ALERTS{alertname="DiscordAlertmanagerWebhooksFailing", alertstate="firing"}
+        eval_time: 25m
+        exp_samples:
+          - labels: 'ALERTS{alertname="DiscordAlertmanagerWebhooksFailing", alertstate="firing", namespace="rules-test", severity="warning"}'
+            value: 1
+      - expr: ALERTS{alertname="DiscordAlertmanagerWebhooksUnauthorized", alertstate="firing"}
+        eval_time: 25m
+        exp_samples: []
+
+  # Everything accepted. The ratio is a division whose numerator is zero rather than absent, so it
+  # evaluates to 0 and must not fire — a rule written as `1 - accepted/total` would be correct here
+  # and wrong the moment a result label the chart does not know about appears.
+  - interval: 1m
+    input_series:
+      - series: 'up{namespace="rules-test", job="discord-alertmanager"}'
+        values: '1x60'
+      - series: 'dam_webhook_requests_total{namespace="rules-test", job="discord-alertmanager", result="accepted"}'
+        values: '0+100x60'
+    promql_expr_test:
+      - expr: ALERTS{alertname="DiscordAlertmanagerWebhooksFailing"}
+        eval_time: 30m
+        exp_samples: []
+
+  # The canary for the enforced namespace matcher. The process is up and the counter has never
+  # been incremented, so the series does not exist at all — which is what `absent()` is reading,
+  # not "the target is gone".
+  - interval: 1m
+    input_series:
+      - series: 'up{namespace="rules-test", job="discord-alertmanager"}'
+        values: '1x1500'
+    promql_expr_test:
+      - expr: ALERTS{alertname="DiscordAlertmanagerNeverReceivedAWebhook", alertstate="firing"}
+        eval_time: 12h
+        exp_samples: []
+      - expr: ALERTS{alertname="DiscordAlertmanagerNeverReceivedAWebhook", alertstate="firing"}
+        eval_time: 24h5m
+        exp_samples:
+          - labels: 'ALERTS{alertname="DiscordAlertmanagerNeverReceivedAWebhook", alertstate="firing", severity="info"}'
+            value: 1
+
+  # One webhook, ever, is enough to answer the question the canary asks. The counter exists from
+  # then on, so `absent()` is false even while the rate is zero.
+  - interval: 1m
+    input_series:
+      - series: 'up{namespace="rules-test", job="discord-alertmanager"}'
+        values: '1x1500'
+      - series: 'dam_webhook_requests_total{namespace="rules-test", job="discord-alertmanager", result="accepted"}'
+        values: '1x1500'
+    promql_expr_test:
+      - expr: ALERTS{alertname="DiscordAlertmanagerNeverReceivedAWebhook"}
+        eval_time: 24h5m
+        exp_samples: []
+
+  # Nothing scraped at all. The canary must stay quiet: `DiscordAlertmanagerAbsent` is the alert
+  # for that, and a rule that fired here as well would page twice for one outage — and would say
+  # "never received a webhook" about a bot nobody can see.
+  - interval: 1m
+    input_series:
+      - series: 'some_unrelated_metric{namespace="rules-test"}'
+        values: '1x1500'
+    promql_expr_test:
+      - expr: ALERTS{alertname="DiscordAlertmanagerNeverReceivedAWebhook"}
+        eval_time: 24h5m
+        exp_samples: []

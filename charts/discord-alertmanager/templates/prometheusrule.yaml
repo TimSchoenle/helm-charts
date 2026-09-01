@@ -1,0 +1,22 @@
+{{- /*
+  The alerting rules under `rules/`, written against the metrics the image exposes and against a
+  Kubernetes deployment of it.
+
+  Deliberately not routed through the bot. These are alerts *about* the bot, and a bot that has
+  stopped delivering cannot deliver the card saying so — `DiscordAlertmanagerDown` has to reach
+  whatever receiver Alertmanager already had.
+
+  Which namespaces a Prometheus loads rules from is decided by `ruleNamespaceSelector` and
+  `ruleSelector` on the Prometheus custom resource, neither of which a chart can reach.
+  `metrics.prometheusRule.namespace` puts the object somewhere already selected and
+  `metrics.prometheusRule.labels` is what lets it match the second. Which *series* the rules then
+  match is a separate problem with a separate answer: see
+  `discord-alertmanager.rules.scopePlaceholder`.
+*/ -}}
+{{- if .Values.metrics.prometheusRule.enabled }}
+{{- include "common.prometheus.rules.prometheusRule" (dict
+      "ctx" .
+      "values" .Values.metrics.prometheusRule
+      "scopePlaceholder" (include "discord-alertmanager.rules.scopePlaceholder" .)
+      "scopeMatcher" (include "discord-alertmanager.rules.scopeMatcher" .)) }}
+{{- end }}

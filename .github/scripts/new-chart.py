@@ -61,12 +61,20 @@ What "finished" means
 The chart this writes passes `just check` — every offline gate, including the ones that read a
 contract. That is the bar, and it is checked by running them rather than asserted here.
 
+One of them runs here as well. `check-values-docs` reads `values.yaml` alone — no network, no
+resolved dependencies, no render — so this command can hold its own output against it before
+printing that the chart passes, and `assert_documented` does. The rest cannot: they read a
+`values.schema.json` that `just schema` has not generated yet, and generating one would mean
+resolving `charts/common` from inside a scaffold.
+
 What it is not is *done*, and what is left is printed as an ordered list at the end rather than
 left to be discovered: the chart description and the README prose, which a generator cannot write
 and helm-docs will happily publish as placeholders; whatever the workload needs beyond a
-Deployment, none of which is in a contract; the `unbound` reasons, each generated with a
-defensible sentence and a defensible sentence is not a considered one; and, where the image
-publishes no default for a key it requires, the value this scaffold had to invent.
+Deployment, none of which is in a contract; the description on each grouping block in
+`values.yaml`, because a contract describes keys and says nothing about the blocks a chart groups
+them into; the `unbound` reasons, each generated with a defensible sentence and a defensible
+sentence is not a considered one; and, where the image publishes no default for a key it
+requires, the value this scaffold had to invent.
 
 It does not commit, add a `ci/` fixture beyond the one, or touch the root README — the chart index
 is derived from `Chart.yaml`, so the table picks the chart up on its own.
@@ -306,15 +314,20 @@ def _refresh_module():
     the whole signature-verification story — behind an exit code, and this command has to be able
     to remove the partial chart it just wrote.
     """
+    return _module("refresh-contracts.py", "refresh_contracts")
+
+
+def _module(file_name: str, module_name: str):
+    """One of this directory's hyphenated scripts, imported by path and cached in `sys.modules`."""
     import importlib.util
 
-    if "refresh_contracts" in sys.modules:
-        return sys.modules["refresh_contracts"]
+    if module_name in sys.modules:
+        return sys.modules[module_name]
 
-    path = Path(__file__).resolve().parent / "refresh-contracts.py"
-    spec = importlib.util.spec_from_file_location("refresh_contracts", path)
+    path = Path(__file__).resolve().parent / file_name
+    spec = importlib.util.spec_from_file_location(module_name, path)
     module = importlib.util.module_from_spec(spec)
-    sys.modules["refresh_contracts"] = module
+    sys.modules[module_name] = module
     spec.loader.exec_module(module)
     return module
 
@@ -446,6 +459,32 @@ def _write(path: Path, text: str) -> None:
 # --------------------------------------------------------------------------------------------
 
 
+def assert_documented(chart_dir: Path) -> None:
+    """Hold the generated `values.yaml` against `just check-values-docs` before claiming it passes.
+
+    The closing output tells a contributor this chart passes `just check`, and that sentence was
+    false in one specific way until this ran: a scaffold that gave its grouping blocks no `# --`
+    line failed that gate on every one of them, on a chart nobody had written by hand.
+
+    This gate and not the others because of what exists at this point. `values.schema.json` is
+    generated from `values.yaml` by `just schema`, which needs `helm` and a resolved
+    `charts/common` underneath it — so the gates that read a schema have nothing to read here, and
+    starting a dependency build inside a scaffold to give them one would be a second thing this
+    command does. `check-values-docs` reads the values file and nothing else: no network, no
+    dependencies, no render. `just deps && just docs` remains step one of the closing output, and
+    the schema-reading gates are checked by the `just check` that follows it.
+    """
+    missing = _module("check-values-docs.py", "check_values_docs").undocumented(
+        chart_dir / "values.yaml"
+    )
+    if missing:
+        listed = ", ".join(key.path for key in missing)
+        raise ScaffoldAborted(
+            f"{chart_dir / 'values.yaml'}: {len(missing)} value(s) carry no `# --` description, "
+            f"which `just check-values-docs` refuses: {listed}"
+        )
+
+
 def next_steps(chart_dir: Path, surface: sc.Surface, out) -> None:
     """The ordered list of what a person still has to do, printed rather than left to be found."""
     name = chart_dir.name
@@ -476,6 +515,15 @@ def next_steps(chart_dir: Path, surface: sc.Surface, out) -> None:
             "Add whatever the workload needs beyond a Deployment — a Service, an Ingress, a "
             "PodMonitor, a volume. None of that is in the contract."
         )
+        grouped = sc.undescribed(plan)
+        if grouped:
+            steps.append(
+                "Replace the placeholder description on each grouping block in "
+                f"charts/{name}/values.yaml. A contract describes keys, not the blocks a chart "
+                "groups them into, so each of these carries a `TODO` that helm-docs will publish "
+                f"into the README table as it stands: {', '.join(grouped)}."
+            )
+
         guessed = sc.invented(plan)
         if guessed:
             steps.append(
@@ -609,6 +657,7 @@ def main(argv: list[str]) -> int:
         if args.no_contract:
             if owed:
                 opt_out(chart_dir, args.reason, args.repository)
+            assert_documented(chart_dir)
             next_steps(chart_dir, sc.plain(), sys.stdout)
             return 0
 
@@ -628,6 +677,7 @@ def main(argv: list[str]) -> int:
         if load_declaration(chart_dir) is None:
             raise ScaffoldAborted(f"{chart_dir / sc.DECLARATION} was written and cannot be read")
 
+        assert_documented(chart_dir)
         next_steps(chart_dir, surface, sys.stdout)
         return 0
 

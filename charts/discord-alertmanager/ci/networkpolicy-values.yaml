@@ -21,6 +21,14 @@ alertmanager:
 ingest:
   webhookToken: ci-webhook-token
 
+# `/readyz` answers 503 while the Alertmanager poll is stale and the Discord gateway is
+# unauthenticated, which in kind is always: the endpoint above resolves to nothing and the token
+# is not a real one. Left on, `helm install --wait` times out on a pod behaving exactly as
+# designed. `test-values.yaml` and `no-persistence-values.yaml` disable it for the same reason,
+# and this is the third and last fixture `ct` installs.
+readinessProbe:
+  enabled: false
+
 networkPolicy:
   enabled: true
   ingress:

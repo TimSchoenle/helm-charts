@@ -26,7 +26,7 @@ Helm charts for the applications and utilities I run on Kubernetes, built on one
 
 ## What this is
 
-Every one of the 8 application charts here depends on the `common` library chart, which holds the
+Every one of the 9 application charts here depends on the `common` library chart, which holds the
 shared template partials: the pod spec, both security contexts, the NetworkPolicies, the monitoring
 objects and the file-backed configuration. A change to the security baseline is written once there
 and reaches every chart on its next dependency build.
@@ -63,6 +63,7 @@ the chart's own README before installing it.
 | Chart | Description |
 | --- | --- |
 | [cloudflare-access-webhook-redirect](charts/cloudflare-access-webhook-redirect) | A Helm chart for deploying the Cloudflare Access Webhook Redirect service. This service acts as an authentication proxy that validates requests using Cloudflare Access Service Auth tokens before forwarding them to target backend services. |
+| [discord-alertmanager](charts/discord-alertmanager) | This chart deploys discord-alertmanager, a Discord operator surface for Prometheus Alertmanager. It receives the version-4 webhook envelope, renders each alert as a live status card in a Discord channel, and lets an operator acknowledge, ignore, silence or investigate it without leaving the client — with file-backed configuration that reloads in place instead of restarting pods, SQLite or PostgreSQL storage, optional Prometheus metrics and alerting rules, and an optional AlertmanagerConfig that registers the receiver with the Prometheus Operator instead of leaving it to be wired by hand. |
 | [mp-stats-legacy-viewer](charts/mp-stats-legacy-viewer) | MP Stats Legacy Viewer |
 | [netcup-offer-bot](charts/netcup-offer-bot) | This chart deploys the Netcup Offer Bot, which monitors https://www.netcup-sonderangebote.de/ RSS feed and sends notifications to Discord webhooks when new offers are available. |
 | [paperless-ngx](charts/paperless-ngx) | This chart deploys paperless-ngx — a document management system that scans, indexes and archives your paper documents — hardened to the restricted Pod Security Standard, with per-directory persistence, scheduled document_exporter backups and document_importer restores, optional bundled Valkey, PostgreSQL, Gotenberg and Tika, Ingress and Gateway API publishing, Grafana dashboards and Prometheus alerting rules. |

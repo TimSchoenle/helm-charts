@@ -30,6 +30,15 @@ the `with` wrapper in the derived helper is for, and what its absence would sile
 The plain form is asserted for what it does *not* write. A chart whose image publishes no contract
 must not carry `configMount`, `config` or a ConfigMap: each describes a loader nothing knows this
 image has, and a value an operator can set that nothing honours is worse than an absent one.
+
+`SchemaBlocks` and `Descriptions` are a fifth kind of case, and the reason they exist is the same
+for all three defects they cover: none of them is reachable from the scaffold's own run.
+`values.schema.json` is generated from `values.yaml` by `just schema`, and at the moment the
+scaffold finishes there is no schema for anything to disagree with — so a block typed `object`
+above an array default, a block helm-schema refuses outright, and a grouping key with no `# --`
+line all left the generator looking correct and were found on a chart. They are asserted against
+the two readers that decide it: `blocks` parses the `@schema` comments the way helm-schema does,
+and the description assertions call `check-values-docs` rather than re-implementing its rule.
 """
 
 from __future__ import annotations
@@ -48,8 +57,14 @@ sys.path.insert(0, str(SCRIPTS))
 import config_bindings as cb  # noqa: E402
 import config_contract as cc  # noqa: E402
 import config_scaffold as sc  # noqa: E402
+from entry import load  # noqa: E402
 
 TEMPLATES = SCRIPTS.parent / "templates" / "chart"
+
+# The gate the generated values file has to satisfy, run over the generated text rather than
+# re-implemented here: a second reader of `# --` placement would agree with this scaffold and
+# disagree with the gate, which is the failure the assertion exists to catch.
+values_docs = load("check_values_docs", "check-values-docs.py")
 
 
 def key(path: str, **overrides: Any) -> dict[str, Any]:
@@ -86,6 +101,57 @@ def values_of(surface: sc.Surface, chart: str = "app") -> dict[str, Any]:
     """The generated `values.yaml`, parsed. Proves it is YAML as well as what it says."""
     text = sc.render_values(chart, surface, "org/app", "v1.0.0", "", "config.toml")
     return yaml.safe_load(text) or {}
+
+
+def blocks(text: str) -> list[tuple[str, dict[str, Any], Any]]:
+    """Every `@schema` block in a values file, with the key it describes and that key's default.
+
+    Read the way helm-schema reads them — the text between the two delimiters is YAML, and the
+    `# @config` marker inside it is a YAML comment — so this sees exactly what `just schema` will
+    be handed, which is what makes an assertion about one worth anything.
+    """
+    lines = text.splitlines()
+    found: list[tuple[str, dict[str, Any], Any]] = []
+    number = 0
+    while number < len(lines):
+        if lines[number].strip() != "# @schema":
+            number += 1
+            continue
+
+        indent = len(lines[number]) - len(lines[number].lstrip())
+        body: list[str] = []
+        number += 1
+        while number < len(lines) and lines[number].strip() != "# @schema":
+            body.append(lines[number][indent:].removeprefix("#").removeprefix(" "))
+            number += 1
+
+        # Past the closing delimiter, past the description, and onto the key the run belongs to.
+        number += 1
+        while number < len(lines) and lines[number].lstrip().startswith("#"):
+            number += 1
+
+        line = lines[number].strip() if number < len(lines) else ""
+        name, _, written = line.partition(":")
+        default = yaml.safe_load(written) if written.strip() else None
+        found.append((name, yaml.safe_load("\n".join(body)) or {}, default))
+    return found
+
+
+def _json_type(value: Any) -> str:
+    """The JSON Schema type name for one rendered default."""
+    if value is None:
+        return "null"
+    if isinstance(value, bool):
+        return "boolean"
+    if isinstance(value, int):
+        return "integer"
+    if isinstance(value, float):
+        return "number"
+    if isinstance(value, list):
+        return "array"
+    if isinstance(value, dict):
+        return "object"
+    return "string"
 
 
 class Naming(unittest.TestCase):
@@ -242,6 +308,211 @@ class ValuesTree(unittest.TestCase):
         values = yaml.safe_load(text)
         for name in ("podSecurityContextPreset", "serviceAccount", "networkPolicy", "resources"):
             self.assertIn(name, values)
+
+
+class SchemaBlocks(unittest.TestCase):
+    """What the `@schema` block above a generated value says.
+
+    Three defects lived here at once, all found scaffolding `discord-alertmanager` and all worked
+    around in that chart by hand rather than fixed. Two of them are below; the third is
+    `Descriptions`. None was caught by the scaffold's own run, because `values.schema.json` does
+    not exist yet at that point and every gate that would have noticed reads one.
+    """
+
+    def test_a_structured_array_keeps_the_constraint_the_contract_published(self):
+        """`type: [object]` beside an array default is a chart that rejects its own values."""
+        entry = key(
+            "a.hosts", text_form="structured", default_value=["one"],
+            constraint={"type": "array", "items": {"type": "string"}},
+        )
+        block = self._block(entry, "hosts")
+        self.assertEqual(block["type"], ["array", "null"])
+        self.assertEqual(block["items"], {"type": "string"})
+        self.assertNotIn("additionalProperties", block)
+
+    def test_a_structured_arrays_default_is_a_value_its_own_block_accepts(self):
+        entry = key(
+            "a.hosts", text_form="structured", default_value=["one"],
+            constraint={"type": "array", "items": {"type": "string"}},
+        )
+        surface = sc.from_contract(union_of(entry))
+        text = sc.render_values("app", surface, "org/app", "v1", "", "config.toml")
+        for name, block, default in blocks(text):
+            if name == "hosts":
+                self.assertIn(_json_type(default), block["type"])
+                break
+        else:  # pragma: no cover - the loop above always finds it
+            self.fail("the generated values file carries no block for `hosts`")
+
+    def test_a_required_structured_array_defaults_to_an_array_rather_than_a_table(self):
+        entry = key(
+            "a.hosts", text_form="structured", required=True,
+            constraint={"type": "array", "items": {"type": "string"}},
+        )
+        self.assertEqual(sc.default_for(entry), [])
+
+    def test_a_structured_object_is_still_opened_rather_than_described(self):
+        """`internal.peers` is a `BTreeMap<String, PeerConfig>` and its constraint says only that.
+
+        The contract states the value is a table and nothing about what is in it, so the block
+        accepts any table. Inventing properties here would refuse a peer nobody declared.
+        """
+        entry = key("a.peers", text_form="structured", constraint={"type": "object"})
+        block = self._block(entry, "peers")
+        self.assertEqual(block["type"], ["object", "null"])
+        self.assertIs(block["additionalProperties"], True)
+
+    def test_a_structured_key_with_no_declared_type_is_opened_too(self):
+        entry = key("a.peers", text_form="structured", constraint={})
+        block = self._block(entry, "peers")
+        self.assertEqual(block["type"], ["object", "null"])
+        self.assertIs(block["additionalProperties"], True)
+
+    def test_an_enum_is_the_whole_block(self):
+        """helm-schema refuses one carrying both, fatally, and writes no schema for any chart.
+
+        `level=fatal msg="Error while validating jsonschema of key backend: cannot use both
+        'enum' and 'type' in the same schema"` — measured against helm-schema 0.18.1.
+        """
+        entry = key(
+            "a.backend", text_form="choice", default_value="sqlite",
+            constraint={"type": "string", "enum": ["sqlite", "postgres"]},
+        )
+        block = self._block(entry, "backend")
+        self.assertNotIn("type", block)
+        self.assertEqual(block["enum"], ["sqlite", "postgres", None])
+
+    def test_a_required_enum_gains_no_null_member(self):
+        entry = key(
+            "a.backend", text_form="choice", required=True, default_value="sqlite",
+            constraint={"type": "string", "enum": ["sqlite", "postgres"]},
+        )
+        self.assertEqual(self._block(entry, "backend")["enum"], ["sqlite", "postgres"])
+
+    def test_no_generated_block_carries_both_enum_and_type(self):
+        """The property, over a surface holding one of every shape rather than over one key."""
+        surface = sc.from_contract(
+            union_of(
+                key("a.text"),
+                key("a.port", text_form="integer", constraint={"type": "integer", "minimum": 1}),
+                key("a.backend", text_form="choice",
+                    constraint={"type": "string", "enum": ["sqlite", "postgres"]}),
+                key("a.hosts", text_form="structured",
+                    constraint={"type": "array", "items": {"type": "string"}}),
+                key("a.peers", text_form="structured", constraint={"type": "object"}),
+                key("a.token", secret=True),
+            )
+        )
+        chassis = (TEMPLATES / "values.chassis.yaml").read_text(encoding="utf-8")
+        text = sc.render_values("app", surface, "org/app", "v1", chassis, "config.toml")
+        for name, block, _ in blocks(text):
+            with self.subTest(value=name):
+                self.assertFalse("enum" in block and "type" in block, block)
+
+    def test_a_bounded_scalar_still_copies_its_bounds(self):
+        entry = key(
+            "a.port", text_form="integer",
+            constraint={"type": "integer", "minimum": 1, "maximum": 65535},
+        )
+        block = self._block(entry, "port")
+        self.assertEqual(block["type"], ["integer", "null"])
+        self.assertEqual((block["minimum"], block["maximum"]), (1, 65535))
+
+    def _block(self, entry: dict[str, Any], leaf: str) -> dict[str, Any]:
+        """The parsed `@schema` block the scaffold writes above one key's value."""
+        surface = sc.from_contract(union_of(entry))
+        text = sc.render_values("app", surface, "org/app", "v1", "", "config.toml")
+        for name, block, _ in blocks(text):
+            if name == leaf:
+                return block
+        self.fail(f"the generated values file carries no block for `{leaf}`")
+
+
+class Descriptions(unittest.TestCase):
+    """Every generated value carries the `# --` line `just check-values-docs` demands.
+
+    The third defect, and the one a scaffold could not see: the gate reads `values.yaml` alone,
+    but nothing ran it here, so a freshly scaffolded chart failed it on every grouping block —
+    sixteen of them for `discord-alertmanager`. `new-chart.py` now runs it before printing that
+    the chart passes `just check`.
+    """
+
+    def test_the_contracted_form_leaves_nothing_undocumented(self):
+        surface = sc.from_contract(
+            union_of(
+                key("alertmanager.endpoints", text_form="structured",
+                    constraint={"type": "array", "items": {"type": "string"}}),
+                key("discord.capabilities.view", text_form="structured",
+                    constraint={"type": "array", "items": {"type": "string"}}),
+                key("storage.backend", text_form="choice",
+                    constraint={"type": "string", "enum": ["sqlite", "postgres"]}),
+                key("routes", text_form="structured", constraint={"type": "array"}),
+                key("discord.token", secret=True),
+            )
+        )
+        self.assertEqual(self._undocumented(surface), [])
+
+    def test_the_plain_form_leaves_nothing_undocumented(self):
+        self.assertEqual(self._undocumented(sc.plain()), [])
+
+    def test_a_grouping_block_names_the_prefix_it_holds(self):
+        surface = sc.from_contract(union_of(key("discord.capabilities.view")))
+        text = sc.render_values("app", surface, "org/app", "v1", "", "config.toml")
+        self.assertIn("# -- TODO: what the `discord` settings have in common", text)
+        self.assertIn("# -- TODO: what the `discord.capabilities` settings have in common", text)
+
+    def test_the_prefix_is_the_contract_spelling_not_the_values_one(self):
+        """`values_path_for` camel-cases each segment, and the description names the key."""
+        surface = sc.from_contract(union_of(key("rate_limit.per_ip.burst")))
+        text = sc.render_values("app", surface, "org/app", "v1", "", "config.toml")
+        self.assertIn("`rate_limit.per_ip`", text)
+        self.assertNotIn("`rateLimit.perIp`", text)
+
+    def test_every_placeholder_is_reported(self):
+        plan = sc.plan_keys(union_of(key("a.b.c"), key("d.token", secret=True), key("e")))
+        self.assertEqual(sc.undescribed(plan), ["a", "a.b", "d"])
+
+    def test_a_surface_with_no_nesting_reports_none(self):
+        self.assertEqual(sc.undescribed(sc.plan_keys(union_of(key("a")))), [])
+
+    def test_the_chassis_blocks_carry_a_sentence_rather_than_a_placeholder(self):
+        """`image` and `configMount` are the same in every chart, so neither is a TODO."""
+        surface = sc.from_contract(union_of(key("a.b")))
+        described = self._described(
+            sc.render_values("app", surface, "org/app", "v1", "", "config.toml")
+        )
+        for name in ("image", "configMount"):
+            self.assertIn(name, described)
+            self.assertNotIn("TODO", described[name], name)
+
+    @staticmethod
+    def _undocumented(surface: sc.Surface) -> list[str]:
+        """The values `just check-values-docs` would report, asked of the gate rather than of a
+        second reader written here — which is the only way this assertion can be wrong in the
+        contributor's favour rather than in its own.
+        """
+        chassis = (TEMPLATES / "values.chassis.yaml").read_text(encoding="utf-8")
+        text = sc.render_values("app", surface, "org/app", "v1", chassis, "config.toml")
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "values.yaml"
+            path.write_text(text, encoding="utf-8", newline="\n")
+            return [found.path for found in values_docs.undocumented(path)]
+
+    @staticmethod
+    def _described(text: str) -> dict[str, str]:
+        """Each top-level key's `# --` line, keyed by the key it sits above."""
+        lines = text.splitlines()
+        found: dict[str, str] = {}
+        for number, line in enumerate(lines):
+            if line.startswith("#") or not line.endswith(":"):
+                continue
+            above = number - 1
+            while above >= 0 and lines[above].startswith("#"):
+                if lines[above].startswith("# -- "):
+                    found[line[:-1]] = lines[above]
+                    break
+                above -= 1
+        return found
 
 
 class DerivedHelper(unittest.TestCase):

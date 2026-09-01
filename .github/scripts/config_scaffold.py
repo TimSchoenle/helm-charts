@@ -51,7 +51,8 @@ One rule per row, applied in order; the first that matches wins.
 | `reserved`                        | nothing, plus an `unbound` entry   | the loader owns it      |
 | `secret`, and file-supplyable     | `secretData`, plus `unbound`       | never a ConfigMap       |
 | `secret`, not file-supplyable     | nothing, plus an `unbound` entry   | no safe channel exists  |
-| `structured`                      | a chart value typed `object`       | the tree is the value   |
+| `structured`                      | a chart value typed by its own     | the tree is the value   |
+|                                   | constraint, or an open `object`    |                         |
 | anything else                     | a chart value, typed and defaulted | the ordinary case       |
 
 The credential rule is the one worth arguing with, so it is written down rather than assumed. A
@@ -367,25 +368,55 @@ def schema_lines(key: dict[str, Any], indent: str) -> list[str]:
 
     Only the keywords the contract vocabulary already allows are copied, and they are copied
     rather than translated: `constraint` is JSON Schema and so is an `@schema` block, so a
-    `minimum` means the same thing on both sides. A `structured` key is the exception — its
-    constraint describes the TOML *literal* the environment layer would carry, where the chart
-    value is the tree itself.
+    `minimum` means the same thing on both sides.
+
+    Two shapes are not a straight copy, and both were measured against helm-schema rather than
+    reasoned about:
+
+    **An `enum` is the whole block.** helm-schema refuses one carrying both — `Error while
+    validating jsonschema of key backend: cannot use both 'enum' and 'type' in the same schema`,
+    which exits `just schema` fatally and leaves every chart's `values.schema.json` unwritten. So
+    a key whose constraint names an `enum` emits its members alone, with `null` joining them
+    where the key is optional, the way `image.pullPolicy` in the chassis spells its empty member.
+    helm-schema drops that `null` from the generated property, which costs nothing: Helm deletes
+    a `null` value during coalescing, so the validator is never shown one.
+
+    **A `structured` key whose constraint is an object, or which names no type, is opened rather
+    than described.** Such a constraint says the value is a table and nothing about what is in
+    it — `internal.peers` is a `BTreeMap<String, PeerConfig>` and its constraint is
+    `{"type": "object"}` — so the block accepts any table rather than inventing properties the
+    contract never stated.
+
+    A `structured` key whose constraint names an *array* is a different thing and used to be
+    caught by the same branch. It carries its own `items`, and `default_for` writes an array
+    beside it, so describing it as an object made the chart reject its own defaults the moment
+    `just schema` ran: nine keys in `discord-alertmanager` — `alertmanager.endpoints`, the four
+    `discord.capabilities.*`, `links.allowed_hosts`, `links.buttons`, `render.key_labels` and
+    `routes` — every one of which had to be corrected by hand.
     """
+    constraint = key.get("constraint") or {}
+
+    if "enum" in constraint:
+        members = list(constraint["enum"])
+        if not key.get("required") and None not in members:
+            members.append(None)
+        return [f"{indent}# enum: {_schema_scalar(members)}"]
+
+    declared = constraint.get("type")
+    types = [str(name) for name in (declared if isinstance(declared, list) else [declared])
+             if name is not None]
     body: list[str] = []
 
-    if key.get("text_form") == "structured":
+    if key.get("text_form") == "structured" and (not types or "object" in types):
         types = ["object"]
         body = ["additionalProperties: true"]
     else:
-        constraint = key.get("constraint") or {}
-        declared = constraint.get("type")
-        types = [str(name) for name in (declared if isinstance(declared, list) else [declared])
-                 if name is not None]
-        for keyword in ("enum", "const", "minimum", "maximum", "exclusiveMinimum",
-                        "exclusiveMaximum", "multipleOf", "minLength", "maxLength", "pattern"):
+        for keyword in ("const", "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum",
+                        "multipleOf", "minLength", "maxLength", "pattern", "items", "minItems",
+                        "maxItems", "uniqueItems"):
             if keyword not in constraint:
                 continue
-            body.append(f"{keyword}: {_schema_scalar(constraint[keyword])}")
+            body.extend(_schema_keyword(keyword, constraint[keyword]))
 
     if not types:
         # The constraint names no type. Rather than guess one, accept every JSON type — the
@@ -419,6 +450,23 @@ def _schema_scalar(value: Any) -> str:
     if isinstance(value, list):
         return "[" + ", ".join(_schema_scalar(item) for item in value) + "]"
     return _quoted(str(value))
+
+
+def _schema_keyword(name: str, value: Any) -> list[str]:
+    """One JSON Schema keyword as the YAML lines an `@schema` comment carries.
+
+    A scalar is one line. A subschema is a nested block — `items` on a `Vec<T>` is the one that
+    occurs, and a flow mapping would parse identically — because block form is what every
+    hand-written `@schema` in this repository uses and these lines are read by people first.
+    """
+    if isinstance(value, dict):
+        if not value:
+            return [f"{name}: {{}}"]
+        lines = [f"{name}:"]
+        for inner in sorted(value):
+            lines.extend(f"  {line}" for line in _schema_keyword(str(inner), value[inner]))
+        return lines
+    return [f"{name}: {_schema_scalar(value)}"]
 
 
 def _quoted(text: str) -> str:
@@ -455,7 +503,13 @@ def default_for(key: dict[str, Any]) -> Any:
         return None
 
     if key.get("text_form") == "structured":
-        return {}
+        # Empty, in the shape the constraint names. An empty table where the constraint says
+        # `array` is the same defect `schema_lines` used to have from the other side: the chart
+        # would be written with a default its own `values.schema.json` rejects.
+        declared = (key.get("constraint") or {}).get("type")
+        if isinstance(declared, list):
+            declared = declared[0] if declared else None
+        return [] if str(declared) == "array" else {}
 
     candidate = tg.satisfying(key)
     if candidate is not None:
@@ -481,6 +535,32 @@ def invented(plan: Plan) -> list[Placement]:
         for item in plan.projected
         if not item.optional and item.key.get("default_value") is None
     ]
+
+
+def undescribed(plan: Plan) -> list[str]:
+    """The grouping blocks whose `# --` description is a placeholder, as values paths.
+
+    The companion to `invented`, and reported for the same reason: `branch_placeholder` writes a
+    `TODO` because a contract says nothing about the blocks a chart groups its keys into, and a
+    placeholder nobody was told about is one helm-docs publishes into the README table.
+    """
+    surfaced = plan.projected + plan.secrets
+    if not surfaced:
+        return []
+
+    found: list[str] = []
+
+    def walk(node: dict[str, Any], prefix: str) -> None:
+        for name in sorted(node):
+            child = node[name]
+            if isinstance(child, Placement):
+                continue
+            path = f"{prefix}.{name}" if prefix else name
+            found.append(path)
+            walk(child, path)
+
+    walk(tree_of(surfaced), "")
+    return found
 
 
 def values_scalar(value: Any) -> str:
@@ -510,20 +590,25 @@ def marker_line(placement: Placement, indent: str) -> str:
     return f"{indent}# # {MARKER} {placement.marker_class} {placement.path}{suffix}"
 
 
-def description_lines(placement: Placement, indent: str) -> list[str]:
-    """The helm-docs description for one value: `# --` on the first line, `#` on the rest.
+def described(text: str, indent: str) -> list[str]:
+    """One helm-docs description: `# --` on the first line, `#` on the rest.
 
     The marker belongs to the description as a whole and helm-docs reads it that way — repeating
     it on every wrapped line puts a literal `--` in the middle of the rendered sentence.
     """
+    wrapped = wrap(text, "", WIDTH - len(indent) - 5)
+    return [f"{indent}# -- {wrapped[0]}"] + [f"{indent}# {line}" for line in wrapped[1:]]
+
+
+def description_lines(placement: Placement, indent: str) -> list[str]:
+    """The helm-docs description for one contract key's value."""
     key = placement.key
     summary = summary_of(key).rstrip(".")
     text = f"{summary} (`{key['path']}`)."
     if placement.where == SECRET_FILE:
         text += f" Delivered as the secrets-directory file `{_file_name(placement)}`."
 
-    wrapped = wrap(text, "", WIDTH - len(indent) - 5)
-    return [f"{indent}# -- {wrapped[0]}"] + [f"{indent}# {line}" for line in wrapped[1:]]
+    return described(text, indent)
 
 
 def value_block(placement: Placement, indent: str = "") -> list[str]:
@@ -573,7 +658,7 @@ def tree_of(placements: list[Placement]) -> dict[str, Any]:
     return tree
 
 
-def render_tree(tree: dict[str, Any], indent: str = "") -> list[str]:
+def render_tree(tree: dict[str, Any], indent: str = "", depth: int = 0) -> list[str]:
     """The values blocks for one level of the tree, deepest structure last."""
     lines: list[str] = []
     for name in sorted(tree):
@@ -586,9 +671,56 @@ def render_tree(tree: dict[str, Any], indent: str = "") -> list[str]:
             lines.append(f"{indent}# @schema")
             lines.append(f"{indent}# additionalProperties: true")
             lines.append(f"{indent}# @schema")
+            lines.extend(described(branch_placeholder(node, depth + 1), indent))
             lines.append(f"{indent}{name}:")
-            lines.extend(render_tree(node, indent + "  "))
+            lines.extend(render_tree(node, indent + "  ", depth + 1))
     return lines
+
+
+def branch_placeholder(node: dict[str, Any], depth: int) -> str:
+    """The description a grouping block is scaffolded with, naming the prefix it holds.
+
+    A contract describes keys, not the blocks a chart groups them into, so there is nothing here
+    to derive a sentence from and no honest way to invent one. `just check-values-docs` requires
+    one all the same — helm-docs gives a documented group its own README row, and helm-schema
+    copies the text into the property an editor shows on hover — so the scaffold writes a `TODO`
+    in the same spelling `Chart.yaml`'s description placeholder uses, and `new-chart.py` lists
+    every one of them in its closing output rather than leaving them to a gate.
+
+    Without this, a freshly scaffolded chart failed `just check-values-docs` with one entry per
+    grouping block — sixteen for `discord-alertmanager`, fourteen from its contract plus `image`
+    and `configMount` — which is what the gate reported before anybody had read a line of it.
+    """
+    return (
+        f"TODO: what the `{branch_prefix(node, depth)}` settings have in common, in one sentence."
+    )
+
+
+def branch_prefix(node: dict[str, Any], depth: int) -> str:
+    """The contract path prefix one grouping block holds.
+
+    Read off a key underneath it rather than off the values path: `values_path_for` camel-cases
+    each segment independently, so the two paths have the same segment count and the contract
+    spelling — which is what the description should name — is only recoverable from a key.
+    """
+    placement = _any_placement(node)
+    if placement is None:
+        # `tree_of` only ever creates a branch on the way to a leaf, so this is unreachable — but
+        # a branch holding nothing would render a mapping with no values and no prefix to name.
+        raise ScaffoldError("a values branch was built with no key underneath it")
+    return ".".join(placement.path.split(".")[:depth])
+
+
+def _any_placement(node: dict[str, Any]) -> Placement | None:
+    """Any placement under this branch. They all share its prefix, so any of them will do."""
+    for name in sorted(node):
+        child = node[name]
+        if isinstance(child, Placement):
+            return child
+        found = _any_placement(child)
+        if found is not None:
+            return found
+    return None
 
 
 def render_values(
@@ -619,6 +751,7 @@ def render_values(
         "# @schema",
         "# additionalProperties: true",
         "# @schema",
+        "# -- Container image the pod runs, composed as `registry/repository:tag`.",
         "image:",
         "  # @schema",
         "  # type: string",
@@ -754,6 +887,7 @@ def render_values(
             "# @schema",
             "# additionalProperties: true",
             "# @schema",
+            "# -- Where the rendered configuration document and the credential files are mounted.",
             "configMount:",
             "  # @schema",
             "  # type: string",

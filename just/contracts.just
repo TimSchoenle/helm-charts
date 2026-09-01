@@ -194,6 +194,30 @@ check-config-bindings:
     {{ resolve_python }}
     "$python" {{ scripts }}/check-config-bindings.py --charts {{ charts }}
 
+# Hold every hand-transcribed config shape against the appVersion it was read at.
+#
+# A contract states a key's type with a flat keyword set — no `items`, no `properties` — so a
+# setting whose type is a *struct* arrives with its shape missing: `discord-alertmanager`'s
+# `routes` is a `Vec<RouteConfig>` and the contract carries `{"type": "array"}`, which is all
+# the producer can currently say. The chart types it anyway, because a bare `type: array` is not
+# type checking, and that means transcribing a struct somebody else owns.
+#
+# A `# @config-shape <values-path> <appVersion> <source>` comment above the value's `@schema`
+# block records which struct, at which version. This fails when the chart's appVersion has moved
+# past one — which is exactly what an automated bump does, repinning the image and touching
+# nothing else, leaving a schema that refuses a field the new release added.
+#
+# In `just check` rather than left to the Documentation job, unlike `check-contracts` and the two
+# `$ref` gates: nothing repairs this automatically, because re-reading the struct is a person's
+# job. It reads two committed files per chart — no network, no render, no cluster.
+[doc("Hold every hand-transcribed config shape against the appVersion it was read at")]
+[group('contracts')]
+check-config-shapes:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    {{ resolve_python }}
+    "$python" {{ scripts }}/check-config-shapes.py --charts {{ charts }}
+
 # Unit tests for the contract model, over fixtures rather than over a registry.
 #
 # The union is tested here and nowhere else: every document in the repository binds a single image,

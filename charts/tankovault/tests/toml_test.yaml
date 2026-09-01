@@ -79,14 +79,45 @@ tests:
           path: data["config.toml"]
           pattern: "\\[rate_limit\\.auth\\]\\nper_minute = 10"
 
-  - it: refuses an array of tables instead of emitting invalid TOML
+  # `[[providers]]`, with each element's sub-tables following its own header. A header names an
+  # absolute path, so `[providers.auth]` belongs to the element it follows rather than to the
+  # first one.
+  - it: emits an array of tables as [[name]]
     set:
       config:
         providers:
           - name: example
+            auth:
+              kind: token
+          - name: second
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-api-config
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\[\[providers\]\]\nname = "example"\n\n\[providers\.auth\]\nkind = "token"\n\n\[\[providers\]\]\nname = "second"'
+
+  # The two shapes TOML genuinely cannot spell, which is what `configExtraToml` is still for.
+  - it: refuses an array that mixes tables and scalars
+    set:
+      config:
+        providers:
+          - name: example
+          - plain
     asserts:
       - failedTemplate:
-          errorPattern: "array of tables"
+          errorPattern: "mixes tables and scalars in one array"
+
+  - it: refuses an array of arrays
+    set:
+      config:
+        matrix:
+          - [1, 2]
+          - [3]
+    asserts:
+      - failedTemplate:
+          errorPattern: "holds an array of arrays"
 
   - it: appends configExtraToml verbatim
     set:

@@ -192,7 +192,7 @@ default:
 # the other three.
 [doc("Every gate CI runs that does not need a Kubernetes cluster")]
 [group('meta')]
-check: deps test validate-manifests check-immutable check-config check-contract-coverage check-config-bindings check-contract-tests check-values-docs check-preset-schema test-contract-union lint-python lint lint-policy
+check: deps test validate-manifests check-immutable check-config check-contract-coverage check-config-bindings check-config-shapes check-contract-tests check-values-docs check-preset-schema test-contract-union lint-python lint lint-policy
 
 # Install the pinned Helm plugins. The CI composite action calls this recipe too, so the versions
 # above are the only place they are declared.

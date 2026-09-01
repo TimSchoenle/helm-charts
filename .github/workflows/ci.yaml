@@ -620,12 +620,20 @@ jobs:
       - name: Check configuration binding markers
         run: just check-config-bindings
 
+      # The shapes a contract cannot state. A `constraint` is a flat keyword set, so a setting
+      # whose type is a struct arrives as a bare `type: array`; the chart transcribes the struct
+      # and a `@config-shape` marker records the appVersion it was read at. This fails when the
+      # image has moved past one — which is precisely what an automated bump does.
+      - name: Check hand-transcribed config shapes
+        run: just check-config-shapes
+
       # The generated round-trip suites, against the contracts they were generated from.
       #
       # `just check` carries this recipe and its three siblings — `check-contracts`,
       # `check-kube-refs` and `check-crd-refs` — do not, because those are repaired by the
-      # Documentation job on the pull request itself. Nothing regenerates the contract suites, deliberately, so a contract
-      # that gained a key leaves its suite silently short of it unless something says so.
+      # Documentation job on the pull request itself. Nothing regenerates the contract suites,
+      # deliberately, so a contract that gained a key leaves its suite silently short of it
+      # unless something says so.
       #
       # Nothing said so here. CI runs the recipes as parallel jobs rather than running
       # `just check`, so this gate held only for contributors who ran the aggregate locally — and

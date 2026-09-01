@@ -422,7 +422,7 @@
         },
         "configExtraToml": {
           "default": "",
-          "description": "Verbatim TOML appended after the rendered `config` tree. The escape hatch for anything\n`common.toml` cannot express, notably arrays of tables.",
+          "description": "Verbatim TOML appended after the rendered `config` tree. The escape hatch for the shapes\n`common.toml` cannot express: an array of arrays, an array mixing tables and scalars, and\nTOML's own literal types such as a datetime. Arrays of tables render natively.",
           "required": [],
           "title": "configExtraToml",
           "type": "string"
@@ -1692,7 +1692,7 @@
     },
     "configExtraToml": {
       "default": "",
-      "description": "Verbatim TOML appended after the rendered configuration. The escape hatch for\nanything the chart's TOML renderer cannot express, notably arrays of tables.",
+      "description": "Verbatim TOML appended after the rendered configuration. The escape hatch for the shapes\nthe chart's TOML renderer cannot express: an array of arrays, an array mixing tables and\nscalars, and TOML's own literal types such as a datetime. Arrays of tables render natively,\nso `routes` and `links.buttons` do not need this.",
       "required": [],
       "title": "configExtraToml",
       "type": "string"
@@ -2545,6 +2545,24 @@
         "buttons": {
           "description": "The buttons themselves, rendered in order (`links.buttons`).",
           "items": {
+            "additionalProperties": false,
+            "properties": {
+              "label": {
+                "required": [],
+                "type": "string"
+              },
+              "url": {
+                "required": [],
+                "type": "string"
+              },
+              "when": {
+                "required": [],
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
             "required": [],
             "type": "object"
           },
@@ -3889,9 +3907,9 @@
       "type": "integer"
     },
     "routes": {
-      "description": "Routes declared in the file, which cannot be edited or deleted from Discord (`routes`).",
+      "description": "Routes declared in the file, which cannot be edited or deleted from Discord (`routes`).\nRendered as `[[routes]]`, with `target`, `mentions` and `escalation` as sub-tables of each\nelement.",
       "items": {
-        "additionalProperties": true,
+        "additionalProperties": false,
         "properties": {
           "continue_to_next": {
             "required": [],
@@ -3902,16 +3920,30 @@
             "type": "boolean"
           },
           "escalation": {
-            "additionalProperties": true,
+            "additionalProperties": false,
             "properties": {
               "after_secs": {
+                "minimum": 0,
                 "required": [],
-                "type": "integer"
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "roles": {
+                "items": {
+                  "pattern": "^[0-9]+$",
+                  "required": [],
+                  "type": "string"
+                },
+                "required": [],
+                "type": "array"
               },
               "users": {
                 "items": {
+                  "pattern": "^[0-9]+$",
                   "required": [],
-                  "type": "integer"
+                  "type": "string"
                 },
                 "required": [],
                 "type": "array"
@@ -3921,28 +3953,47 @@
             "type": "object"
           },
           "group_strategy": {
-            "required": [],
-            "type": "string"
+            "enum": [
+              "per_alert",
+              "per_group",
+              "digest"
+            ],
+            "required": []
           },
           "guild_id": {
+            "pattern": "^[0-9]+$",
             "required": [],
-            "type": "integer"
+            "type": "string"
           },
           "matchers": {
             "required": [],
             "type": "string"
           },
           "mentions": {
-            "additionalProperties": true,
+            "additionalProperties": false,
             "properties": {
               "min_severity": {
-                "required": [],
-                "type": "string"
+                "enum": [
+                  "info",
+                  "warning",
+                  "critical"
+                ],
+                "required": []
               },
               "roles": {
                 "items": {
+                  "pattern": "^[0-9]+$",
                   "required": [],
-                  "type": "integer"
+                  "type": "string"
+                },
+                "required": [],
+                "type": "array"
+              },
+              "users": {
+                "items": {
+                  "pattern": "^[0-9]+$",
+                  "required": [],
+                  "type": "string"
                 },
                 "required": [],
                 "type": "array"
@@ -3952,27 +4003,144 @@
             "type": "object"
           },
           "min_severity": {
-            "required": [],
-            "type": "string"
+            "enum": [
+              "info",
+              "warning",
+              "critical"
+            ],
+            "required": []
           },
           "name": {
             "required": [],
             "type": "string"
           },
           "priority": {
+            "maximum": 2147483647,
+            "minimum": -2147483648,
             "required": [],
             "type": "integer"
           },
           "target": {
-            "additionalProperties": true,
+            "additionalProperties": false,
             "properties": {
               "id": {
-                "required": [],
-                "type": "integer"
-              },
-              "kind": {
+                "pattern": "^[0-9]+$",
                 "required": [],
                 "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "text",
+                  "forum",
+                  "thread",
+                  "dm"
+                ],
+                "required": []
+              },
+              "policy": {
+                "additionalProperties": false,
+                "properties": {
+                  "archive_on_resolve": {
+                    "required": [],
+                    "type": "boolean"
+                  },
+                  "auto_archive_minutes": {
+                    "maximum": 4294967295,
+                    "minimum": 0,
+                    "required": [],
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "bump_on_state_change": {
+                    "required": [],
+                    "type": "boolean"
+                  },
+                  "default_tag": {
+                    "required": [],
+                    "type": "string"
+                  },
+                  "label_tags": {
+                    "items": {
+                      "required": [],
+                      "type": "string"
+                    },
+                    "required": [],
+                    "type": "array"
+                  },
+                  "lock_on_resolve": {
+                    "required": [],
+                    "type": "boolean"
+                  },
+                  "manage_tags": {
+                    "required": [],
+                    "type": "boolean"
+                  },
+                  "max_pinned": {
+                    "maximum": 4294967295,
+                    "minimum": 0,
+                    "required": [],
+                    "type": "integer"
+                  },
+                  "pin_min_severity": {
+                    "enum": [
+                      "info",
+                      "warning",
+                      "critical"
+                    ],
+                    "required": []
+                  },
+                  "severity_tags": {
+                    "required": [],
+                    "type": "boolean"
+                  },
+                  "state_tags": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "acked": {
+                        "required": [],
+                        "type": "string"
+                      },
+                      "firing": {
+                        "required": [],
+                        "type": "string"
+                      },
+                      "resolved": {
+                        "required": [],
+                        "type": "string"
+                      },
+                      "silenced": {
+                        "required": [],
+                        "type": "string"
+                      }
+                    },
+                    "required": [],
+                    "type": "object"
+                  },
+                  "thread_kind": {
+                    "enum": [
+                      "public",
+                      "private"
+                    ],
+                    "required": []
+                  },
+                  "thread_when": {
+                    "enum": [
+                      "never",
+                      "on_create",
+                      "on_ack",
+                      "on_first_reply"
+                    ],
+                    "required": []
+                  },
+                  "title_template": {
+                    "required": [],
+                    "type": "string"
+                  }
+                },
+                "required": [],
+                "type": "object"
               }
             },
             "required": [],

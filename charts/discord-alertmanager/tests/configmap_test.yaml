@@ -10,6 +10,12 @@ templates:
 # `discord.token` and `alertmanager.endpoints` are set on the suite because
 # `discord-alertmanager.validateValues` refuses a render without them, and the guard runs from
 # this template.
+#
+# No `failedTemplate` test belongs in this file, measured here rather than assumed: with the two
+# snowflake refusals present in this suite, every *other* test in it saw an empty document and
+# failed, and lifting just those two made all ten pass unchanged. Nothing in the assertions said
+# so — they simply reported no match. The refusals live in `validation_test.yaml`, which is the
+# same template scope and nothing but refusals, which is what that file is for.
 set:
   discord.token: suite-token
   alertmanager.endpoints:
@@ -62,7 +68,7 @@ tests:
     asserts:
       - matchRegex:
           path: data['config.toml']
-          pattern: "\[scaffolded\]"
+          pattern: '\[scaffolded\]'
 
   # An optional setting left unset is omitted rather than written empty. To the loader an empty
   # value is a *supplied* value, so writing one would configure the setting blank instead of
@@ -97,3 +103,68 @@ tests:
       - matchRegex:
           path: data['config.toml']
           pattern: 'path = "/data/discord-alertmanager.db"'
+
+  # `routes` is TOML's array-of-tables form, which is the one shape the renderer refused until
+  # `common.toml` learned `[[name]]`. Asserted as one block, because what is being checked is the
+  # interleaving: `[routes.target]` after an element belongs to that element and not to the first.
+  - it: renders routes as an array of tables, each with its own sub-tables
+    set:
+      routes:
+        - name: first
+          guild_id: "1"
+          target:
+            kind: forum
+            id: "2"
+        - name: second
+          guild_id: "3"
+    asserts:
+      - matchRegex:
+          path: data['config.toml']
+          pattern: '\[\[routes\]\]\nguild_id = 1\nname = "first"\n\n\[routes\.target\]\nid = 2\nkind = "forum"\n\n\[\[routes\]\]\nguild_id = 3\nname = "second"'
+
+  # The whole reason snowflakes are quoted in values.yaml. Helm parses a values file through
+  # `encoding/json`, so an unquoted `123456789012345678` is a float64 and reaches the chart as
+  # `...680`. The string survives, and this is where it becomes the integer the image reads —
+  # exactly, digit for digit, which is the assertion that would fail on any rounding.
+  - it: writes a Discord snowflake as an exact TOML integer
+    set:
+      routes:
+        - name: platform
+          guild_id: "123456789012345678"
+          target:
+            kind: text
+            id: "234567890123456789"
+          mentions:
+            roles: ["345678901234567890"]
+          escalation:
+            users: ["456789012345678901"]
+    asserts:
+      - matchRegex:
+          path: data['config.toml']
+          pattern: 'guild_id = 123456789012345678\n'
+      - matchRegex:
+          path: data['config.toml']
+          pattern: 'id = 234567890123456789\n'
+      - matchRegex:
+          path: data['config.toml']
+          pattern: 'roles = \[345678901234567890\]'
+      - matchRegex:
+          path: data['config.toml']
+          pattern: 'users = \[456789012345678901\]'
+      - notMatchRegex:
+          path: data['config.toml']
+          pattern: 'guild_id = "'
+
+  # `links.buttons` is the other array of tables in this chart, and the one whose elements have no
+  # sub-tables at all — so it exercises the plain case.
+  - it: renders link buttons as an array of tables
+    set:
+      links:
+        allowedHosts: [grafana.example.com]
+        buttons:
+          - label: Dashboard
+            url: https://grafana.example.com/d/abc
+    asserts:
+      - matchRegex:
+          path: data['config.toml']
+          pattern: '\[\[links\.buttons\]\]\nlabel = "Dashboard"\nurl = "https://grafana\.example\.com/d/abc"'

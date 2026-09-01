@@ -45,12 +45,14 @@ alertmanager:
 
 routes:
   - name: platform
-    guild_id: 123456789012345678
+    guild_id: "123456789012345678"
     matchers: 'severity=~"warning|critical"'
     target:
-      kind: channel
-      id: 234567890123456789
+      kind: text
+      id: "234567890123456789"
 ```
+
+Snowflakes are quoted. That is not a style choice — see [Routes](#routes) below.
 
 Upgrade with `helm upgrade [RELEASE_NAME] timschoenle/{{ template "chart.name" . }} -n [NAMESPACE]`,
 remove with `helm uninstall [RELEASE_NAME] -n [NAMESPACE]`.
@@ -134,32 +136,52 @@ in the database.
 ```yaml
 routes:
   - name: platform-critical
-    guild_id: 123456789012345678
+    guild_id: "123456789012345678"
     matchers: 'severity="critical", namespace=~"prod-.*"'
     min_severity: critical
     target:
       kind: forum
-      id: 234567890123456789
-    group_strategy: alert
+      id: "234567890123456789"
+      policy:
+        thread_when: on_ack
+        label_tags: [namespace]
+    group_strategy: per_alert
     mentions:
-      roles: [345678901234567890]
+      roles: ["345678901234567890"]
       min_severity: critical
     escalation:
       after_secs: 900
-      users: [456789012345678901]
+      users: ["456789012345678901"]
     priority: 10
     continue_to_next: true
     enabled: true
 ```
 
+### Every snowflake is a quoted string
+
+`guild_id`, `target.id` and the mention lists are Discord snowflakes: `u64` values above 2^53.
+Helm parses a values file through `encoding/json`, so every number in one becomes a `float64` —
+`guild_id: 123456789012345678` reaches the chart as `123456789012345680` before a single template
+runs, and nothing downstream can tell. The route would then post to whatever channel the rounded
+id names.
+
+A quoted string is the only spelling that survives, so that is what the schema requires; the chart
+writes it back out as the TOML integer the bot reads. An unquoted one is refused by
+`helm install`, and one arriving through the untyped `config` escape hatch is refused by the
+renderer.
+
 `matchers` uses Alertmanager's own operators — `=`, `!=`, `=~`, `!~` — and a regex is fully
 anchored. A route removed from this list is disabled rather than deleted, so the cards it created
-keep their history.
+keep their history. `target.kind` is one of `text`, `forum`, `thread` or `dm`, and
+`group_strategy` one of `per_alert`, `per_group` or `digest`; `target.policy` carries the
+per-kind settings, which `values.yaml` lists in full.
 
 > [!NOTE]
-> `routes` is an array of tables. It is rendered through the chart's TOML writer like everything
-> else, but a route needing a shape the writer cannot express belongs in `configExtraToml`, which
-> is appended verbatim.
+> `routes` is an array of tables, and the chart's TOML writer emits it as `[[routes]]` with each
+> route's `target`, `mentions` and `escalation` as sub-tables of its own element. The value is
+> typed against the `RouteConfig` the image declares, so an unknown key is refused by
+> `helm install` rather than by the service at boot — which is also what the image does, since
+> `RouteConfig` is `deny_unknown_fields`.
 
 ## Wiring Alertmanager to it
 

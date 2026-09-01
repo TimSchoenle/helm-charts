@@ -182,3 +182,32 @@ tests:
     asserts:
       - failedTemplate:
           errorPattern: 'ingest\.webhookToken is set while alertmanagerConfig\.auth\.enabled is false'
+
+  # `routes` is typed, so an unquoted snowflake never gets this far — but `config` is the untyped
+  # escape hatch, and a value that arrived through it has already been rounded. Refusing beats
+  # emitting an id that names a different channel.
+  - it: refuses a rounded snowflake arriving through config
+    set:
+      discord.token: t
+      alertmanager.endpoints: [http://am.invalid:9093]
+      config:
+        routes:
+          - name: raw
+            guild_id: 123456789012345678
+    asserts:
+      - failedTemplate:
+          errorPattern: 'config key "routes.guild_id"'
+      - failedTemplate:
+          errorPattern: "above 2\\^53"
+
+  - it: refuses a snowflake that is not digits
+    set:
+      discord.token: t
+      alertmanager.endpoints: [http://am.invalid:9093]
+      config:
+        routes:
+          - name: raw
+            guild_id: "not-a-snowflake"
+    asserts:
+      - failedTemplate:
+          errorPattern: 'is written as a TOML integer, but holds "not-a-snowflake"'

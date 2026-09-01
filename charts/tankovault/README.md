@@ -1,6 +1,6 @@
 # tankovault
 
-![Version: 5.7.0](https://img.shields.io/badge/Version-5.7.0-informational?style=flat-square) ![AppVersion: 8.7.1](https://img.shields.io/badge/AppVersion-8.7.1-informational?style=flat-square)
+![Version: 5.7.1](https://img.shields.io/badge/Version-5.7.1-informational?style=flat-square) ![AppVersion: 8.7.1](https://img.shields.io/badge/AppVersion-8.7.1-informational?style=flat-square)
 
 This chart deploys the full TankoVault manga aggregator stack — frontend, api, control-plane, worker, notifier, sync, challenge-solver and render — hardened to the restricted Pod Security Standard, with file-backed configuration that reloads in place instead of restarting pods, optional bundled PostgreSQL, Valkey, NATS JetStream and TRAWL, and optional Prometheus metrics, alerting rules and Grafana dashboards.
 
@@ -1439,7 +1439,7 @@ lookup; the chart fails the render if FQDN destinations are named with the DNS r
 | commonAnnotations | object | `{}` | Annotations added to every object this chart creates. |
 | commonLabels | object | `{}` | Labels added to every object this chart creates. |
 | config | object | `{}` | Global TankoVault configuration, expressed exactly as the TOML tree documented in `docs/CONFIGURATION.md` (`database.max_connections`, `security.cors.allowed_origins`, ...). It is rendered to a ConfigMap and mounted as a file, never passed as environment variables, so **changing a value here reloads the running services in place instead of restarting them**. Two carve-outs from upstream: `telemetry.*` and `metrics.*` are installed process-globally and still need a restart to take effect. |
-| configExtraToml | string | `""` | Verbatim TOML appended after the rendered `config` tree. The escape hatch for anything this chart's TOML renderer cannot express, notably arrays of tables. |
+| configExtraToml | string | `""` | Verbatim TOML appended after the rendered `config` tree. The escape hatch for the shapes this chart's TOML renderer cannot express: an array of arrays, an array mixing tables and scalars, and TOML's own literal types such as a datetime. Arrays of tables render natively. |
 | configReload | object | `{"configDir":"/etc/tankovault/config","rolloutOnChange":false,"secretsDir":"/etc/tankovault/secrets"}` | Where the configuration and the credential files land in the container, and whether a change to either rolls the Deployments. |
 | configReload.configDir | string | `"/etc/tankovault/config"` | Directory the configuration fragments are mounted at, passed as `TANKOVAULT_CONFIG`. |
 | configReload.rolloutOnChange | bool | `false` | Add `checksum/config` pod annotations so a configuration change rolls the Deployments. Off by default, and deliberately so: every TankoVault service watches the directories its configuration came from and rebuilds its runtime when the kubelet updates the mounted ConfigMap or Secret, which is strictly better than a rollout. Turn this on only if you want config changes to behave like an ordinary image bump. |

@@ -218,11 +218,35 @@ Not included: `configExtraToml`, which is appended verbatim and never parsed.
 {{- end -}}
 
 {{/*
+Every Discord snowflake in the configuration, as the dotted paths `common.toml` writes them at.
+
+A snowflake is a `u64` and the ones Discord issues are all above 2^53, which is the largest
+integer Helm can carry out of a values file — it parses one through `encoding/json`, so every
+number in it arrives as a `float64` and `guild_id: 123456789012345678` becomes
+`123456789012345680` before any template runs. Nothing downstream can detect that, and the result
+is a route that posts to whatever channel the rounded id names.
+
+So these are written as quoted strings in `values.yaml`, which is the only spelling that survives,
+and named here so the renderer writes them back out as the TOML integers the image reads. The
+schema for `routes` refuses an unquoted one, and `common.toml` refuses a rounded one arriving
+through the untyped `config` escape hatch.
+*/}}
+{{- define "discord-alertmanager.snowflakes" -}}
+- routes.guild_id
+- routes.target.id
+- routes.mentions.roles
+- routes.mentions.users
+- routes.escalation.roles
+- routes.escalation.users
+{{- end -}}
+
+{{/*
 The complete configuration document: the effective tree, then the verbatim escape hatch.
 */}}
 {{- define "discord-alertmanager.configToml" -}}
 {{- $config := include "discord-alertmanager.effectiveConfig" . | fromYaml -}}
-{{- include "common.configToml" (dict "ctx" . "maps" (list $config)) -}}
+{{- $snowflakes := include "discord-alertmanager.snowflakes" . | fromYamlArray -}}
+{{- include "common.configToml" (dict "ctx" . "maps" (list $config) "intKeys" $snowflakes) -}}
 {{- end -}}
 
 {{/*

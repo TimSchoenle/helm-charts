@@ -1,6 +1,6 @@
 # tankovault
 
-![Version: 5.7.2](https://img.shields.io/badge/Version-5.7.2-informational?style=flat-square) ![AppVersion: 8.8.0](https://img.shields.io/badge/AppVersion-8.8.0-informational?style=flat-square)
+![Version: 5.8.0](https://img.shields.io/badge/Version-5.8.0-informational?style=flat-square) ![AppVersion: 8.8.0](https://img.shields.io/badge/AppVersion-8.8.0-informational?style=flat-square)
 
 This chart deploys the full TankoVault manga aggregator stack — frontend, api, control-plane, worker, notifier, sync, challenge-solver and render — hardened to the restricted Pod Security Standard, with file-backed configuration that reloads in place instead of restarting pods, optional bundled PostgreSQL, Valkey, NATS JetStream and TRAWL, and optional Prometheus metrics, alerting rules and Grafana dashboards.
 
@@ -206,6 +206,38 @@ The last two are needed only under `internal.identity=token`, and they are the o
 whose name is *not* a configuration path: one token is read as `internal.caller.token` by the
 caller that presents it and as `internal.peers.<caller>.token` by each of its callees, so the
 Secret key is storage and the projected file name carries the configuration path.
+
+Every credential the nine images declare, and which of them read each one:
+
+<!-- @config-credentials -->
+Every credential below is read from a **file in the secrets directory**, named for the
+configuration path it carries with `.` written as `__`. A file spelt any other way is
+mounted and never read. Those names are the keys of the Secret this chart mounts, except
+where a note below says otherwise.
+
+| Secrets file | Required | Chart value | Read by | When |
+|---|---|---|---|---|
+| `anilist__client_secret` | yes | `anilist.clientSecret` | `sync` | `services.sync.enabled`, and issued by AniList rather than generated |
+| `anilist__token_encryption_key` | yes | `anilist.tokenEncryptionKey` | `sync` | `services.sync.enabled`; generated when empty |
+| `auth__jwt_secret` | yes | `auth.jwtSecret` | `api` | always; generated when empty |
+| `auth__mfa_encryption_key` | no | `auth.mfaEncryptionKey` | `api` | `services.api.enabled`; generated when empty |
+| `auth__password_pepper` | no | `auth.passwordPepper` | `api`, `bootstrap` | generated on a first install only — see above |
+| `channels__discord_webhook_url` | no | `channels.discordWebhookUrl` | `notifier` | `services.notifier.enabled`, for the Discord channel |
+| `channels__webhook_url` | no | `channels.webhookUrl` | `notifier` | `services.notifier.enabled`, for a generic webhook |
+| `database__url` | yes |  | `api`, `bootstrap`, `control-plane`, `notifier`, `sync`, `worker` | derived from `postgresql` or `externalDatabase`; set it only through `config` or an `existingSecret` |
+| `email__password` | no | `email.password` | `api`, `notifier` | with `email.host` |
+| `email__url` | no |  | `api`, `notifier` | not surfaced as a value; write it into `config` or the Secret |
+| `internal__caller__token` | no |  | `api`, `challenge-solver`, `control-plane`, `notifier`, `render`, `sync`, `worker` | `internal.identity=token`; stored under the Secret key `internal__tokens__<caller>` and projected to this file name, one per caller — see above |
+| `internal__token` | no |  | `api`, `challenge-solver`, `control-plane`, `notifier`, `render`, `sync`, `worker` | the pre-4.0 shared token, refused at boot upstream; see the migration note above |
+| `nats__url` | yes |  | `api`, `control-plane`, `notifier`, `worker` | derived from `nats` or `externalNats` |
+| `redis__url` | yes |  | `api`, `control-plane` | derived from `redis` or `externalRedis` |
+| `seed_admin_password` | no | `bootstrap.seedAdmin.password` | `bootstrap` | `bootstrap.seedAdmin.enabled`; generated when empty |
+| `telemetry__sentry__dsn` | no | `telemetry.sentry.dsn` | `api`, `challenge-solver`, `control-plane`, `frontend`, `notifier`, `render`, `sync`, `worker` | `telemetry.sentry.enabled` |
+
+The same value is addressable as the variable `TANKOVAULT_<PATH>`, upper-cased with `.`
+written as `__`, and that spelling with `_FILE` appended names a file whose contents
+supply it.
+<!-- @config-credentials end -->
 
 ## Inter-service authentication
 

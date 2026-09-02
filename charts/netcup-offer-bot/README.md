@@ -1,6 +1,6 @@
 # netcup-offer-bot
 
-![Version: 6.1.2](https://img.shields.io/badge/Version-6.1.2-informational?style=flat-square) ![AppVersion: v3.1.0](https://img.shields.io/badge/AppVersion-v3.1.0-informational?style=flat-square)
+![Version: 6.2.0](https://img.shields.io/badge/Version-6.2.0-informational?style=flat-square) ![AppVersion: v3.1.0](https://img.shields.io/badge/AppVersion-v3.1.0-informational?style=flat-square)
 
 This chart deploys the Netcup Offer Bot, which monitors https://www.netcup-sonderangebote.de/ RSS feed and sends notifications to Discord webhooks when new offers are available.
 
@@ -44,14 +44,27 @@ kubectl create secret generic netcup-webhook   --namespace [NAMESPACE]   --from-
 existingSecret: netcup-webhook
 ```
 
-**The key names are the configuration paths the bot reads, not free-form names.** Each
-credential arrives as a file in a projected volume and the bot takes the key out of the file
-*name*, so `discord__webhook_url` and `telemetry__sentry__dsn` are the required spellings; a
-Secret spelled any other way mounts cleanly, supplies nothing, and the bot refuses to boot
-naming the missing credential.
+<!-- @config-credentials -->
+Every credential below is read from a **file in the secrets directory**, named for the
+configuration path it carries with `.` written as `__`. A file spelt any other way is
+mounted and never read. Those names are the keys of the Secret this chart mounts, except
+where a note below says otherwise.
 
-`discord.webhookUrl` and `telemetry.sentry.dsn` are then ignored. Only the keys the release
-actually uses need to be present: the DSN is projected only while `telemetry.sentry.enabled` is
+| Secrets file | Required | Chart value | When |
+|---|---|---|---|
+| `discord__webhook_url` | yes | `discord.webhookUrl` | always — the bot refuses to render without a webhook |
+| `telemetry__sentry__dsn` | no | `telemetry.sentry.dsn` | `telemetry.sentry.enabled` |
+
+The same value is addressable as the variable `NETCUP_OFFER_BOT_<PATH>`, upper-cased with `.`
+written as `__`, and that spelling with `_FILE` appended names a file whose contents
+supply it.
+<!-- @config-credentials end -->
+
+Each credential arrives as a file in a projected volume, so a Secret spelled any other way
+mounts cleanly, supplies nothing, and the bot refuses to boot naming the missing credential.
+
+With `existingSecret` set, `discord.webhookUrl` and `telemetry.sentry.dsn` are ignored. Only
+the keys the release actually uses need to be present: the DSN is projected only while `telemetry.sentry.enabled` is
 set, so a Secret for a release that does not report to Sentry carries the webhook alone.
 
 ## Configuration

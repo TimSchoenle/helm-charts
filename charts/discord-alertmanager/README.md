@@ -1,6 +1,6 @@
 # discord-alertmanager
 
-![Version: 0.3.1](https://img.shields.io/badge/Version-0.3.1-informational?style=flat-square) ![AppVersion: v0.4.0](https://img.shields.io/badge/AppVersion-v0.4.0-informational?style=flat-square)
+![Version: 0.4.0](https://img.shields.io/badge/Version-0.4.0-informational?style=flat-square) ![AppVersion: v0.4.0](https://img.shields.io/badge/AppVersion-v0.4.0-informational?style=flat-square)
 
 This chart deploys discord-alertmanager, a Discord operator surface for Prometheus Alertmanager. It receives the version-4 webhook envelope, renders each alert as a live status card in a Discord channel, and lets an operator acknowledge, ignore, silence or investigate it without leaving the client — with file-backed configuration that reloads in place instead of restarting pods, SQLite or PostgreSQL storage, optional Prometheus metrics and alerting rules, and an optional AlertmanagerConfig that registers the receiver with the Prometheus Operator instead of leaving it to be wired by hand.
 
@@ -66,9 +66,7 @@ CrashLoopBackOff rather than a degraded feature:
 
 ## Credentials
 
-Create the Secret yourself and reference it by name. **The keys are the configuration paths the
-service reads, not free-form names** — the loader takes each credential out of the file name, so
-`discord__token` is required and `token` is not read at all:
+Create the Secret yourself and reference it by name:
 
 ```shell
 kubectl create secret generic discord-alertmanager \
@@ -81,15 +79,24 @@ kubectl create secret generic discord-alertmanager \
 existingSecret: discord-alertmanager
 ```
 
-The five keys this chart knows how to consume:
+<!-- @config-credentials -->
+Every credential below is read from a **file in the secrets directory**, named for the
+configuration path it carries with `.` written as `__`. A file spelt any other way is
+mounted and never read. Those names are the keys of the Secret this chart mounts, except
+where a note below says otherwise.
 
-| Key | Setting | When |
-|---|---|---|
-| `discord__token` | `discord.token` | always |
-| `ingest__webhook_token` | `ingest.webhookToken` | to authenticate the webhook |
-| `alertmanager__bearer_token` | `alertmanager.bearerToken` | Alertmanager behind bearer auth |
-| `alertmanager__basic_password` | `alertmanager.basicPassword` | Alertmanager behind basic auth |
-| `storage__postgres__url` | `storage.postgres.url` | `storage.backend: postgres` |
+| Secrets file | Required | Chart value | When |
+|---|---|---|---|
+| `alertmanager__basic_password` | no | `alertmanager.basicPassword` | Alertmanager behind basic auth |
+| `alertmanager__bearer_token` | no | `alertmanager.bearerToken` | Alertmanager behind bearer auth |
+| `discord__token` | no | `discord.token` | always |
+| `ingest__webhook_token` | no | `ingest.webhookToken` | to authenticate the webhook |
+| `storage__postgres__url` | no | `storage.postgres.url` | `storage.backend: postgres` |
+
+The same value is addressable as the variable `DAM_<PATH>`, upper-cased with `.`
+written as `__`, and that spelling with `_FILE` appended names a file whose contents
+supply it.
+<!-- @config-credentials end -->
 
 The matching chart values are accepted as an alternative and make the chart render the Secret
 itself. That puts the credentials into `values.yaml` and into the Helm release object, where

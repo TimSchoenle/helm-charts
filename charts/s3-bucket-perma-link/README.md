@@ -1,6 +1,6 @@
 # s3-bucket-perma-link
 
-![Version: 5.1.2](https://img.shields.io/badge/Version-5.1.2-informational?style=flat-square) ![AppVersion: v2.1.0](https://img.shields.io/badge/AppVersion-v2.1.0-informational?style=flat-square)
+![Version: 5.2.0](https://img.shields.io/badge/Version-5.2.0-informational?style=flat-square) ![AppVersion: v2.1.0](https://img.shields.io/badge/AppVersion-v2.1.0-informational?style=flat-square)
 
 This chart deploys a simple web server that provides permanent links to specific S3 bucket resources. It allows you to define static URL paths that always point to specific files in your S3 buckets.
 
@@ -21,16 +21,31 @@ bucket has to be made public.
 
 ## Quick start
 
-Create the credential Secret first — the chart never takes the keys as values:
+Create the credential Secret first, and reference it by name:
 
 ```shell
 kubectl create secret generic s3-credentials   --namespace [NAMESPACE]   --from-literal=s3__access_key='...'   --from-literal=s3__secret_key='...'
 ```
 
-**The key names are the configuration paths the service reads, not free-form names.** The
-credential arrives as a file and the service takes the key out of the file *name*, so
-`s3__access_key` is required; a Secret spelled any other way mounts cleanly, supplies nothing,
-and the service refuses to boot naming the missing credential.
+<!-- @config-credentials -->
+Every credential below is read from a **file in the secrets directory**, named for the
+configuration path it carries with `.` written as `__`. A file spelt any other way is
+mounted and never read. Those names are the keys of the Secret this chart mounts, except
+where a note below says otherwise.
+
+| Secrets file | Required | Chart value | When |
+|---|---|---|---|
+| `s3__access_key` | yes | `s3.accessKey` | always, with `s3.secret_key` |
+| `s3__secret_key` | yes | `s3.secretKey` | always, with `s3.access_key` |
+| `telemetry__sentry__dsn` | no | `telemetry.sentry.dsn` | `telemetry.sentry.enabled` |
+
+The same value is addressable as the variable `S3_PERMA_LINK_<PATH>`, upper-cased with `.`
+written as `__`, and that spelling with `_FILE` appended names a file whose contents
+supply it.
+<!-- @config-credentials end -->
+
+A Secret spelled any other way mounts cleanly, supplies nothing, and the service refuses to boot
+naming the missing credential.
 
 ```shell
 helm repo add timschoenle https://timschoenle.github.io/helm-charts

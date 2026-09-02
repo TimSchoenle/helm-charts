@@ -7,9 +7,14 @@
 
 # Regenerate every generated file that has a local toolchain. The root README is rendered from
 # handlebars by a workflow action and has no local equivalent; `just chart-index` prints its input.
+#
+# `config-readme` writes into every chart's `README.md.gotmpl`, so it runs before `chart-readmes`
+# renders those templates — the same ordering `schema` has against helm-schema, and for the same
+# reason: a generator that edits another generator's input has to go first or the tree needs two
+# runs to converge.
 [doc("Regenerate every generated file that has a local toolchain")]
 [group('docs')]
-docs: schema chart-readmes
+docs: schema config-readme chart-readmes
 
 # Generate every chart's `values.schema.json` from the `@schema` blocks in its values.yaml.
 #

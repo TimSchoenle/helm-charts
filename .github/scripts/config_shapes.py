@@ -14,37 +14,58 @@ composed through both when they are stacked, so a `HashMap<String, HashSet<Metho
 enum. That is the fact this module turns into the `@schema` block the chart ships.
 
 --------------------------------------------------------------------------------------------
-The three markers
+Generated is the default, and the markers are the departures from it
 --------------------------------------------------------------------------------------------
 
-    # @config-shape <values-path> generated
+**Every value carrying a `# @config projection`, `structured` or `external` marker has its
+`@schema` block written from the contract.** Nothing enrols it. The marker naming the contract key
+is the enrolment, because a value that says which key it feeds has said everything a generator
+needs, and a second marker repeating "yes, really" is one more thing to forget.
+
+It was the other way round until this change, and what that cost was measured rather than argued:
+nine values were enrolled and 185 were not, while 114 of the 185 carried a block byte-identical to
+the one their contract describes. Those 114 were hand copies that happened to still be right, with
+nothing holding them there — precisely the state this repository keeps discovering after an
+automated bump. The other 71 were not identical, and every one of those differences was invisible.
+
+Three markers remain, and each one now says the *opposite* of what the retired `generated` said:
+not "derive this", but "here is where the chart departs from what was derived".
+
     # @config-shape <values-path> handwritten <appVersion> <source>
     # @config-shape-except <values-path> <sub-path> <reason>
+    # @config-shape-narrow <values-path> <sub-path> <reason>
 
 written as plain comments above the value's `@schema` block, separated from it by a blank line —
 the placement `config_bindings.py` measured to be invisible to helm-schema and helm-docs alike,
 and the reason a `@config` marker cannot use it: inside the delimiters the text *is* the schema.
 
-`generated` says the block below is derived from the contract, and `just config-shapes` writes
-it. It is refused for a key whose contract does not describe its element, because a block
-generated from `{"type": "array"}` alone type-checks nothing — and enrolling one would *delete* a
-hand transcription that was doing real work.
+`handwritten` says the chart owns this block, and is the escape hatch generation is refused for.
+Two things earn it: a container whose element the producer has not described, where a block built
+from `{"type": "array"}` alone would type-check nothing, and a key the producer publishes no
+constraint for at all, where the derived block would name all six JSON types and check nothing.
+Five keys in this repository are the second kind, three of them log-level enumerations the chart
+knows the members of and the contract calls `unknown`. The marker asserts "read from `<source>` at
+`<appVersion>`" and fails when the chart's appVersion moves past it, which is what an automated
+bump does — and fails for a second reason once the contract *does* describe the key, because a
+hand copy the image has superseded is a stale copy that looks maintained.
 
-`handwritten` is the older form, and stays for exactly that case: an element the producer has not
-described yet. It asserts "read from `<source>` at `<appVersion>`" and fails when the chart's
-appVersion moves past it, which is what an automated bump does. It fails for a second reason as
-of this module: once the contract *does* describe the element, the hand copy is superseded and
-the marker has to become `generated`. That is the interlock that stops a chart carrying a stale
-transcription of a struct its image now publishes.
-
-`@config-shape-except` keeps one position in an otherwise generated shape. `discord-alertmanager`
-is why it exists: `routes[].guild_id` is a Discord snowflake, the contract types it `integer`,
-and the chart types it as a quoted string of digits because Helm parses a values file through
+`@config-shape-except` overrides one position the contract *does* describe. `discord-alertmanager`
+is why it exists: `routes[].guild_id` is a Discord snowflake, the contract types it `integer`, and
+the chart types it as a quoted string of digits because Helm parses a values file through
 `encoding/json` and a snowflake is above 2^53 — `123456789012345678` reaches the chart as
 `123456789012345680`, silently. Every other field of that struct is still generated, so a field
-the next release adds still lands automatically. The sub-path is refused when it addresses
-nothing in the generated shape, which is how an exception that outlived the field it protected is
-caught rather than silently kept.
+the next release adds still lands automatically.
+
+`@config-shape-narrow` keeps one position the contract does *not* describe: a bound the chart
+knows and the producer has not published. `sentry.sample_rate` is a `f64` the contract types
+`number`, and every chart here writes `minimum: 0` and `maximum: 1` above it, because a sample rate
+of 5 is a values file nobody should get past `helm install`. Generation would have dropped all
+sixteen of those keywords across four charts.
+
+The two are told apart by where the position resolves, and each is refused when written as the
+other — see `apply_divergences` for why that is worth a second marker rather than one that accepts
+either. Both are refused outright when the sub-path addresses nothing in the chart's own block,
+which is how a departure that outlived the field it protected is caught.
 
 --------------------------------------------------------------------------------------------
 What is deliberately not generated
@@ -119,18 +140,34 @@ import config_contract as cc
 from config_declaration import Bound, DeclarationError, load_declaration
 from config_paths import CHARTS_DIR, read_yaml
 
+# The one mode a marker still declares. `generated` was the other, and is now what every bound
+# value is without declaring anything — see the module docstring. The word is kept because the
+# marker it used to spell is refused *by name*, which is the whole of the migration diagnostic.
 GENERATED = "generated"
 HANDWRITTEN = "handwritten"
-MODES = (GENERATED, HANDWRITTEN)
+MODES = (HANDWRITTEN,)
 
 SHAPE_MARKER = "@config-shape"
 EXCEPT_MARKER = "@config-shape-except"
+NARROW_MARKER = "@config-shape-narrow"
+
+# The binding classes whose value has a constraint of its own to be generated from. `composed` is
+# absent because such a value is one input to the key's text rather than the key's value; see
+# `Chart._generated`.
+DERIVED_CLASSES = (cb.PROJECTION, cb.STRUCTURED, cb.EXTERNAL)
+
+# The two kinds of declared divergence, told apart by where the position they name resolves: an
+# override replaces one the contract also describes, a narrowing keeps one it does not describe at
+# all. See `apply_divergences` for why that distinction is worth a second marker.
+OVERRIDE = "override"
+NARROWING = "narrowing"
 
 # Anchored as whole comment lines, so a marker mentioned in prose — this file's own docstring, a
-# chart's `# --` description — is not mistaken for a declaration. The exception is matched first
-# by the caller, since its own name begins with the other's.
+# chart's `# --` description — is not mistaken for a declaration. The two suffixed spellings are
+# matched before the bare one by the caller, since both their names begin with it.
 _SHAPE = re.compile(r"^\s*#\s*@config-shape\s+(?P<rest>\S.*?)\s*$")
 _EXCEPT = re.compile(r"^\s*#\s*@config-shape-except\s+(?P<rest>\S.*?)\s*$")
+_NARROW = re.compile(r"^\s*#\s*@config-shape-narrow\s+(?P<rest>\S.*?)\s*$")
 
 # Keywords in the order a generated block spells them: what the value *is*, then its bounds, then
 # what it holds. Anything outside this list is appended alphabetically rather than dropped —
@@ -165,7 +202,16 @@ class ShapeError(Exception):
 
 @dataclass(frozen=True)
 class Shape:
-    """One `@config-shape` marker: a value whose `@schema` block is derived, or was transcribed."""
+    """One value whose `@schema` block this module owns, generated or transcribed.
+
+    A `handwritten` one is declared by a marker and `line` is that marker's. A generated one is
+    declared by nothing — every value carrying a `@config projection`, `structured` or `external`
+    marker is generated — and `line` is the opening delimiter of the `@schema` block itself, which
+    is where a reader of the message has to go either way.
+
+    `declared` tells the two apart for the one message that has to know: a generated shape cannot
+    be told to move a marker it does not have.
+    """
 
     chart: str
     line: int
@@ -173,6 +219,7 @@ class Shape:
     mode: str
     version: str | None
     source: str | None
+    declared: bool = True
 
     @property
     def where(self) -> str:
@@ -182,13 +229,24 @@ class Shape:
 
 @dataclass(frozen=True)
 class Divergence:
-    """One `@config-shape-except` marker: a position the chart keeps against the contract."""
+    """One declared departure from the generated shape: a position the chart keeps as its own.
+
+    `kind` is `OVERRIDE` for a `@config-shape-except`, which replaces a position the contract also
+    describes, and `NARROWING` for a `@config-shape-narrow`, which keeps one it does not describe
+    at all. The marker states which, and is held to it — see `apply_divergences`.
+    """
 
     chart: str
     line: int
     values_path: str
     sub_path: str
     reason: str
+    kind: str = OVERRIDE
+
+    @property
+    def marker(self) -> str:
+        """The marker this divergence was written as, for a message that names it."""
+        return EXCEPT_MARKER if self.kind == OVERRIDE else NARROW_MARKER
 
     @property
     def where(self) -> str:
@@ -202,7 +260,7 @@ class Divergence:
 
 
 def parse_markers(text: str, chart: str) -> tuple[list[Shape], list[Divergence]]:
-    """Every `@config-shape` and `@config-shape-except` marker in one values.yaml.
+    """Every `@config-shape`, `-except` and `-narrow` marker in one values.yaml.
 
     Every problem is collected before any is raised, which is the posture every gate in this group
     takes: one broken line must not hide the state of the rest.
@@ -214,16 +272,21 @@ def parse_markers(text: str, chart: str) -> tuple[list[Shape], list[Divergence]]
     for number, line in enumerate(text.splitlines(), start=1):
         where = f"{chart}/values.yaml:{number}"
 
-        found = _EXCEPT.match(line)
-        if found:
+        for pattern, kind, marker in (
+            (_EXCEPT, OVERRIDE, EXCEPT_MARKER),
+            (_NARROW, NARROWING, NARROW_MARKER),
+        ):
+            found = pattern.match(line)
+            if not found:
+                continue
             words = found["rest"].split(maxsplit=2)
             if len(words) < 3:
                 problems.append(
-                    f"{where}: `{EXCEPT_MARKER}` takes a values path, a sub-path inside the "
-                    "generated schema and the reason the chart keeps its own — an exception "
-                    "without a reason is one nobody can review"
+                    f"{where}: `{marker}` takes a values path, a sub-path inside the schema and "
+                    "the reason the chart keeps its own — a departure from the contract without a "
+                    "reason is one nobody can review"
                 )
-                continue
+                break
             divergences.append(
                 Divergence(
                     chart=chart,
@@ -231,47 +294,50 @@ def parse_markers(text: str, chart: str) -> tuple[list[Shape], list[Divergence]]
                     values_path=words[0],
                     sub_path=words[1],
                     reason=words[2].strip(),
+                    kind=kind,
                 )
             )
-            continue
+            break
+        else:
+            found = _SHAPE.match(line)
+            if not found:
+                continue
 
-        found = _SHAPE.match(line)
-        if not found:
-            continue
+            words = found["rest"].split()
+            if len(words) >= 2 and words[1] == GENERATED:
+                problems.append(
+                    f"{where}: `{SHAPE_MARKER} {words[0]} {GENERATED}` is obsolete — every value "
+                    f"carrying a `{cb.MARKER}` marker has its `@schema` block generated from the "
+                    "contract now, without enrolling. Delete this line; declare any position the "
+                    f"chart keeps with `{EXCEPT_MARKER}` or `{NARROW_MARKER}`"
+                )
+                continue
+            if len(words) < 2 or words[1] not in MODES:
+                problems.append(
+                    f"{where}: `{SHAPE_MARKER}` takes a values path and then "
+                    f"`{HANDWRITTEN} <appVersion> <source>`, which is the one thing a marker "
+                    "still declares"
+                )
+                continue
 
-        words = found["rest"].split()
-        if len(words) < 2 or words[1] not in MODES:
-            problems.append(
-                f"{where}: `{SHAPE_MARKER}` takes a values path and then `{GENERATED}` or "
-                f"`{HANDWRITTEN} <appVersion> <source>`"
-            )
-            continue
+            values_path, mode = words[0], words[1]
+            if len(words) != 4:
+                problems.append(
+                    f"{where}: `{SHAPE_MARKER} {values_path} {HANDWRITTEN}` takes the appVersion "
+                    "the struct was read at and the file it was read from"
+                )
+                continue
 
-        values_path, mode = words[0], words[1]
-        if mode == GENERATED and len(words) != 2:
-            problems.append(
-                f"{where}: `{SHAPE_MARKER} {values_path} {GENERATED}` takes nothing further — the "
-                "contract is the source, and the version it was read at is the digest the chart "
-                "pins"
+            shapes.append(
+                Shape(
+                    chart=chart,
+                    line=number,
+                    values_path=values_path,
+                    mode=mode,
+                    version=words[2],
+                    source=words[3],
+                )
             )
-            continue
-        if mode == HANDWRITTEN and len(words) != 4:
-            problems.append(
-                f"{where}: `{SHAPE_MARKER} {values_path} {HANDWRITTEN}` takes the appVersion the "
-                "struct was read at and the file it was read from"
-            )
-            continue
-
-        shapes.append(
-            Shape(
-                chart=chart,
-                line=number,
-                values_path=values_path,
-                mode=mode,
-                version=words[2] if mode == HANDWRITTEN else None,
-                source=words[3] if mode == HANDWRITTEN else None,
-            )
-        )
 
     if problems:
         raise ShapeError("\n".join(problems))
@@ -333,6 +399,21 @@ def _dedent(text: str) -> str:
 # --------------------------------------------------------------------------------------------
 # Building the expected schema
 # --------------------------------------------------------------------------------------------
+
+
+def describing(constraint: dict[str, Any] | None) -> bool:
+    """Whether a constraint says anything a schema could hold a value to.
+
+    A key the producer publishes no constraint for reaches `expected` as `None` and leaves with a
+    block naming all six JSON types, which is a property helm-schema emits and nothing rejects. As
+    an opt-in that was harmless: a value nobody enrolled kept its hand-written block. As the
+    default it is a downgrade — five keys in this repository are typed only by the chart, and three
+    of them are log-level enumerations the contract calls `unknown` — so the generator refuses the
+    key instead and asks for the transcription to be declared as one.
+    """
+    return bool(constraint) and any(
+        keyword in constraint for keyword in ("type", "enum", "const")
+    )
 
 
 def expected(constraint: dict[str, Any] | None, *, optional: bool, structured: bool) -> dict:
@@ -443,26 +524,32 @@ def apply_divergences(
     """The generated schema with each declared position taken from the chart's own block.
 
     Returns the result and the problems found, rather than raising on the first: a value with two
-    stale exceptions should report both.
+    stale departures should report both.
 
     A sub-path is a dotted walk of *schema keywords* — `items.properties.guild_id`,
-    `additionalProperties.items` — because that is what the thing being addressed is. It has to
-    resolve on both sides: absent from the generated shape it is an exception that outlived the
-    field it protected, and absent from the chart's block it keeps nothing.
+    `additionalProperties.items` — because that is what the thing being addressed is. It always has
+    to resolve in the chart's own block, since that is where the kept text comes from; whether it
+    resolves in the *generated* schema is what the two markers disagree about, and holding each to
+    its own answer is what makes a departure age visibly:
+
+    | Marker                 | In the generated shape | What it says                              |
+    |------------------------|------------------------|-------------------------------------------|
+    | `@config-shape-except` | present                | the contract describes this, and the chart |
+    |                        |                        | overrides it — `guild_id` as a string      |
+    | `@config-shape-narrow` | absent                 | the contract describes nothing here, and   |
+    |                        |                        | the chart adds a bound — `sampleRate` 0..1 |
+
+    Written the wrong way round, each is refused with the other named. That is not pedantry: a
+    narrowing whose position the contract *starts* describing is exactly the moment somebody has
+    to decide whether the producer's own bound supersedes the chart's, and an override whose
+    position the contract *stops* describing is a keyword nothing upstream stands behind any more.
+    Both are silent under a single marker that accepts either.
     """
     result = _deep_copy(generated)
     problems: list[str] = []
 
     for divergence in divergences:
         parts = divergence.sub_path.split(".")
-        if _dig(result, parts) is None:
-            problems.append(
-                f"{divergence.where}: keeps {divergence.sub_path!r} of "
-                f"{divergence.values_path!r}, which the generated schema does not contain. Either "
-                "the contract no longer describes it, in which case the exception is what is "
-                "stale, or the sub-path is a typo"
-            )
-            continue
         kept = _dig(present, parts)
         if kept is None:
             problems.append(
@@ -471,9 +558,51 @@ def apply_divergences(
                 "nothing to keep"
             )
             continue
+
+        described = _dig(generated, parts) is not None
+        if divergence.kind == OVERRIDE and not described:
+            problems.append(
+                f"{divergence.where}: overrides {divergence.sub_path!r} of "
+                f"{divergence.values_path!r}, which the generated schema does not contain. Either "
+                f"the contract no longer describes it — in which case this is a narrowing and the "
+                f"marker is `{NARROW_MARKER}` — or the sub-path is a typo"
+            )
+            continue
+        if divergence.kind == NARROWING and described:
+            problems.append(
+                f"{divergence.where}: narrows {divergence.sub_path!r} of "
+                f"{divergence.values_path!r}, which the contract now describes itself. Decide "
+                f"between them: `{EXCEPT_MARKER}` keeps the chart's, and deleting the marker takes "
+                "the image's"
+            )
+            continue
+
+        if not described and _dig(result, parts[:-1]) is None:
+            problems.append(
+                f"{divergence.where}: narrows {divergence.sub_path!r} of "
+                f"{divergence.values_path!r}, whose enclosing position the generated schema does "
+                "not contain either, so there is nowhere to put it"
+            )
+            continue
+
         _put(result, parts, _deep_copy(kept))
 
-    return result, problems
+    return _settle(result), problems
+
+
+def _settle(schema: dict[str, Any]) -> dict[str, Any]:
+    """One assembled block, with the pair helm-schema refuses resolved in the enum's favour.
+
+    `expected` never emits `enum` beside `type` at the top level, because helm-schema exits
+    `just schema` fatally on it and leaves every chart without a `values.schema.json`. A narrowing
+    can reintroduce the pair — a chart that enumerates the members of a key the contract only types
+    as a string is the ordinary case, and `telemetry.logLevel` is three of them — so the same rule
+    is applied after the departures rather than only before. The enum wins because it is the
+    stricter of the two and because it is the half somebody wrote down deliberately.
+    """
+    if "enum" in schema and "type" in schema:
+        return {name: value for name, value in schema.items() if name != "type"}
+    return schema
 
 
 def _dig(schema: Any, parts: list[str]) -> Any:
@@ -642,7 +771,7 @@ class Chart:
             self.text = handle.read()
         self.problems: list[str] = []
 
-        self.shapes, self.divergences = parse_markers(self.text, self.name)
+        self.transcribed, self.divergences = parse_markers(self.text, self.name)
         self.blocks = {
             block.values_path: block
             for block in cb.parse_blocks(self.values, self.name)
@@ -655,7 +784,47 @@ class Chart:
         self.bound = Bound(chart_dir, declaration) if declaration is not None else None
         self.app_version = str(read_yaml(chart_dir / "Chart.yaml").get("appVersion", "")).strip()
 
+        self.generated = self._generated()
+        self.shapes = self.generated + self.transcribed
         self._check_markers()
+
+    def _generated(self) -> list[Shape]:
+        """Every value whose block is derived, which is every bound value that keeps no marker.
+
+        Enrolment was per value and opt-in until the `generated` marker was retired, and what that
+        cost was measured rather than guessed: nine values across one chart were enrolled and 185
+        were not, while 114 of those 185 carried a block byte-identical to the one the contract
+        describes — hand copies that happened to still be right, with nothing holding them there.
+        The default is now the other way round, so a key the image retypes moves the chart on the
+        next `just config-shapes` whether or not anybody remembered to enrol the value.
+
+        `composed` is the one binding class left out, and the reason is in `config_bindings.py`:
+        such a value is *an input* to the key's text — `printf "0.0.0.0:%v"` over a port — so the
+        key's constraint describes the composition and not the value, and generating from it would
+        type the part as the whole.
+        """
+        shapes: list[Shape] = []
+        declared = {shape.values_path for shape in self.transcribed}
+
+        for values_path, markers in self.markers.items():
+            if values_path in declared:
+                continue
+            if not any(marker.cls in DERIVED_CLASSES for marker in markers):
+                continue
+            block = self.blocks.get(values_path)
+            shapes.append(
+                Shape(
+                    chart=self.name,
+                    line=block.start if block is not None else markers[0].line,
+                    values_path=values_path,
+                    mode=GENERATED,
+                    version=None,
+                    source=None,
+                    declared=False,
+                )
+            )
+
+        return sorted(shapes, key=lambda shape: shape.line)
 
     # ------------------------------------------------------------------------------------
     # Resolution
@@ -664,11 +833,11 @@ class Chart:
     def _check_markers(self) -> None:
         """What can be decided from the markers alone, before a contract is opened.
 
-        A value carries at most one shape marker, and an exception belongs to a generated one and
+        A value carries at most one shape marker, and a departure belongs to a generated block and
         says so by naming the same value.
         """
         seen: dict[str, Shape] = {}
-        for shape in self.shapes:
+        for shape in self.transcribed:
             first = seen.get(shape.values_path)
             if first is not None:
                 self.problems.append(
@@ -679,22 +848,32 @@ class Chart:
                 continue
             seen[shape.values_path] = shape
 
-        generated = {
-            shape.values_path for shape in self.shapes if shape.mode == GENERATED
-        }
+        generated = {shape.values_path for shape in self.generated}
         for divergence in self.divergences:
-            if divergence.values_path not in generated:
+            if divergence.values_path in generated:
+                continue
+            if divergence.values_path in seen:
                 self.problems.append(
-                    f"{divergence.where}: excepts {divergence.sub_path!r} of "
-                    f"{divergence.values_path!r}, which no `{SHAPE_MARKER} ... "
-                    f"{GENERATED}` marker declares. An exception to a hand-written block is "
-                    "just the block"
+                    f"{divergence.where}: departs from the generated shape of "
+                    f"{divergence.values_path!r}, whose block is `{HANDWRITTEN}` and so is not "
+                    "generated at all. A departure from a hand-written block is just the block"
                 )
+                continue
+            self.problems.append(
+                f"{divergence.where}: departs from the generated shape of "
+                f"{divergence.values_path!r}, which carries no `{cb.MARKER}` marker naming a "
+                "contract key, so nothing is generated there to depart from"
+            )
 
     def constraint_for(
         self, shape: Shape, *, report: bool = True
-    ) -> tuple[dict[str, Any] | None, bool, bool] | None:
-        """The contract key one value feeds, as `(constraint, optional, structured)`.
+    ) -> tuple[dict[str, Any] | None, bool, bool, str] | None:
+        """The contract key one value feeds, as `(constraint, optional, structured, ty)`.
+
+        `ty` is the producer's own name for the type — `SentryLevel`, `BTreeMap<String,
+        LegalDocument>` — and is carried for one purpose: a refusal that asks for a transcription
+        can name what is being transcribed, so the marker it asks for can be pasted rather than
+        composed. Empty when the contract publishes none.
 
         `None` when the value cannot be resolved. Reported unless the caller is only asking
         whether a resolution exists — a hand transcription in a chart with no contract at all
@@ -707,7 +886,7 @@ class Chart:
         markers = [
             marker
             for marker in self.markers.get(shape.values_path, [])
-            if marker.cls in (cb.PROJECTION, cb.STRUCTURED)
+            if marker.cls in DERIVED_CLASSES
         ]
         if not markers:
             refuse(
@@ -758,20 +937,29 @@ class Chart:
             return None
 
         forms = {cc.text_form(entry) for entry in entries}
-        return constraints[0], marker.optional, forms == {"structured"}
+        names = {str(entry.get("ty") or "") for entry in entries}
+        return (
+            constraints[0],
+            marker.optional,
+            forms == {"structured"},
+            names.pop() if len(names) == 1 else "",
+        )
 
     # ------------------------------------------------------------------------------------
     # One shape
     # ------------------------------------------------------------------------------------
 
     def block_for(self, shape: Shape) -> cb.Block | None:
-        """The `@schema` block one marker describes, refusing a marker that is not above it.
+        """The `@schema` block one shape describes, refusing a marker that is not above it.
 
-        Placement is checked rather than assumed. The marker is matched to its value by name, so
-        one written at the other end of the file would still resolve — and would then assert
-        something about a block nobody reading that block can see. The rule is the one the two
-        existing markers already follow: above the block, with nothing but comments and blank
-        lines in between.
+        Placement is checked rather than assumed, for a shape a marker declares. The marker is
+        matched to its value by name, so one written at the other end of the file would still
+        resolve — and would then assert something about a block nobody reading that block can see.
+        The rule is the one the surviving markers already follow: above the block, with nothing but
+        comments and blank lines in between.
+
+        A generated shape is not declared anywhere, so there is nothing to place: it *is* the
+        block, found through the `@config` marker written inside it.
         """
         block = self.blocks.get(shape.values_path)
         if block is None:
@@ -780,6 +968,9 @@ class Chart:
                 "this marker to describe"
             )
             return None
+
+        if not shape.declared:
+            return block
 
         lines = self.text.splitlines()
         between = lines[shape.line : block.start - 1]
@@ -803,13 +994,25 @@ class Chart:
         resolved = self.constraint_for(shape)
         if resolved is None:
             return None
-        constraint, optional, structured = resolved
+        constraint, optional, structured, ty = resolved
+        source = ty if ty and not re.search(r"[\s,]", ty) else "<source>"
+        version = self.app_version or "<appVersion>"
 
         if structured and not cc.describes_element(constraint):
             self.problems.append(
                 f"{shape.where}: the contract describes {shape.values_path!r} as a container and "
                 "says nothing about what one element holds, so a generated block would type-check "
-                f"nothing. Keep it `{HANDWRITTEN}` until the image publishes the element"
+                f"nothing. Transcribe it and declare `{SHAPE_MARKER} {shape.values_path} "
+                f"{HANDWRITTEN} {version} {source}` until the image publishes the element"
+            )
+            return None
+
+        if not describing(constraint):
+            self.problems.append(
+                f"{shape.where}: the contract publishes no constraint for {shape.values_path!r}, "
+                "so a generated block would accept every JSON type and check nothing. Transcribe "
+                f"it and declare `{SHAPE_MARKER} {shape.values_path} {HANDWRITTEN} {version} "
+                f"{source}`, which is held against the version it was read at"
             )
             return None
 
@@ -833,9 +1036,19 @@ class Chart:
         return render(wanted, " " * block.indent)
 
     def superseded(self, shape: Shape) -> bool:
-        """Whether a hand-transcribed shape is one the contract now publishes itself."""
+        """Whether a hand-transcribed shape is one the contract now publishes itself.
+
+        Two ways for that to become true, and they are the two reasons a transcription is allowed
+        in the first place: a container whose element the producer had not described, and a key it
+        published no constraint for at all. Either one arriving retires the hand copy.
+        """
         resolved = self.constraint_for(shape, report=False)
-        return resolved is not None and cc.describes_element(resolved[0])
+        if resolved is None:
+            return False
+        constraint, _, structured, _name = resolved
+        if structured:
+            return cc.describes_element(constraint)
+        return describing(constraint)
 
 
 def check_handwritten(chart: Chart, shape: Shape) -> None:
@@ -846,9 +1059,9 @@ def check_handwritten(chart: Chart, shape: Shape) -> None:
     if chart.superseded(shape):
         chart.problems.append(
             f"{shape.where}: {shape.values_path!r} was transcribed by hand, and the contract now "
-            f"describes this element itself. Replace the marker with `{SHAPE_MARKER} "
-            f"{shape.values_path} {GENERATED}` and run `just config-shapes`; declare any "
-            f"position the chart keeps with `{EXCEPT_MARKER}`"
+            f"describes it itself. Delete the marker and run `just config-shapes`, which "
+            f"generates every bound value's block; declare any position the chart keeps with "
+            f"`{EXCEPT_MARKER}` or `{NARROW_MARKER}`"
         )
         return
 

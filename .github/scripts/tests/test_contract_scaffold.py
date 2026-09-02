@@ -330,12 +330,12 @@ class SchemaBlocks(unittest.TestCase):
         self.assertEqual(block["items"], {"type": "string"})
         self.assertNotIn("additionalProperties", block)
 
-    def test_a_described_element_enrols_the_value_as_a_generated_shape(self):
+    def test_a_described_element_is_written_without_enrolling_it(self):
         """A new chart's deepest schemas are owned from the moment they are written.
 
-        Nothing is asserted here that the scaffold did not just do — the block below the marker
-        was generated from the same element — and without it the chart starts life with a correct
-        schema and no interlock holding it to the contract it came from.
+        No marker says so, and none is needed: the `# @config` marker inside the block is what
+        makes it generated, so the interlock holding it to the contract is there from the first
+        `just config-shapes` without a second line asserting it.
         """
         entry = key(
             "a.hosts", text_form="structured", default_value=["one"],
@@ -343,9 +343,10 @@ class SchemaBlocks(unittest.TestCase):
         )
         surface = sc.from_contract(union_of(entry))
         text = sc.render_values("app", surface, "org/app", "v1", "", "config.toml")
-        self.assertIn("# @config-shape a.hosts generated", text)
+        self.assertIn("# # @config structured a.hosts optional", text)
+        self.assertNotIn("@config-shape", text)
 
-    def test_an_undescribed_container_is_not_enrolled(self):
+    def test_an_undescribed_container_is_written_without_a_marker_either(self):
         entry = key("a.peers", text_form="structured", constraint={"type": "object"})
         surface = sc.from_contract(union_of(entry))
         text = sc.render_values("app", surface, "org/app", "v1", "", "config.toml")

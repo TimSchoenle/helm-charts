@@ -7,6 +7,30 @@
 # image listed, and validates the rendered ConfigMap, the container environment and the
 # mounted secret file names against the result.
 
+# What this chart adds to the credential reference in its README, which `just config-readme`
+# generates from the contract. The rows are the contract's — every key it marks `secret: true`,
+# and whether the image requires it — and these two columns are the chart's: the value an
+# operator may set instead of creating the Secret, and the condition under which a release needs
+# the credential at all. Neither is derivable, and both are refused when they go stale: an entry
+# for a key the contract no longer declares, or a `value` this chart's values.yaml does not
+# expose, fails the gate.
+credentials:
+  - key: discord.token
+    value: discord.token
+    note: always
+  - key: ingest.webhook_token
+    value: ingest.webhookToken
+    note: to authenticate the webhook
+  - key: alertmanager.bearer_token
+    value: alertmanager.bearerToken
+    note: Alertmanager behind bearer auth
+  - key: alertmanager.basic_password
+    value: alertmanager.basicPassword
+    note: Alertmanager behind basic auth
+  - key: storage.postgres.url
+    value: storage.postgres.url
+    note: "`storage.backend: postgres`"
+
 # Whether `just check-config-bindings` holds this chart's values against the keys below.
 #
 # Declared rather than inferred from the chart carrying markers: a chart that loses them

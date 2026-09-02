@@ -74,9 +74,7 @@ engine:
   {{- with .Values.engine.outboxLeaseSecs }}
   outbox_lease_secs: {{ . }}
   {{- end }}
-  {{- with .Values.engine.persistEvents }}
-  persist_events: {{ . }}
-  {{- end }}
+  persist_events: {{ .Values.engine.persistEvents }}
   {{- with .Values.engine.pruneIntervalSecs }}
   prune_interval_secs: {{ . }}
   {{- end }}
@@ -153,9 +151,7 @@ observability:
   {{- with .Values.observability.adminChannelId }}
   admin_channel_id: {{ . }}
   {{- end }}
-  {{- with .Values.observability.metricsEnabled }}
-  metrics_enabled: {{ . }}
-  {{- end }}
+  metrics_enabled: {{ .Values.observability.metricsEnabled }}
 render:
   {{- with .Values.render.debounceSecs }}
   debounce_secs: {{ . }}
@@ -167,9 +163,7 @@ render:
   key_labels:
     {{- toYaml . | nindent 4 }}
   {{- end }}
-  {{- with .Values.render.showFingerprint }}
-  show_fingerprint: {{ . }}
-  {{- end }}
+  show_fingerprint: {{ .Values.render.showFingerprint }}
   {{- with .Values.render.threadArchiveAfterMinutes }}
   thread_archive_after_minutes: {{ . }}
   {{- end }}
@@ -188,9 +182,7 @@ storage:
     {{- with .Values.storage.postgres.maxConnections }}
     max_connections: {{ . }}
     {{- end }}
-    {{- with .Values.storage.postgres.migrateOnStart }}
-    migrate_on_start: {{ . }}
-    {{- end }}
+    migrate_on_start: {{ .Values.storage.postgres.migrateOnStart }}
   sqlite:
     {{- with .Values.storage.sqlite.acquireTimeoutSecs }}
     acquire_timeout_secs: {{ . }}
@@ -198,9 +190,7 @@ storage:
     {{- with .Values.storage.sqlite.maxConnections }}
     max_connections: {{ . }}
     {{- end }}
-    {{- with .Values.storage.sqlite.migrateOnStart }}
-    migrate_on_start: {{ . }}
-    {{- end }}
+    migrate_on_start: {{ .Values.storage.sqlite.migrateOnStart }}
     {{- with .Values.storage.sqlite.path }}
     path: {{ . | quote }}
     {{- end }}

@@ -76,10 +76,10 @@ jobs:
 
       # The vendored configuration contracts, refreshed from the images the charts pin. Placed
       # before the schemas and after the dependency build, and the order is load-bearing in one
-      # direction: `just schema` derives every `@config-shape ... generated` block from the
-      # committed contract, so a refresh running after it would generate this run's schemas from
-      # last run's contract and only converge on the next push. The commit step below still
-      # sweeps both up together, under a message that already covers them.
+      # direction: `just schema` derives every bound value's `@schema` block from the committed
+      # contract, so a refresh running after it would generate this run's schemas from last run's
+      # contract and only converge on the next push. The commit step below still sweeps both up
+      # together, under a message that already covers them.
       #
       # This is the one networked step in the repository, and the only one depending on a service
       # outside GitHub: `just contracts` verifies each image's signature, which queries the
@@ -107,6 +107,13 @@ jobs:
 
       - name: Generate schemas
         run: just schema
+
+      # The credential reference every contracted chart's README carries, written from the
+      # contract between two HTML comments. Before helm-docs and after the refresh above, for the
+      # reason the schemas are: it edits `README.md.gotmpl`, which is helm-docs' input, so a run
+      # after it would publish last run's table and converge only on the next push.
+      - name: Generate credential references
+        run: just config-readme
 
       - name: Run helm-docs
         uses: losisin/helm-docs-github-action@3a4528e97c49a5e83de6b78c50c61c8ee5c9f944 # v2
@@ -618,15 +625,23 @@ jobs:
       - name: Check configuration binding markers
         run: just check-config-bindings
 
-      # The element schemas, both halves. A `schema_version: 2` contract publishes what one
-      # element of a container-typed key holds, and a value enrolled with `@config-shape ...
-      # generated` carries a block derived from it — which the Documentation job rewrites, so
-      # this half is a safety net rather than the repair. The other half is not repairable:
-      # an element the producer has not described yet is transcribed by hand, held against the
-      # appVersion it was read at, and fails when the image moves past it — which is precisely
-      # what an automated bump does — or when the contract starts publishing that element itself.
+      # The derived schemas, both halves. Every value carrying a `# @config` marker has its
+      # `@schema` block written from that key's constraint — the element schema included, where a
+      # `schema_version: 2` contract publishes what one element of a container holds — and the
+      # Documentation job rewrites those, so this half is a safety net rather than the repair.
+      # The other half is not repairable: a key the producer has not described is transcribed by
+      # hand, held against the appVersion it was read at, and fails when the image moves past it
+      # — which is precisely what an automated bump does — or when the contract catches up. The
+      # two declared departures from a generated block fail here for the mirror-image reason.
       - name: Check derived config shapes
         run: just check-config-shapes
+
+      # The credential reference in every contracted chart's README. The generated half the
+      # Documentation job repairs, so this is a safety net for it; the two hand-written columns
+      # beside it are not repairable, and an entry naming a credential the image dropped or a
+      # chart value somebody renamed is exactly what a digest bump produces.
+      - name: Check README credential references
+        run: just check-config-readme
 
       # The generated round-trip suites, against the contracts they were generated from.
       #

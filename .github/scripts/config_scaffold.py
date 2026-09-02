@@ -521,22 +521,17 @@ def description_lines(placement: Placement, indent: str) -> list[str]:
 def value_block(placement: Placement, indent: str = "") -> list[str]:
     """One contract key as the `values.yaml` block that feeds it.
 
-    A container key whose element the contract describes is enrolled as a derived shape while it
-    is being written, with a `# @config-shape ... generated` marker above the block. Nothing is
-    being asserted that this function did not just do — `schema_lines` generated the block from
-    that element a line later — and the alternative is a new chart whose deepest schemas are
-    correct today and unowned tomorrow, which is the state the marker exists to end.
+    No `@config-shape` marker is written, and none is needed: a block belonging to a value that
+    carries a `# @config` marker is generated from the contract by definition, so the block this
+    function emits is already owned by `just config-shapes` and stays in step with the image on
+    its own. The marker that used to enrol it was retired when generation became the default —
+    see `config_shapes.py`.
 
-    A credential gets neither marker, for the reason below.
+    A credential gets no `# @config` marker either, for the reason below.
     """
     leaf = placement.values_path.split(".")[-1]
 
-    lines: list[str] = []
-    if placement.where != SECRET_FILE and cc.describes_element(placement.key.get("constraint")):
-        lines.append(f"{indent}# {cs.SHAPE_MARKER} {placement.values_path} {cs.GENERATED}")
-        lines.append("")
-
-    lines.append(f"{indent}# @schema")
+    lines: list[str] = [f"{indent}# @schema"]
     # A credential gets no marker, and the two facts that make that right are worth keeping
     # together: every marker class names a way a value reaches the *configuration document*, and a
     # credential delivered as a file never reaches it. `check-config-bindings` says the same thing

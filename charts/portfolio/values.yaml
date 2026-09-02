@@ -78,6 +78,8 @@ server:
   # -- Bind address, passed as `IP`.
   host: 0.0.0.0
 
+  # @config-shape-except server.port minimum port 0 asks the kernel for an ephemeral one, which nothing in this chart can put a Service or a probe in front of
+
   # @schema
   # # @config external PORT
   # type: integer
@@ -218,7 +220,7 @@ isr:
 sentry:
   # @schema
   # # @config projection sentry.enabled optional
-  # type: boolean
+  # type: [boolean, 'null']
   # @schema
   # -- Initialise the Sentry client (`sentry.enabled`). Off, every other key here is inert. On,
   # the server refuses to boot without a DSN rather than starting with a reporter that reports
@@ -239,7 +241,7 @@ sentry:
 
   # @schema
   # # @config projection sentry.environment optional when sentry.enabled
-  # type: string
+  # type: [string, 'null']
   # @schema
   # -- Environment tag on every event (`sentry.environment`). Empty lets the server derive it
   # from the build profile: `production` for the release binary every published image is. Set it
@@ -248,7 +250,7 @@ sentry:
 
   # @schema
   # # @config projection sentry.release optional when sentry.enabled
-  # type: string
+  # type: [string, 'null']
   # @schema
   # -- Release tag on every event (`sentry.release`). Empty uses `portfolio@<version>`, the
   # workspace version the binary was built from — which is what makes a regression attributable
@@ -257,12 +259,15 @@ sentry:
 
   # @schema
   # # @config projection sentry.server_name optional when sentry.enabled
-  # type: string
+  # type: [string, 'null']
   # @schema
   # -- Host tag on every event (`sentry.server_name`). Empty reports none, which is the right
   # answer here: the value would be one replica's pod name, and this site runs one image behind
   # a tunnel, so it identifies nothing an event does not already say.
   serverName: ""
+
+  # @config-shape-narrow sentry.sampleRate minimum a sample rate is a fraction of events and the producer types it `f64` with no bound, so 0..1 is the chart's own
+  # @config-shape-narrow sentry.sampleRate maximum a sample rate is a fraction of events and the producer types it `f64` with no bound, so 0..1 is the chart's own
 
   # @schema
   # # @config projection sentry.sample_rate when sentry.enabled
@@ -274,6 +279,9 @@ sentry:
   # drops whole issues, not repetitions of one, so a rare bug is exactly as likely to be dropped
   # as a noisy one — so leave it at `1` unless a quota forces otherwise.
   sampleRate: 1.0
+
+  # @config-shape-narrow sentry.tracesSampleRate minimum a sample rate is a fraction of events and the producer types it `f64` with no bound, so 0..1 is the chart's own
+  # @config-shape-narrow sentry.tracesSampleRate maximum a sample rate is a fraction of events and the producer types it `f64` with no bound, so 0..1 is the chart's own
 
   # @schema
   # # @config projection sentry.traces_sample_rate when sentry.enabled
@@ -290,7 +298,7 @@ sentry:
 
   # @schema
   # # @config projection sentry.capture_level when sentry.enabled
-  # enum: ["off", error, warn, info, debug, trace]
+  # enum: ["off", "error", "warn", "info", "debug", "trace"]
   # @schema
   # -- Least severe `tracing` level reported as a Sentry issue (`sentry.capture_level`). Quote
   # `"off"` — unquoted, YAML reads it as the boolean `false`.
@@ -298,7 +306,7 @@ sentry:
 
   # @schema
   # # @config projection sentry.breadcrumb_level when sentry.enabled
-  # enum: ["off", error, warn, info, debug, trace]
+  # enum: ["off", "error", "warn", "info", "debug", "trace"]
   # @schema
   # -- Least severe `tracing` level kept as a breadcrumb, the trail attached to the next issue
   # (`sentry.breadcrumb_level`). Records at or above `captureLevel` become issues instead, so the

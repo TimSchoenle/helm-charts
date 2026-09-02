@@ -44,6 +44,8 @@ server:
   # -- Bind address (`server.host`). `0.0.0.0` is what makes the Service reach the listener.
   host: 0.0.0.0
 
+  # @config-shape-except server.port minimum port 0 asks the kernel for an ephemeral one, which nothing in this chart can put a Service or a probe in front of
+
   # @schema
   # # @config projection server.port
   # type: integer
@@ -94,16 +96,20 @@ s3:
 # -- The link table. Required: the render fails on an empty `entries`, and on any entry missing
 # `bucket` or `object`.
 bucket:
+  # @config-shape-narrow bucket.entries additionalProperties.additionalProperties `bucket` and `object` are the whole of an entry, and a misspelt third field is a permalink that resolves to nothing
+
   # @schema
   # # @config structured bucket.entries
   # type: object
   # additionalProperties:
   #   type: object
-  #   additionalProperties: false
-  #   required: [bucket, object]
+  #   required: ["bucket", "object"]
   #   properties:
-  #     bucket: {type: string}
-  #     object: {type: string}
+  #     bucket:
+  #       type: string
+  #     object:
+  #       type: string
+  #   additionalProperties: false
   # @schema
   # -- One entry per permanent link (`bucket.entries`), keyed by the request path it is served
   # at and valued by the bucket and object key it resolves to. Required — a server with no
@@ -125,9 +131,11 @@ bucket:
 # @schema
 # -- Logging and error reporting, rendered under `telemetry` in `config.toml`.
 telemetry:
+  # @config-shape-narrow telemetry.logLevel enum the producer types this `String` and documents its five members, so enumerating them refuses a typo in the values file rather than at boot
+
   # @schema
   # # @config projection telemetry.log_level
-  # enum: [trace, debug, info, warn, error]
+  # enum: ["trace", "debug", "info", "warn", "error"]
   # @schema
   # -- Log level (`telemetry.log_level`).
   logLevel: info
@@ -155,7 +163,7 @@ telemetry:
   sentry:
     # @schema
     # # @config projection telemetry.sentry.enabled optional
-    # type: boolean
+    # type: [boolean, 'null']
     # @schema
     # -- Initialise the Sentry client (`telemetry.sentry.enabled`). Off, every other key here is
     # inert. On, the server refuses to boot without a DSN rather than starting with a reporter
@@ -175,7 +183,7 @@ telemetry:
 
     # @schema
     # # @config projection telemetry.sentry.environment optional when telemetry.sentry.enabled
-    # type: string
+    # type: [string, 'null']
     # @schema
     # -- Environment tag on every event (`telemetry.sentry.environment`). Empty lets the server
     # resolve it: `production` from a release build, `development` from a debug one. It always
@@ -185,7 +193,7 @@ telemetry:
 
     # @schema
     # # @config projection telemetry.sentry.release optional when telemetry.sentry.enabled
-    # type: string
+    # type: [string, 'null']
     # @schema
     # -- Release tag on every event (`telemetry.sentry.release`). Empty uses
     # `s3-bucket-perma-link@<version>`, which is both what makes a regression attributable to a
@@ -195,12 +203,15 @@ telemetry:
 
     # @schema
     # # @config projection telemetry.sentry.server_name optional when telemetry.sentry.enabled
-    # type: string
+    # type: [string, 'null']
     # @schema
     # -- Host tag on every event (`telemetry.sentry.server_name`). Empty reports none, which is
     # the right answer here: the value would be one replica's pod name, gone by the time anyone
     # reads the issue.
     serverName: ""
+
+    # @config-shape-narrow telemetry.sentry.sampleRate minimum a sample rate is a fraction of events and the producer types it `f64` with no bound, so 0..1 is the chart's own
+    # @config-shape-narrow telemetry.sentry.sampleRate maximum a sample rate is a fraction of events and the producer types it `f64` with no bound, so 0..1 is the chart's own
 
     # @schema
     # # @config projection telemetry.sentry.sample_rate when telemetry.sentry.enabled
@@ -212,6 +223,9 @@ telemetry:
     # volume cap — it drops whole issues, not repetitions of one, so a rare error is exactly what
     # it loses — so leave it at `1` unless a quota forces otherwise.
     sampleRate: 1.0
+
+    # @config-shape-narrow telemetry.sentry.tracesSampleRate minimum a sample rate is a fraction of events and the producer types it `f64` with no bound, so 0..1 is the chart's own
+    # @config-shape-narrow telemetry.sentry.tracesSampleRate maximum a sample rate is a fraction of events and the producer types it `f64` with no bound, so 0..1 is the chart's own
 
     # @schema
     # # @config projection telemetry.sentry.traces_sample_rate when telemetry.sentry.enabled
@@ -226,6 +240,8 @@ telemetry:
     # already sampled: an inbound `sentry-trace` header is continued whatever this says.
     tracesSampleRate: 0.0
 
+    # @config-shape telemetry.sentry.captureLevel handwritten v2.1.0 SentryLevel
+
     # @schema
     # # @config projection telemetry.sentry.capture_level when telemetry.sentry.enabled
     # enum: ["off", error, warn, info, debug, trace]
@@ -234,6 +250,8 @@ telemetry:
     # (`telemetry.sentry.capture_level`). Quote `"off"` — unquoted, YAML reads it as the boolean
     # `false`.
     captureLevel: error
+
+    # @config-shape telemetry.sentry.breadcrumbLevel handwritten v2.1.0 SentryLevel
 
     # @schema
     # # @config projection telemetry.sentry.breadcrumb_level when telemetry.sentry.enabled

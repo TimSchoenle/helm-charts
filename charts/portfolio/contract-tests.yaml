@@ -22,6 +22,23 @@ documents:
     baseline:
       config.csp.cloudflare.script_nonce: false
 
+    # The chart values every generated case carries, with no exception, because without them the
+    # chart refuses to render at all.
+    prerequisites:
+      values:
+        existingSecret: portfolio-contract-probe
+
+      reason: >-
+        Twelve of this document's keys are `sentry.*`, and every one of them carries a
+        `when sentry.enabled` clause — so a case probing one switches Sentry on, and
+        `portfolio.validateValues` then refuses the render unless a DSN is available: an enabled
+        client with nowhere to report is a CrashLoopBackOff rather than a degraded feature.
+        Naming an `existingSecret` satisfies that guard without putting a credential-shaped
+        string in a committed test file, which is the same reason no probe is ever synthesised
+        for a `secret: true` key. It changes nothing the cases assert against — the DSN travels
+        as a file in the secrets directory and is never written into `config.toml` — and the
+        Secret it names does not have to exist for a template render.
+
     reason: >-
       `portfolio.validateValues` fails the render when `csp.hash_inline_scripts` is false while
       `csp.cloudflare.script_nonce` is true — dropping the hashes restores `'unsafe-inline'`,

@@ -1,0 +1,198 @@
+# vim: set ft=yaml:
+
+# Enrols this chart in the generated configuration round-trip suites, one per declared document.
+#
+# `just check-config` proves each rendered `config.toml` satisfies the contract of the image that
+# reads it. It cannot prove the round trip: that a setting an operator writes arrives in that
+# document, at the path the image reads it from, carrying the value that was asked for. A document
+# missing a setting entirely satisfies the contract perfectly — every key it does contain is legal
+# — so a typo in a template helper passes every gate and the service runs on a compiled default
+# nobody chose.
+#
+# Nine documents, and two of this chart's properties decide what every entry below says.
+#
+# **`.Values.config` is the lowest layer here, not the highest.** `tankovault.configToml` merges
+# the root `config` tree, then everything the chart derives from its first-class values, then
+# `services.<name>.config`. Every other chart in this repository merges the operator's tree *over*
+# what it derives, so a probe written into `config` wins; here it is overwritten before it reaches
+# the file for any key the chart derives. Each service therefore names its own highest-precedence
+# layer as the probe root, and the one document that has no such layer — `bootstrap`, a Job rather
+# than a service — keeps the default.
+#
+# **A probe now goes into the chart's own value wherever one is bound.** 219 bindings carry a
+# `# @config` marker naming the key they feed, so most cases here write `telemetry.sentry.release`
+# rather than `services.api.config.telemetry.sentry.release` and prove the mapping rather than the
+# merge. The probe root still matters: it is where a key with no bound value goes, and it is what
+# the baseline and the prerequisite rules are read against.
+documents:
+  - name: frontend
+    probe: services.frontend.config
+
+    # The chart values every generated case carries, in every one of the nine suites. Written
+    # once and aliased into the other eight: they answer this chart's own `validateValues`, which
+    # is chart-wide rather than per document, and nine copies of one list is nine places for it to
+    # drift.
+    #
+    # Flat dotted paths, exactly as the helm-unittest `set` block they become spells them. Nothing
+    # here may name a path under a document's probe root: a prerequisite is never dropped for the
+    # case it collides with, the way a baseline is, so one written into the tree the cases probe
+    # could supply the very value a case exists to prove the chart delivered. The generator
+    # refuses one outright, per document and against that document's own root.
+    prerequisites: &prerequisites
+      values:
+        internal.identity: token
+        internal.tokens.api: probe-internal-token-api-0123456789ab
+        internal.tokens.worker: probe-internal-token-worker-01234567
+        auth.jwtSecret: probe-jwt-secret-0123456789abcdef0123
+        postgresql.enabled: true
+        postgresql.auth.password: probe-postgresql-password
+        nats.enabled: true
+        trawl.enabled: true
+        anilist.clientId: probe-anilist-client-id
+        anilist.clientSecret: probe-anilist-client-secret
+        anilist.redirectUri: https://render-prerequisite.invalid/account/anilist-callback
+        services.render.enabled: true
+        existingSecret: tankovault-contract-probe
+        email.host: smtp.render-prerequisite.invalid
+        branding.wordmark.lead: Render
+        legal.documents:
+          render-prerequisite:
+            url: https://render-prerequisite.invalid/legal
+
+      reason: >-
+        `tankovault.validateValues` refuses this chart's own default render, and it does so from
+        `serviceaccount.yaml` — before any ConfigMap exists for a case to assert against. Every
+        entry answers one of its guards, and each is the cheapest answer that keeps all nine
+        documents rendered:
+
+        `internal.identity=token` with both caller tokens, because the default `mtls` needs
+        cert-manager's API registered and a CA the render has no way to reach, and because mtls
+        and the bundled NATS are refused together — the broker serves plaintext. The tokens are
+        set explicitly for the reason `ci/minimal-values.yaml` sets them: `helm template` has no
+        cluster to read a generated value back out of, so an empty one renders differently on
+        every invocation and the suite's own `set` block would be the only stable thing in the
+        diff. `auth.jwtSecret` is set for that reason alone.
+
+        `postgresql.enabled`, `nats.enabled` and `trawl.enabled` bring up the bundled datastores
+        the enabled services require — a database for everything, JetStream for the worker and
+        the control plane, a solver backend for the challenge solver. `anilist.clientId`,
+        `anilist.clientSecret` and `anilist.redirectUri` are what `services.sync.enabled`
+        demands. `services.render.enabled` is the one service off by default, and without it the
+        `render` document has no ConfigMap and its whole suite would assert against nothing.
+
+        None of these is a credential. The AniList pair identifies an application registered with
+        a third party and these values identify none; the tokens and the JWT secret mean nothing
+        outside a release that does not exist; and `.invalid` is reserved by RFC 2606 and can
+        never resolve. No key any of them occupies carries a case in these suites either — every
+        one is `secret: true` in the contract, which the generator refuses to synthesise a probe
+        for.
+
+        The last three answer guards that gate a whole *table* rather than the render. `[email]`
+        is written only when `email.host` or a base URL is set, so without a host the six
+        `email.*` cases assert against a block that is not there. `[legal]` is written only when
+        at least one document is published, which is what `legal.dir` needs to appear beside.
+        And `branding.wordmark.accent` is refused without `branding.wordmark.lead` — the accent
+        half is only ever drawn beside a lead half. Each of the three is a chart value a case
+        probing *it* then collides with, and the generator answers that by routing those probes
+        back into the raw tree rather than by dropping the prerequisite.
+
+        `existingSecret` answers one more guard, and a different one. Every
+        `telemetry.sentry.*` key carries a `when telemetry.sentry.enabled` clause, so a case
+        probing one switches Sentry on for the whole release — and the chart then refuses the
+        render unless a DSN is available. Naming a Secret satisfies that without a
+        credential-shaped string in a committed file, and changes nothing any case asserts
+        against: the DSN travels as a file in the secrets directory and never reaches a
+        `config.toml`. The Secret does not have to exist for a template render. It also takes
+        over the generation of every other credential this chart would otherwise write, which is
+        why the tokens and the JWT secret above are still set explicitly: with `existingSecret`
+        the chart fills in nothing, and the values are what the guards read.
+
+        The probe root still wins over everything these values derive: each service's own
+        `config` block is the last layer `tankovault.configToml` merges, so a probe written there
+        outranks the wiring the chart builds from the values above.
+
+    reason: >-
+      `tankovault.configToml` merges `.Values.config`, then the chart's derived wiring, then this
+      service's own `config` block — so the root tree is the *lowest* layer here and a probe
+      written into it is overwritten before it reaches the document for any key the chart derives.
+      This is the layer that wins.
+
+  - name: api
+    prerequisites: *prerequisites
+    probe: services.api.config
+    reason: >-
+      The service's own configuration layer, which outranks both `.Values.config` and everything
+      the chart derives from its first-class values. A probe written into the root tree would be
+      overwritten before it reached the document.
+
+    # Keys whose probe stays in the raw configuration tree rather than going into the chart's own
+    # value for them.
+    unrouted:
+      - keys:
+          - branding.licence.url
+          - branding.project_url
+          - branding.releases_url
+        reason: >-
+          `tankovault.validateValues` accepts only an absolute `http(s)` URL in each of these:
+          a scheme-less value is resolved by the browser against the deployment's own origin, so
+          the footer link lands back on the app rather than where it was meant to. The probe is a
+          token naming the key it tests, and no rule derived from the contract could make it a
+          URL — the contract types all three `String` and says nothing about their shape. The
+          cases therefore write through `services.api.config`, where the guard does not read, and
+          prove that layer reaches each key in the document. That the chart's own `branding.*`
+          values reach it too is covered by `branding_test.yaml`, which can use real URLs because
+          a person wrote them.
+
+  - name: control-plane
+    prerequisites: *prerequisites
+    probe: services.controlPlane.config
+    reason: >-
+      The service's own configuration layer, which outranks both `.Values.config` and everything
+      the chart derives. The values path is camelCase where the document name is not: the document
+      is selected by the `app.kubernetes.io/component` label the chart sets, and the values tree is
+      spelled the way every other value in this chart is.
+
+  - name: worker
+    prerequisites: *prerequisites
+    probe: services.worker.config
+    reason: >-
+      The service's own configuration layer, which outranks both `.Values.config` and everything
+      the chart derives from its first-class values.
+
+  - name: notifier
+    prerequisites: *prerequisites
+    probe: services.notifier.config
+    reason: >-
+      The service's own configuration layer, which outranks both `.Values.config` and everything
+      the chart derives from its first-class values.
+
+  - name: sync
+    prerequisites: *prerequisites
+    probe: services.sync.config
+    reason: >-
+      The service's own configuration layer, which outranks both `.Values.config` and everything
+      the chart derives from its first-class values.
+
+  - name: challenge-solver
+    prerequisites: *prerequisites
+    probe: services.challengeSolver.config
+    reason: >-
+      The service's own configuration layer, which outranks both `.Values.config` and everything
+      the chart derives. camelCase for the same reason `control-plane` is.
+
+  - name: render
+    prerequisites: *prerequisites
+    probe: services.render.config
+    reason: >-
+      The service's own configuration layer, which outranks both `.Values.config` and everything
+      the chart derives from its first-class values.
+
+  - name: bootstrap
+    prerequisites: *prerequisites
+    reason: >-
+      The one document with no per-service layer, so its probes go into `.Values.config` — the
+      default root. Bootstrap is a Job rather than a service and the chart gives it no `config`
+      block of its own; what it reads is the root tree plus the wiring the chart derives, and a
+      probe for a key the chart derives would lose to that. Those keys are the ones this suite
+      cannot cover, and they are the same ones the chart's `unbound` list already writes off as
+      derived from the topology.

@@ -43,8 +43,10 @@ looks for the rules, and "the grammar makes it impossible" is no longer the answ
 **Enrolment is opt-in and declared, by `bindings: true` in `config-contract.yaml`.** A gate that
 failed unenrolled charts would be red for work nobody has scheduled and would end up disabled,
 which is worse than absent. A chart that does not set the switch is not checked and not reported.
-All five charts that map values onto a contract set it today: `portfolio`, `netcup-offer-bot`,
-`s3-bucket-perma-link`, `mp-stats-legacy-viewer` and `tankovault`.
+Every chart that vendors a contract sets it today — `portfolio`, `netcup-offer-bot`,
+`s3-bucket-perma-link`, `mp-stats-legacy-viewer`, `discord-alertmanager`,
+`cloudflare-access-webhook-redirect` and `tankovault` — so the switch now guards against a chart
+losing its markers rather than against one that never had any.
 
 **What a nine-document chart changed about all of this.** The format was designed against two
 single-document charts, and `tankovault` — nine documents, 184 distinct key paths in 583

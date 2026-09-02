@@ -32,6 +32,7 @@ documents:
           render-prerequisite:
             bucket: render-prerequisite
             object: render-prerequisite
+        existingSecret: s3-perma-link-contract-probe
 
       reason: >-
         `s3-bucket-perma-link.validateValues` refuses a render with no `bucket.entries` — a
@@ -45,3 +46,11 @@ documents:
         keys beneath it are the operator's own names — so nothing this suite proves is being
         covered up by the entry above. The chart merges `.Values.config` over everything it
         derives from its values, so a probe still wins wherever the two would meet.
+
+        `existingSecret` is the second entry, and it answers a different guard. Every
+        `telemetry.sentry.*` key carries a `when telemetry.sentry.enabled` clause, so a case
+        probing one switches Sentry on and the chart then refuses the render unless a DSN is
+        available. Naming a Secret satisfies that without a credential-shaped string in a
+        committed file, and changes nothing the cases assert against: the DSN travels as a file
+        in the secrets directory and never reaches `config.toml`. The Secret does not have to
+        exist for a template render.

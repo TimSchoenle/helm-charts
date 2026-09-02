@@ -57,6 +57,7 @@ from __future__ import annotations
 import argparse
 import difflib
 import sys
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -65,7 +66,9 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import config_bindings as cb
 import config_contract as cc
+import config_shapes as cs
 import config_testgen as tg
 from config_declaration import (
     Declaration,
@@ -83,7 +86,15 @@ from config_paths import CHARTS_DIR
 # and for the same reason.
 ENROLMENT = "contract-tests.yaml"
 ENROLMENT_KEYS = {"documents"}
-ENROLMENT_DOCUMENT_KEYS = {"name", "baseline", "probe", "reason", "prerequisites"}
+ENROLMENT_DOCUMENT_KEYS = {
+    "name",
+    "baseline",
+    "probe",
+    "reason",
+    "prerequisites",
+    "unrouted",
+}
+ENROLMENT_UNROUTED_KEYS = {"keys", "reason"}
 ENROLMENT_PREREQUISITE_KEYS = {"values", "reason"}
 
 # Where a generated suite goes, and the name that identifies one. The prefix is what lets the
@@ -184,11 +195,21 @@ class Enrolment:
     It sits here rather than on `Baseline` because it governs all three fields at once: the
     probes are written under it, the baseline is read under it, and the prerequisites are
     refused from it.
+
+    `unrouted` is the one field that takes something away. A probe is written into the chart's
+    own value for the key wherever a `# @config projection` marker names one, because that is
+    what proves the chart's mapping rather than only its escape hatch — and a chart may have a
+    guard that a synthesised value cannot satisfy at that position. `discord-alertmanager`
+    refuses a `storage.sqlite.path` outside `persistence.data.mountPath`, which no probe derived
+    from the contract can know about. Such a key is named here, with the reason, and its probe
+    goes into the raw tree instead: the case still proves the merge, and the file says which
+    proof it is making.
     """
 
     baseline: Baseline = field(default_factory=Baseline)
     prerequisites: Prerequisites = field(default_factory=Prerequisites)
     probe: str = tg.VALUES_ROOT
+    unrouted: list[tuple[str, str]] = field(default_factory=list)
 
 
 def load_enrolment(chart_dir: Path) -> dict[str, Enrolment] | None:
@@ -234,6 +255,7 @@ def load_enrolment(chart_dir: Path) -> dict[str, Enrolment] | None:
             baseline=baseline,
             prerequisites=_load_prerequisites(path, name, entry.get("prerequisites"), probe),
             probe=probe,
+            unrouted=_load_unrouted(path, name, entry.get("unrouted")),
         )
 
     return enrolments
@@ -354,6 +376,55 @@ def _load_prerequisites(path: Path, name: str, block: Any, probe: str) -> Prereq
 # --------------------------------------------------------------------------------------------
 
 
+def _load_unrouted(path: Path, name: str, entries: Any) -> list[tuple[str, str]]:
+    """The keys this document probes through the raw tree rather than the chart's own value.
+
+    Grouped as `keys` against one `reason`, the shape `unbound` in `config-contract.yaml` already
+    uses, so a chart with several such keys states the reason once. A key named twice is refused:
+    two reasons for one key means one of them is stale, and picking either is picking a winner in
+    silence.
+    """
+    if entries is None:
+        return []
+    if not isinstance(entries, list):
+        raise DeclarationError(f"{path}: document {name!r}: `unrouted` has to be a list")
+
+    unrouted: dict[str, str] = {}
+    for entry in entries:
+        if not isinstance(entry, dict):
+            raise DeclarationError(
+                f"{path}: document {name!r}: every `unrouted` entry has to be a mapping of "
+                "`keys` and `reason`"
+            )
+        reject_unknown(path, f"document {name!r}: unrouted", entry, ENROLMENT_UNROUTED_KEYS)
+
+        keys = entry.get("keys")
+        reason = entry.get("reason")
+        if not isinstance(keys, list) or not keys:
+            raise DeclarationError(
+                f"{path}: document {name!r}: an `unrouted` entry names no key"
+            )
+        if not isinstance(reason, str) or not reason.strip():
+            raise DeclarationError(
+                f"{path}: document {name!r}: the `unrouted` entry for "
+                f"{', '.join(str(key) for key in keys)} carries no reason, and a probe moved off "
+                "the chart's own value without one is indistinguishable from an oversight"
+            )
+        for key in keys:
+            if not isinstance(key, str) or not key:
+                raise DeclarationError(
+                    f"{path}: document {name!r}: an `unrouted` key has to be a contract path"
+                )
+            if key in unrouted:
+                raise DeclarationError(
+                    f"{path}: document {name!r}: {key!r} is named by two `unrouted` entries, so "
+                    "one of the two reasons is stale"
+                )
+            unrouted[key] = reason.strip()
+
+    return sorted(unrouted.items())
+
+
 def probe_tree(chart_dir: Path, values: dict, name: str, probe: str) -> None:
     """Refuse a document whose probe path is not a configuration tree in the chart's values.
 
@@ -428,6 +499,94 @@ def repository_path(chart_dir: Path, *parts: str) -> str:
     return "/".join((chart_dir.parent.name, chart_dir.name, *parts))
 
 
+def routes_for(
+    chart_dir: Path,
+    declaration: Declaration,
+    document: Document,
+    values: dict,
+    root: str,
+    unrouted: Sequence[tuple[str, str]] = (),
+) -> dict[str, tg.Route]:
+    """Where each of this document's keys is better probed: the chart's own value for it.
+
+    A probe written into the raw configuration tree proves the tree reaches the document. It says
+    nothing about the mapping every chart here also has — `assets.distDir` onto `assets.dist_dir`,
+    `telemetry.sentry.serverName` onto `telemetry.sentry.server_name` — and a typo in the helper
+    that spells one of those passes every case in the suite. The `# @config projection` markers
+    are what close that: each one names the contract key its value feeds, so a probe can be
+    written where an operator would actually write it.
+
+    Four things disqualify a marker, and each one is a case where the route would prove something
+    other than what the case claims:
+
+      not a `projection`   `composed` transforms the value on the way — the key's text is not the
+                           value's text — and `structured` holds names the operator chose, so
+                           neither is a value a probe can be compared against. Both fall back.
+      out of scope         a marker scoped to other documents does not bind the key here.
+      two markers          a key several values feed has no single value to write the probe into.
+      inside the probes    a chart value under the probe root is the escape hatch already.
+
+    A `when` clause travels with the route: the chart tests that path before writing the key at
+    all, so a case that did not switch it on would assert against a document the probe never
+    reached. Both the value and the gate are required to exist in `values.yaml`, which is what
+    stops a renamed value from turning into a probe helm silently creates and nothing renders.
+    """
+    if not declaration.bindings:
+        return {}
+
+    blocks = {
+        block.values_path: block
+        for block in cb.parse_blocks(chart_dir / "values.yaml", chart_dir.name)
+    }
+
+    by_key: dict[str, list[cb.Marker]] = {}
+    for marker in cb.parse_values(chart_dir / "values.yaml", chart_dir.name):
+        if marker.cls != cb.PROJECTION:
+            continue
+        if marker.documents is not None and document.name not in marker.documents:
+            continue
+        by_key.setdefault(marker.target, []).append(marker)
+
+    declined = {key for key, _ in unrouted}
+    stale = sorted(declined - set(by_key))
+    if stale:
+        raise DeclarationError(
+            f"{chart_dir / ENROLMENT}: document {document.name!r} declares "
+            f"{', '.join(repr(key) for key in stale)} `unrouted`, and no `# @config projection` "
+            "marker binds that key here — so nothing was routed away from and the entry is "
+            "describing a chart that no longer exists"
+        )
+
+    routes: dict[str, tg.Route] = {}
+    for target, markers in by_key.items():
+        if target in declined:
+            continue
+        if len(markers) != 1:
+            continue
+        marker = markers[0]
+        path = marker.values_path
+        if path == root or path.startswith(f"{root}."):
+            continue
+        if not cb.has_path(values, path):
+            continue
+        if marker.condition is not None and not cb.has_path(values, marker.condition):
+            continue
+
+        schema = None
+        block = blocks.get(path)
+        if block is not None:
+            try:
+                schema = cs.block_schema(block) or None
+            except cs.ShapeError:
+                schema = None
+
+        routes[target] = tg.Route(
+            values_path=path, condition=marker.condition, schema=schema
+        )
+
+    return routes
+
+
 def build(chart_dir: Path, declaration: Declaration, enrolments: dict[str, Enrolment]) -> dict:
     """Every suite one chart owns, as a path to text mapping."""
     declared = {document.name for document in declaration.documents}
@@ -464,6 +623,14 @@ def build(chart_dir: Path, declaration: Declaration, enrolments: dict[str, Enrol
             enrolment.baseline.values,
             enrolment.prerequisites.values,
             enrolment.probe,
+            routes_for(
+                chart_dir,
+                declaration,
+                document,
+                values,
+                enrolment.probe,
+                enrolment.unrouted,
+            ),
         )
         suites[suite_path(chart_dir, document)] = tg.render_suite(
             target,
@@ -472,6 +639,7 @@ def build(chart_dir: Path, declaration: Declaration, enrolments: dict[str, Enrol
             enrolment.baseline.reason,
             enrolment.prerequisites.values,
             enrolment.prerequisites.reason,
+            enrolment.unrouted,
         )
     return suites
 

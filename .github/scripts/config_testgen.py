@@ -109,7 +109,7 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -286,12 +286,22 @@ class Probe:
     text: str
 
 
-def probe_for(key: dict[str, Any]) -> tuple[Probe | None, str | None]:
+def probe_for(
+    key: dict[str, Any], also: dict[str, Any] | None = None
+) -> tuple[Probe | None, str | None]:
     """The probe for one contract key, or the reason it carries none.
 
     Exactly one of the two is ever set, and the reason is written into the generated file
     verbatim — an unexplained absence is indistinguishable from an oversight, which for a file
     whose whole job is to be exhaustive is the worst possible failure mode.
+
+    `also` is a second schema the candidate has to satisfy, and it is what makes a probe written
+    into the chart's *own* value safe. Such a value carries a `@schema` block, so Helm validates
+    what is set there — and that block may be stricter than the contract, deliberately: a chart
+    that types a port `minimum: 1` where the producer's `u16` allows 0 would refuse a probe the
+    contract accepts, and the failure would read as a broken chart rather than as a probe nothing
+    can satisfy. Passing the chart's own block here makes the two agree by construction; the
+    caller falls back to the untyped escape hatch when nothing satisfies both.
     """
     path = key.get("path")
     if not isinstance(path, str) or not path:
@@ -323,6 +333,8 @@ def probe_for(key: dict[str, Any]) -> tuple[Probe | None, str | None]:
         failure = unmet(candidate, constraint)
         if failure is not None:
             continue
+        if also is not None and unmet(candidate, also) is not None:
+            continue
         text = toml_scalar(candidate)
         # The environment spelling of the same setting is what `text_constraint` governs, and a
         # probe that the chart could deliver through the file but not through the environment
@@ -336,6 +348,8 @@ def probe_for(key: dict[str, Any]) -> tuple[Probe | None, str | None]:
     refused = f"`constraint` {json.dumps(constraint, sort_keys=True)}"
     if text_constraint:
         refused += f" and `text_constraint` {json.dumps(text_constraint, sort_keys=True)}"
+    if also:
+        refused += f" and the chart's own schema {json.dumps(also, sort_keys=True)}"
     return None, (
         f"no value this generator can synthesise satisfies {refused} while also differing from "
         f"the default {json.dumps(default)}"
@@ -534,11 +548,42 @@ def selector_path(key: str, discriminator: Sequence[tuple[str, str]]) -> str:
 
 @dataclass(frozen=True)
 class Case:
-    """One probe, as the case that proves the chart delivers it."""
+    """One probe, as the case that proves the chart delivers it.
+
+    `through` is the chart value the probe was written into, and `None` when it went into the
+    raw configuration tree instead. That is the difference between a case that proves the
+    chart's own mapping — that `assets.distDir` reaches `assets.dist_dir` — and one that proves
+    only that the escape hatch is merged into the document.
+    """
 
     path: str
     set_values: list[tuple[str, Any]]
     pattern: str
+    through: str | None = None
+
+
+@dataclass(frozen=True)
+class Route:
+    """One contract key's own chart value: where a probe for it is better written.
+
+    Written from the `# @config projection` marker the value carries, which is the single
+    statement in this repository of which key a chart value feeds. Without one a probe goes into
+    the raw configuration tree every chart exposes, and what it proves is that the tree is merged
+    into the document — true, worth asserting once, and silent about the chart's own mapping. A
+    typo in the helper that spells `assets.dist_dir` from `assets.distDir` passes every case in
+    the suite.
+
+    `condition` is the marker's `when` clause: a values path the chart tests before writing the
+    key at all, which a case has to switch on or the probe is dropped before it reaches the
+    document and the assertion fails for the wrong reason.
+
+    `schema` is the chart's own `@schema` block for the value, which the probe has to satisfy as
+    well — see `probe_for`.
+    """
+
+    values_path: str
+    condition: str | None = None
+    schema: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -586,11 +631,28 @@ def prerequisite_conflict(path: str, root: str = VALUES_ROOT) -> str | None:
     return None
 
 
+def _occupied(values_path: str, prerequisites: Sequence[tuple[str, Any]]) -> bool:
+    """Whether a render prerequisite already writes at, under or around one values path.
+
+    All three collide in a `set` mapping: the same path twice is a duplicate key, and either
+    nesting puts two entries of one unordered mapping inside each other. The same three
+    comparisons `prerequisite_conflict` makes against the probe root, made here against one
+    routed value.
+    """
+    for name, _ in prerequisites:
+        if name == values_path:
+            return True
+        if values_path.startswith(f"{name}.") or name.startswith(f"{values_path}."):
+            return True
+    return False
+
+
 def plan(
     keys: Iterable[dict[str, Any]],
     baseline: Sequence[tuple[str, Any]],
     prerequisites: Sequence[tuple[str, Any]] = (),
     root: str = VALUES_ROOT,
+    routes: Mapping[str, Route] | None = None,
 ) -> Plan:
     """Turn a union's keys into the cases and the skips of one suite.
 
@@ -614,6 +676,12 @@ def plan(
     enrolment states the baseline under it, so the collision check stays a comparison of two
     strings, and the prerequisite refusal is measured against it, so moving the root moves the
     tree a prerequisite has to stay out of.
+
+    `routes` moves a probe off that tree and onto the chart's own value for the key, where one is
+    bound — see `Route`. The baseline is still dropped by the key's escape-hatch path rather than
+    by the route's, and deliberately: a baseline entry naming the key a case probes would override
+    the chart value it was just written into, since the raw tree is merged over what the chart
+    derives, so the entry to drop is the same one either way.
     """
     for name, _ in prerequisites:
         conflict = prerequisite_conflict(name, root)
@@ -625,17 +693,47 @@ def plan(
 
     for key in sorted(keys, key=lambda entry: entry.get("path") or ""):
         path = key["path"]
-        probe, reason = probe_for(key)
+        route = (routes or {}).get(path)
+
+        probe = None
+        if route is not None and _occupied(route.values_path, prerequisites):
+            # A render prerequisite and a routed probe on one values path is one `set` mapping
+            # with the same key twice, which helm-unittest refuses outright — and the prerequisite
+            # is the one that cannot move, since without it the chart does not render at all.
+            # `tankovault` is the live case: `internal.identity` is both a contract key a value
+            # binds and the switch that keeps the whole release renderable offline. The probe goes
+            # into the raw tree instead, where it still outranks what the chart derives.
+            route = None
+        if route is not None:
+            # The chart's own value first, and its own schema with it. A key whose chart value is
+            # typed more tightly than the contract can leave nothing that satisfies both, and the
+            # answer there is the escape hatch rather than no case at all: a probe that proves
+            # only the merge is worth more than a hole in the coverage.
+            probe, _ = probe_for(key, also=route.schema)
+            if probe is None:
+                route = None
+        if probe is None:
+            probe, reason = probe_for(key)
         if probe is None:
             skipped.append(Skipped(path=path, reason=reason or "no reason given"))
             continue
 
-        target = values_path(path, root)
+        hatch = values_path(path, root)
         set_values = list(prerequisites)
-        set_values.extend((name, value) for name, value in baseline if name != target)
-        set_values.append((target, probe.value))
+        set_values.extend((name, value) for name, value in baseline if name != hatch)
+        if route is not None:
+            if route.condition is not None:
+                set_values.append((route.condition, True))
+            set_values.append((route.values_path, probe.value))
+        else:
+            set_values.append((hatch, probe.value))
         cases.append(
-            Case(path=path, set_values=set_values, pattern=document_pattern(path, probe.text))
+            Case(
+                path=path,
+                set_values=set_values,
+                pattern=document_pattern(path, probe.text),
+                through=route.values_path if route is not None else None,
+            )
         )
 
     return Plan(cases=cases, skipped=skipped)
@@ -739,6 +837,7 @@ def render_suite(
     reason: str | None,
     prerequisites: Sequence[tuple[str, Any]] = (),
     prerequisite_reason: str | None = None,
+    unrouted: Sequence[tuple[str, str]] = (),
 ) -> str:
     """The complete helm-unittest suite for one document, as the text to write.
 
@@ -770,6 +869,10 @@ def render_suite(
         lines.append("")
         lines.extend(comment(notes, indent="  "))
 
+    if unrouted:
+        lines.append("")
+        lines.extend(comment(_unrouted_note(unrouted, target.root), indent="  "))
+
     for case in plan.cases:
         lines.append("")
         lines.extend(_probe_case(case, target))
@@ -784,22 +887,24 @@ def render_suite(
 def _preamble(target: Target, plan: Plan) -> list[str]:
     covered = len(plan.cases)
     total = covered + len(plan.skipped)
+    routed = sum(1 for case in plan.cases if case.through)
     return [
         BANNER,
         "",
         *_wrap(
-            f"Every case below writes one setting into `{target.root}` and asserts that it "
-            f"arrives in `{target.key}`, under the table its contract path names. That is the "
-            "round trip no other gate can see: `just check-config` proves the rendered document "
-            "satisfies the contract, and a document missing a setting entirely satisfies it "
-            "perfectly.",
+            "Every case below writes one setting into the chart's own value for it — or into "
+            f"`{target.root}` where no value is bound to that key — and asserts that it arrives "
+            f"in `{target.key}`, under the table its contract path names. That is the round trip "
+            "no other gate can see: `just check-config` proves the rendered document satisfies "
+            "the contract, and a document missing a setting entirely satisfies it perfectly.",
             COMMENT_WIDTH - 2,
         ),
         "",
         f"Chart:       {target.chart}",
         f"Declaration: {target.declaration} (document `{target.name}`)",
         *[f"Contract:    {path}" for path in target.contracts],
-        f"Coverage:    {covered} of {total} contract keys carry a probe",
+        f"Coverage:    {covered} of {total} contract keys carry a probe, "
+        f"{routed} through the chart's own value",
         "",
         *_wrap(
             "Regenerate with `just contract-tests`. `just check-contract-tests` fails a pull "
@@ -953,8 +1058,13 @@ def _prerequisite_note(root: str, reason: str | None) -> list[str]:
 
 
 def _probe_case(case: Case, target: Target) -> list[str]:
+    # The case says which route it took, because the two prove different things and a reader
+    # scanning the suite has no other way to tell them apart: `from <value>` exercises the
+    # chart's own mapping onto the key, and its absence means the probe went into the raw tree
+    # and the mapping is untested.
+    through = f" from {case.through}" if case.through else ""
     lines = [
-        f"  - it: delivers {case.path} into {target.key}",
+        f"  - it: delivers {case.path} into {target.key}{through}",
         *_selector(target),
         *_set_block(case.set_values),
     ]
@@ -966,6 +1076,27 @@ def _probe_case(case: Case, target: Target) -> list[str]:
             f"          pattern: {yaml_quoted(case.pattern)}",
         ]
     )
+    return lines
+
+
+def _unrouted_note(unrouted: Sequence[tuple[str, str]], root: str) -> list[str]:
+    """The keys whose probe the enrolment moved back into the raw tree, and the reason given.
+
+    Written into the suite rather than left in the enrolment file, because the difference is
+    visible in every affected case — `delivers x into config.toml` where its neighbours say
+    `from y` — and a reader who notices that deserves the answer in the same file.
+    """
+    lines = _wrap(
+        f"The keys below are probed through `{root}` rather than through the chart's own value "
+        "for them, which their neighbours use. Each one is declared in the chart's "
+        "`contract-tests.yaml` with the reason repeated here: such a case proves the raw tree "
+        "reaches the document and says nothing about the chart's mapping onto the key.",
+        COMMENT_WIDTH - 4,
+    )
+    for key, reason in unrouted:
+        lines.append("")
+        lines.append(f"{key}:")
+        lines.extend(f"  {line}" for line in _wrap(reason, COMMENT_WIDTH - 6))
     return lines
 
 

@@ -104,6 +104,20 @@ tests:
           path: data['config.toml']
           pattern: 'path = "/data/discord-alertmanager.db"'
 
+  # The round trip for `storage.sqlite.path`, written by hand because the generated suite cannot
+  # write it: this chart refuses any path outside `persistence.data.mountPath`, and a probe
+  # synthesised from the contract has no way to know that — the contract types the key `String`
+  # and says nothing about where the file has to live. The generated case for it is declared
+  # `unrouted` in `contract-tests.yaml` and goes through `config` instead, which proves the raw
+  # tree reaches the key and not that this value does. This is the half that does.
+  - it: writes the chart's own SQLite path into the document
+    set:
+      storage.sqlite.path: /data/somewhere-else.db
+    asserts:
+      - matchRegex:
+          path: data['config.toml']
+          pattern: 'path = "/data/somewhere-else\.db"'
+
   # `routes` is TOML's array-of-tables form, which is the one shape the renderer refused until
   # `common.toml` learned `[[name]]`. Asserted as one block, because what is being checked is the
   # interleaving: `[routes.target]` after an element belongs to that element and not to the first.

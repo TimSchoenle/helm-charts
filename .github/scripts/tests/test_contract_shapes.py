@@ -344,18 +344,26 @@ class TestMarkers(unittest.TestCase):
     def parse(self, text: str):
         return cs.parse_markers(text, "fixture")
 
-    def test_both_modes_are_read(self):
+    def test_the_one_surviving_mode_is_read(self):
         shapes, _ = self.parse(
-            "# @config-shape routes generated\n"
             "# @config-shape links.buttons handwritten v1.2.3 src/links.rs\n"
         )
-        self.assertEqual([shape.mode for shape in shapes], [cs.GENERATED, cs.HANDWRITTEN])
-        self.assertEqual(shapes[1].version, "v1.2.3")
-        self.assertEqual(shapes[1].source, "src/links.rs")
+        self.assertEqual([shape.mode for shape in shapes], [cs.HANDWRITTEN])
+        self.assertEqual(shapes[0].version, "v1.2.3")
+        self.assertEqual(shapes[0].source, "src/links.rs")
+        self.assertTrue(shapes[0].declared)
 
     def test_a_mode_nobody_defined_is_refused(self):
         with self.assertRaises(cs.ShapeError):
             self.parse("# @config-shape routes derived\n")
+
+    def test_the_retired_enrolment_marker_is_refused_by_name(self):
+        # Generation is the default now, so the marker that used to enrol a value asserts nothing.
+        # Refused rather than ignored: accepting it silently would leave every migrated chart
+        # carrying a line whose meaning nobody could look up.
+        with self.assertRaises(cs.ShapeError) as raised:
+            self.parse("# @config-shape routes generated\n")
+        self.assertIn("obsolete", str(raised.exception))
 
     def test_the_older_three_word_form_is_refused_by_name(self):
         # The form two charts carried before the mode was written down. Refused rather than
@@ -364,13 +372,18 @@ class TestMarkers(unittest.TestCase):
             self.parse("# @config-shape routes v0.3.0 src/routes.rs\n")
         self.assertIn("handwritten", str(raised.exception))
 
-    def test_a_generated_marker_takes_nothing_further(self):
-        with self.assertRaises(cs.ShapeError):
-            self.parse("# @config-shape routes generated v1.0.0\n")
+    def test_a_departure_without_a_reason_is_refused(self):
+        for marker in (cs.EXCEPT_MARKER, cs.NARROW_MARKER):
+            with self.assertRaises(cs.ShapeError):
+                self.parse(f"# {marker} routes items.properties.guild_id\n")
 
-    def test_an_exception_without_a_reason_is_refused(self):
-        with self.assertRaises(cs.ShapeError):
-            self.parse("# @config-shape-except routes items.properties.guild_id\n")
+    def test_a_narrowing_is_read_as_its_own_kind(self):
+        _, divergences = self.parse(
+            "# @config-shape-narrow sampleRate minimum a fraction the contract does not bound\n"
+        )
+        self.assertEqual(divergences[0].kind, cs.NARROWING)
+        self.assertEqual(divergences[0].sub_path, "minimum")
+        self.assertEqual(divergences[0].marker, cs.NARROW_MARKER)
 
     def test_an_exception_reason_may_be_a_sentence(self):
         _, divergences = self.parse(
@@ -406,9 +419,14 @@ class TestDivergences(unittest.TestCase):
         },
     }
 
-    def divergence(self, sub_path: str) -> cs.Divergence:
+    def divergence(self, sub_path: str, kind: str = cs.OVERRIDE) -> cs.Divergence:
         return cs.Divergence(
-            chart="fixture", line=1, values_path="routes", sub_path=sub_path, reason="because"
+            chart="fixture",
+            line=1,
+            values_path="routes",
+            sub_path=sub_path,
+            reason="because",
+            kind=kind,
         )
 
     def test_the_named_position_is_taken_from_the_chart(self):
@@ -427,11 +445,46 @@ class TestDivergences(unittest.TestCase):
         self.assertIn("added_later", result["items"]["properties"])
 
     def test_a_sub_path_the_contract_no_longer_describes_is_refused(self):
+        present = copy.deepcopy(self.PRESENT)
+        present["items"]["properties"]["gone"] = {"type": "string"}
         _, problems = cs.apply_divergences(
-            self.GENERATED, self.PRESENT, [self.divergence("items.properties.gone")]
+            self.GENERATED, present, [self.divergence("items.properties.gone")]
         )
         self.assertEqual(len(problems), 1)
         self.assertIn("does not contain", problems[0])
+        self.assertIn(cs.NARROW_MARKER, problems[0])
+
+    def test_a_narrowing_adds_a_position_the_contract_does_not_describe(self):
+        result, problems = cs.apply_divergences(
+            {"type": "number"},
+            {"type": "number", "minimum": 0, "maximum": 1},
+            [
+                cs.Divergence("fixture", 1, "sampleRate", "minimum", "a fraction", cs.NARROWING),
+                cs.Divergence("fixture", 2, "sampleRate", "maximum", "a fraction", cs.NARROWING),
+            ],
+        )
+        self.assertEqual(problems, [])
+        self.assertEqual(result, {"type": "number", "minimum": 0, "maximum": 1})
+
+    def test_a_narrowing_the_contract_has_caught_up_with_is_refused(self):
+        _, problems = cs.apply_divergences(
+            self.GENERATED,
+            self.PRESENT,
+            [self.divergence("items.properties.guild_id", cs.NARROWING)],
+        )
+        self.assertEqual(len(problems), 1)
+        self.assertIn(cs.EXCEPT_MARKER, problems[0])
+
+    def test_a_narrowed_enum_takes_the_top_level_from_the_type(self):
+        # helm-schema refuses the pair at the top level, so a chart enumerating the members of a
+        # key the contract only types has to lose the `type` rather than the enum.
+        result, problems = cs.apply_divergences(
+            {"type": "string"},
+            {"enum": ["trace", "debug"]},
+            [cs.Divergence("fixture", 1, "logLevel", "enum", "the five members", cs.NARROWING)],
+        )
+        self.assertEqual(problems, [])
+        self.assertEqual(result, {"enum": ["trace", "debug"]})
 
     def test_a_sub_path_the_chart_does_not_declare_keeps_nothing(self):
         _, problems = cs.apply_divergences(
@@ -523,16 +576,15 @@ class ChartBuilder:
 
 
 def enrolled(key: str = "github.repos", value: str = "githubRepos") -> str:
-    """One enrolled value whose block is deliberately behind the contract, for the writer to fix.
+    """One bound value whose block is deliberately behind the contract, for the writer to fix.
 
-    The shape marker names the *chart value*, and the `@config` marker inside the block names the
-    contract key — the two halves of the resolution, and the pair a test that spelt one of them
-    twice would not exercise.
+    Nothing enrols it: the `@config` marker inside the block names the contract key, and that is
+    the whole of what makes the block generated. The chart value's own path comes from where the
+    block sits in the file, so a test spelling one of the two halves twice would not exercise the
+    resolution at all.
     """
     return (
         "image: example\n"
-        f"# @config-shape {value} generated\n"
-        "\n"
         "# @schema\n"
         f"# # @config structured {key} optional\n"
         "# type: string\n"
@@ -587,35 +639,56 @@ class TestWriter(GateCase):
 
 
 class TestGate(GateCase):
-    def test_a_generated_marker_on_an_undescribed_container_is_refused(self):
-        # A block generated from `{"type": "object"}` alone type-checks nothing, and enrolling one
-        # would delete whatever hand transcription was there.
+    def test_an_undescribed_container_is_refused_rather_than_opened(self):
+        # A block generated from `{"type": "object"}` alone type-checks nothing, and writing one
+        # would delete whatever hand transcription was there. The refusal names the marker that
+        # keeps it.
         self.chart.values(
             enrolled("internal.peers", "peers")
         )
         self.assertEqual(self.chart.check(), 1)
+        self.assertIn(cs.HANDWRITTEN, self.chart.output)
 
-    def test_a_generated_marker_on_a_value_binding_nothing_is_refused(self):
+    def test_a_value_binding_nothing_is_left_alone(self):
+        # The `@config` marker is the enrolment, so a value without one is not this module's
+        # business — and a gate that walked it would rewrite every chart value in the repository.
         self.chart.values(
-            "# @config-shape orphan generated\n"
-            "\n"
             "# @schema\n"
             "# type: string\n"
             "# @schema\n"
             "# -- Orphan.\n"
             "orphan: \"\"\n"
         )
+        self.assertEqual(self.chart.check(), 0)
+        self.assertEqual(self.chart.write(), 0)
+        self.assertIn("# type: string", self.chart.read())
+
+    def test_a_value_bound_only_by_composition_is_left_alone(self):
+        # `composed` says the value is *an input* to the key's text, so the key's constraint
+        # describes the composition rather than this value: generating from it would type the
+        # part as the whole.
+        self.chart.values(
+            "image: example\n"
+            "# @schema\n"
+            "# # @config composed github.repos\n"
+            "# type: integer\n"
+            "# @schema\n"
+            "# -- One input.\n"
+            "githubRepos: 1\n"
+        )
+        self.assertEqual(self.chart.check(), 0)
+
+    def test_a_handwritten_marker_naming_a_value_that_does_not_exist_is_refused(self):
+        self.chart.values(
+            enrolled() + "\n# @config-shape nowhere handwritten v1 src/nowhere.rs\n"
+        )
         self.assertEqual(self.chart.check(), 1)
 
-    def test_a_marker_naming_a_value_that_does_not_exist_is_refused(self):
-        self.chart.values(enrolled() + "\n# @config-shape nowhere generated\n")
-        self.assertEqual(self.chart.check(), 1)
-
-    def test_a_marker_away_from_its_block_is_refused(self):
+    def test_a_handwritten_marker_away_from_its_block_is_refused(self):
         # Matched to its value by name, so one written at the other end of the file resolves — and
         # then asserts something about a block nobody reading that block can see.
         self.chart.values(
-            "# @config-shape githubRepos generated\n"
+            "# @config-shape githubRepos handwritten v1 src/repos.rs\n"
             "other: 1\n"
             "\n"
             "# @schema\n"
@@ -674,7 +747,6 @@ class TestGate(GateCase):
     def test_a_declared_divergence_survives_a_check(self):
         self.chart.values(
             "image: example\n"
-            "# @config-shape githubRepos generated\n"
             "# @config-shape-except githubRepos items snowflakes do not survive a float64\n"
             "\n"
             "# @schema\n"

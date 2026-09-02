@@ -29,24 +29,36 @@ documented recurring failure here — an automated bump repins the digest and si
 everything else — and a marker per value is what turns "the chart has a contract" into "every key
 of that contract has an operator-facing value, or a written reason why it has none".
 
-**2. Retargeting the generated round-trip probes — later, and an addition rather than a rewrite.**
-The generated suites write their probes into the raw `config` escape hatch, so they pass whether
-or not the chart's hand-written camelCase-to-snake_case mapping is right. `Marker.values_path` is
-the dotted path of the chart value itself, so a probe can be written *there* instead and finally
-exercise the mapping. `condition` and `optional` are carried for the same reason: a probe on a
-gated value has to switch its gate on first, and a probe on an optional one has to assert the key
-is *absent* when the value is empty rather than present and empty. Nothing here uses either field;
-both are recorded because a generator that had to re-derive them would have to re-parse the
-templates.
+**2. Retargeting the generated round-trip probes — done, and it found defects immediately.**
+The generated suites used to write every probe into the raw `config` escape hatch, so they passed
+whether or not the chart's hand-written camelCase-to-snake_case mapping was right.
+`Marker.values_path` is the dotted path of the chart value itself, so `config_testgen.Route`
+writes the probe *there* and the case exercises the mapping; `condition` is read with it, because
+a probe on a gated value has to switch its gate on first or the key never reaches the document.
+That retargeting is what caught `bootstrap:seed_admin_email`, whose marker did not name the
+`bootstrap.seedAdmin.enabled` gate the template reads — a defect invisible from either side alone,
+since the marker looked complete and the chart looked correct.
 
-**3. Carrying contract prose into `values.schema.json` — later, likewise an addition.**
-`keys[].docs` and a value's schema `description` carry the same sentences today, written twice.
-A marker is the join: the description of the value at `Marker.values_path` is the `docs` of the key
-at `Marker.target`.
+`optional` is still carried and still unread: a probe on an optional value should also assert the
+key is *absent* when the value is empty, which is a second case per key rather than a change to
+the first.
+
+**3. Deriving the value's `@schema` block — done, and now the default.** A contract states each
+key's type as JSON Schema, and `config_shapes` writes that into the block of every value carrying
+one of these markers. The marker is the only join between the two: it is what says which key's
+constraint describes this value, and a chart that is not bindings-enrolled therefore has no
+derived schemas at all.
+
+**4. Carrying contract prose into `values.schema.json` — still later.** `keys[].docs` and a
+value's schema `description` overlap today, written twice. A marker is the join here as well, and
+the reason it has not been taken is that the two are not copies: a chart's description says what
+the value does *in this chart* — which probe reads it, which guard refuses it, which volume it
+needs — and the producer's says what the setting means. Replacing one with the other would lose
+the half nobody else writes.
 
 So the model is deliberately (values_path -> target) plus enough about *how* to reproduce the
-mapping, and not a list of covered keys. A coverage-only model would have to be replaced for both
-later payoffs; this one is read by them.
+mapping, and not a list of covered keys. A coverage-only model would have had to be replaced for
+each of the three above; this one is read by all of them.
 
 --------------------------------------------------------------------------------------------
 The grammar
@@ -87,7 +99,7 @@ for some of the documents that declare it and not others.
 The six relationships that actually occur, and where each one lands
 --------------------------------------------------------------------------------------------
 
-Measured across all five charts that map values onto a contract, not designed from one:
+Measured across every chart that maps values onto a contract, not designed from one:
 
 | Relationship      | Real example                            | How it is said                 |
 |-------------------|-----------------------------------------|--------------------------------|
@@ -134,8 +146,9 @@ Refusing to bind them would leave a reader unable to tell "no marker because thi
 configuration" from "no marker because someone forgot", which is the distinction the whole gate
 exists to make. They validate identically — an `external.env` entry carries the same `docs`,
 `default`, `required` and `constraint` fields a key does — so the gate is the same code, and
-payoff 3 works on them unchanged. Payoff 2 does not: an external variable is not in the document,
-so a round-trip probe through `config` was never available for it either way.
+payoffs 3 and 4 work on them unchanged — `config_shapes` derives an external variable's block
+from the same `constraint` field a key carries. Payoff 2 does not: an external variable is not in
+the document, so a round-trip probe through `config` was never available for it either way.
 
 They are **not** counted by the coverage rule. The loader does not own that namespace; a chart
 that surfaces no value for `RUST_LOG` is not delinquent, it simply does not offer to set it.
@@ -163,7 +176,7 @@ entirely, and the marker *is* a comment. `yaml.safe_load` on `values.yaml` retur
 which no marker has ever existed. Nothing in the stdlib round-trips YAML comments, and this
 repository's scripts are stdlib plus PyYAML by rule, so a line-by-line reader is the only
 implementation available. It still has to track indentation, because `Marker.values_path` is the
-value's full dotted path and the leaf name alone is useless to both later payoffs.
+value's full dotted path and the leaf name alone is useless to every payoff above.
 
 --------------------------------------------------------------------------------------------
 Where the marker must sit, which was measured rather than chosen
@@ -209,10 +222,10 @@ it asserts a schema keyword that is not one. Appending to `# type: string` hangs
 token it says nothing about. And the blank-line placement makes a blank line load-bearing in a
 file where the row below it shows what a misplaced one costs — every description in the chart.
 
-Available everywhere it is needed: all 1,128 documented values across the five charts that map
-values onto a contract carry a `@schema` block — 179 in `portfolio`, 114 in `netcup-offer-bot`,
-172, 173 and 490 in the other three. Not one is description-only, so no chart has to be told to
-add a schema block in order to bind a value.
+Available everywhere it is needed: all 1,832 documented values across the seven charts that map
+values onto a contract carry a `@schema` block — 202 in `portfolio`, 136 in `netcup-offer-bot`,
+573 in `tankovault` and 199 to 312 in the other four. Not one is description-only, so no chart has
+to be told to add a schema block in order to bind a value.
 
 What this placement gives up, stated because the first draft of this file used it as the reason
 for the other one: attachment becomes positional again. A trailing comment is *on* the line it
@@ -283,8 +296,8 @@ class Marker:
 
     `values_path` is the dotted path of that value — `csp.cloudflare.scriptNonce` — derived from
     the indentation of the *value* the block belongs to, not of the marker, so it cannot disagree
-    with the file. It is the field the two later payoffs read: the probe target for payoff 2, the
-    description target for payoff 3.
+    with the file. It is the field the payoffs above read: the probe target for payoff 2, the
+    value whose `@schema` block payoff 3 derives, and the description target payoff 4 would use.
 
     `line` is the marker's own line, because that is the line a reader has to edit; the value it
     binds is a few lines below it and named in every message.

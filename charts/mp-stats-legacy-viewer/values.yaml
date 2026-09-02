@@ -173,7 +173,7 @@ telemetry:
   sentry:
     # @schema
     # # @config projection telemetry.sentry.enabled optional
-    # type: boolean
+    # type: [boolean, 'null']
     # @schema
     # -- Initialise the Sentry client (`telemetry.sentry.enabled`). Off, every other key here is
     # inert. On, the server refuses to boot without a DSN rather than starting with a reporter
@@ -193,7 +193,7 @@ telemetry:
 
     # @schema
     # # @config projection telemetry.sentry.environment optional when telemetry.sentry.enabled
-    # type: string
+    # type: [string, 'null']
     # @schema
     # -- Environment tag on every event (`telemetry.sentry.environment`). Empty lets the server
     # derive it from the build: `production` for a release binary, which every published image
@@ -202,7 +202,7 @@ telemetry:
 
     # @schema
     # # @config projection telemetry.sentry.release optional when telemetry.sentry.enabled
-    # type: string
+    # type: [string, 'null']
     # @schema
     # -- Release tag on every event (`telemetry.sentry.release`). Empty uses
     # `mp-stats-legacy-viewer@v<version>`, spelled as the image tag spells it, which is what
@@ -212,12 +212,15 @@ telemetry:
 
     # @schema
     # # @config projection telemetry.sentry.server_name optional when telemetry.sentry.enabled
-    # type: string
+    # type: [string, 'null']
     # @schema
     # -- Host tag on every event (`telemetry.sentry.server_name`). Empty reports none, which is
     # the right answer here: the value would be one replica's pod name, gone by the time anyone
     # reads the issue.
     serverName: ""
+
+    # @config-shape-narrow telemetry.sentry.sampleRate minimum a sample rate is a fraction of events and the producer types it `f64` with no bound, so 0..1 is the chart's own
+    # @config-shape-narrow telemetry.sentry.sampleRate maximum a sample rate is a fraction of events and the producer types it `f64` with no bound, so 0..1 is the chart's own
 
     # @schema
     # # @config projection telemetry.sentry.sample_rate when telemetry.sentry.enabled
@@ -229,6 +232,9 @@ telemetry:
     # volume cap — it drops whole issues, not repetitions of one — so leave it at `1` unless a
     # quota forces otherwise. A value outside the range fails the boot.
     sampleRate: 1.0
+
+    # @config-shape-narrow telemetry.sentry.tracesSampleRate minimum a sample rate is a fraction of events and the producer types it `f64` with no bound, so 0..1 is the chart's own
+    # @config-shape-narrow telemetry.sentry.tracesSampleRate maximum a sample rate is a fraction of events and the producer types it `f64` with no bound, so 0..1 is the chart's own
 
     # @schema
     # # @config projection telemetry.sentry.traces_sample_rate when telemetry.sentry.enabled
@@ -246,7 +252,7 @@ telemetry:
 
     # @schema
     # # @config projection telemetry.sentry.capture_level when telemetry.sentry.enabled
-    # enum: ["off", error, warn, info, debug, trace]
+    # enum: ["off", "error", "warn", "info", "debug", "trace"]
     # @schema
     # -- Least severe `tracing` level reported as a Sentry issue
     # (`telemetry.sentry.capture_level`). Quote `"off"` — unquoted, YAML reads it as the boolean
@@ -256,7 +262,7 @@ telemetry:
 
     # @schema
     # # @config projection telemetry.sentry.breadcrumb_level when telemetry.sentry.enabled
-    # enum: ["off", error, warn, info, debug, trace]
+    # enum: ["off", "error", "warn", "info", "debug", "trace"]
     # @schema
     # -- Least severe `tracing` level kept as a breadcrumb, the trail attached to the next issue
     # (`telemetry.sentry.breadcrumb_level`). Records at or above `captureLevel` become issues

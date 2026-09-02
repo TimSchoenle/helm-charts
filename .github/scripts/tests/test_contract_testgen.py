@@ -415,6 +415,99 @@ class TestPlanning(unittest.TestCase):
         self.assertEqual(case.set_values[0][1], tg.DISTINCTIVE_INTEGER)
 
 
+class TestRoutedProbes(unittest.TestCase):
+    """The probe written into the chart's own value for a key, rather than into the raw tree.
+
+    This is the difference between a suite that proves the escape hatch is merged into the
+    document and one that proves the chart's own mapping — `assets.distDir` onto
+    `assets.dist_dir`. Five charts here spell every key twice, once in camelCase for the operator
+    and once in the contract's snake_case, and until a probe went through the first of those a
+    typo in the helper between them passed every case in the suite.
+    """
+
+    ROUTES: ClassVar[dict] = {
+        "assets.dist_dir": tg.Route(values_path="assets.distDir"),
+        "isr.ttl_secs": tg.Route(values_path="isr.ttlSecs"),
+    }
+
+    def test_the_probe_lands_on_the_chart_value(self):
+        plan = tg.plan(TestPlanning.KEYS, [], routes=self.ROUTES)
+        case = next(case for case in plan.cases if case.path == "isr.ttl_secs")
+        self.assertEqual(case.set_values[-1], ("isr.ttlSecs", tg.DISTINCTIVE_INTEGER))
+        self.assertEqual(case.through, "isr.ttlSecs")
+
+    def test_a_key_with_no_route_still_goes_through_the_raw_tree(self):
+        plan = tg.plan(TestPlanning.KEYS, [], routes={})
+        case = next(case for case in plan.cases if case.path == "isr.ttl_secs")
+        self.assertEqual(case.set_values[-1], ("config.isr.ttl_secs", tg.DISTINCTIVE_INTEGER))
+        self.assertIsNone(case.through)
+
+    def test_a_gate_the_marker_names_is_switched_on(self):
+        # A `when` clause is a values path the chart tests before writing the key at all, so a
+        # case that left it alone would assert against a document the probe never reached.
+        routes = {"isr.ttl_secs": tg.Route(values_path="isr.ttlSecs", condition="isr.enabled")}
+        plan = tg.plan(TestPlanning.KEYS, [], routes=routes)
+        case = next(case for case in plan.cases if case.path == "isr.ttl_secs")
+        self.assertIn(("isr.enabled", True), case.set_values)
+
+    def test_the_baseline_is_still_dropped_by_its_escape_hatch_path(self):
+        # The raw tree is merged over what the chart derives, so a baseline entry naming the key
+        # a case probes would override the chart value the probe was just written into.
+        probed = tg.values_path("isr.ttl_secs")
+        plan = tg.plan(TestPlanning.KEYS, [(probed, 99)], routes=self.ROUTES)
+        case = next(case for case in plan.cases if case.path == "isr.ttl_secs")
+        self.assertEqual([name for name, _ in case.set_values], ["isr.ttlSecs"])
+
+    def test_a_chart_schema_nothing_satisfies_falls_back_to_the_raw_tree(self):
+        # A chart value may be typed more tightly than the contract — deliberately, and the
+        # narrowing markers in values.yaml are where that is declared. A probe that satisfies the
+        # contract and not the chart would fail Helm's own values validation, so the case goes
+        # through the untyped escape hatch instead of disappearing.
+        routes = {
+            "isr.ttl_secs": tg.Route(
+                values_path="isr.ttlSecs", schema={"maximum": -1},
+            )
+        }
+        plan = tg.plan(TestPlanning.KEYS, [], routes=routes)
+        case = next(case for case in plan.cases if case.path == "isr.ttl_secs")
+        self.assertEqual(case.set_values[-1], ("config.isr.ttl_secs", tg.DISTINCTIVE_INTEGER))
+        self.assertIsNone(case.through)
+
+    def test_a_chart_schema_the_probe_satisfies_keeps_the_route(self):
+        routes = {
+            "isr.ttl_secs": tg.Route(
+                values_path="isr.ttlSecs", schema={"type": "integer", "minimum": 1},
+            )
+        }
+        plan = tg.plan(TestPlanning.KEYS, [], routes=routes)
+        case = next(case for case in plan.cases if case.path == "isr.ttl_secs")
+        self.assertEqual(case.through, "isr.ttlSecs")
+
+    def test_the_case_title_names_the_value_the_probe_went_through(self):
+        # The two kinds of case prove different things and a reader scanning the suite has no
+        # other way to tell them apart.
+        rendered = tg.render_suite(
+            TestSuiteRendering.TARGET,
+            tg.plan(TestPlanning.KEYS, [], routes=self.ROUTES),
+            [],
+            None,
+        )
+        self.assertIn("delivers isr.ttl_secs into config.toml from isr.ttlSecs", rendered)
+        self.assertIn("2 of 3 contract keys carry a probe, 2 through the chart's own value",
+                      rendered)
+
+    def test_an_unrouted_key_is_explained_in_the_suite(self):
+        rendered = tg.render_suite(
+            TestSuiteRendering.TARGET,
+            tg.plan(TestPlanning.KEYS, [], routes={}),
+            [],
+            None,
+            unrouted=[("isr.ttl_secs", "the chart refuses a value this probe could take")],
+        )
+        self.assertIn("isr.ttl_secs:", rendered)
+        self.assertIn("the chart refuses a value this probe could take", rendered)
+
+
 class TestProbeTarget(unittest.TestCase):
     """Where a probe is written, when a chart's derived wiring outranks its configuration tree."""
 
@@ -544,7 +637,7 @@ class TestSuiteRendering(unittest.TestCase):
 
     def test_a_moved_probe_root_reaches_the_header_the_set_paths_and_the_note(self):
         rendered = self.render_shared(TestPlanning.KEYS, reason="the derived wiring outranks it")
-        self.assertIn("writes one setting into `services.api.config`", rendered)
+        self.assertIn("`services.api.config` where no value is bound", rendered)
         self.assertIn("services.api.config.isr.ttl_secs:", rendered)
         self.assertIn("rather than into `config`", rendered)
         self.assertIn("the derived wiring outranks it", rendered)

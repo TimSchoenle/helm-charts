@@ -635,8 +635,11 @@ class Chart:
         self.name = chart_dir.name
         self.values = chart_dir / "values.yaml"
         # Read without newline translation: this working tree is CRLF and a rewrite that
-        # normalised it would reflow every line of every file it touched.
-        self.text = self.values.read_text(encoding="utf-8", newline="")
+        # normalised it would reflow every line of every file it touched. `Path.open`
+        # rather than `read_text(newline=...)`: that keyword is 3.13, and the recipes
+        # resolve to whatever python is on PATH — the runner image's system one, in CI.
+        with self.values.open(encoding="utf-8", newline="") as handle:
+            self.text = handle.read()
         self.problems: list[str] = []
 
         self.shapes, self.divergences = parse_markers(self.text, self.name)
@@ -978,7 +981,8 @@ def main(argv: list[str]) -> int:
         else:
             text, written = rewrite(chart)
             if written:
-                chart.values.write_text(text, encoding="utf-8", newline="")
+                with chart.values.open("w", encoding="utf-8", newline="") as handle:
+                    handle.write(text)
                 touched.append(f"{chart.name} ({written} block(s))")
 
         problems.extend(chart.problems)

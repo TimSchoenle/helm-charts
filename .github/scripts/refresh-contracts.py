@@ -445,7 +445,8 @@ def write_vendored(path: Path, image: str, digest: str, payload: bytes, sha256: 
         return False
 
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(rendered, encoding="utf-8", newline="\n")
+    with path.open("w", encoding="utf-8", newline="\n") as handle:
+        handle.write(rendered)
     return True
 
 

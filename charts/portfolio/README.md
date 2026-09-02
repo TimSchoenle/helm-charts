@@ -1,6 +1,6 @@
 # portfolio
 
-![Version: 5.2.2](https://img.shields.io/badge/Version-5.2.2-informational?style=flat-square) ![AppVersion: v2.10.0](https://img.shields.io/badge/AppVersion-v2.10.0-informational?style=flat-square)
+![Version: 5.3.1](https://img.shields.io/badge/Version-5.3.1-informational?style=flat-square) ![AppVersion: v2.10.0](https://img.shields.io/badge/AppVersion-v2.10.0-informational?style=flat-square)
 
 Personal portfolio built with Rust (Yew frontend, Axum server).
 
@@ -495,7 +495,7 @@ policy pointing at the wrong Gateway looks correct and blocks everything.
 | commonAnnotations | object | `{}` | Annotations added to every object this chart creates. |
 | commonLabels | object | `{}` | Labels added to every object this chart creates. |
 | config | object | `{}` | Extra configuration, expressed as the TOML tree of [the application's README](https://github.com/TimSchoenle/Portfolio#configuration) (`assets.dist_dir`, `isr.ttl_secs`, ...). Merged over everything the chart derives from the values above, so it can both extend and override them. Rendered into the mounted ConfigMap — never into the environment, which the loader refuses to combine with a file. |
-| configExtraToml | string | `""` | Verbatim TOML appended after the rendered configuration. The escape hatch for anything the chart's TOML renderer cannot express, notably arrays of tables. |
+| configExtraToml | string | `""` | Verbatim TOML appended after the rendered configuration. The escape hatch for the shapes the chart's TOML renderer cannot express: an array of arrays, an array mixing tables and scalars, and TOML's own literal types such as a datetime. Arrays of tables render natively. |
 | configMount | object | `{"configDir":"/etc/portfolio/config","secretsDir":"/etc/portfolio/secrets"}` | Where the rendered configuration and the credential files land in the container. |
 | configMount.configDir | string | `"/etc/portfolio/config"` | Directory the rendered `config.toml` is mounted at, passed as `PORTFOLIO_CONFIG`. |
 | configMount.secretsDir | string | `"/etc/portfolio/secrets"` | Directory credential files are mounted at, passed as `PORTFOLIO_SECRETS_DIR`. The Sentry DSN is the only credential this server reads — `github.token` belongs to the build-time repository builder — so the volume and the variable both appear only while `sentry.enabled` is set, and a release that does not report to Sentry carries neither. |

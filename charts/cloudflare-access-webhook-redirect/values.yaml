@@ -434,8 +434,9 @@ config: {}
 # @schema
 # type: string
 # @schema
-# -- Verbatim TOML appended after the rendered configuration. The escape hatch for anything the
-# chart's TOML renderer cannot express, notably arrays of tables.
+# -- Verbatim TOML appended after the rendered configuration. The escape hatch for the shapes the
+# chart's TOML renderer cannot express: an array of arrays, an array mixing tables and scalars,
+# and TOML's own literal types such as a datetime. Arrays of tables render natively.
 configExtraToml: ""
 
 # @schema
@@ -579,6 +580,19 @@ gateway:
 
   # @schema
   # type: array
+  # items:
+  #   anyOf:
+  #     - $ref: https://raw.githubusercontent.com/datreeio/CRDs-catalog/866b2653a5334db9aed20ad74701e20fd464471b/gateway.networking.k8s.io/httproute_v1.json#/properties/spec/properties/parentRefs/items
+  #     - type: object
+  #       required: [name]
+  #       additionalProperties: false
+  #       properties:
+  #         group: {type: string}
+  #         kind: {type: string}
+  #         name: {type: string}
+  #         namespace: {type: string}
+  #         port: {type: integer}
+  #         sectionName: {type: string}
   # @schema
   # -- Gateways the route attaches to. Each entry takes `name` and optionally `namespace`,
   # `sectionName` (a single listener), `port`, `group` and `kind`; the API's defaults are filled
@@ -597,6 +611,10 @@ gateway:
 
   # @schema
   # type: array
+  # items:
+  #   anyOf:
+  #     - $ref: https://raw.githubusercontent.com/datreeio/CRDs-catalog/866b2653a5334db9aed20ad74701e20fd464471b/gateway.networking.k8s.io/httproute_v1.json#/properties/spec/properties/hostnames/items
+  #     - {type: string, pattern: '\{\{'}
   # @schema
   # -- Hostnames the route serves. Values may contain Go templates.
   #
@@ -614,6 +632,8 @@ gateway:
 
   # @schema
   # type: array
+  # items:
+  #   $ref: https://raw.githubusercontent.com/datreeio/CRDs-catalog/866b2653a5334db9aed20ad74701e20fd464471b/gateway.networking.k8s.io/httproute_v1.json#/properties/spec/properties/rules/items
   # @schema
   # -- Routing rules, in full `HTTPRouteRule` form (`matches`, `filters`, `backendRefs`,
   # `timeouts`). An entry that omits `backendRefs` inherits this chart's Service, so a rule that
@@ -625,6 +645,8 @@ gateway:
 
   # @schema
   # type: array
+  # items:
+  #   $ref: https://raw.githubusercontent.com/datreeio/CRDs-catalog/866b2653a5334db9aed20ad74701e20fd464471b/gateway.networking.k8s.io/httproute_v1.json#/properties/spec/properties/rules/items/properties/backendRefs/items
   # @schema
   # -- Backends for rules that name none. Defaults to this chart's own Service. Weights are
   # honoured, so a traffic split needs no custom rule.
@@ -632,6 +654,8 @@ gateway:
 
   # @schema
   # type: array
+  # items:
+  #   $ref: https://raw.githubusercontent.com/datreeio/CRDs-catalog/866b2653a5334db9aed20ad74701e20fd464471b/gateway.networking.k8s.io/httproute_v1.json#/properties/spec/properties/rules/items/properties/filters/items
   # @schema
   # -- Filters applied to the default rule: `RequestHeaderModifier`, `ResponseHeaderModifier`,
   # `RequestRedirect`, `URLRewrite`, `RequestMirror`, `ExtensionRef`. This is where an
@@ -639,8 +663,7 @@ gateway:
   filters: []
 
   # @schema
-  # type: object
-  # additionalProperties: true
+  # $ref: https://raw.githubusercontent.com/datreeio/CRDs-catalog/866b2653a5334db9aed20ad74701e20fd464471b/gateway.networking.k8s.io/httproute_v1.json#/properties/spec/properties/rules/items/properties/timeouts
   # @schema
   # -- Timeouts for the default rule: `request` and `backendRequest`, as Go durations. Ignored
   # when `rules` is set.
@@ -699,6 +722,8 @@ gateway:
 
     # @schema
     # type: array
+    # items:
+    #   $ref: https://raw.githubusercontent.com/datreeio/CRDs-catalog/866b2653a5334db9aed20ad74701e20fd464471b/gateway.networking.k8s.io/gateway_v1.json#/properties/spec/properties/listeners/items/properties/tls/properties/certificateRefs/items
     # @schema
     # -- Secrets holding the certificate. Required by `Terminate`: unlike an Ingress there is no
     # convention by which one is looked up from the hostname. A ref naming another namespace
@@ -707,14 +732,15 @@ gateway:
     certificateRefs: []
 
     # @schema
-    # type: object
-    # additionalProperties: true
+    # $ref: https://raw.githubusercontent.com/datreeio/CRDs-catalog/866b2653a5334db9aed20ad74701e20fd464471b/gateway.networking.k8s.io/gateway_v1.json#/properties/spec/properties/listeners/items/properties/tls/properties/options
     # @schema
     # -- Implementation-specific TLS options.
     options: {}
 
   # @schema
   # type: array
+  # items:
+  #   $ref: https://raw.githubusercontent.com/datreeio/CRDs-catalog/866b2653a5334db9aed20ad74701e20fd464471b/gateway.networking.k8s.io/gateway_v1.json#/properties/spec/properties/listeners/items
   # @schema
   # -- Listeners for the created Gateway, replacing the derived ones entirely. Reach for this
   # when a listener needs its own hostname or certificate.
@@ -734,21 +760,21 @@ gateway:
 
   # @schema
   # type: array
+  # items:
+  #   $ref: https://raw.githubusercontent.com/datreeio/CRDs-catalog/866b2653a5334db9aed20ad74701e20fd464471b/gateway.networking.k8s.io/gateway_v1.json#/properties/spec/properties/addresses/items
   # @schema
   # -- Addresses requested for the created Gateway, e.g. a fixed `IPAddress`.
   addresses: []
 
   # @schema
-  # type: object
-  # additionalProperties: true
+  # $ref: https://raw.githubusercontent.com/datreeio/CRDs-catalog/866b2653a5334db9aed20ad74701e20fd464471b/gateway.networking.k8s.io/gateway_v1.json#/properties/spec/properties/listeners/items/properties/allowedRoutes
   # @schema
   # -- Which routes may attach to the created Gateway's listeners. Defaults to `Same`: a Gateway
   # this chart owns should not be attachable from another namespace unless that is asked for.
   allowedRoutes: {}
 
   # @schema
-  # type: object
-  # additionalProperties: true
+  # $ref: https://raw.githubusercontent.com/datreeio/CRDs-catalog/866b2653a5334db9aed20ad74701e20fd464471b/gateway.networking.k8s.io/gateway_v1.json#/properties/spec/properties/infrastructure
   # @schema
   # -- `infrastructure.labels` / `infrastructure.annotations` for the created Gateway, passed
   # through to the load balancer the implementation provisions. Where Cilium's LB-IPAM

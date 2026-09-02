@@ -123,10 +123,25 @@ rules_namespace := "rules-test"
 # Mirrors `remote`/`target-branch` in ct.yaml — keep the two in step.
 target_branch := "origin/main"
 
+# The commit of the community CRD catalog every schema in this repository is read at.
+#
+# Pinned rather than tracking `main` for the reason `kube_version` is pinned: the catalog is a
+# third party's branch, and an unpinned reference lets a push there change what CI accepts and
+# what an operator's values are validated against, silently and with nothing in this repository
+# recording that it moved. `just sync-crd-refs` carries a change here into the charts and the CI
+# documentation job runs it, exactly as `sync-kube-refs` does for the Kubernetes references.
+#
+# Bumping it is a deliberate act: read the catalog's log for the groups below first. Its Gateway
+# API schemas track the **experimental** channel, so they accept fields — `rules[].retry`,
+# `rules[].sessionPersistence`, `filters[].externalAuth`, `spec.useDefaultGateways` — that a
+# standard-channel cluster prunes at apply time. That looseness is inherited rather than chosen;
+# it already applied to `kubeconform` before any chart value referenced the catalog.
+crd_catalog_ref := "866b2653a5334db9aed20ad74701e20fd464471b"
+
 # PodMonitor and the other operator CRDs are not part of the Kubernetes API surface, so their
 # schemas come from the community catalog. Held as a variable because the `{{ ... }}` placeholders
 # kubeconform expects would otherwise be read as just interpolations.
-crd_schemas := 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json'
+crd_schemas := 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/' + crd_catalog_ref + '/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json'
 
 # --------------------------------------------------------------------------------------------
 # Shared shell preamble
@@ -165,18 +180,19 @@ default:
 # `ct` and `kube-linter` means a shell without those still gets everything else checked before it
 # stops.
 #
-# `check-contract-tests` is here and its siblings `check-contracts` and `check-kube-refs` are not,
-# and the difference is who repairs the drift. Those two are repaired by the Documentation job,
-# which refreshes and commits on the pull request itself, so failing `check` on them would fail a
-# contributor for something the automation is about to fix. Nothing regenerates the contract
-# suites — deliberately, because a generated *test* that lands without its author having read it
-# is a test nobody has read — so a contract that gained a key would otherwise leave its suite
-# silently short of it, which is precisely the drift the suites exist to remove. It reads two
-# committed files and writes nothing, so it costs the aggregate nothing to carry. If the
-# Documentation job ever adopts `just contract-tests`, this belongs back out beside the other two.
+# `check-contract-tests` is here and its siblings `check-contracts`, `check-kube-refs` and
+# `check-crd-refs` are not, and the difference is who repairs the drift. Those three are repaired
+# by the Documentation job, which refreshes and commits on the pull request itself, so failing
+# `check` on them would fail a contributor for something the automation is about to fix. Nothing
+# regenerates the contract suites — deliberately, because a generated *test* that lands without
+# its author having read it is a test nobody has read — so a contract that gained a key would
+# otherwise leave its suite silently short of it, which is precisely the drift the suites exist to
+# remove. It reads two committed files and writes nothing, so it costs the aggregate nothing to
+# carry. If the Documentation job ever adopts `just contract-tests`, this belongs back out beside
+# the other three.
 [doc("Every gate CI runs that does not need a Kubernetes cluster")]
 [group('meta')]
-check: deps test validate-manifests check-immutable check-config check-contract-coverage check-config-bindings check-contract-tests check-values-docs check-preset-schema test-contract-union lint-python lint lint-policy
+check: deps test validate-manifests check-immutable check-config check-contract-coverage check-config-bindings check-config-shapes check-contract-tests check-values-docs check-preset-schema test-contract-union lint-python lint lint-policy
 
 # Install the pinned Helm plugins. The CI composite action calls this recipe too, so the versions
 # above are the only place they are declared.

@@ -457,9 +457,20 @@ links:
   # -- Hosts a rendered button may point at (`links.allowed_hosts`).
   allowedHosts: []
 
+  # `LinkButton` as the image declares it, on the same terms as `routes` above: the contract
+  # carries no element shape, the struct is `deny_unknown_fields`, and every field defaults.
+  # @config-shape links.buttons v0.3.0 crates/discord-alertmanager-config/src/links.rs
+
   # @schema
   # # @config structured links.buttons optional
   # type: [array, 'null']
+  # items:
+  #   type: object
+  #   additionalProperties: false
+  #   properties:
+  #     label: {type: string}
+  #     url: {type: string}
+  #     when: {type: [string, 'null']}
   # @schema
   # -- The buttons themselves, rendered in order (`links.buttons`).
   buttons: []
@@ -567,11 +578,88 @@ render:
   # (`render.thread_archive_after_minutes`).
   threadArchiveAfterMinutes: 1440
 
+# `RouteConfig` as the image declares it, transcribed from the struct named below. The contract
+# cannot carry this: `constraint` is a flat keyword set with no `items`, so a `Vec<RouteConfig>`
+# reaches the chart as a bare `type: array` and the element's shape has nowhere else to live.
+# `just check-config-shapes` fails when the appVersion moves and this has not been re-read.
+#
+# Closed rather than open, because the image is closed: every struct here is
+# `#[serde(deny_unknown_fields)]`, so a key this schema refuses is one the service refuses at
+# boot. Nothing is required, because every field is `#[serde(default)]`.
+#
+# `guild_id`, `target.id` and the mention and escalation lists are Discord snowflakes, and they
+# are typed as **quoted strings of digits** rather than as integers. That is not a preference:
+# Helm parses a values file through `encoding/json`, so every number in one arrives as a
+# `float64`, and a snowflake is above 2^53 — `guild_id: 123456789012345678` reaches this chart as
+# `123456789012345680`, silently, and the route then posts to whatever channel that names. A
+# quoted string is the only spelling that survives, and `discord-alertmanager.snowflakes` is what
+# writes it back out as the TOML integer the image reads.
+# @config-shape routes v0.3.0 crates/discord-alertmanager-config/src/routes.rs
+
 # @schema
 # # @config structured routes optional
 # type: [array, 'null']
+# items:
+#   type: object
+#   additionalProperties: false
+#   properties:
+#     name: {type: string}
+#     guild_id: {type: string, pattern: '^[0-9]+$'}
+#     matchers: {type: string}
+#     min_severity: {enum: [info, warning, critical, null]}
+#     group_strategy: {enum: [per_alert, per_group, digest]}
+#     priority: {type: integer, minimum: -2147483648, maximum: 2147483647}
+#     continue_to_next: {type: boolean}
+#     enabled: {type: boolean}
+#     target:
+#       type: object
+#       additionalProperties: false
+#       properties:
+#         kind: {enum: [text, forum, thread, dm]}
+#         id: {type: string, pattern: '^[0-9]+$'}
+#         policy:
+#           type: object
+#           additionalProperties: false
+#           properties:
+#             thread_when: {enum: [never, on_create, on_ack, on_first_reply]}
+#             thread_kind: {enum: [public, private]}
+#             title_template: {type: string}
+#             manage_tags: {type: boolean}
+#             severity_tags: {type: boolean}
+#             label_tags: {type: array, items: {type: string}}
+#             default_tag: {type: string}
+#             auto_archive_minutes: {type: [integer, 'null'], minimum: 0, maximum: 4294967295}
+#             archive_on_resolve: {type: boolean}
+#             lock_on_resolve: {type: boolean}
+#             pin_min_severity: {enum: [info, warning, critical, null]}
+#             max_pinned: {type: integer, minimum: 0, maximum: 4294967295}
+#             bump_on_state_change: {type: boolean}
+#             state_tags:
+#               type: object
+#               additionalProperties: false
+#               properties:
+#                 firing: {type: string}
+#                 acked: {type: string}
+#                 silenced: {type: string}
+#                 resolved: {type: string}
+#     mentions:
+#       type: object
+#       additionalProperties: false
+#       properties:
+#         roles: {type: array, items: {type: string, pattern: '^[0-9]+$'}}
+#         users: {type: array, items: {type: string, pattern: '^[0-9]+$'}}
+#         min_severity: {enum: [info, warning, critical, null]}
+#     escalation:
+#       type: object
+#       additionalProperties: false
+#       properties:
+#         after_secs: {type: [integer, 'null'], minimum: 0}
+#         roles: {type: array, items: {type: string, pattern: '^[0-9]+$'}}
+#         users: {type: array, items: {type: string, pattern: '^[0-9]+$'}}
 # @schema
 # -- Routes declared in the file, which cannot be edited or deleted from Discord (`routes`).
+# Rendered as `[[routes]]`, with `target`, `mentions` and `escalation` as sub-tables of each
+# element.
 routes: []
 
 # @schema
@@ -695,8 +783,10 @@ config: {}
 # @schema
 # type: string
 # @schema
-# -- Verbatim TOML appended after the rendered configuration. The escape hatch for
-# anything the chart's TOML renderer cannot express, notably arrays of tables.
+# -- Verbatim TOML appended after the rendered configuration. The escape hatch for the shapes
+# the chart's TOML renderer cannot express: an array of arrays, an array mixing tables and
+# scalars, and TOML's own literal types such as a datetime. Arrays of tables render natively,
+# so `routes` and `links.buttons` do not need this.
 configExtraToml: ""
 
 # @schema
@@ -911,6 +1001,19 @@ gateway:
 
   # @schema
   # type: array
+  # items:
+  #   anyOf:
+  #     - $ref: https://raw.githubusercontent.com/datreeio/CRDs-catalog/866b2653a5334db9aed20ad74701e20fd464471b/gateway.networking.k8s.io/httproute_v1.json#/properties/spec/properties/parentRefs/items
+  #     - type: object
+  #       required: [name]
+  #       additionalProperties: false
+  #       properties:
+  #         group: {type: string}
+  #         kind: {type: string}
+  #         name: {type: string}
+  #         namespace: {type: string}
+  #         port: {type: integer}
+  #         sectionName: {type: string}
   # @schema
   # -- Gateways the route attaches to. Each entry takes `name` and optionally `namespace`,
   # `sectionName` (a single listener), `port`, `group` and `kind`; the API's defaults are filled
@@ -929,6 +1032,10 @@ gateway:
 
   # @schema
   # type: array
+  # items:
+  #   anyOf:
+  #     - $ref: https://raw.githubusercontent.com/datreeio/CRDs-catalog/866b2653a5334db9aed20ad74701e20fd464471b/gateway.networking.k8s.io/httproute_v1.json#/properties/spec/properties/hostnames/items
+  #     - {type: string, pattern: '\{\{'}
   # @schema
   # -- Hostnames the route serves. Values may contain Go templates.
   #
@@ -946,6 +1053,8 @@ gateway:
 
   # @schema
   # type: array
+  # items:
+  #   $ref: https://raw.githubusercontent.com/datreeio/CRDs-catalog/866b2653a5334db9aed20ad74701e20fd464471b/gateway.networking.k8s.io/httproute_v1.json#/properties/spec/properties/rules/items
   # @schema
   # -- Routing rules, in full `HTTPRouteRule` form (`matches`, `filters`, `backendRefs`,
   # `timeouts`). An entry that omits `backendRefs` inherits this chart's Service, so a rule that
@@ -957,6 +1066,8 @@ gateway:
 
   # @schema
   # type: array
+  # items:
+  #   $ref: https://raw.githubusercontent.com/datreeio/CRDs-catalog/866b2653a5334db9aed20ad74701e20fd464471b/gateway.networking.k8s.io/httproute_v1.json#/properties/spec/properties/rules/items/properties/backendRefs/items
   # @schema
   # -- Backends for rules that name none. Defaults to this chart's own Service. Weights are
   # honoured, so a traffic split needs no custom rule.
@@ -964,6 +1075,8 @@ gateway:
 
   # @schema
   # type: array
+  # items:
+  #   $ref: https://raw.githubusercontent.com/datreeio/CRDs-catalog/866b2653a5334db9aed20ad74701e20fd464471b/gateway.networking.k8s.io/httproute_v1.json#/properties/spec/properties/rules/items/properties/filters/items
   # @schema
   # -- Filters applied to the default rule: `RequestHeaderModifier`, `ResponseHeaderModifier`,
   # `RequestRedirect`, `URLRewrite`, `RequestMirror`, `ExtensionRef`. This is where an
@@ -971,8 +1084,7 @@ gateway:
   filters: []
 
   # @schema
-  # type: object
-  # additionalProperties: true
+  # $ref: https://raw.githubusercontent.com/datreeio/CRDs-catalog/866b2653a5334db9aed20ad74701e20fd464471b/gateway.networking.k8s.io/httproute_v1.json#/properties/spec/properties/rules/items/properties/timeouts
   # @schema
   # -- Timeouts for the default rule: `request` and `backendRequest`, as Go durations. Ignored
   # when `rules` is set.
@@ -1031,6 +1143,8 @@ gateway:
 
     # @schema
     # type: array
+    # items:
+    #   $ref: https://raw.githubusercontent.com/datreeio/CRDs-catalog/866b2653a5334db9aed20ad74701e20fd464471b/gateway.networking.k8s.io/gateway_v1.json#/properties/spec/properties/listeners/items/properties/tls/properties/certificateRefs/items
     # @schema
     # -- Secrets holding the certificate. Required by `Terminate`: unlike an Ingress there is no
     # convention by which one is looked up from the hostname. A ref naming another namespace
@@ -1039,14 +1153,15 @@ gateway:
     certificateRefs: []
 
     # @schema
-    # type: object
-    # additionalProperties: true
+    # $ref: https://raw.githubusercontent.com/datreeio/CRDs-catalog/866b2653a5334db9aed20ad74701e20fd464471b/gateway.networking.k8s.io/gateway_v1.json#/properties/spec/properties/listeners/items/properties/tls/properties/options
     # @schema
     # -- Implementation-specific TLS options.
     options: {}
 
   # @schema
   # type: array
+  # items:
+  #   $ref: https://raw.githubusercontent.com/datreeio/CRDs-catalog/866b2653a5334db9aed20ad74701e20fd464471b/gateway.networking.k8s.io/gateway_v1.json#/properties/spec/properties/listeners/items
   # @schema
   # -- Listeners for the created Gateway, replacing the derived ones entirely. Reach for this
   # when a listener needs its own hostname or certificate.
@@ -1066,21 +1181,21 @@ gateway:
 
   # @schema
   # type: array
+  # items:
+  #   $ref: https://raw.githubusercontent.com/datreeio/CRDs-catalog/866b2653a5334db9aed20ad74701e20fd464471b/gateway.networking.k8s.io/gateway_v1.json#/properties/spec/properties/addresses/items
   # @schema
   # -- Addresses requested for the created Gateway, e.g. a fixed `IPAddress`.
   addresses: []
 
   # @schema
-  # type: object
-  # additionalProperties: true
+  # $ref: https://raw.githubusercontent.com/datreeio/CRDs-catalog/866b2653a5334db9aed20ad74701e20fd464471b/gateway.networking.k8s.io/gateway_v1.json#/properties/spec/properties/listeners/items/properties/allowedRoutes
   # @schema
   # -- Which routes may attach to the created Gateway's listeners. Defaults to `Same`: a Gateway
   # this chart owns should not be attachable from another namespace unless that is asked for.
   allowedRoutes: {}
 
   # @schema
-  # type: object
-  # additionalProperties: true
+  # $ref: https://raw.githubusercontent.com/datreeio/CRDs-catalog/866b2653a5334db9aed20ad74701e20fd464471b/gateway.networking.k8s.io/gateway_v1.json#/properties/spec/properties/infrastructure
   # @schema
   # -- `infrastructure.labels` / `infrastructure.annotations` for the created Gateway, passed
   # through to the load balancer the implementation provisions. Where Cilium's LB-IPAM

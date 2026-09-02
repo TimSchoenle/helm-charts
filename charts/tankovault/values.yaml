@@ -44,8 +44,9 @@ config: {}
 # @schema
 # type: string
 # @schema
-# -- Verbatim TOML appended after the rendered `config` tree. The escape hatch for anything
-# this chart's TOML renderer cannot express, notably arrays of tables.
+# -- Verbatim TOML appended after the rendered `config` tree. The escape hatch for the shapes
+# this chart's TOML renderer cannot express: an array of arrays, an array mixing tables and
+# scalars, and TOML's own literal types such as a datetime. Arrays of tables render natively.
 configExtraToml: ""
 
 # @schema
@@ -2827,6 +2828,19 @@ gateway:
 
   # @schema
   # type: array
+  # items:
+  #   anyOf:
+  #     - $ref: https://raw.githubusercontent.com/datreeio/CRDs-catalog/866b2653a5334db9aed20ad74701e20fd464471b/gateway.networking.k8s.io/httproute_v1.json#/properties/spec/properties/parentRefs/items
+  #     - type: object
+  #       required: [name]
+  #       additionalProperties: false
+  #       properties:
+  #         group: {type: string}
+  #         kind: {type: string}
+  #         name: {type: string}
+  #         namespace: {type: string}
+  #         port: {type: integer}
+  #         sectionName: {type: string}
   # @schema
   # -- Gateways the routes attach to. Each entry takes `name` and optionally `namespace`,
   # `sectionName`, `port`, `group` and `kind`. Required unless `create` is set: a route with no
@@ -2856,6 +2870,8 @@ gateway:
 
   # @schema
   # type: array
+  # items:
+  #   $ref: https://raw.githubusercontent.com/datreeio/CRDs-catalog/866b2653a5334db9aed20ad74701e20fd464471b/gateway.networking.k8s.io/httproute_v1.json#/properties/spec/properties/rules/items/properties/filters/items
   # @schema
   # -- Filters applied to the frontend route: `RequestHeaderModifier`,
   # `ResponseHeaderModifier`, `RequestRedirect`, `URLRewrite`, `RequestMirror`, `ExtensionRef`.
@@ -2863,8 +2879,7 @@ gateway:
   filters: []
 
   # @schema
-  # type: object
-  # additionalProperties: true
+  # $ref: https://raw.githubusercontent.com/datreeio/CRDs-catalog/866b2653a5334db9aed20ad74701e20fd464471b/gateway.networking.k8s.io/httproute_v1.json#/properties/spec/properties/rules/items/properties/timeouts
   # @schema
   # -- Timeouts for the frontend route: `request` and `backendRequest`, as Go durations.
   #
@@ -2930,6 +2945,8 @@ gateway:
 
     # @schema
     # type: array
+    # items:
+    #   $ref: https://raw.githubusercontent.com/datreeio/CRDs-catalog/866b2653a5334db9aed20ad74701e20fd464471b/gateway.networking.k8s.io/gateway_v1.json#/properties/spec/properties/listeners/items/properties/tls/properties/certificateRefs/items
     # @schema
     # -- Secrets holding the certificate for the created Gateway's listener. Required by
     # `Terminate`: unlike an Ingress there is no convention by which one is looked up from the
@@ -2937,14 +2954,15 @@ gateway:
     certificateRefs: []
 
     # @schema
-    # type: object
-    # additionalProperties: true
+    # $ref: https://raw.githubusercontent.com/datreeio/CRDs-catalog/866b2653a5334db9aed20ad74701e20fd464471b/gateway.networking.k8s.io/gateway_v1.json#/properties/spec/properties/listeners/items/properties/tls/properties/options
     # @schema
     # -- Implementation-specific TLS options for the created Gateway's listener.
     options: {}
 
   # @schema
   # type: array
+  # items:
+  #   $ref: https://raw.githubusercontent.com/datreeio/CRDs-catalog/866b2653a5334db9aed20ad74701e20fd464471b/gateway.networking.k8s.io/gateway_v1.json#/properties/spec/properties/listeners/items
   # @schema
   # -- Listeners for the created Gateway, replacing the derived `http`/`https` pair entirely.
   listeners: []
@@ -2963,20 +2981,20 @@ gateway:
 
   # @schema
   # type: array
+  # items:
+  #   $ref: https://raw.githubusercontent.com/datreeio/CRDs-catalog/866b2653a5334db9aed20ad74701e20fd464471b/gateway.networking.k8s.io/gateway_v1.json#/properties/spec/properties/addresses/items
   # @schema
   # -- Addresses requested for the created Gateway, e.g. a fixed `IPAddress`.
   addresses: []
 
   # @schema
-  # type: object
-  # additionalProperties: true
+  # $ref: https://raw.githubusercontent.com/datreeio/CRDs-catalog/866b2653a5334db9aed20ad74701e20fd464471b/gateway.networking.k8s.io/gateway_v1.json#/properties/spec/properties/listeners/items/properties/allowedRoutes
   # @schema
   # -- Which routes may attach to the created Gateway's listeners. Defaults to `Same`.
   allowedRoutes: {}
 
   # @schema
-  # type: object
-  # additionalProperties: true
+  # $ref: https://raw.githubusercontent.com/datreeio/CRDs-catalog/866b2653a5334db9aed20ad74701e20fd464471b/gateway.networking.k8s.io/gateway_v1.json#/properties/spec/properties/infrastructure
   # @schema
   # -- `infrastructure.labels` / `infrastructure.annotations` for the created Gateway, passed
   # through to the load balancer the implementation provisions. Where Cilium's LB-IPAM
@@ -3005,13 +3023,14 @@ gateway:
 
     # @schema
     # type: array
+    # items:
+    #   $ref: https://raw.githubusercontent.com/datreeio/CRDs-catalog/866b2653a5334db9aed20ad74701e20fd464471b/gateway.networking.k8s.io/httproute_v1.json#/properties/spec/properties/rules/items/properties/filters/items
     # @schema
     # -- Filters applied to the API route.
     filters: []
 
     # @schema
-    # type: object
-    # additionalProperties: true
+    # $ref: https://raw.githubusercontent.com/datreeio/CRDs-catalog/866b2653a5334db9aed20ad74701e20fd464471b/gateway.networking.k8s.io/httproute_v1.json#/properties/spec/properties/rules/items/properties/timeouts
     # @schema
     # -- Timeouts for the API route.
     timeouts: {}
@@ -3226,7 +3245,15 @@ legal:
   # @schema
   # # @config structured api:legal.documents optional
   # type: object
-  # additionalProperties: true
+  # additionalProperties:
+  #   type: object
+  #   additionalProperties: false
+  #   properties:
+  #     title: {type: object, additionalProperties: {type: string}}
+  #     updated: {type: string}
+  #     content: {type: object, additionalProperties: {type: string}}
+  #     sources: {type: object, additionalProperties: {type: string}}
+  #     url: {type: string}
   # @schema
   # -- Published documents, keyed by the URL slug they are served under. Each document names its
   # body exactly once, in one of three ways, and the chart refuses a document that names it

@@ -1,0 +1,141 @@
+suite: common.toml array handling
+# Its own suite, and scoped to the one template that renders the tree: helm-unittest requires a
+# `failedTemplate` assertion to hold for every template a suite lists, and the rest of the
+# fixture renders fine on the same values.
+templates:
+  - configmap.yaml
+tests:
+  # `[[name]]` is TOML's array-of-tables header, and every header names an absolute path — so the
+  # `[routes.target]` following an element belongs to *that* element rather than to the first one.
+  # Asserted as one contiguous block, because the property being checked is the interleaving.
+  - it: renders an array of tables as [[name]] with each element's own sub-tables
+    set:
+      config:
+        routes:
+          - name: a
+            target:
+              kind: text
+          - name: b
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\[\[routes\]\]\nname = "a"\n\n\[routes\.target\]\nkind = "text"\n\n\[\[routes\]\]\nname = "b"'
+
+  # Three passes, in this order. Only the first boundary can silently reparent a key — a scalar
+  # after a `[table]` header belongs to that table — but pinning all three keeps the order from
+  # drifting into one that emits a correct-looking file meaning something else.
+  - it: emits scalars, then tables, then arrays of tables
+    set:
+      config:
+        zeta: top
+        alpha:
+          nested: true
+        aardvark:
+          - one: 1
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\Azeta = "top"[\s\S]*\n\[alpha\]\nnested = true[\s\S]*\n\[\[aardvark\]\]\none = 1'
+
+  # An empty slice is not an array of tables. Reading it as one would emit nothing at all where
+  # the service expects `key = []`, which is a different value rather than a missing one.
+  - it: keeps empty and scalar arrays inline
+    set:
+      config:
+        empty: []
+        hosts: [a, b]
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: 'empty = \[\]'
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: 'hosts = \["a","b"\]'
+
+  # The two shapes TOML has no spelling for at all, which is what `configExtraToml` is still for.
+  # Both name the dotted key, so the message points at the value rather than at the renderer.
+  - it: refuses an array that mixes tables and scalars
+    set:
+      config:
+        rewrite:
+          - from: /a
+          - plain
+    asserts:
+      - failedTemplate:
+          errorPattern: 'config key "rewrite" mixes tables and scalars in one array'
+
+  - it: refuses an array of arrays, naming the nested key
+    set:
+      config:
+        outer:
+          matrix:
+            - [1, 2]
+            - [3]
+    asserts:
+      - failedTemplate:
+          errorPattern: 'config key "outer\.matrix" holds an array of arrays'
+      - failedTemplate:
+          errorPattern: "configExtraToml"
+
+
+  # An integer above 2^53 cannot survive a values file at all: Helm parses one through
+  # `encoding/json`, so every number arrives as a `float64` and the low digits are gone before a
+  # template runs. A quoted string is the only faithful spelling, and `intKeys` is what turns it
+  # back into a TOML integer at the one point where the type matters.
+  - it: writes a listed string as a TOML integer
+    set:
+      tomlIntKeys: [snowflake.guild_id, snowflake.roles]
+      config:
+        snowflake:
+          guild_id: "123456789012345678"
+          roles: ["345678901234567890", "1"]
+          name: "not-listed"
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: 'guild_id = 123456789012345678\n'
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: 'roles = \[345678901234567890,1\]'
+      # Everything not listed keeps its quotes, which is the whole point of naming the paths
+      # rather than guessing from the contents.
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: 'name = "not-listed"'
+
+  - it: refuses a listed value that is not digits
+    set:
+      tomlIntKeys: [snowflake.guild_id]
+      config:
+        snowflake:
+          guild_id: "twelve"
+    asserts:
+      - failedTemplate:
+          errorPattern: 'config key "snowflake.guild_id" is written as a TOML integer, but holds "twelve"'
+
+  # The diagnosis, at the only place it can still be made: the value is already wrong here, and
+  # emitting it would be emitting a different number than the operator wrote.
+  - it: refuses a number that Helm has already rounded
+    set:
+      tomlIntKeys: [snowflake.guild_id]
+      config:
+        snowflake:
+          guild_id: 123456789012345678
+    asserts:
+      - failedTemplate:
+          errorPattern: "above 2\\^53"
+      - failedTemplate:
+          errorPattern: "Quote it"
+
+  # A listed path that holds a number small enough to have survived is left alone: refusing it
+  # would reject a port or a timeout that a caller happened to name.
+  - it: passes a small listed number through unchanged
+    set:
+      tomlIntKeys: [snowflake.guild_id]
+      config:
+        snowflake:
+          guild_id: 42
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: 'guild_id = 42\n'

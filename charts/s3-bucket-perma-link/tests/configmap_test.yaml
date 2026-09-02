@@ -76,10 +76,17 @@ tests:
       - failedTemplate:
           errorPattern: "bucket.entries is required but was not set"
 
-  # The old value shape was a list of `bucket,object` strings. `bucket.entries` is typed, so
-  # the schema rejects that outright; the raw `config` tree is not, and rendering it as-is
-  # would emit a TOML array where the service expects a table — a failure that would otherwise
-  # surface at boot.
+  # Both of the next two go through the raw `config` tree rather than through `bucket.entries`.
+  # That value is typed — each entry is an object of a `bucket` and an `object`, both required —
+  # so `values.schema.json` refuses a malformed entry before the template runs and the
+  # validator's own message never appears. `config` is deliberately untyped, being the escape
+  # hatch, and it is exactly the path the validator exists to cover: it reads the *effective*
+  # tree, so an entry supplied through `config` is checked as one supplied through
+  # `bucket.entries` is.
+  #
+  # The old value shape was a list of `bucket,object` strings. Rendering one as-is would emit a
+  # TOML array where the service expects a table — a failure that would otherwise surface at
+  # boot.
   - it: names an entry that is not a bucket and object mapping
     set:
       config:
@@ -92,9 +99,15 @@ tests:
       - failedTemplate:
           errorPattern: 'bucket.entries\["legacy"\] must be a mapping of `bucket` and `object`'
 
+  # A slug the suite's own `set` does not already carry: `config` is merged *over* the derived
+  # tree, so reusing `logo` would inherit the `object` this test exists to leave out.
   - it: names an entry missing its object key
     set:
-      bucket.entries.logo.object: null
+      config:
+        bucket:
+          entries:
+            broken:
+              bucket: my-bucket
     asserts:
       - failedTemplate:
-          errorPattern: 'bucket.entries\["logo"\].object is required but was not set'
+          errorPattern: 'bucket.entries\["broken"\].object is required but was not set'

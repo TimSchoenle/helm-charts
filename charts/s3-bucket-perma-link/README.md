@@ -1,6 +1,6 @@
 # s3-bucket-perma-link
 
-![Version: 5.0.2](https://img.shields.io/badge/Version-5.0.2-informational?style=flat-square) ![AppVersion: v2.0.0](https://img.shields.io/badge/AppVersion-v2.0.0-informational?style=flat-square)
+![Version: 5.1.1](https://img.shields.io/badge/Version-5.1.1-informational?style=flat-square) ![AppVersion: v2.0.0](https://img.shields.io/badge/AppVersion-v2.0.0-informational?style=flat-square)
 
 This chart deploys a simple web server that provides permanent links to specific S3 bucket resources. It allows you to define static URL paths that always point to specific files in your S3 buckets.
 
@@ -82,7 +82,8 @@ a restart.
 
 The values above cover the whole documented surface. `config` takes the raw TOML tree for
 anything they do not, merged over the derived one, and `configExtraToml` is appended verbatim
-for what the renderer cannot express, notably arrays of tables.
+for what the renderer cannot express — an array of arrays, an array mixing tables and scalars,
+and TOML's own literal types such as a datetime.
 
 Because the service rebuilds itself when a mount changes, this chart publishes **no
 `checksum/*` pod annotations by default** — a configuration change reloads rather than rolls.
@@ -481,7 +482,7 @@ policy pointing at the wrong Gateway looks correct and blocks everything.
 | commonAnnotations | object | `{}` | Annotations added to every object this chart creates. |
 | commonLabels | object | `{}` | Labels added to every object this chart creates. |
 | config | object | `{}` | Extra configuration, expressed as the TOML tree of [the service's README](https://github.com/TimSchoenle/s3-bucket-perma-link#configuration) (`server.host`, `bucket.entries`, ...). Merged over everything the chart derives from the values above, so it can both extend and override them. Rendered into the mounted ConfigMap — never into the environment, which the loader refuses to combine with a file. |
-| configExtraToml | string | `""` | Verbatim TOML appended after the rendered configuration. The escape hatch for anything the chart's TOML renderer cannot express, notably arrays of tables. |
+| configExtraToml | string | `""` | Verbatim TOML appended after the rendered configuration. The escape hatch for the shapes the chart's TOML renderer cannot express: an array of arrays, an array mixing tables and scalars, and TOML's own literal types such as a datetime. Arrays of tables render natively. |
 | configMount | object | `{"configDir":"/etc/s3-bucket-perma-link/config","rolloutOnChange":false,"secretsDir":"/etc/s3-bucket-perma-link/secrets"}` | Where the rendered configuration and the credential files land in the container. |
 | configMount.configDir | string | `"/etc/s3-bucket-perma-link/config"` | Directory the rendered `config.toml` is mounted at, passed as `S3_PERMA_LINK_CONFIG`. |
 | configMount.rolloutOnChange | bool | `false` | Add `checksum/*` pod annotations so a configuration change rolls the Deployment. Off by default, and deliberately so: the service watches the directories its configuration came from and rebuilds its bucket clients and listener in place when the kubelet updates the mounted ConfigMap or Secret, which is strictly better than a rollout. Turn this on only if you want configuration changes to behave like an ordinary image bump. `telemetry.*` is installed once per process and needs a restart either way. |

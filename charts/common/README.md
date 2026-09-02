@@ -1,6 +1,6 @@
 # common
 
-![Version: 2.2.0](https://img.shields.io/badge/Version-2.2.0-informational?style=flat-square) ![Type: library](https://img.shields.io/badge/Type-library-informational?style=flat-square)
+![Version: 2.4.0](https://img.shields.io/badge/Version-2.4.0-informational?style=flat-square) ![Type: library](https://img.shields.io/badge/Type-library-informational?style=flat-square)
 
 Shared template partials for the TimSchoenle Helm charts
 
@@ -199,7 +199,7 @@ and act as the reference shape for consuming charts.
 | commonLabels | object | `{}` | Labels added to every object the chart creates. Values may contain Go templates. |
 | component | string | `""` | Value for the `app.kubernetes.io/component` label. |
 | config | object | `{}` | Application configuration, expressed as the TOML tree the service documents. Rendered by `common.toml` into the ConfigMap the pod mounts, never passed as environment variables: the loader every application shares refuses a key supplied by both the environment and a file, and a value that lives in a file is one the kubelet can rotate under a running process. |
-| configExtraToml | string | `""` | Verbatim TOML appended after the rendered `config` tree. The escape hatch for anything `common.toml` cannot express, notably arrays of tables. |
+| configExtraToml | string | `""` | Verbatim TOML appended after the rendered `config` tree. The escape hatch for the shapes `common.toml` cannot express: an array of arrays, an array mixing tables and scalars, and TOML's own literal types such as a datetime. Arrays of tables render natively. |
 | configMount | object | `{"configDir":"","secretsDir":""}` | Where the rendered configuration and the credential files land in the container. Consumed by `common.fileConfig.*`, which also passes both directories to the application as `<PREFIX>_CONFIG` and `<PREFIX>_SECRETS_DIR`. |
 | configMount.configDir | string | `""` | Directory the rendered `config.toml` is mounted at. |
 | configMount.secretsDir | string | `""` | Directory the credential files are mounted at, one file per configuration key. |

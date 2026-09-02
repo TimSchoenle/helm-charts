@@ -418,7 +418,7 @@
         },
         "configExtraToml": {
           "default": "",
-          "description": "Verbatim TOML appended after the rendered `config` tree. The escape hatch for anything\n`common.toml` cannot express, notably arrays of tables.",
+          "description": "Verbatim TOML appended after the rendered `config` tree. The escape hatch for the shapes\n`common.toml` cannot express: an array of arrays, an array mixing tables and scalars, and\nTOML's own literal types such as a datetime. Arrays of tables render natively.",
           "required": [],
           "title": "configExtraToml",
           "type": "string"
@@ -514,6 +514,7 @@
             "addresses": {
               "description": "Addresses requested for the created Gateway, e.g. a fixed `IPAddress`.",
               "items": {
+                "$ref": "https://raw.githubusercontent.com/datreeio/CRDs-catalog/866b2653a5334db9aed20ad74701e20fd464471b/gateway.networking.k8s.io/gateway_v1.json#/properties/spec/properties/addresses/items",
                 "required": []
               },
               "required": [],
@@ -521,11 +522,8 @@
               "type": "array"
             },
             "allowedRoutes": {
-              "additionalProperties": true,
-              "description": "Which routes may attach to the created Gateway's listeners. Defaults to `Same`: a Gateway\nthis chart owns should not be attachable from another namespace unless that is asked for.",
-              "required": [],
-              "title": "allowedRoutes",
-              "type": "object"
+              "$ref": "https://raw.githubusercontent.com/datreeio/CRDs-catalog/866b2653a5334db9aed20ad74701e20fd464471b/gateway.networking.k8s.io/gateway_v1.json#/properties/spec/properties/listeners/items/properties/allowedRoutes",
+              "required": []
             },
             "annotations": {
               "additionalProperties": true,
@@ -537,6 +535,7 @@
             "backendRefs": {
               "description": "Backends for rules that name none. Defaults to this chart's own Service. Weights are\nhonoured, so a traffic split needs no custom rule.",
               "items": {
+                "$ref": "https://raw.githubusercontent.com/datreeio/CRDs-catalog/866b2653a5334db9aed20ad74701e20fd464471b/gateway.networking.k8s.io/httproute_v1.json#/properties/spec/properties/rules/items/properties/backendRefs/items",
                 "required": []
               },
               "required": [],
@@ -560,6 +559,7 @@
             "filters": {
               "description": "Filters applied to the default rule: `RequestHeaderModifier`, `ResponseHeaderModifier`,\n`RequestRedirect`, `URLRewrite`, `RequestMirror`, `ExtensionRef`. This is where an\nIngress controller's annotations end up, as typed fields. Ignored when `rules` is set.",
               "items": {
+                "$ref": "https://raw.githubusercontent.com/datreeio/CRDs-catalog/866b2653a5334db9aed20ad74701e20fd464471b/gateway.networking.k8s.io/httproute_v1.json#/properties/spec/properties/rules/items/properties/filters/items",
                 "required": []
               },
               "required": [],
@@ -576,6 +576,17 @@
             "hostnames": {
               "description": "Hostnames the route serves. Values may contain Go templates.\n\nRequired unless `create` is set. A route with no hostnames matches every name its listener\naccepts: on a Gateway this chart owns that is harmless, and sometimes the point — an install\nreached by address has no DNS name to state. On a shared Gateway it means taking over traffic\nmeant for other applications, so the render refuses it.",
               "items": {
+                "anyOf": [
+                  {
+                    "$ref": "https://raw.githubusercontent.com/datreeio/CRDs-catalog/866b2653a5334db9aed20ad74701e20fd464471b/gateway.networking.k8s.io/httproute_v1.json#/properties/spec/properties/hostnames/items",
+                    "required": []
+                  },
+                  {
+                    "pattern": "\\{\\{",
+                    "required": [],
+                    "type": "string"
+                  }
+                ],
                 "required": []
               },
               "required": [],
@@ -636,15 +647,13 @@
               "title": "httpsRedirect"
             },
             "infrastructure": {
-              "additionalProperties": true,
-              "description": "`infrastructure.labels` / `infrastructure.annotations` for the created Gateway, passed\nthrough to the load balancer the implementation provisions. Where Cilium's LB-IPAM\nannotations go.",
-              "required": [],
-              "title": "infrastructure",
-              "type": "object"
+              "$ref": "https://raw.githubusercontent.com/datreeio/CRDs-catalog/866b2653a5334db9aed20ad74701e20fd464471b/gateway.networking.k8s.io/gateway_v1.json#/properties/spec/properties/infrastructure",
+              "required": []
             },
             "listeners": {
               "description": "Listeners for the created Gateway, replacing the derived ones entirely. Reach for this\nwhen a listener needs its own hostname or certificate.",
               "items": {
+                "$ref": "https://raw.githubusercontent.com/datreeio/CRDs-catalog/866b2653a5334db9aed20ad74701e20fd464471b/gateway.networking.k8s.io/gateway_v1.json#/properties/spec/properties/listeners/items",
                 "required": []
               },
               "required": [],
@@ -654,6 +663,43 @@
             "parentRefs": {
               "description": "Gateways the route attaches to. Each entry takes `name` and optionally `namespace`,\n`sectionName` (a single listener), `port`, `group` and `kind`; the API's defaults are filled\nin. Values may contain Go templates.\n\nA route that names no parent is accepted by the API server and then does nothing — no\nlistener ever programs it — so this is required unless `create` is set.\nExample:\n```yaml\nparentRefs:\n  - name: shared-gateway\n    namespace: gateway-system\n    sectionName: https\n```",
               "items": {
+                "anyOf": [
+                  {
+                    "$ref": "https://raw.githubusercontent.com/datreeio/CRDs-catalog/866b2653a5334db9aed20ad74701e20fd464471b/gateway.networking.k8s.io/httproute_v1.json#/properties/spec/properties/parentRefs/items",
+                    "required": []
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "group": {
+                        "required": [],
+                        "type": "string"
+                      },
+                      "kind": {
+                        "required": [],
+                        "type": "string"
+                      },
+                      "name": {
+                        "required": [],
+                        "type": "string"
+                      },
+                      "namespace": {
+                        "required": [],
+                        "type": "string"
+                      },
+                      "port": {
+                        "required": [],
+                        "type": "integer"
+                      },
+                      "sectionName": {
+                        "required": [],
+                        "type": "string"
+                      }
+                    },
+                    "required": [],
+                    "type": "object"
+                  }
+                ],
                 "required": []
               },
               "required": [],
@@ -670,6 +716,7 @@
             "rules": {
               "description": "Routing rules, in full `HTTPRouteRule` form (`matches`, `filters`, `backendRefs`,\n`timeouts`). An entry that omits `backendRefs` inherits this chart's Service, so a rule that\nonly narrows the path does not have to restate where the traffic goes.\n\nLeft empty, the route gets one rule matching `path` as a prefix — the Gateway API equivalent\nof a single-path Ingress, and a complete configuration together with `hostnames`.",
               "items": {
+                "$ref": "https://raw.githubusercontent.com/datreeio/CRDs-catalog/866b2653a5334db9aed20ad74701e20fd464471b/gateway.networking.k8s.io/httproute_v1.json#/properties/spec/properties/rules/items",
                 "required": []
               },
               "required": [],
@@ -677,11 +724,8 @@
               "type": "array"
             },
             "timeouts": {
-              "additionalProperties": true,
-              "description": "Timeouts for the default rule: `request` and `backendRequest`, as Go durations. Ignored\nwhen `rules` is set.",
-              "required": [],
-              "title": "timeouts",
-              "type": "object"
+              "$ref": "https://raw.githubusercontent.com/datreeio/CRDs-catalog/866b2653a5334db9aed20ad74701e20fd464471b/gateway.networking.k8s.io/httproute_v1.json#/properties/spec/properties/rules/items/properties/timeouts",
+              "required": []
             },
             "tls": {
               "additionalProperties": true,
@@ -690,6 +734,7 @@
                 "certificateRefs": {
                   "description": "Secrets holding the certificate. Required by `Terminate`: unlike an Ingress there is no\nconvention by which one is looked up from the hostname. A ref naming another namespace\nadditionally needs a `ReferenceGrant` there, which this chart deliberately does not create\n— a grant is the target namespace owner's to give.",
                   "items": {
+                    "$ref": "https://raw.githubusercontent.com/datreeio/CRDs-catalog/866b2653a5334db9aed20ad74701e20fd464471b/gateway.networking.k8s.io/gateway_v1.json#/properties/spec/properties/listeners/items/properties/tls/properties/certificateRefs/items",
                     "required": []
                   },
                   "required": [],
@@ -714,11 +759,8 @@
                   "title": "mode"
                 },
                 "options": {
-                  "additionalProperties": true,
-                  "description": "Implementation-specific TLS options.",
-                  "required": [],
-                  "title": "options",
-                  "type": "object"
+                  "$ref": "https://raw.githubusercontent.com/datreeio/CRDs-catalog/866b2653a5334db9aed20ad74701e20fd464471b/gateway.networking.k8s.io/gateway_v1.json#/properties/spec/properties/listeners/items/properties/tls/properties/options",
+                  "required": []
                 }
               },
               "required": [],
@@ -1646,7 +1688,7 @@
     },
     "configExtraToml": {
       "default": "",
-      "description": "Verbatim TOML appended after the rendered `config` tree. The escape hatch for anything\nthis chart's TOML renderer cannot express, notably arrays of tables.",
+      "description": "Verbatim TOML appended after the rendered `config` tree. The escape hatch for the shapes\nthis chart's TOML renderer cannot express: an array of arrays, an array mixing tables and\nscalars, and TOML's own literal types such as a datetime. Arrays of tables render natively.",
       "required": [],
       "title": "configExtraToml",
       "type": "string"
@@ -2195,6 +2237,7 @@
         "addresses": {
           "description": "Addresses requested for the created Gateway, e.g. a fixed `IPAddress`.",
           "items": {
+            "$ref": "https://raw.githubusercontent.com/datreeio/CRDs-catalog/866b2653a5334db9aed20ad74701e20fd464471b/gateway.networking.k8s.io/gateway_v1.json#/properties/spec/properties/addresses/items",
             "required": []
           },
           "required": [],
@@ -2202,11 +2245,8 @@
           "type": "array"
         },
         "allowedRoutes": {
-          "additionalProperties": true,
-          "description": "Which routes may attach to the created Gateway's listeners. Defaults to `Same`.",
-          "required": [],
-          "title": "allowedRoutes",
-          "type": "object"
+          "$ref": "https://raw.githubusercontent.com/datreeio/CRDs-catalog/866b2653a5334db9aed20ad74701e20fd464471b/gateway.networking.k8s.io/gateway_v1.json#/properties/spec/properties/listeners/items/properties/allowedRoutes",
+          "required": []
         },
         "annotations": {
           "additionalProperties": true,
@@ -2236,6 +2276,7 @@
             "filters": {
               "description": "Filters applied to the API route.",
               "items": {
+                "$ref": "https://raw.githubusercontent.com/datreeio/CRDs-catalog/866b2653a5334db9aed20ad74701e20fd464471b/gateway.networking.k8s.io/httproute_v1.json#/properties/spec/properties/rules/items/properties/filters/items",
                 "required": []
               },
               "required": [],
@@ -2250,11 +2291,8 @@
               "type": "string"
             },
             "timeouts": {
-              "additionalProperties": true,
-              "description": "Timeouts for the API route.",
-              "required": [],
-              "title": "timeouts",
-              "type": "object"
+              "$ref": "https://raw.githubusercontent.com/datreeio/CRDs-catalog/866b2653a5334db9aed20ad74701e20fd464471b/gateway.networking.k8s.io/httproute_v1.json#/properties/spec/properties/rules/items/properties/timeouts",
+              "required": []
             }
           },
           "required": [],
@@ -2277,6 +2315,7 @@
         "filters": {
           "description": "Filters applied to the frontend route: `RequestHeaderModifier`,\n`ResponseHeaderModifier`, `RequestRedirect`, `URLRewrite`, `RequestMirror`, `ExtensionRef`.\nThis is where an Ingress controller's annotations end up, as typed fields.",
           "items": {
+            "$ref": "https://raw.githubusercontent.com/datreeio/CRDs-catalog/866b2653a5334db9aed20ad74701e20fd464471b/gateway.networking.k8s.io/httproute_v1.json#/properties/spec/properties/rules/items/properties/filters/items",
             "required": []
           },
           "required": [],
@@ -2341,15 +2380,13 @@
           "title": "httpsRedirect"
         },
         "infrastructure": {
-          "additionalProperties": true,
-          "description": "`infrastructure.labels` / `infrastructure.annotations` for the created Gateway, passed\nthrough to the load balancer the implementation provisions. Where Cilium's LB-IPAM\nannotations go.",
-          "required": [],
-          "title": "infrastructure",
-          "type": "object"
+          "$ref": "https://raw.githubusercontent.com/datreeio/CRDs-catalog/866b2653a5334db9aed20ad74701e20fd464471b/gateway.networking.k8s.io/gateway_v1.json#/properties/spec/properties/infrastructure",
+          "required": []
         },
         "listeners": {
           "description": "Listeners for the created Gateway, replacing the derived `http`/`https` pair entirely.",
           "items": {
+            "$ref": "https://raw.githubusercontent.com/datreeio/CRDs-catalog/866b2653a5334db9aed20ad74701e20fd464471b/gateway.networking.k8s.io/gateway_v1.json#/properties/spec/properties/listeners/items",
             "required": []
           },
           "required": [],
@@ -2359,6 +2396,45 @@
         "parentRefs": {
           "description": "Gateways the routes attach to. Each entry takes `name` and optionally `namespace`,\n`sectionName`, `port`, `group` and `kind`. Required unless `create` is set: a route with no\nparent is accepted by the API server and then never programmed by any listener.",
           "items": {
+            "anyOf": [
+              {
+                "$ref": "https://raw.githubusercontent.com/datreeio/CRDs-catalog/866b2653a5334db9aed20ad74701e20fd464471b/gateway.networking.k8s.io/httproute_v1.json#/properties/spec/properties/parentRefs/items",
+                "required": []
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "group": {
+                    "required": [],
+                    "type": "string"
+                  },
+                  "kind": {
+                    "required": [],
+                    "type": "string"
+                  },
+                  "name": {
+                    "required": [],
+                    "type": "string"
+                  },
+                  "namespace": {
+                    "required": [],
+                    "type": "string"
+                  },
+                  "port": {
+                    "required": [],
+                    "type": "integer"
+                  },
+                  "sectionName": {
+                    "required": [],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "type": "object"
+              }
+            ],
             "required": []
           },
           "required": [],
@@ -2373,11 +2449,8 @@
           "type": "string"
         },
         "timeouts": {
-          "additionalProperties": true,
-          "description": "Timeouts for the frontend route: `request` and `backendRequest`, as Go durations.\n\nLeave `request` unset or generous if the SPA holds the `/v1/events` SSE stream open through\nthis route — a request timeout cuts a long-lived stream at the Gateway, and the symptom is a\nUI that quietly stops updating rather than an error anybody sees.",
-          "required": [],
-          "title": "timeouts",
-          "type": "object"
+          "$ref": "https://raw.githubusercontent.com/datreeio/CRDs-catalog/866b2653a5334db9aed20ad74701e20fd464471b/gateway.networking.k8s.io/httproute_v1.json#/properties/spec/properties/rules/items/properties/timeouts",
+          "required": []
         },
         "tls": {
           "additionalProperties": true,
@@ -2386,6 +2459,7 @@
             "certificateRefs": {
               "description": "Secrets holding the certificate for the created Gateway's listener. Required by\n`Terminate`: unlike an Ingress there is no convention by which one is looked up from the\nhostname. Ignored without `create` — otherwise the certificate is the Gateway owner's.",
               "items": {
+                "$ref": "https://raw.githubusercontent.com/datreeio/CRDs-catalog/866b2653a5334db9aed20ad74701e20fd464471b/gateway.networking.k8s.io/gateway_v1.json#/properties/spec/properties/listeners/items/properties/tls/properties/certificateRefs/items",
                 "required": []
               },
               "required": [],
@@ -2410,11 +2484,8 @@
               "title": "mode"
             },
             "options": {
-              "additionalProperties": true,
-              "description": "Implementation-specific TLS options for the created Gateway's listener.",
-              "required": [],
-              "title": "options",
-              "type": "object"
+              "$ref": "https://raw.githubusercontent.com/datreeio/CRDs-catalog/866b2653a5334db9aed20ad74701e20fd464471b/gateway.networking.k8s.io/gateway_v1.json#/properties/spec/properties/listeners/items/properties/tls/properties/options",
+              "required": []
             }
           },
           "required": [],
@@ -2923,7 +2994,36 @@
           "type": "string"
         },
         "documents": {
-          "additionalProperties": true,
+          "additionalProperties": {
+            "additionalProperties": false,
+            "properties": {
+              "content": {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "sources": {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "title": {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "updated": {
+                "type": "string"
+              },
+              "url": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
           "description": "Published documents, keyed by the URL slug they are served under. Each document names its\nbody exactly once, in one of three ways, and the chart refuses a document that names it\ntwice or not at all:\n\n- `content`: a locale-keyed map of the text itself. The chart writes it into a ConfigMap as\n  `\u003cslug\u003e.\u003clocale\u003e.md` and mounts it into the API pod. Edits are picked up without a restart —\n  the service re-reads behind an mtime check — so this is the option to reach for by default.\n- `sources`: a locale-keyed map of file paths you have arranged to mount yourself, through\n  `extraVolumes`/`extraVolumeMounts`. Use this when the texts belong to a Secret, a PVC or\n  another chart.\n- `url`: an absolute `http(s)` link to a document hosted elsewhere. Mounts nothing.\n\n`title` is a locale-keyed display name, and `updated` a free-form date shown alongside it.\nBoth are optional and independent of how the body is supplied.\n\n\u003cdetails\u003e\u003csummary\u003eExample\u003c/summary\u003e\n\n```yaml\nlegal:\n  documents:\n    terms:\n      updated: \"2026-08-04\"\n      title:\n        en: Terms of Service\n        de: Nutzungsbedingungen\n      content:\n        en: |\n          # Terms of Service\n          ...\n        de: |\n          # Nutzungsbedingungen\n          ...\n    imprint:\n      title:\n        de: Impressum\n      url: https://example.org/impressum\n```\n\n\u003c/details\u003e",
           "required": [],
           "title": "documents",

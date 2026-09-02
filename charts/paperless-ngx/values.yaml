@@ -2037,7 +2037,9 @@ gateway:
   # @schema
   # type: array
   # items:
-  #   type: string
+  #   anyOf:
+  #     - $ref: https://raw.githubusercontent.com/datreeio/CRDs-catalog/866b2653a5334db9aed20ad74701e20fd464471b/gateway.networking.k8s.io/httproute_v1.json#/properties/spec/properties/hostnames/items
+  #     - {type: string, pattern: '\{\{'}
   # @schema
   # -- Hostnames the route serves. Used as the default for `paperless.url`. Required unless
   # `gateway.create` is set, because a route with no hostnames matches every hostname its
@@ -2047,8 +2049,18 @@ gateway:
   # @schema
   # type: array
   # items:
-  #   type: object
-  #   additionalProperties: true
+  #   anyOf:
+  #     - $ref: https://raw.githubusercontent.com/datreeio/CRDs-catalog/866b2653a5334db9aed20ad74701e20fd464471b/gateway.networking.k8s.io/httproute_v1.json#/properties/spec/properties/parentRefs/items
+  #     - type: object
+  #       required: [name]
+  #       additionalProperties: false
+  #       properties:
+  #         group: {type: string}
+  #         kind: {type: string}
+  #         name: {type: string}
+  #         namespace: {type: string}
+  #         port: {type: integer}
+  #         sectionName: {type: string}
   # @schema
   # -- Gateways to attach to, as `{name, namespace, sectionName}` entries. Empty attaches to the
   # Gateway this chart creates, when `gateway.create` is set.
@@ -2062,14 +2074,15 @@ gateway:
 
   # @schema
   # type: array
+  # items:
+  #   $ref: https://raw.githubusercontent.com/datreeio/CRDs-catalog/866b2653a5334db9aed20ad74701e20fd464471b/gateway.networking.k8s.io/httproute_v1.json#/properties/spec/properties/rules/items/properties/filters/items
   # @schema
   # -- HTTPRoute filters — header manipulation, request mirroring, URL rewriting. These are the
   # typed replacement for what Ingress expressed as controller-specific annotations.
   filters: []
 
   # @schema
-  # type: object
-  # additionalProperties: true
+  # $ref: https://raw.githubusercontent.com/datreeio/CRDs-catalog/866b2653a5334db9aed20ad74701e20fd464471b/gateway.networking.k8s.io/httproute_v1.json#/properties/spec/properties/rules/items/properties/timeouts
   # @schema
   # -- Route timeouts, e.g. `{request: 300s}`. Worth raising: uploading a large scan through the
   # gateway can outlast a default request timeout.
@@ -2114,6 +2127,8 @@ gateway:
 
     # @schema
     # type: array
+    # items:
+    #   $ref: https://raw.githubusercontent.com/datreeio/CRDs-catalog/866b2653a5334db9aed20ad74701e20fd464471b/gateway.networking.k8s.io/gateway_v1.json#/properties/spec/properties/listeners/items/properties/tls/properties/certificateRefs/items
     # @schema
     # -- Certificates the listener terminates with, as `{name}` or `{name, namespace}` entries.
     # Required for a `Terminate` listener: unlike an Ingress, nothing looks a certificate up

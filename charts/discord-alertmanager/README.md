@@ -1,6 +1,6 @@
 # discord-alertmanager
 
-![Version: 0.1.0](https://img.shields.io/badge/Version-0.1.0-informational?style=flat-square) ![AppVersion: v0.3.0](https://img.shields.io/badge/AppVersion-v0.3.0-informational?style=flat-square)
+![Version: 0.3.0](https://img.shields.io/badge/Version-0.3.0-informational?style=flat-square) ![AppVersion: v0.3.0](https://img.shields.io/badge/AppVersion-v0.3.0-informational?style=flat-square)
 
 This chart deploys discord-alertmanager, a Discord operator surface for Prometheus Alertmanager. It receives the version-4 webhook envelope, renders each alert as a live status card in a Discord channel, and lets an operator acknowledge, ignore, silence or investigate it without leaving the client — with file-backed configuration that reloads in place instead of restarting pods, SQLite or PostgreSQL storage, optional Prometheus metrics and alerting rules, and an optional AlertmanagerConfig that registers the receiver with the Prometheus Operator instead of leaving it to be wired by hand.
 
@@ -43,12 +43,14 @@ alertmanager:
 
 routes:
   - name: platform
-    guild_id: 123456789012345678
+    guild_id: "123456789012345678"
     matchers: 'severity=~"warning|critical"'
     target:
-      kind: channel
-      id: 234567890123456789
+      kind: text
+      id: "234567890123456789"
 ```
+
+Snowflakes are quoted. That is not a style choice — see [Routes](#routes) below.
 
 Upgrade with `helm upgrade [RELEASE_NAME] timschoenle/discord-alertmanager -n [NAMESPACE]`,
 remove with `helm uninstall [RELEASE_NAME] -n [NAMESPACE]`.
@@ -132,32 +134,52 @@ in the database.
 ```yaml
 routes:
   - name: platform-critical
-    guild_id: 123456789012345678
+    guild_id: "123456789012345678"
     matchers: 'severity="critical", namespace=~"prod-.*"'
     min_severity: critical
     target:
       kind: forum
-      id: 234567890123456789
-    group_strategy: alert
+      id: "234567890123456789"
+      policy:
+        thread_when: on_ack
+        label_tags: [namespace]
+    group_strategy: per_alert
     mentions:
-      roles: [345678901234567890]
+      roles: ["345678901234567890"]
       min_severity: critical
     escalation:
       after_secs: 900
-      users: [456789012345678901]
+      users: ["456789012345678901"]
     priority: 10
     continue_to_next: true
     enabled: true
 ```
 
+### Every snowflake is a quoted string
+
+`guild_id`, `target.id` and the mention lists are Discord snowflakes: `u64` values above 2^53.
+Helm parses a values file through `encoding/json`, so every number in one becomes a `float64` —
+`guild_id: 123456789012345678` reaches the chart as `123456789012345680` before a single template
+runs, and nothing downstream can tell. The route would then post to whatever channel the rounded
+id names.
+
+A quoted string is the only spelling that survives, so that is what the schema requires; the chart
+writes it back out as the TOML integer the bot reads. An unquoted one is refused by
+`helm install`, and one arriving through the untyped `config` escape hatch is refused by the
+renderer.
+
 `matchers` uses Alertmanager's own operators — `=`, `!=`, `=~`, `!~` — and a regex is fully
 anchored. A route removed from this list is disabled rather than deleted, so the cards it created
-keep their history.
+keep their history. `target.kind` is one of `text`, `forum`, `thread` or `dm`, and
+`group_strategy` one of `per_alert`, `per_group` or `digest`; `target.policy` carries the
+per-kind settings, which `values.yaml` lists in full.
 
 > [!NOTE]
-> `routes` is an array of tables. It is rendered through the chart's TOML writer like everything
-> else, but a route needing a shape the writer cannot express belongs in `configExtraToml`, which
-> is appended verbatim.
+> `routes` is an array of tables, and the chart's TOML writer emits it as `[[routes]]` with each
+> route's `target`, `mentions` and `escalation` as sub-tables of its own element. The value is
+> typed against the `RouteConfig` the image declares, so an unknown key is refused by
+> `helm install` rather than by the service at boot — which is also what the image does, since
+> `RouteConfig` is `deny_unknown_fields`.
 
 ## Wiring Alertmanager to it
 
@@ -423,7 +445,7 @@ also why a pod that cannot reach Alertmanager never becomes ready — check the 
 | commonAnnotations | object | `{}` | Annotations added to every object this chart creates. |
 | commonLabels | object | `{}` | Labels added to every object this chart creates. |
 | config | object | `{}` | — never into the environment, which the loader refuses to combine with a file. |
-| configExtraToml | string | `""` | Verbatim TOML appended after the rendered configuration. The escape hatch for anything the chart's TOML renderer cannot express, notably arrays of tables. |
+| configExtraToml | string | `""` | Verbatim TOML appended after the rendered configuration. The escape hatch for the shapes the chart's TOML renderer cannot express: an array of arrays, an array mixing tables and scalars, and TOML's own literal types such as a datetime. Arrays of tables render natively, so `routes` and `links.buttons` do not need this. |
 | configMount | object | `{"configDir":"/etc/discord-alertmanager/config","secretsDir":"/etc/discord-alertmanager/secrets"}` | Where the rendered configuration and the credential files are mounted. Neither is ever mounted with `subPath`: a subPath mount is resolved once at container start and never receives kubelet updates, which would turn every configuration change back into "restart the pod to pick it up". |
 | configMount.configDir | string | `"/etc/discord-alertmanager/config"` | Directory the rendered `config.toml` is mounted at, passed as `DAM_CONFIG`. |
 | configMount.secretsDir | string | `"/etc/discord-alertmanager/secrets"` | Directory the credential files are mounted at, passed as `DAM_SECRETS_DIR`. |
@@ -649,7 +671,7 @@ also why a pod that cannot reach Alertmanager never becomes ready — check the 
 | resources.requests.cpu | string | `"25m"` | Guaranteed CPU request |
 | resources.requests.memory | string | `"96Mi"` | Guaranteed memory request |
 | revisionHistoryLimit | int | `3` | Number of old ReplicaSets retained for rollback. |
-| routes | list | `[]` | Routes declared in the file, which cannot be edited or deleted from Discord (`routes`). |
+| routes | list | `[]` | Routes declared in the file, which cannot be edited or deleted from Discord (`routes`). Rendered as `[[routes]]`, with `target`, `mentions` and `escalation` as sub-tables of each element. |
 | securityContext | object | `{}` | Container security context, merged over the preset. A writable /tmp is provided automatically via an emptyDir volume. |
 | securityContextPreset | string | `"restricted"` | Container security context baseline. `restricted` drops all Linux capabilities and forbids privilege escalation, running as root and a writable root filesystem. |
 | service | object | `{"annotations":{},"port":80,"type":"ClusterIP"}` | The Service in front of the ingest listener. This is the address Alertmanager posts to, and on an in-cluster Alertmanager it is the only exposure the chart needs — `ingress` and `gateway` below exist for the case where Alertmanager is somewhere else. |

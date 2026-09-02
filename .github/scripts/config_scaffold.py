@@ -96,6 +96,7 @@ from typing import Any
 
 import config_bindings as cb
 import config_contract as cc
+import config_shapes as cs
 import config_testgen as tg
 
 # The marker vocabulary, taken from the parser rather than spelt again. A scaffold writing
@@ -366,113 +367,19 @@ def summary_of(key: dict[str, Any]) -> str:
 def schema_lines(key: dict[str, Any], indent: str) -> list[str]:
     """The `@schema` block for one contract key, from its constraint.
 
-    Only the keywords the contract vocabulary already allows are copied, and they are copied
-    rather than translated: `constraint` is JSON Schema and so is an `@schema` block, so a
-    `minimum` means the same thing on both sides.
-
-    Two shapes are not a straight copy, and both were measured against helm-schema rather than
-    reasoned about:
-
-    **An `enum` is the whole block.** helm-schema refuses one carrying both — `Error while
-    validating jsonschema of key backend: cannot use both 'enum' and 'type' in the same schema`,
-    which exits `just schema` fatally and leaves every chart's `values.schema.json` unwritten. So
-    a key whose constraint names an `enum` emits its members alone, with `null` joining them
-    where the key is optional, the way `image.pullPolicy` in the chassis spells its empty member.
-    helm-schema drops that `null` from the generated property, which costs nothing: Helm deletes
-    a `null` value during coalescing, so the validator is never shown one.
-
-    **A `structured` key whose constraint is an object, or which names no type, is opened rather
-    than described.** Such a constraint says the value is a table and nothing about what is in
-    it — `internal.peers` is a `BTreeMap<String, PeerConfig>` and its constraint is
-    `{"type": "object"}` — so the block accepts any table rather than inventing properties the
-    contract never stated.
-
-    A `structured` key whose constraint names an *array* is a different thing and used to be
-    caught by the same branch. It carries its own `items`, and `default_for` writes an array
-    beside it, so describing it as an object made the chart reject its own defaults the moment
-    `just schema` ran: nine keys in `discord-alertmanager` — `alertmanager.endpoints`, the four
-    `discord.capabilities.*`, `links.allowed_hosts`, `links.buttons`, `render.key_labels` and
-    `routes` — every one of which had to be corrected by hand.
+    A thin call into `config_shapes`, which is where the rules and the measurements behind them
+    live. Two generators write these blocks — this one for a chart that does not exist yet, and
+    `config_shapes.py` for one that does — and a scaffold whose idea of a block differed from the
+    gate's would produce a chart that fails the moment it is created.
     """
-    constraint = key.get("constraint") or {}
-
-    if "enum" in constraint:
-        members = list(constraint["enum"])
-        if not key.get("required") and None not in members:
-            members.append(None)
-        return [f"{indent}# enum: {_schema_scalar(members)}"]
-
-    declared = constraint.get("type")
-    types = [str(name) for name in (declared if isinstance(declared, list) else [declared])
-             if name is not None]
-    body: list[str] = []
-
-    if key.get("text_form") == "structured" and (not types or "object" in types):
-        types = ["object"]
-        body = ["additionalProperties: true"]
-    else:
-        for keyword in ("const", "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum",
-                        "multipleOf", "minLength", "maxLength", "pattern", "items", "minItems",
-                        "maxItems", "uniqueItems"):
-            if keyword not in constraint:
-                continue
-            body.extend(_schema_keyword(keyword, constraint[keyword]))
-
-    if not types:
-        # The constraint names no type. Rather than guess one, accept every JSON type — the
-        # contract is still the authority on the value, and `just check-config` holds the
-        # rendered document against it either way. A `@schema` block is not optional here: the
-        # marker lives inside one, and helm-schema emits no property for a value without one.
-        types = ["string", "integer", "boolean", "array", "object", "null"]
-
-    # An optional key is one the chart may legitimately leave unset, and the derived helper omits
-    # it rather than writing it empty — so `null` has to be a value the schema accepts.
-    if not key.get("required") and "null" not in types:
-        types.append("null")
-
-    # Type names are schema vocabulary, not data, so they are written bare. `null` is the one that
-    # has to be quoted: unquoted it is YAML's null, and the schema would then declare no type at
-    # all where it meant to declare the null type.
-    rendered = ", ".join("'null'" if name == "null" else name for name in types)
-    head = f"type: {rendered}" if len(types) == 1 else f"type: [{rendered}]"
-
-    return [f"{indent}# {line}" for line in [head, *body]]
-
-
-def _schema_scalar(value: Any) -> str:
-    """One JSON Schema keyword's value, as the YAML an `@schema` comment carries."""
-    if isinstance(value, bool):
-        return "true" if value else "false"
-    if value is None:
-        return "null"
-    if isinstance(value, (int, float)):
-        return str(value)
-    if isinstance(value, list):
-        return "[" + ", ".join(_schema_scalar(item) for item in value) + "]"
-    return _quoted(str(value))
-
-
-def _schema_keyword(name: str, value: Any) -> list[str]:
-    """One JSON Schema keyword as the YAML lines an `@schema` comment carries.
-
-    A scalar is one line. A subschema is a nested block — `items` on a `Vec<T>` is the one that
-    occurs, and a flow mapping would parse identically — because block form is what every
-    hand-written `@schema` in this repository uses and these lines are read by people first.
-    """
-    if isinstance(value, dict):
-        if not value:
-            return [f"{name}: {{}}"]
-        lines = [f"{name}:"]
-        for inner in sorted(value):
-            lines.extend(f"  {line}" for line in _schema_keyword(str(inner), value[inner]))
-        return lines
-    return [f"{name}: {_schema_scalar(value)}"]
-
-
-def _quoted(text: str) -> str:
-    """A YAML double-quoted scalar. Used wherever a value could be read as something else."""
-    escaped = text.replace("\\", "\\\\").replace('"', '\\"')
-    return f'"{escaped}"'
+    return cs.render(
+        cs.expected(
+            key.get("constraint"),
+            optional=not key.get("required"),
+            structured=key.get("text_form") == "structured",
+        ),
+        indent,
+    )
 
 
 def default_for(key: dict[str, Any]) -> Any:
@@ -575,7 +482,7 @@ def values_scalar(value: Any) -> str:
         return "[]" if not value else "[" + ", ".join(values_scalar(item) for item in value) + "]"
     if isinstance(value, dict):
         return "{}"
-    return _quoted(str(value))
+    return cs.quoted(str(value))
 
 
 def marker_line(placement: Placement, indent: str) -> str:
@@ -612,10 +519,24 @@ def description_lines(placement: Placement, indent: str) -> list[str]:
 
 
 def value_block(placement: Placement, indent: str = "") -> list[str]:
-    """One contract key as the `values.yaml` block that feeds it."""
+    """One contract key as the `values.yaml` block that feeds it.
+
+    A container key whose element the contract describes is enrolled as a derived shape while it
+    is being written, with a `# @config-shape ... generated` marker above the block. Nothing is
+    being asserted that this function did not just do — `schema_lines` generated the block from
+    that element a line later — and the alternative is a new chart whose deepest schemas are
+    correct today and unowned tomorrow, which is the state the marker exists to end.
+
+    A credential gets neither marker, for the reason below.
+    """
     leaf = placement.values_path.split(".")[-1]
 
-    lines = [f"{indent}# @schema"]
+    lines: list[str] = []
+    if placement.where != SECRET_FILE and cc.describes_element(placement.key.get("constraint")):
+        lines.append(f"{indent}# {cs.SHAPE_MARKER} {placement.values_path} {cs.GENERATED}")
+        lines.append("")
+
+    lines.append(f"{indent}# @schema")
     # A credential gets no marker, and the two facts that make that right are worth keeping
     # together: every marker class names a way a value reaches the *configuration document*, and a
     # credential delivered as a file never reaches it. `check-config-bindings` says the same thing
@@ -772,7 +693,7 @@ def render_values(
         # Always quoted. A tag like `8.0` is a YAML float unquoted, and the chart's own schema
         # types this as a string — so an unquoted numeric tag fails `helm template` on the
         # scaffold's first render, for a reason that reads like a bug in the schema.
-        f"  tag: {_quoted(tag)}",
+        f"  tag: {cs.quoted(tag)}",
         "",
         "  # @schema",
         '  # enum: ["", Always, IfNotPresent, Never]',

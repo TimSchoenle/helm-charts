@@ -1,0 +1,1007 @@
+#!/usr/bin/env python3
+"""Deriving a chart value's `@schema` block from the element schema its image publishes.
+
+A configuration contract states a key's type as a JSON Schema object, and until
+`schema_version: 2` that object was flat: `type`, `enum`, `minimum` and nine more, with no way to
+say what one element of a container held. A `Vec<RouteConfig>` arrived as `{"type": "array"}`,
+which is all the producer could say, and a chart that wanted its operators' editors to catch a
+misspelt field before the service did had to transcribe the struct by hand — a copy of a fact
+somebody else owns, and a copy nothing regenerates is the one that goes stale.
+
+`schema_version: 2` publishes that shape. A container-typed key whose element type describes
+itself carries the element under `items` for a sequence and `additionalProperties` for a map,
+composed through both when they are stacked, so a `HashMap<String, HashSet<Method>>` reaches the
+enum. That is the fact this module turns into the `@schema` block the chart ships.
+
+--------------------------------------------------------------------------------------------
+The three markers
+--------------------------------------------------------------------------------------------
+
+    # @config-shape <values-path> generated
+    # @config-shape <values-path> handwritten <appVersion> <source>
+    # @config-shape-except <values-path> <sub-path> <reason>
+
+written as plain comments above the value's `@schema` block, separated from it by a blank line —
+the placement `config_bindings.py` measured to be invisible to helm-schema and helm-docs alike,
+and the reason a `@config` marker cannot use it: inside the delimiters the text *is* the schema.
+
+`generated` says the block below is derived from the contract, and `just config-shapes` writes
+it. It is refused for a key whose contract does not describe its element, because a block
+generated from `{"type": "array"}` alone type-checks nothing — and enrolling one would *delete* a
+hand transcription that was doing real work.
+
+`handwritten` is the older form, and stays for exactly that case: an element the producer has not
+described yet. It asserts "read from `<source>` at `<appVersion>`" and fails when the chart's
+appVersion moves past it, which is what an automated bump does. It fails for a second reason as
+of this module: once the contract *does* describe the element, the hand copy is superseded and
+the marker has to become `generated`. That is the interlock that stops a chart carrying a stale
+transcription of a struct its image now publishes.
+
+`@config-shape-except` keeps one position in an otherwise generated shape. `discord-alertmanager`
+is why it exists: `routes[].guild_id` is a Discord snowflake, the contract types it `integer`,
+and the chart types it as a quoted string of digits because Helm parses a values file through
+`encoding/json` and a snowflake is above 2^53 — `123456789012345678` reaches the chart as
+`123456789012345680`, silently. Every other field of that struct is still generated, so a field
+the next release adds still lands automatically. The sub-path is refused when it addresses
+nothing in the generated shape, which is how an exception that outlived the field it protected is
+caught rather than silently kept.
+
+--------------------------------------------------------------------------------------------
+What is deliberately not generated
+--------------------------------------------------------------------------------------------
+
+**Annotations.** `description`, `title`, `default` and `examples` are dropped at every level. The
+producer's descriptions are Rust doc comments — multi-paragraph, and several carry fenced TOML
+examples — and folding one into a YAML comment inside a YAML comment produces something nobody
+can read and that helm-docs then renders into the published README. The value's own `# --` line
+is the description this repository publishes, and `just explain` is where the producer's prose is
+read in full.
+
+**A block for a value with no `@config` marker.** The marker is what says which contract key the
+value feeds, and it is hand-written on purpose — `config_bindings.py` says why in bold. A
+`@config-shape` marker naming a value that binds nothing has no key to generate from, and
+guessing one from the value's name is the failure that module refuses to build.
+
+--------------------------------------------------------------------------------------------
+One file, and it runs
+--------------------------------------------------------------------------------------------
+
+The writer and the gate are one program, the way `schema-presets.py` is: what `just config-shapes`
+writes is exactly what `just check-config-shapes` demands, and neither can drift from the other.
+They are also in the same file as the rules they apply, because `config_scaffold` imports those
+rules to write a new chart's blocks — and the alternative was `config-shapes.py` beside
+`config_shapes.py`, a pair differing by one character, which `entry.py` already names as the wart
+it is for `config-secrets.py`. The recipes spell the path either way.
+
+--------------------------------------------------------------------------------------------
+Resolving a value to its key
+--------------------------------------------------------------------------------------------
+
+Through the `# @config` marker the value already carries, and through nothing else. That marker is
+the one statement in this repository of which contract key a chart value feeds; a second one here
+would be a copy of it, and the copy nothing holds in step is the one that goes stale. It also
+means a chart that is not bindings-enrolled cannot enrol a shape — `cloudflare-access-webhook-
+redirect` is the one such chart, and its `webhook.paths` is exactly the map this format describes,
+so it is the first thing enrolling that chart would buy.
+
+A marker binds a key in every document whose contract declares it, which for `tankovault` is up to
+nine. Their constraints have to agree: two images describing one key's element differently is the
+same defect as disagreeing about its type, and generating from either would be picking a winner
+silently. `just check-config-bindings` is where the scope itself is held to account, so the report
+here is deliberately short — it names the disagreement and stops.
+
+--------------------------------------------------------------------------------------------
+Deliberately not run by `just contracts`
+--------------------------------------------------------------------------------------------
+
+The refresh repins the vendored contract, and this reads it. Chaining them would mean one command
+that fetches a document and rewrites the chart from it in the same breath, which is the shape of
+change a reviewer cannot check: the contract diff and the schema diff would arrive as one commit
+with no way to see which caused which. They stay two recipes, and the Documentation job runs both.
+
+Usage: .github/scripts/config_shapes.py [--charts DIR] [--check]
+"""
+
+from __future__ import annotations
+
+import argparse
+import difflib
+import re
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+import yaml
+
+import config_bindings as cb
+import config_contract as cc
+from config_declaration import Bound, DeclarationError, load_declaration
+from config_paths import CHARTS_DIR, read_yaml
+
+GENERATED = "generated"
+HANDWRITTEN = "handwritten"
+MODES = (GENERATED, HANDWRITTEN)
+
+SHAPE_MARKER = "@config-shape"
+EXCEPT_MARKER = "@config-shape-except"
+
+# Anchored as whole comment lines, so a marker mentioned in prose — this file's own docstring, a
+# chart's `# --` description — is not mistaken for a declaration. The exception is matched first
+# by the caller, since its own name begins with the other's.
+_SHAPE = re.compile(r"^\s*#\s*@config-shape\s+(?P<rest>\S.*?)\s*$")
+_EXCEPT = re.compile(r"^\s*#\s*@config-shape-except\s+(?P<rest>\S.*?)\s*$")
+
+# Keywords in the order a generated block spells them: what the value *is*, then its bounds, then
+# what it holds. Anything outside this list is appended alphabetically rather than dropped —
+# under-reporting a constraint is the failure this whole pipeline exists to remove, and it would
+# be no better coming from a renderer.
+ORDER = (
+    "type",
+    "enum",
+    "const",
+    "pattern",
+    "format",
+    "minimum",
+    "exclusiveMinimum",
+    "maximum",
+    "exclusiveMaximum",
+    "multipleOf",
+    "minLength",
+    "maxLength",
+    "minItems",
+    "maxItems",
+    "uniqueItems",
+    "required",
+    "properties",
+    "additionalProperties",
+    "items",
+)
+
+
+class ShapeError(Exception):
+    """A marker, an exception or a block this module cannot read as one."""
+
+
+@dataclass(frozen=True)
+class Shape:
+    """One `@config-shape` marker: a value whose `@schema` block is derived, or was transcribed."""
+
+    chart: str
+    line: int
+    values_path: str
+    mode: str
+    version: str | None
+    source: str | None
+
+    @property
+    def where(self) -> str:
+        """`chart/values.yaml:LINE`, for a message a reader can jump to."""
+        return f"{self.chart}/values.yaml:{self.line}"
+
+
+@dataclass(frozen=True)
+class Divergence:
+    """One `@config-shape-except` marker: a position the chart keeps against the contract."""
+
+    chart: str
+    line: int
+    values_path: str
+    sub_path: str
+    reason: str
+
+    @property
+    def where(self) -> str:
+        """`chart/values.yaml:LINE`, for a message a reader can jump to."""
+        return f"{self.chart}/values.yaml:{self.line}"
+
+
+# --------------------------------------------------------------------------------------------
+# Reading the markers
+# --------------------------------------------------------------------------------------------
+
+
+def parse_markers(text: str, chart: str) -> tuple[list[Shape], list[Divergence]]:
+    """Every `@config-shape` and `@config-shape-except` marker in one values.yaml.
+
+    Every problem is collected before any is raised, which is the posture every gate in this group
+    takes: one broken line must not hide the state of the rest.
+    """
+    shapes: list[Shape] = []
+    divergences: list[Divergence] = []
+    problems: list[str] = []
+
+    for number, line in enumerate(text.splitlines(), start=1):
+        where = f"{chart}/values.yaml:{number}"
+
+        found = _EXCEPT.match(line)
+        if found:
+            words = found["rest"].split(maxsplit=2)
+            if len(words) < 3:
+                problems.append(
+                    f"{where}: `{EXCEPT_MARKER}` takes a values path, a sub-path inside the "
+                    "generated schema and the reason the chart keeps its own — an exception "
+                    "without a reason is one nobody can review"
+                )
+                continue
+            divergences.append(
+                Divergence(
+                    chart=chart,
+                    line=number,
+                    values_path=words[0],
+                    sub_path=words[1],
+                    reason=words[2].strip(),
+                )
+            )
+            continue
+
+        found = _SHAPE.match(line)
+        if not found:
+            continue
+
+        words = found["rest"].split()
+        if len(words) < 2 or words[1] not in MODES:
+            problems.append(
+                f"{where}: `{SHAPE_MARKER}` takes a values path and then `{GENERATED}` or "
+                f"`{HANDWRITTEN} <appVersion> <source>`"
+            )
+            continue
+
+        values_path, mode = words[0], words[1]
+        if mode == GENERATED and len(words) != 2:
+            problems.append(
+                f"{where}: `{SHAPE_MARKER} {values_path} {GENERATED}` takes nothing further — the "
+                "contract is the source, and the version it was read at is the digest the chart "
+                "pins"
+            )
+            continue
+        if mode == HANDWRITTEN and len(words) != 4:
+            problems.append(
+                f"{where}: `{SHAPE_MARKER} {values_path} {HANDWRITTEN}` takes the appVersion the "
+                "struct was read at and the file it was read from"
+            )
+            continue
+
+        shapes.append(
+            Shape(
+                chart=chart,
+                line=number,
+                values_path=values_path,
+                mode=mode,
+                version=words[2] if mode == HANDWRITTEN else None,
+                source=words[3] if mode == HANDWRITTEN else None,
+            )
+        )
+
+    if problems:
+        raise ShapeError("\n".join(problems))
+    return shapes, divergences
+
+
+# --------------------------------------------------------------------------------------------
+# Reading a block
+# --------------------------------------------------------------------------------------------
+
+
+def split_block(block: cb.Block) -> tuple[list[str], list[str]]:
+    """One block's lines, as `(the marker run, the schema)`.
+
+    The marker run is the `# # @config ...` lines the block opens with — hand-written, and none of
+    this module's business. Everything after it is the schema, and is what a regeneration
+    replaces.
+    """
+    markers: list[str] = []
+    rest: list[str] = []
+    in_run = True
+    for line in block.lines:
+        _, comment = cb.split_comment(line)
+        if in_run and cb.is_marker(cb.schema_comment(comment)):
+            markers.append(line)
+            continue
+        in_run = False
+        rest.append(line)
+    return markers, rest
+
+
+def block_schema(block: cb.Block) -> dict[str, Any]:
+    """The schema half of one block, as the mapping helm-schema reads it as.
+
+    Compared rather than the text, so a difference in quoting or in key order is not reported as
+    drift: what the block *means* is what the contract has an opinion about. The writer normalises
+    the spelling, so a block this function calls equal is one a regeneration leaves alone.
+    """
+    _, lines = split_block(block)
+    body = []
+    for line in lines:
+        stripped = line.strip()
+        if not stripped.startswith("#"):
+            raise ShapeError(f"line {line!r} inside an `@schema` block is not a comment")
+        body.append(_dedent(stripped[1:]))
+    loaded = yaml.safe_load("\n".join(body)) if any(part.strip() for part in body) else {}
+    if loaded is None:
+        return {}
+    if not isinstance(loaded, dict):
+        raise ShapeError("an `@schema` block has to be a mapping")
+    return loaded
+
+
+def _dedent(text: str) -> str:
+    """Drop the single space helm-schema's `# ` prefix carries, keeping the schema's own indent."""
+    return text[1:] if text.startswith(" ") else text
+
+
+# --------------------------------------------------------------------------------------------
+# Building the expected schema
+# --------------------------------------------------------------------------------------------
+
+
+def expected(constraint: dict[str, Any] | None, *, optional: bool, structured: bool) -> dict:
+    """The `@schema` mapping one contract key's constraint calls for.
+
+    Two shapes are not a straight copy, and both were measured against helm-schema rather than
+    reasoned about:
+
+    **An `enum` is the whole block.** helm-schema refuses one carrying both — `Error while
+    validating jsonschema of key backend: cannot use both 'enum' and 'type' in the same schema`,
+    which exits `just schema` fatally and leaves every chart's `values.schema.json` unwritten. So a
+    key whose constraint names an `enum` emits its members alone, with `null` joining them where
+    the value is optional. Measured again for `schema_version: 2`: the refusal applies to the *top
+    level of the block only*. A nested subschema carrying both passes through verbatim, and that is
+    what makes a generated element schema possible at all — every enum inside a struct is an `enum`
+    beside a `type`.
+
+    **A `structured` key whose element is undescribed is opened rather than described.** Such a
+    constraint says the value is a table and nothing about what is in it — `internal.peers` is a
+    `BTreeMap<String, PeerConfig>` whose constraint is `{"type": "object"}` — so the block accepts
+    any table. A key whose element *is* described takes the description instead, which is the whole
+    of what `schema_version: 2` buys: the same `additionalProperties` field, carrying a schema
+    rather than `true`.
+
+    **A `structured` key whose constraint names an array is neither.** It carries its own `items`,
+    and the value beside it is a list, so describing it as an object made the chart reject its own
+    defaults the moment `just schema` ran — nine keys in `discord-alertmanager`, every one of which
+    had to be corrected by hand.
+    """
+    constraint = constraint or {}
+
+    if "enum" in constraint:
+        members = list(constraint["enum"])
+        if optional and None not in members:
+            members.append(None)
+        return {"enum": members}
+
+    declared = constraint.get("type")
+    names = declared if isinstance(declared, list) else [declared]
+    types = [str(name) for name in names if name is not None]
+
+    schema: dict[str, Any] = {}
+    element = cc.element_schema(constraint)
+
+    if structured and (not types or "object" in types) and "items" not in constraint:
+        types = ["object"]
+        # The producer's own fields, where it published any. A table key is normally split into
+        # one contract key per field, so this is the hand-written `Sink` case rather than the
+        # derive's — and dropping the fields there would describe a documented struct as an open
+        # table.
+        for keyword in ("required", "properties"):
+            if keyword in constraint:
+                schema[keyword] = _copy(constraint[keyword])
+        # `additionalProperties: true` is the open flag, and an element schema replaces it: a map
+        # whose values are all one shape is not open, it is uniform. Written even beside enumerated
+        # properties, because helm-schema injects `additionalProperties: false` into a top-level
+        # block that enumerates them and says nothing — and the contract's silence here means open,
+        # not closed: `serde` accepts a field nobody declared unless the struct says otherwise.
+        schema["additionalProperties"] = _copy(element) if element is not None else True
+    else:
+        for keyword in ORDER:
+            if keyword in ("type", "enum") or keyword not in constraint:
+                continue
+            schema[keyword] = _copy(constraint[keyword])
+
+    if not types:
+        # The constraint names no type. Rather than guess one, accept every JSON type — the
+        # contract is still the authority on the value, and `just check-config` holds the rendered
+        # document against it either way. A `@schema` block is not optional here: the marker lives
+        # inside one, and helm-schema emits no property for a value without one.
+        types = ["string", "integer", "boolean", "array", "object", "null"]
+
+    # An optional value is one the chart may legitimately leave unset, and the derived helper omits
+    # it rather than writing it empty — so `null` has to be a value the schema accepts.
+    if optional and "null" not in types:
+        types.append("null")
+
+    return {"type": types[0] if len(types) == 1 else types, **schema}
+
+
+def _copy(value: Any) -> Any:
+    """One constraint keyword's value, with every annotation dropped at every level.
+
+    See the module docstring for why the prose does not come across. `format` is kept: it is the
+    one member of `ANNOTATIONS` a validator acts on. Everything else is copied rather than
+    translated — `constraint` is JSON Schema and so is an `@schema` block, so a `minimum` means the
+    same thing on both sides.
+    """
+    if isinstance(value, dict):
+        return {
+            name: _copy(inner)
+            for name, inner in value.items()
+            if name not in cc.ANNOTATIONS or name == "format"
+        }
+    if isinstance(value, list):
+        return [_copy(item) for item in value]
+    return value
+
+
+# --------------------------------------------------------------------------------------------
+# Declared divergences
+# --------------------------------------------------------------------------------------------
+
+
+def apply_divergences(
+    generated: dict[str, Any], present: dict[str, Any], divergences: list[Divergence]
+) -> tuple[dict[str, Any], list[str]]:
+    """The generated schema with each declared position taken from the chart's own block.
+
+    Returns the result and the problems found, rather than raising on the first: a value with two
+    stale exceptions should report both.
+
+    A sub-path is a dotted walk of *schema keywords* — `items.properties.guild_id`,
+    `additionalProperties.items` — because that is what the thing being addressed is. It has to
+    resolve on both sides: absent from the generated shape it is an exception that outlived the
+    field it protected, and absent from the chart's block it keeps nothing.
+    """
+    result = _deep_copy(generated)
+    problems: list[str] = []
+
+    for divergence in divergences:
+        parts = divergence.sub_path.split(".")
+        if _dig(result, parts) is None:
+            problems.append(
+                f"{divergence.where}: keeps {divergence.sub_path!r} of "
+                f"{divergence.values_path!r}, which the generated schema does not contain. Either "
+                "the contract no longer describes it, in which case the exception is what is "
+                "stale, or the sub-path is a typo"
+            )
+            continue
+        kept = _dig(present, parts)
+        if kept is None:
+            problems.append(
+                f"{divergence.where}: keeps {divergence.sub_path!r} of "
+                f"{divergence.values_path!r}, which the block below does not declare — there is "
+                "nothing to keep"
+            )
+            continue
+        _put(result, parts, _deep_copy(kept))
+
+    return result, problems
+
+
+def _dig(schema: Any, parts: list[str]) -> Any:
+    for part in parts:
+        if not isinstance(schema, dict) or part not in schema:
+            return None
+        schema = schema[part]
+    return schema
+
+
+def _put(schema: dict[str, Any], parts: list[str], value: Any) -> None:
+    for part in parts[:-1]:
+        schema = schema[part]
+    schema[parts[-1]] = value
+
+
+def _deep_copy(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {name: _deep_copy(inner) for name, inner in value.items()}
+    if isinstance(value, list):
+        return [_deep_copy(item) for item in value]
+    return value
+
+
+# --------------------------------------------------------------------------------------------
+# Writing it back out
+# --------------------------------------------------------------------------------------------
+
+
+def render(schema: dict[str, Any], indent: str) -> list[str]:
+    """One `@schema` mapping as the comment lines a values.yaml carries it as."""
+    return [f"{indent}# {line}" if line else f"{indent}#" for line in _lines(schema)]
+
+
+def _lines(schema: dict[str, Any]) -> list[str]:
+    """The schema as YAML, in `ORDER`, block form throughout.
+
+    Block form rather than flow, because that is what every hand-written `@schema` in this
+    repository uses and these lines are read by people first. Written here rather than handed to
+    `yaml.dump`, which sorts keys alphabetically, wraps mid-value at 80 columns and quotes strings
+    on rules of its own — three things that would each show up as churn in a generated file.
+    """
+    lines: list[str] = []
+    for name in _ordered(schema):
+        lines.extend(_keyword(name, schema[name]))
+    return lines
+
+
+def _ordered(schema: dict[str, Any]) -> list[str]:
+    """The keywords of one level, canonical ones first and the rest alphabetically after."""
+    known = [name for name in ORDER if name in schema]
+    return known + sorted(name for name in schema if name not in ORDER)
+
+
+def _keyword(name: str, value: Any) -> list[str]:
+    """One JSON Schema keyword as the YAML lines an `@schema` comment carries."""
+    if name == "type":
+        return [_type_line(value)]
+    if name == "properties" and isinstance(value, dict) and value:
+        # Field names, not keywords. Kept in the order the producer declared them — that is the
+        # order the struct is written in and the order its documentation reads in, and sorting
+        # them would make a twenty-field element unrecognisable against the source it came from.
+        lines = ["properties:"]
+        for field, subschema in value.items():
+            # Rendered here rather than through `_keyword`, which reads its first argument as a
+            # schema keyword: a struct with a field called `type` or `items` would otherwise be
+            # spelt as the keyword of that name and come out as something else entirely.
+            if isinstance(subschema, dict) and subschema:
+                lines.append(f"  {_field(field)}:")
+                lines.extend(f"    {line}" for line in _lines(subschema))
+            else:
+                lines.append(f"  {_field(field)}: {{}}")
+        return lines
+    if isinstance(value, dict):
+        if not value:
+            return [f"{name}: {{}}"]
+        return [f"{name}:"] + [f"  {line}" for line in _lines(value)]
+    if isinstance(value, list) and any(isinstance(item, (dict, list)) for item in value):
+        lines = [f"{name}:"]
+        for item in value:
+            if isinstance(item, dict):
+                rendered = _lines(item)
+                lines.append(f"  - {rendered[0]}")
+                lines.extend(f"    {line}" for line in rendered[1:])
+            else:
+                lines.append(f"  - {scalar(item)}")
+        return lines
+    return [f"{name}: {scalar(value)}"]
+
+
+# Field names YAML 1.1 reads as something other than a string. `yes`, `no`, `on` and `off` are the
+# ones that bite — a struct field called `on` is an ordinary field name in every language a
+# producer here is written in, and unquoted it is the boolean true.
+_PLAIN_FIELD = re.compile(r"^[A-Za-z_][A-Za-z0-9_.\-]*$")
+_YAML_WORDS = frozenset(
+    {"y", "n", "yes", "no", "on", "off", "true", "false", "null", "none", "~"}
+)
+
+
+def _field(name: str) -> str:
+    """One struct field name, as the mapping key an `@schema` block carries it as."""
+    if _PLAIN_FIELD.match(name) and name.lower() not in _YAML_WORDS:
+        return name
+    return quoted(name)
+
+
+def _type_line(value: Any) -> str:
+    """The `type` keyword, whose members are schema vocabulary rather than data.
+
+    Written bare for that reason — `type: [array, 'null']`, the spelling every hand-written block
+    in this repository uses. `null` is the one member that has to be quoted: unquoted it is YAML's
+    null, and the schema would then declare no type at all where it meant to declare the null type.
+    """
+    names = value if isinstance(value, list) else [value]
+    rendered = ", ".join("'null'" if str(name) == "null" else str(name) for name in names)
+    return f"type: {rendered}" if len(names) == 1 else f"type: [{rendered}]"
+
+
+def scalar(value: Any) -> str:
+    """One JSON Schema keyword's value, as the YAML an `@schema` comment carries.
+
+    `null` is the one that has to be quoted where it names a *type*: unquoted it is YAML's null,
+    and a schema would then declare no type at all where it meant to declare the null type. Inside
+    an `enum` it is the null value and is written bare, which is the spelling `image.pullPolicy` in
+    the chassis already uses.
+    """
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if value is None:
+        return "null"
+    if isinstance(value, (int, float)):
+        return str(value)
+    if isinstance(value, list):
+        return "[" + ", ".join(scalar(item) for item in value) + "]"
+    return quoted(str(value))
+
+
+def quoted(text: str) -> str:
+    """A YAML double-quoted scalar. Used wherever a value could be read as something else."""
+    escaped = text.replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"'
+
+# --------------------------------------------------------------------------------------------
+# The walk over the charts
+# --------------------------------------------------------------------------------------------
+
+
+class Chart:
+    """One chart's shape markers, resolved against its contracts.
+
+    Everything that can fail before a single block is looked at fails here, with the chart named
+    once: a `@config-shape` marker naming a value that does not exist, an exception with no shape
+    to except from, a value that binds no key. The two callers then differ only in what they do
+    with a block that does not match.
+    """
+
+    def __init__(self, chart_dir: Path):
+        self.dir = chart_dir
+        self.name = chart_dir.name
+        self.values = chart_dir / "values.yaml"
+        # Read without newline translation: this working tree is CRLF and a rewrite that
+        # normalised it would reflow every line of every file it touched.
+        self.text = self.values.read_text(encoding="utf-8", newline="")
+        self.problems: list[str] = []
+
+        self.shapes, self.divergences = parse_markers(self.text, self.name)
+        self.blocks = {
+            block.values_path: block
+            for block in cb.parse_blocks(self.values, self.name)
+        }
+        self.markers: dict[str, list[cb.Marker]] = {}
+        for marker in cb.parse_values(self.values, self.name):
+            self.markers.setdefault(marker.values_path, []).append(marker)
+
+        declaration = load_declaration(chart_dir)
+        self.bound = Bound(chart_dir, declaration) if declaration is not None else None
+        self.app_version = str(read_yaml(chart_dir / "Chart.yaml").get("appVersion", "")).strip()
+
+        self._check_markers()
+
+    # ------------------------------------------------------------------------------------
+    # Resolution
+    # ------------------------------------------------------------------------------------
+
+    def _check_markers(self) -> None:
+        """What can be decided from the markers alone, before a contract is opened.
+
+        A value carries at most one shape marker, and an exception belongs to a generated one and
+        says so by naming the same value.
+        """
+        seen: dict[str, Shape] = {}
+        for shape in self.shapes:
+            first = seen.get(shape.values_path)
+            if first is not None:
+                self.problems.append(
+                    f"{shape.where}: {shape.values_path!r} already declares a shape on line "
+                    f"{first.line}. One value has one block, so the second marker is either a "
+                    "duplicate or the migration of the first left half-done"
+                )
+                continue
+            seen[shape.values_path] = shape
+
+        generated = {
+            shape.values_path for shape in self.shapes if shape.mode == GENERATED
+        }
+        for divergence in self.divergences:
+            if divergence.values_path not in generated:
+                self.problems.append(
+                    f"{divergence.where}: excepts {divergence.sub_path!r} of "
+                    f"{divergence.values_path!r}, which no `{SHAPE_MARKER} ... "
+                    f"{GENERATED}` marker declares. An exception to a hand-written block is "
+                    "just the block"
+                )
+
+    def constraint_for(
+        self, shape: Shape, *, report: bool = True
+    ) -> tuple[dict[str, Any] | None, bool, bool] | None:
+        """The contract key one value feeds, as `(constraint, optional, structured)`.
+
+        `None` when the value cannot be resolved. Reported unless the caller is only asking
+        whether a resolution exists — a hand transcription in a chart with no contract at all
+        is the ordinary state of one, not a defect.
+        """
+        def refuse(message: str) -> None:
+            if report:
+                self.problems.append(message)
+
+        markers = [
+            marker
+            for marker in self.markers.get(shape.values_path, [])
+            if marker.cls in (cb.PROJECTION, cb.STRUCTURED)
+        ]
+        if not markers:
+            refuse(
+                f"{shape.where}: {shape.values_path!r} carries no `{cb.MARKER}` marker naming the "
+                f"contract key it feeds, so there is nothing to derive its schema from"
+            )
+            return None
+        if len(markers) > 1:
+            refuse(
+                f"{shape.where}: {shape.values_path!r} binds "
+                f"{', '.join(repr(marker.target) for marker in markers)}, and a value feeding "
+                "several keys has no single constraint to be derived from"
+            )
+            return None
+
+        marker = markers[0]
+        if self.bound is None:
+            refuse(
+                f"{shape.where}: {shape.values_path!r} binds {marker.target!r}, and this chart has "
+                "no config-contract.yaml naming the document that declares it"
+            )
+            return None
+
+        candidates = (
+            list(marker.documents) if marker.documents is not None else sorted(self.bound.documents)
+        )
+        entries = [
+            self.bound.namespace(name, marker.cls)[marker.target]
+            for name in candidates
+            if name in self.bound.documents
+            and marker.target in self.bound.namespace(name, marker.cls)
+        ]
+        if not entries:
+            # `check-config-bindings` reports this one properly, with the suggestions and the
+            # scope diagnosti Repeating that here would print the same defect twice.
+            refuse(
+                f"{shape.where}: {shape.values_path!r} binds {marker.target!r}, which no contract "
+                "this chart declares carries — see `just check-config-bindings`"
+            )
+            return None
+
+        constraints = [entry.get("constraint") for entry in entries]
+        if any(other != constraints[0] for other in constraints[1:]):
+            refuse(
+                f"{shape.where}: the documents this chart declares describe {marker.target!r} "
+                "differently, so no one schema is derivable from them"
+            )
+            return None
+
+        forms = {cc.text_form(entry) for entry in entries}
+        return constraints[0], marker.optional, forms == {"structured"}
+
+    # ------------------------------------------------------------------------------------
+    # One shape
+    # ------------------------------------------------------------------------------------
+
+    def block_for(self, shape: Shape) -> cb.Block | None:
+        """The `@schema` block one marker describes, refusing a marker that is not above it.
+
+        Placement is checked rather than assumed. The marker is matched to its value by name, so
+        one written at the other end of the file would still resolve — and would then assert
+        something about a block nobody reading that block can see. The rule is the one the two
+        existing markers already follow: above the block, with nothing but comments and blank
+        lines in between.
+        """
+        block = self.blocks.get(shape.values_path)
+        if block is None:
+            self.problems.append(
+                f"{shape.where}: names {shape.values_path!r}, which has no `@schema` block for "
+                "this marker to describe"
+            )
+            return None
+
+        lines = self.text.splitlines()
+        between = lines[shape.line : block.start - 1]
+        if shape.line >= block.start or any(
+            line.strip() and not line.lstrip().startswith("#") for line in between
+        ):
+            self.problems.append(
+                f"{shape.where}: sits away from the `@schema` block for {shape.values_path!r} on "
+                f"line {block.start}. A marker is read next to the thing it describes or it is "
+                "not read at all; write it in the comment run directly above the block"
+            )
+            return None
+        return block
+
+    def target(self, shape: Shape) -> list[str] | None:
+        """The lines one generated block's schema half should carry, or `None` on a problem."""
+        block = self.block_for(shape)
+        if block is None:
+            return None
+
+        resolved = self.constraint_for(shape)
+        if resolved is None:
+            return None
+        constraint, optional, structured = resolved
+
+        if structured and not cc.describes_element(constraint):
+            self.problems.append(
+                f"{shape.where}: the contract describes {shape.values_path!r} as a container and "
+                "says nothing about what one element holds, so a generated block would type-check "
+                f"nothing. Keep it `{HANDWRITTEN}` until the image publishes the element"
+            )
+            return None
+
+        generated = expected(constraint, optional=optional, structured=structured)
+        try:
+            present = block_schema(block)
+        except ShapeError as failure:
+            self.problems.append(f"{shape.where}: {failure}")
+            return None
+
+        mine = [
+            divergence
+            for divergence in self.divergences
+            if divergence.values_path == shape.values_path
+        ]
+        wanted, problems = apply_divergences(generated, present, mine)
+        self.problems.extend(problems)
+        if problems:
+            return None
+
+        return render(wanted, " " * block.indent)
+
+    def superseded(self, shape: Shape) -> bool:
+        """Whether a hand-transcribed shape is one the contract now publishes itself."""
+        resolved = self.constraint_for(shape, report=False)
+        return resolved is not None and cc.describes_element(resolved[0])
+
+
+def check_handwritten(chart: Chart, shape: Shape) -> None:
+    """The older marker: a copy of a struct, held against the version it was copied at."""
+    if chart.block_for(shape) is None:
+        return
+
+    if chart.superseded(shape):
+        chart.problems.append(
+            f"{shape.where}: {shape.values_path!r} was transcribed by hand, and the contract now "
+            f"describes this element itself. Replace the marker with `{SHAPE_MARKER} "
+            f"{shape.values_path} {GENERATED}` and run `just config-shapes`; declare any "
+            f"position the chart keeps with `{EXCEPT_MARKER}`"
+        )
+        return
+
+    if not chart.app_version:
+        chart.problems.append(
+            f"{shape.where}: declares a shape for {shape.values_path!r}, but the chart has no "
+            "appVersion to hold it against"
+        )
+        return
+
+    if shape.version != chart.app_version:
+        chart.problems.append(
+            f"{shape.where}: {shape.values_path!r} was transcribed at {shape.version}, and the "
+            f"chart now pins appVersion {chart.app_version}\n"
+            f"    re-read {shape.source} at {chart.app_version}, bring the `@schema` block for "
+            f"{shape.values_path!r} up to it, and move the marker"
+        )
+
+
+def rewrite(chart: Chart) -> tuple[str, int]:
+    """The chart's values.yaml with every generated block written from its contract.
+
+    Blocks are replaced from the bottom up so that an earlier replacement cannot move the line
+    numbers a later one was read at.
+    """
+    lines = chart.text.splitlines(keepends=True)
+    written = 0
+
+    pending: list[tuple[cb.Block, list[str]]] = []
+    for shape in chart.shapes:
+        if shape.mode != GENERATED:
+            continue
+        target = chart.target(shape)
+        if target is None:
+            continue
+        pending.append((chart.blocks[shape.values_path], target))
+
+    ending = "\r\n" if chart.text.count("\r\n") else "\n"
+    for block, target in sorted(pending, key=lambda item: item[0].start, reverse=True):
+        markers, current = split_block(block)
+        if current == target:
+            continue
+        body = [f"{line}{ending}" for line in markers + target]
+        lines[block.start : block.end - 1] = body
+        written += 1
+
+    return "".join(lines), written
+
+
+def check(chart: Chart) -> None:
+    """Every generated block against what its contract calls for, reported onto the chart."""
+    for shape in chart.shapes:
+        if shape.mode != GENERATED:
+            continue
+        target = chart.target(shape)
+        if target is None:
+            continue
+
+        block = chart.blocks[shape.values_path]
+        _, current = split_block(block)
+        if current == target:
+            continue
+
+        # Compared as text rather than as meaning, and the writer compares the same way. A block
+        # that differs only in quoting is still a block a regeneration would rewrite, so a gate
+        # that passed it would leave `just config-shapes` with a diff to commit on a tree it had
+        # just called current — which is how a generated artefact ends up perpetually dirty.
+        difference = "\n".join(
+            difflib.unified_diff(
+                current, target, fromfile="values.yaml", tofile="the contract", lineterm=""
+            )
+        )
+        chart.problems.append(
+            f"{shape.where}: the `@schema` block for {shape.values_path!r} is not what its "
+            f"contract describes; run `just config-shapes`\n{difference}"
+        )
+
+
+def values_charts(charts: Path) -> list[Path]:
+    """Every chart directory carrying a values.yaml, in a stable order."""
+    return [
+        chart
+        for chart in sorted(charts.iterdir())
+        if chart.is_dir() and (chart / "values.yaml").is_file()
+    ]
+
+
+def main(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument(
+        "--charts", default=CHARTS_DIR, type=Path, help="charts directory (default: charts)"
+    )
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="fail when a generated block is behind its contract, rather than writing it",
+    )
+    args = parser.parse_args(argv)
+
+    if not args.charts.is_dir():
+        print(f"error: {args.charts} is not a directory", file=sys.stderr)
+        return 1
+
+    problems: list[str] = []
+    generated = 0
+    transcribed = 0
+    touched: list[str] = []
+
+    for chart_dir in values_charts(args.charts):
+        try:
+            chart = Chart(chart_dir)
+        except (ShapeError, cb.BindingError, DeclarationError) as failure:
+            # Both parsers collect every problem in a file and raise them as one message. Split
+            # again here so the closing count is a count of problems rather than of files.
+            problems.extend(str(failure).splitlines())
+            continue
+
+        if not chart.shapes and not chart.divergences:
+            continue
+
+        for shape in chart.shapes:
+            if shape.mode == HANDWRITTEN:
+                transcribed += 1
+                check_handwritten(chart, shape)
+            else:
+                generated += 1
+
+        if args.check:
+            check(chart)
+        else:
+            text, written = rewrite(chart)
+            if written:
+                chart.values.write_text(text, encoding="utf-8", newline="")
+                touched.append(f"{chart.name} ({written} block(s))")
+
+        problems.extend(chart.problems)
+
+    # Every problem is reported before it exits, matching every other gate here: a run that stopped
+    # at the first would hide the second on a bump that moved two charts.
+    if problems:
+        for problem in problems:
+            print(problem, file=sys.stderr)
+        print(f"\nerror: {len(problems)} config shape problem(s)", file=sys.stderr)
+        return 1
+
+    if args.check:
+        print(
+            f"==> {generated} generated and {transcribed} hand-transcribed config shape(s), "
+            "all current"
+        )
+    elif touched:
+        print(f"==> rewrote: {', '.join(touched)}")
+    else:
+        print(f"==> {generated} generated config shape(s) already match their contracts")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))

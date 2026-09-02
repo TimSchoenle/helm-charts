@@ -1,6 +1,6 @@
 # discord-alertmanager
 
-![Version: 0.3.0](https://img.shields.io/badge/Version-0.3.0-informational?style=flat-square) ![AppVersion: v0.3.0](https://img.shields.io/badge/AppVersion-v0.3.0-informational?style=flat-square)
+![Version: 0.3.1](https://img.shields.io/badge/Version-0.3.1-informational?style=flat-square) ![AppVersion: v0.3.0](https://img.shields.io/badge/AppVersion-v0.3.0-informational?style=flat-square)
 
 This chart deploys discord-alertmanager, a Discord operator surface for Prometheus Alertmanager. It receives the version-4 webhook envelope, renders each alert as a live status card in a Discord channel, and lets an operator acknowledge, ignore, silence or investigate it without leaving the client — with file-backed configuration that reloads in place instead of restarting pods, SQLite or PostgreSQL storage, optional Prometheus metrics and alerting rules, and an optional AlertmanagerConfig that registers the receiver with the Prometheus Operator instead of leaving it to be wired by hand.
 

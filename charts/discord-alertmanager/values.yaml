@@ -93,11 +93,13 @@ alertmanager:
   # (`alertmanager.connect_timeout_secs`).
   connectTimeoutSecs: 2
 
+  # @config-shape alertmanager.endpoints generated
+
   # @schema
   # # @config structured alertmanager.endpoints optional
   # type: [array, 'null']
   # items:
-  #   type: "string"
+  #   type: string
   # @schema
   # -- Base URLs of the Alertmanager peers, tried in order (`alertmanager.endpoints`).
   endpoints: []
@@ -157,40 +159,48 @@ discord:
   # Alertmanager and stops every receiver, the pager included, where `operate` only adds a
   # bot-local ignore that suppresses Discord.
   capabilities:
+    # @config-shape discord.capabilities.admin generated
+
     # @schema
     # # @config structured discord.capabilities.admin optional
     # type: [array, 'null']
     # items:
-    #   type: "string"
+    #   type: string
     # @schema
     # -- Manage routes and read the effective configuration (`discord.capabilities.admin`).
     admin: []
+
+    # @config-shape discord.capabilities.operate generated
 
     # @schema
     # # @config structured discord.capabilities.operate optional
     # type: [array, 'null']
     # items:
-    #   type: "string"
+    #   type: string
     # @schema
     # -- Acknowledge, assign, and add or remove bot-local ignores
     # (`discord.capabilities.operate`).
     operate: []
 
+    # @config-shape discord.capabilities.silence generated
+
     # @schema
     # # @config structured discord.capabilities.silence optional
     # type: [array, 'null']
     # items:
-    #   type: "string"
+    #   type: string
     # @schema
     # -- Create, extend and expire Alertmanager silences, which affects every receiver
     # (`discord.capabilities.silence`).
     silence: []
 
+    # @config-shape discord.capabilities.view generated
+
     # @schema
     # # @config structured discord.capabilities.view optional
     # type: [array, 'null']
     # items:
-    #   type: "string"
+    #   type: string
     # @schema
     # -- Read alerts, silences and routes. Grants no mutation of any kind
     # (`discord.capabilities.view`).
@@ -448,18 +458,20 @@ ingest:
 # -- Templates for the link buttons on a card, and the host allowlist they are checked
 # against.
 links:
+  # @config-shape links.allowedHosts generated
+
   # @schema
   # # @config structured links.allowed_hosts optional
   # type: [array, 'null']
   # items:
-  #   type: "string"
+  #   type: string
   # @schema
   # -- Hosts a rendered button may point at (`links.allowed_hosts`).
   allowedHosts: []
 
-  # `LinkButton` as the image declares it, on the same terms as `routes` above: the contract
+  # `LinkButton` as the image declares it, on the same terms as `routes` above: this contract
   # carries no element shape, the struct is `deny_unknown_fields`, and every field defaults.
-  # @config-shape links.buttons v0.3.0 crates/discord-alertmanager-config/src/links.rs
+  # @config-shape links.buttons handwritten v0.3.0 crates/discord-alertmanager-config/src/links.rs
 
   # @schema
   # # @config structured links.buttons optional
@@ -552,11 +564,13 @@ render:
   # (`render.description_budget`).
   descriptionBudget: 1500
 
+  # @config-shape render.keyLabels generated
+
   # @schema
   # # @config structured render.key_labels optional
   # type: [array, 'null']
   # items:
-  #   type: "string"
+  #   type: string
   # @schema
   # -- Labels promoted to their own inline field on the card, in order (`render.key_labels`).
   keyLabels: ["namespace", "instance", "job"]
@@ -578,10 +592,12 @@ render:
   # (`render.thread_archive_after_minutes`).
   threadArchiveAfterMinutes: 1440
 
-# `RouteConfig` as the image declares it, transcribed from the struct named below. The contract
-# cannot carry this: `constraint` is a flat keyword set with no `items`, so a `Vec<RouteConfig>`
-# reaches the chart as a bare `type: array` and the element's shape has nowhere else to live.
-# `just check-config-shapes` fails when the appVersion moves and this has not been re-read.
+# `RouteConfig` as the image declares it, transcribed from the struct named below. This image's
+# contract cannot carry it: at `schema_version: 1` a `constraint` is a flat keyword set with no
+# `items`, so a `Vec<RouteConfig>` reaches the chart as a bare `type: array` and the element's
+# shape has nowhere else to live. `just check-config-shapes` fails when the appVersion moves and
+# this has not been re-read — and again once the image starts publishing the element itself, at
+# which point the marker below becomes `generated` and `just config-shapes` writes the block.
 #
 # Closed rather than open, because the image is closed: every struct here is
 # `#[serde(deny_unknown_fields)]`, so a key this schema refuses is one the service refuses at
@@ -594,7 +610,7 @@ render:
 # `123456789012345680`, silently, and the route then posts to whatever channel that names. A
 # quoted string is the only spelling that survives, and `discord-alertmanager.snowflakes` is what
 # writes it back out as the TOML integer the image reads.
-# @config-shape routes v0.3.0 crates/discord-alertmanager-config/src/routes.rs
+# @config-shape routes handwritten v0.3.0 crates/discord-alertmanager-config/src/routes.rs
 
 # @schema
 # # @config structured routes optional

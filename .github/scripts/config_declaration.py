@@ -401,6 +401,41 @@ def _load_unbound(path: Path, entries: Iterable[Any], documents: set[str]) -> li
 # --------------------------------------------------------------------------------------------
 
 
+class Bound:
+    """One chart's documents, resolved to the contracts that describe them.
+
+    Built without the staleness interlock `bind` applies — a gate that refuses to run during a
+    digest bump withdraws its report from the one pull request it exists for — so this is
+    deliberately not that function and does not pretend to be.
+
+    Lives here rather than in the gate that first needed it because two of them need it now:
+    `check-config-bindings.py` holds a marker against the key it names, and `config_shapes.py`
+    regenerates a value's `@schema` block from that same key's constraint.
+    """
+
+    def __init__(self, chart_dir: Path, declaration: Declaration):
+        self.chart = declaration.chart
+        self.declaration = declaration
+        self.documents: dict[str, Document] = {}
+        self.unions: dict[str, cc.Union] = {}
+
+        for document in declaration.documents:
+            self.documents[document.name] = document
+            self.unions[document.name] = union_for(chart_dir, document)
+
+    def namespace(self, name: str, cls: str) -> dict[str, dict[str, Any]]:
+        """The half of one document's contract a marker of this class may name.
+
+        The class vocabulary is `config_bindings`', and it is compared by value rather than
+        imported: that module imports nothing from here, and a cycle between the two would be a
+        real cost for a constant that has not moved since the format was written.
+        """
+        union = self.unions[name]
+        if cls in ("projection", "structured", "composed"):
+            return union.keys
+        return union.external_env
+
+
 def chart_dirs(charts: Path) -> Iterator[Path]:
     """Every chart directory under `charts`, in directory order.
 

@@ -127,6 +127,13 @@ CONSTRAINT_ORDER = (
     "multipleOf",
     "minLength",
     "maxLength",
+    "minItems",
+    "maxItems",
+    "uniqueItems",
+    "required",
+    "properties",
+    "additionalProperties",
+    "items",
 )
 
 # Keywords `describe_constraint` folds into another keyword's phrase, or that are said elsewhere
@@ -137,6 +144,8 @@ CONSTRAINT_FOLDED = frozenset(
         "exclusiveMaximum",
         "maximum",
         "maxLength",
+        "maxItems",
+        "required",
         "description",
         "title",
         "default",
@@ -431,11 +440,20 @@ def select(settings: dict[str, Setting], pattern: str | None) -> list[Setting]:
 
 
 def describe_constraint(constraint: Any) -> str:
-    """A flat JSON Schema constraint object, as a phrase.
+    """A JSON Schema constraint object, as a phrase.
 
     Bounds are folded into one range because that is how they are read — `0 to 65535`, not
     `integer, minimum 0, maximum 65535` — and an unrecognised keyword is printed rather than
     dropped, so a vocabulary this renderer does not know still reaches the reader.
+
+    Recurses, as of `schema_version: 2`. A container-typed key carries what one element holds
+    under `items` or `additionalProperties`, and printing that as raw JSON — which the catch-all
+    below did before the keywords were named — turns the one line an operator reads about a
+    setting into a wall of braces. `array of string one of "GET" | "POST"` is the same fact.
+
+    A struct element is named by its fields rather than described in full: a `RouteConfig` has
+    twenty of them, each with a type and a bound of its own, and a table cell is not where that
+    belongs. `--json` emits the constraint verbatim for a reader that wants all of it.
     """
     if not isinstance(constraint, dict) or not constraint:
         return ""
@@ -465,6 +483,21 @@ def describe_constraint(constraint: Any) -> str:
         elif keyword in ("minLength", "maxLength"):
             if keyword == "minLength" or "minLength" not in constraint:
                 parts.append(_length(constraint))
+        elif keyword in ("minItems", "maxItems"):
+            if keyword == "minItems" or "minItems" not in constraint:
+                parts.append(_count(constraint))
+        elif keyword == "uniqueItems":
+            if value:
+                parts.append("distinct")
+        elif keyword == "properties":
+            parts.append(_fields(value, constraint.get("required") or []))
+        elif keyword in ("items", "additionalProperties"):
+            if isinstance(value, dict) and value:
+                inner = describe_constraint(value)
+                if inner:
+                    # Parenthesised where the element has more than one thing to say about it, so
+                    # `object, of (array, distinct)` cannot be read as a distinct object.
+                    parts.append(f"of ({inner})" if "," in inner else f"of {inner}")
 
     for keyword, value in sorted(constraint.items()):
         if keyword not in CONSTRAINT_ORDER and keyword not in CONSTRAINT_FOLDED:
@@ -487,6 +520,26 @@ def _range(constraint: dict[str, Any]) -> str:
     if lower is not None:
         return lower if low_open is not None else f"at least {lower}"
     return upper if high_open is not None else f"at most {upper}"
+
+
+def _count(constraint: dict[str, Any]) -> str:
+    """`minItems` and `maxItems`, folded the way `_length` folds their string equivalents."""
+    low, high = constraint.get("minItems"), constraint.get("maxItems")
+    if low is not None and high is not None:
+        return f"{low} to {high} items"
+    if low is not None:
+        return f"at least {low} item(s)"
+    return f"at most {high} item(s)"
+
+
+def _fields(properties: dict[str, Any], required: list[Any]) -> str:
+    """A struct element's fields, in the order the producer declared them, required ones starred.
+
+    Declaration order rather than alphabetical: that is the order the struct is written in, and
+    the order somebody comparing this against the source will read it in.
+    """
+    names = [f"{name}*" if name in required else str(name) for name in properties]
+    return "fields " + ", ".join(names) if names else "no fields"
 
 
 def _length(constraint: dict[str, Any]) -> str:

@@ -194,29 +194,60 @@ check-config-bindings:
     {{ resolve_python }}
     "$python" {{ scripts }}/check-config-bindings.py --charts {{ charts }}
 
-# Hold every hand-transcribed config shape against the appVersion it was read at.
+# Write every derived `@schema` block in a chart's values.yaml from the contract.
 #
-# A contract states a key's type with a flat keyword set — no `items`, no `properties` — so a
-# setting whose type is a *struct* arrives with its shape missing: `discord-alertmanager`'s
-# `routes` is a `Vec<RouteConfig>` and the contract carries `{"type": "array"}`, which is all
-# the producer can currently say. The chart types it anyway, because a bare `type: array` is not
-# type checking, and that means transcribing a struct somebody else owns.
+# A contract states a key's type as JSON Schema, and as of `schema_version: 2` that object nests:
+# a container-typed key whose element type describes itself carries the element under `items` for
+# a sequence and `additionalProperties` for a map, composed through both when they are stacked.
+# That is a full description of a struct somebody else owns, published by the image that owns it
+# — so a chart that wants an operator's editor to catch a misspelt field before the service does
+# no longer has to transcribe it by hand.
 #
-# A `# @config-shape <values-path> <appVersion> <source>` comment above the value's `@schema`
-# block records which struct, at which version. This fails when the chart's appVersion has moved
-# past one — which is exactly what an automated bump does, repinning the image and touching
-# nothing else, leaving a schema that refuses a field the new release added.
+# A `# @config-shape <values-path> generated` comment above the value's `@schema` block enrols it,
+# and this recipe writes the block. The contract key comes from the `# @config` marker the value
+# already carries — the one statement in this repository of which key a value feeds — so nothing
+# here restates a binding, and a chart that is not bindings-enrolled cannot enrol a shape.
 #
-# In `just check` rather than left to the Documentation job, unlike `check-contracts` and the two
-# `$ref` gates: nothing repairs this automatically, because re-reading the struct is a person's
-# job. It reads two committed files per chart — no network, no render, no cluster.
-[doc("Hold every hand-transcribed config shape against the appVersion it was read at")]
+# Run by `just schema`, before helm-schema, since it edits helm-schema's input. Deliberately *not*
+# run by `just contracts`: that recipe fetches the contract, and one command that both fetches a
+# document and rewrites the chart from it produces a commit in which nobody can see which caused
+# which.
+[doc("Write every derived `@schema` block in a chart's values.yaml from its contract")]
+[group('contracts')]
+config-shapes:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    {{ resolve_python }}
+    "$python" {{ scripts }}/config_shapes.py --charts {{ charts }}
+
+# Fail when a derived `@schema` block is not what its contract describes.
+#
+# The asserting half of the recipe above, and the gate over the older marker beside it. Two things
+# fail here, and they are the same failure at two removes:
+#
+#   `# @config-shape <path> generated`                          the block is behind its contract
+#   `# @config-shape <path> handwritten <appVersion> <source>`   the chart's appVersion moved past
+#                                                                the version the struct was read
+#                                                                at, or the contract now describes
+#                                                                that element itself
+#
+# The second marker is what the first replaces. An element the producer has not described yet
+# still has to be transcribed by hand, and that transcription is held against the version it was
+# read at — which an automated bump moves while touching nothing else, leaving a schema that
+# refuses a field the new release added. Once the image publishes the element, the hand copy is
+# superseded and the gate says so rather than letting a stale copy sit there looking maintained.
+#
+# In `just check` rather than left to the Documentation job. The generated half the docs job does
+# repair, but the hand-written half it cannot: re-reading a struct is a person's job, and the
+# question is not whether the file changed but whether the schema still describes it. Reads
+# committed files only — no network, no render, no cluster.
+[doc("Fail when a derived `@schema` block is not what its contract describes")]
 [group('contracts')]
 check-config-shapes:
     #!/usr/bin/env bash
     set -euo pipefail
     {{ resolve_python }}
-    "$python" {{ scripts }}/check-config-shapes.py --charts {{ charts }}
+    "$python" {{ scripts }}/config_shapes.py --charts {{ charts }} --check
 
 # Unit tests for the contract model, over fixtures rather than over a registry.
 #

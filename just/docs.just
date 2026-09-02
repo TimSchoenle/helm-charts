@@ -16,9 +16,10 @@ docs: schema chart-readmes
 # Needs the dependency tree extracted, not just built: the generator resolves the library chart's
 # definitions from `charts/<chart>/charts/common/`. Run `just deps` first.
 #
-# Three invocations. The first regenerates the `@schema` blocks that are themselves derived — the
-# alert preset lists, which enumerate names out of `rules/*.yml` and `rules/tunables.yaml` — and
-# has to run *before* helm-schema, since it edits helm-schema's input.
+# Four invocations. The first two regenerate the `@schema` blocks that are themselves derived —
+# the alert preset lists, which enumerate names out of `rules/*.yml` and `rules/tunables.yaml`,
+# and the config shapes, which are the element schemas the images publish — and both have to run
+# *before* helm-schema, since they edit helm-schema's input.
 #
 # The other two are helm-schema, because one pass cannot cover both. Walking `charts/` finds
 # `charts/common` and the extracted copy of it under every consumer, and the generator keys its
@@ -28,7 +29,7 @@ docs: schema chart-readmes
 # library chart has none.
 [doc("Generate every chart's values.schema.json from the @schema blocks in its values.yaml")]
 [group('docs')]
-schema: schema-presets
+schema: schema-presets config-shapes
     helm schema --add-schema-reference --chart-search-root {{ charts }}
     helm schema --add-schema-reference --chart-search-root {{ charts }}/common --no-dependencies
 

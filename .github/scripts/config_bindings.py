@@ -312,6 +312,31 @@ class Marker:
         return f"{self.chart}/values.yaml:{self.line}"
 
 
+@dataclass(frozen=True)
+class Block:
+    """One `@schema` block, and the chart value it belongs to.
+
+    The same walk that finds a marker finds this, and for the same reason: a block is attached to
+    its value by contiguity, and the rules for what breaks that contiguity — a blank line, a
+    sequence item, a second block — are the ones `parse_values` already implements. A second
+    reader of this file would have had to get all of them right again.
+
+    `lines` are the raw lines *between* the delimiters, marker run and schema alike, exactly as
+    they appear in the file. `start` and `end` are the delimiters' own line numbers, so a caller
+    rewriting the block replaces `start + 1 .. end - 1` and leaves everything else alone.
+
+    Read by `config_shapes`, which regenerates the schema half of a block from the contract while
+    leaving the marker half — which is hand-written, and says what the block is *for* — untouched.
+    """
+
+    chart: str
+    values_path: str
+    start: int
+    end: int
+    indent: int
+    lines: tuple[str, ...]
+
+
 def split_comment(line: str) -> tuple[str, str | None]:
     """Split one line into its YAML and its trailing comment, respecting quotes.
 
@@ -417,7 +442,21 @@ def schema_comment(comment: str | None) -> str | None:
 
 
 def parse_values(path: Path, chart: str | None = None) -> list[Marker]:
-    """Every marker in one `values.yaml`, each carrying the dotted path of the value it binds.
+    """Every marker in one `values.yaml`, each carrying the dotted path of the value it binds."""
+    return _walk(path, chart)[0]
+
+
+def parse_blocks(path: Path, chart: str | None = None) -> list[Block]:
+    """Every `@schema` block in one `values.yaml`, each carrying the value it belongs to.
+
+    The other half of the same walk. A block with no marker is still a block — most of them are —
+    so this is not `parse_values` with the markers thrown away.
+    """
+    return _walk(path, chart)[1]
+
+
+def _walk(path: Path, chart: str | None = None) -> tuple[list[Marker], list[Block]]:
+    """Every marker and every `@schema` block in one `values.yaml`, bound to their values.
 
     Walks the file as lines, because the marker is a comment and no YAML reader available here
     keeps one — see the module docstring. Every problem in the file is collected before any is
@@ -433,6 +472,7 @@ def parse_values(path: Path, chart: str | None = None) -> list[Marker]:
     chart = chart or path.parent.name
     problems: list[str] = []
     markers: list[Marker] = []
+    blocks: list[Block] = []
 
     # The mapping nesting, as (indent, name). A key at indent i closes everything at indent >= i.
     stack: list[tuple[int, str]] = []
@@ -445,16 +485,24 @@ def parse_values(path: Path, chart: str | None = None) -> list[Marker]:
     in_marker_run = False
     # The markers read out of a block, waiting for the value that block belongs to.
     pending: list[tuple[int, tuple]] = []
+    # The block they came out of, waiting for the same value: `(start, end, indent, lines)`.
+    pending_block: tuple[int, int, int, list[str]] | None = None
+    # The lines inside the block currently open, collected as they are read.
+    open_block: tuple[int, int, list[str]] | None = None
 
     def strand(what: str) -> None:
         """Markers whose block never reached a value bind nothing. Say so, naming both."""
-        nonlocal pending
+        nonlocal pending, pending_block
         for line_number, _ in pending:
             problems.append(
                 f"{chart}/values.yaml:{line_number}: this `{MARKER}` marker's `@schema` block is "
                 f"followed by {what} rather than by the value it binds, so it binds nothing"
             )
         pending = []
+        # A block that never reached a value describes nothing either, and unlike a stranded
+        # marker that is ordinary: `# @schema` above a comment-only section header is how several
+        # charts open a subtree. Dropped in silence for that reason.
+        pending_block = None
 
     for number, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
         line = raw.rstrip()
@@ -478,13 +526,20 @@ def parse_values(path: Path, chart: str | None = None) -> list[Marker]:
             if in_schema:
                 in_schema = False
                 in_marker_run = False
+                if open_block is not None:
+                    start, block_indent, collected = open_block
+                    pending_block = (start, number, block_indent, collected)
+                    open_block = None
             else:
                 strand("a second `@schema` block")
                 in_schema = True
                 in_marker_run = True
+                open_block = (number, indent, [])
             continue
 
         if in_schema:
+            if open_block is not None:
+                open_block[2].append(line)
             nested = schema_comment(comment)
             if is_marker(nested):
                 if not in_marker_run:
@@ -569,6 +624,19 @@ def parse_values(path: Path, chart: str | None = None) -> list[Marker]:
             )
 
         values_path = ".".join(name for _, name in stack)
+        if pending_block is not None:
+            start, end, block_indent, collected = pending_block
+            blocks.append(
+                Block(
+                    chart=chart,
+                    values_path=values_path,
+                    start=start,
+                    end=end,
+                    indent=block_indent,
+                    lines=tuple(collected),
+                )
+            )
+            pending_block = None
         for marker_line, (cls, documents, target, optional, condition) in pending:
             markers.append(
                 Marker(
@@ -588,7 +656,7 @@ def parse_values(path: Path, chart: str | None = None) -> list[Marker]:
 
     if problems:
         raise BindingError("\n".join(problems))
-    return markers
+    return markers, blocks
 
 
 def _refuse(problems: list[str], chart: str, number: int, comment: str | None, what: str) -> None:

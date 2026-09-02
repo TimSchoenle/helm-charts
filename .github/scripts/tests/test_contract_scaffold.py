@@ -330,6 +330,27 @@ class SchemaBlocks(unittest.TestCase):
         self.assertEqual(block["items"], {"type": "string"})
         self.assertNotIn("additionalProperties", block)
 
+    def test_a_described_element_enrols_the_value_as_a_generated_shape(self):
+        """A new chart's deepest schemas are owned from the moment they are written.
+
+        Nothing is asserted here that the scaffold did not just do — the block below the marker
+        was generated from the same element — and without it the chart starts life with a correct
+        schema and no interlock holding it to the contract it came from.
+        """
+        entry = key(
+            "a.hosts", text_form="structured", default_value=["one"],
+            constraint={"type": "array", "items": {"type": "string"}},
+        )
+        surface = sc.from_contract(union_of(entry))
+        text = sc.render_values("app", surface, "org/app", "v1", "", "config.toml")
+        self.assertIn("# @config-shape a.hosts generated", text)
+
+    def test_an_undescribed_container_is_not_enrolled(self):
+        entry = key("a.peers", text_form="structured", constraint={"type": "object"})
+        surface = sc.from_contract(union_of(entry))
+        text = sc.render_values("app", surface, "org/app", "v1", "", "config.toml")
+        self.assertNotIn("@config-shape", text)
+
     def test_a_structured_arrays_default_is_a_value_its_own_block_accepts(self):
         entry = key(
             "a.hosts", text_form="structured", default_value=["one"],

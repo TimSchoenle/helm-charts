@@ -28,6 +28,7 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import config_contract as cc
 import config_diff as cd
 
 FIXTURES = Path(__file__).resolve().parents[2] / "testdata" / "contracts"
@@ -125,11 +126,29 @@ class TestEnvelope(unittest.TestCase):
         self.assertEqual(result.impact, cd.MAJOR)
         self.assertEqual(only(result, subject="terrace_contract").new, 99)
 
-    def test_the_schema_version_is_a_major(self):
+    def test_a_widening_schema_version_is_a_minor(self):
+        # 1 -> 2 added the nested `constraint`, and removed nothing. Every key is spelt and
+        # checked as before, so the chart is not owed a major for it — but it is a line worth
+        # reading, because a container key that gained an element schema is one whose
+        # `@config-shape` marker can stop being hand-written.
         new = vendored()
         new["contract"]["schema"]["schema_version"] = 2
         self.assertEqual(
+            only(diff(vendored(), new), subject="schema.schema_version").severity, cd.MINOR
+        )
+
+    def test_a_schema_version_above_what_is_implemented_is_a_major(self):
+        new = vendored()
+        new["contract"]["schema"]["schema_version"] = cc.SCHEMA_VERSION + 1
+        self.assertEqual(
             only(diff(vendored(), new), subject="schema.schema_version").severity, cd.MAJOR
+        )
+
+    def test_a_schema_version_going_backwards_is_a_major(self):
+        old = vendored()
+        old["contract"]["schema"]["schema_version"] = 2
+        self.assertEqual(
+            only(diff(old, vendored()), subject="schema.schema_version").severity, cd.MAJOR
         )
 
     def test_every_dialect_field_is_a_major(self):

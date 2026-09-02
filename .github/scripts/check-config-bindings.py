@@ -115,38 +115,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import config_bindings as cb
 import config_contract as cc
 from config_declaration import (
+    Bound,
     Declaration,
     DeclarationError,
-    Document,
     chart_dirs,
     load_declaration,
-    union_for,
 )
 from config_paths import CHARTS_DIR
 from config_report import Report
-
-
-class Bound:
-    """One chart's documents, resolved to the contracts that describe them.
-
-    Built without the staleness interlock `config_declaration.bind` applies — see the module
-    docstring — so this is deliberately not that function and does not pretend to be.
-    """
-
-    def __init__(self, chart_dir: Path, declaration: Declaration):
-        self.chart = declaration.chart
-        self.declaration = declaration
-        self.documents: dict[str, Document] = {}
-        self.unions: dict[str, cc.Union] = {}
-
-        for document in declaration.documents:
-            self.documents[document.name] = document
-            self.unions[document.name] = union_for(chart_dir, document)
-
-    def namespace(self, name: str, cls: str) -> dict[str, dict[str, Any]]:
-        """The half of one document's contract a marker of this class may name."""
-        union = self.unions[name]
-        return union.keys if cls in cb.KEY_CLASSES else union.external_env
 
 
 class Gate:

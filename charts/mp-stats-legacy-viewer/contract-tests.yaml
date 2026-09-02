@@ -8,9 +8,31 @@
 # entirely satisfies the contract perfectly, so a typo in a template helper passes every gate and
 # the server runs on a compiled default nobody chose.
 #
-# No `baseline` here, and that is the whole entry: this chart renders from its packaged defaults
-# with nothing supplied, so every generated case stands on its own. The charts that do need one
-# need it because a `validateValues` guard refuses the default render, which is a property of the
-# chart rather than of the contract.
+# No `baseline` here: this chart renders from its packaged defaults with nothing supplied, so no
+# case has to be protected from a combination another one sets up. The single prerequisite below
+# is a different thing — a `validateValues` guard that refuses the render outright, which is a
+# property of the chart rather than of the contract.
 documents:
   - name: viewer
+
+    # The chart values every generated case carries, with no exception, because without them the
+    # chart refuses to render at all.
+    #
+    # Flat dotted paths, exactly as the helm-unittest `set` block they become spells them.
+    # Nothing here may name a path under `config`: a prerequisite is never dropped for the case
+    # it collides with, the way a baseline is, so one written into the tree the cases probe could
+    # supply the very value a case exists to prove the chart delivered. The generator refuses one
+    # outright.
+    prerequisites:
+      values:
+        existingSecret: mp-stats-contract-probe
+
+      reason: >-
+        Every `telemetry.sentry.*` key carries a `when telemetry.sentry.enabled` clause, so a case
+        probing one switches Sentry on — and the chart's `validateValues` then refuses the render
+        unless a DSN is available: an enabled client with nowhere to report is a CrashLoopBackOff
+        rather than a degraded feature. Naming an `existingSecret` satisfies that guard without
+        putting a credential-shaped string in a committed test file, which is the same reason no
+        probe is ever synthesised for a `secret: true` key. It changes nothing the cases assert
+        against — the DSN travels as a file in the secrets directory and is never written into
+        `config.toml` — and the Secret it names does not have to exist for a template render.

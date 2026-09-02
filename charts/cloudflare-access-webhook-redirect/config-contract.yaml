@@ -6,6 +6,54 @@
 # principle `just chart-index` already follows. `just check-config` reads this, unions the
 # contracts of every image listed, and validates the rendered ConfigMap, the container
 # environment and the mounted secret file names against the result.
+# Whether `just check-config-bindings` holds this chart's values against the keys below.
+#
+# Declared rather than inferred from the chart carrying markers: a chart that loses them — a
+# botched edit, a spelling the parser does not recognise — would otherwise drop out of that
+# gate's report without a word. With the switch here, markers without it and it without markers
+# are both errors.
+bindings: true
+
+# Contract keys no chart value binds, each group with the reason it does not.
+#
+# Chart-level: a key nothing surfaces is unsurfaced in every document that declares it, and this
+# chart declares one. Secret keys are not exempt by default and each one is written out — the
+# blanket rule "credentials need no marker" cannot tell a key delivered as a file from a key a
+# chart merely forgot, and the second is exactly the regression this gate exists to catch.
+unbound:
+  - keys:
+      - cloudflare.client_id
+      - cloudflare.client_secret
+      - telemetry.sentry.dsn
+    reason: >-
+      Delivered as files in the secrets directory — from the Secret this chart renders, or from
+      `existingSecret` under the file names `cloudflare__client_id`, `cloudflare__client_secret`
+      and `telemetry__sentry__dsn` — and never written into `config.toml`, because the Access
+      service-token pair authenticates this proxy to Cloudflare and the DSN embeds an ingest key,
+      and a credential in a ConfigMap is readable by anything that can read the namespace.
+      `cloudflare.clientId`, `cloudflare.clientSecret` and `telemetry.sentry.dsn` are the values
+      that carry them, so all three bindings exist; they simply do not run through the
+      configuration document the markers describe. `just check-config-secrets` is what reconciles
+      that channel, and it does it from the rendered manifests rather than from a comment.
+
+# What this chart adds to the credential reference in its README, which `just config-readme`
+# generates from the contract. The rows are the contract's — every key it marks `secret: true`,
+# and whether the image requires it — and these two columns are the chart's: the value an
+# operator may set instead of pre-creating the Secret, and the condition under which a release
+# needs the credential at all. Neither is derivable, and both are refused once they go stale: an
+# entry for a key the contract stops declaring secret, or a `value` this chart's values.yaml no
+# longer exposes, fails the gate.
+credentials:
+  - key: cloudflare.client_id
+    value: cloudflare.clientId
+    note: with `cloudflare.clientSecret`, to verify the Access JWT
+  - key: cloudflare.client_secret
+    value: cloudflare.clientSecret
+    note: with `cloudflare.clientId`
+  - key: telemetry.sentry.dsn
+    value: telemetry.sentry.dsn
+    note: "`telemetry.sentry.enabled`"
+
 documents:
   - name: redirect
 

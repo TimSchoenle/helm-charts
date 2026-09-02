@@ -32,7 +32,10 @@
           "description": "OAuth redirect URI. Left empty it is derived from the ingress as\n`\u003cexternal URL\u003e/account/anilist-callback`. It must point at the **frontend**, not the API:\nthe API callback would need the SPA's in-memory bearer token, which a browser redirect\ncannot carry.",
           "required": [],
           "title": "redirectUri",
-          "type": "string"
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "tokenEncryptionKey": {
           "default": "",
@@ -90,7 +93,7 @@
               "type": "string"
             },
             "tag": {
-              "default": "v8.7.1@sha256:27a730353c32c9fe27a6cc71c88953ec197c5174935e7f7c373ff27f69f89b0c",
+              "default": "v8.8.0@sha256:5c3f4c14eabb9210dc87749d34f6e148e542cc78d7aaa187590ebf6df4cb98a5",
               "description": "Image tag, pinned by digest.",
               "required": [],
               "title": "tag",
@@ -158,7 +161,10 @@
               "description": "Administrator email address.",
               "required": [],
               "title": "email",
-              "type": "string"
+              "type": [
+                "string",
+                "null"
+              ]
             },
             "enabled": {
               "default": false,
@@ -179,7 +185,10 @@
               "description": "Administrator username.",
               "required": [],
               "title": "username",
-              "type": "string"
+              "type": [
+                "string",
+                "null"
+              ]
             }
           },
           "required": [],
@@ -213,7 +222,10 @@
           "description": "The identifiable crawler user-agent the `worker` sends, applied to any provider still\ncarrying the built-in default; a provider whose politeness settings name their own keep it.\nNever published to clients. Set it on a fork so the sites it crawls can attribute the traffic\nto you and reach you about it — `MyDeployment/1.0 (+https://example.org/bot)` is the shape\noperators expect.",
           "required": [],
           "title": "botUserAgent",
-          "type": "string"
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "copyright": {
           "additionalProperties": true,
@@ -224,21 +236,30 @@
               "description": "Who holds it. Empty keeps `Tim Schönle`, which is upstream's — set it on any deployment\nthat publishes its own footer.",
               "required": [],
               "title": "holder",
-              "type": "string"
+              "type": [
+                "string",
+                "null"
+              ]
             },
             "notice": {
               "default": "",
               "description": "The whole notice, verbatim, for when `© {year} {holder}` does not fit. Wins over `holder`\nand `year` **and** over the catalogue's translation of the line, so those two become dead\nconfiguration next to it and the chart refuses the pair.",
               "required": [],
               "title": "notice",
-              "type": "string"
+              "type": [
+                "string",
+                "null"
+              ]
             },
             "year": {
               "default": "",
               "description": "A year or a range (`2024–2026`). Empty resolves per response to the current year, so a\ndeployment nobody has touched since December is not still claiming last year. Quote it:\na bare `2026` is an integer to YAML and a string to the service.",
               "required": [],
               "title": "year",
-              "type": "string"
+              "type": [
+                "string",
+                "null"
+              ]
             }
           },
           "required": [],
@@ -253,14 +274,20 @@
               "description": "What the footer prints. Empty keeps `PolyForm Noncommercial 1.0.0`.",
               "required": [],
               "title": "name",
-              "type": "string"
+              "type": [
+                "string",
+                "null"
+              ]
             },
             "url": {
               "default": "",
               "description": "Absolute `http(s)` URL the label links to. Empty renders it as plain text, which is what\na self-hosted deployment with nowhere to point should show rather than a dead link.",
               "required": [],
               "title": "url",
-              "type": "string"
+              "type": [
+                "string",
+                "null"
+              ]
             }
           },
           "required": [],
@@ -271,28 +298,40 @@
           "description": "The product name, in prose. Substituted for `{brand}` in every translated message that names\nit, and used as the WebAuthn relying-party name and the TOTP issuer unless\n`config.auth.webauthn_rp_name` / `config.auth.totp_issuer` name one. Empty keeps `TankoVault`.\n\nRenaming this does **not** re-key existing passkeys or authenticators: the relying party is\nidentified by `webauthn_rp_id`, and a TOTP secret already provisioned keeps the issuer it was\nenrolled with. Only newly enrolled credentials carry the new name.",
           "required": [],
           "title": "name",
-          "type": "string"
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "projectUrl": {
           "default": "",
           "description": "Absolute `http(s)` URL for the footer's source link and the desktop client's About tab.\nEmpty keeps this project's repository.",
           "required": [],
           "title": "projectUrl",
-          "type": "string"
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "releasesUrl": {
           "default": "",
           "description": "Absolute `http(s)` URL where a reader downloads the native client. Advertised by the web\nbuild only. Empty keeps this project's latest release.",
           "required": [],
           "title": "releasesUrl",
-          "type": "string"
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "tagline": {
           "default": "",
           "description": "One line under the wordmark. Empty keeps the shipped tagline, which is **translated**;\nsetting it replaces that with this one string in every language. That is the right trade only\nfor a deployment the shipped sentence does not describe.",
           "required": [],
           "title": "tagline",
-          "type": "string"
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "wordmark": {
           "additionalProperties": true,
@@ -303,14 +342,20 @@
               "description": "The half drawn in the accent colour. Empty draws `lead` alone. Meaningless without\n`lead`, and the chart refuses that combination rather than rendering a lockup nothing reads.",
               "required": [],
               "title": "accent",
-              "type": "string"
+              "type": [
+                "string",
+                "null"
+              ]
             },
             "lead": {
               "default": "",
               "description": "The half drawn in the body colour. Setting this is what opts into a two-tone lockup:\nleft empty, a deployment that set `name` draws that name as one word, because the shipped\n`Tankō`/`Vault` split is a property of the shipped name and not a template to pour another\none into.",
               "required": [],
               "title": "lead",
-              "type": "string"
+              "type": [
+                "string",
+                "null"
+              ]
             }
           },
           "required": [],
@@ -339,7 +384,10 @@
           },
           "required": [],
           "title": "emailTo",
-          "type": "array"
+          "type": [
+            "array",
+            "null"
+          ]
         },
         "webhookUrl": {
           "default": "",
@@ -361,14 +409,20 @@
           "description": "Send a freshly minted `'nonce-…'` in `script-src` on every response. Set this when the zone\nruns Bot Fight Mode, JavaScript Detections or the challenge platform: each injects an inline\n`\u003cscript\u003e` at the edge, *after* the frontend has hashed the shell, so `script-src` refuses it\nand the detection silently never runs. Cloudflare reads the nonce out of the response header\nand copies it onto what it injects, so nothing is stamped into the shell and the shell's own\ninline scripts keep being admitted by hash. Decide this rather than setting it by default: an\ninjected script that can already run could read the header back off a same-origin fetch and\nadmit further inline script. It cannot forge a nonce ahead of time (128 CSPRNG bits, minted\nper response) and it still reaches neither `'unsafe-eval'` nor an off-origin host — but that\nargument rests on the shell being served `Cache-Control: no-cache`, so **do not put an edge\ncache in front of the shell**. A cached shell pins one nonce across every reader for the\nlifetime of the entry, which is `'unsafe-inline'` with extra steps.",
           "required": [],
           "title": "scriptNonce",
-          "type": "boolean"
+          "type": [
+            "boolean",
+            "null"
+          ]
         },
         "turnstile": {
           "default": false,
           "description": "Admit `https://challenges.cloudflare.com` in `script-src` and `frame-src`, for a Turnstile\nwidget embedded **in** a page the frontend serves. One flag reaches both directives because\nTurnstile loads `api.js` and then frames the widget from that same host; admitting the script\nwithout the frame renders an empty box. A managed-challenge interstitial needs nothing here —\nit is a Cloudflare-served document carrying its own policy. `frame-ancestors 'none'` is\nuntouched: this app framing the widget is the opposite direction from this app being framed.",
           "required": [],
           "title": "turnstile",
-          "type": "boolean"
+          "type": [
+            "boolean",
+            "null"
+          ]
         }
       },
       "required": [],
@@ -2067,21 +2121,30 @@
           "description": "Public base URL used to build links in outgoing mail. Left empty it is derived from the\ningress. Leaving it pointed at localhost produces unusable links in real emails.",
           "required": [],
           "title": "baseUrl",
-          "type": "string"
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "from": {
           "default": "",
           "description": "`From` header, e.g. `TankoVault \u003cno-reply",
           "required": [],
           "title": "from",
-          "type": "string"
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "host": {
           "default": "",
           "description": "SMTP host. Empty disables outbound email entirely.",
           "required": [],
           "title": "host",
-          "type": "string"
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "password": {
           "default": "",
@@ -2103,8 +2166,8 @@
           "default": "starttls",
           "description": "Transport security for the relay connection.",
           "enum": [
-            "starttls",
             "tls",
+            "starttls",
             "none"
           ],
           "required": [],
@@ -2991,7 +3054,10 @@
           "description": "Directory relative `sources` paths resolve against, and where the chart mounts any\ndocument supplied through `content`. An absolute `sources` path ignores it.",
           "required": [],
           "title": "dir",
-          "type": "string"
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "documents": {
           "additionalProperties": {
@@ -5216,7 +5282,7 @@
                   "type": "string"
                 },
                 "tag": {
-                  "default": "v8.7.1@sha256:3a79b4750673fadf0c3f1831aeb4794531697a7cc17a2bfb058bc1afd59936b6",
+                  "default": "v8.8.0@sha256:0d976920413fe12b33a9b83e6e8edc6861bac9f4150748d458b777d1038cf543",
                   "description": "Image tag, pinned by digest.",
                   "required": [],
                   "title": "tag",
@@ -5386,7 +5452,7 @@
                   "type": "string"
                 },
                 "tag": {
-                  "default": "v8.7.1@sha256:4444ff22c365d590891bab359ce5fd58eb523a2a127da4988f46a40007514201",
+                  "default": "v8.8.0@sha256:fccd2bd273dd11e15e26410c051c3a1db26f6d26a7e9061120c170121d48caa3",
                   "description": "Image tag, pinned by digest.",
                   "required": [],
                   "title": "tag",
@@ -5505,7 +5571,7 @@
                   "type": "string"
                 },
                 "tag": {
-                  "default": "v8.7.1@sha256:1690a0d578308af5085171f86eca043c9007a4f74fa33a93a8c6dfb556b9084a",
+                  "default": "v8.8.0@sha256:6216204cbffe5b51bd9d3553976f5275afab54732a851b0c9a4e598d6e6866a8",
                   "description": "Image tag, pinned by digest.",
                   "required": [],
                   "title": "tag",
@@ -5675,7 +5741,7 @@
                   "type": "string"
                 },
                 "tag": {
-                  "default": "v8.7.1@sha256:ef4372506a3b8d0b88c9a782719651c9758eea630debd04d3b7013e9623059ff",
+                  "default": "v8.8.0@sha256:84068e5d2e2becbca235f6c432b8dd49b8acf11608f209e41a97b57181e66bf4",
                   "description": "Image tag, pinned by digest.",
                   "required": [],
                   "title": "tag",
@@ -5794,7 +5860,7 @@
                   "type": "string"
                 },
                 "tag": {
-                  "default": "v8.7.1@sha256:8bb9b7b37b1c44ea0da88d85106f1b74bdd45967c7b2b282f6be3dfaf1a0330b",
+                  "default": "v8.8.0@sha256:42a42e56341d82c8df7af15c8feffb48ef5ad1099acec7e7a1d9675273743707",
                   "description": "Image tag, pinned by digest.",
                   "required": [],
                   "title": "tag",
@@ -5971,7 +6037,7 @@
                   "type": "string"
                 },
                 "tag": {
-                  "default": "v8.7.1@sha256:922ce8e03e3dd80ae6f9d2ba3ff97cccc100a57b7bb22e4762cae312bfb7cfca",
+                  "default": "v8.8.0@sha256:ac2c539d87c2f7551d2f657333ae48198437ba585c5424bc8d694528afd7b2de",
                   "description": "Image tag, pinned by digest.",
                   "required": [],
                   "title": "tag",
@@ -6097,7 +6163,7 @@
                   "type": "string"
                 },
                 "tag": {
-                  "default": "v8.7.1@sha256:70ed406ce0261a2fe87bca97bbc51fccb2fc355eb63d822d89c1565cd4dfd01d",
+                  "default": "v8.8.0@sha256:a9d74726de8bb6647fdab532b0639901dd364a88eb3f405728d5e06dee0ef398",
                   "description": "Image tag, pinned by digest.",
                   "required": [],
                   "title": "tag",
@@ -6267,7 +6333,7 @@
                   "type": "string"
                 },
                 "tag": {
-                  "default": "v8.7.1@sha256:21f471e88ba601d85e97f9326016600de3924a12bc0b900e48c823b39911f406",
+                  "default": "v8.8.0@sha256:a59608ace9b4eab838fff3f8dc2ee779d5fcd0aa93c60bdcef1703b292d48676",
                   "description": "Image tag, pinned by digest.",
                   "required": [],
                   "title": "tag",
@@ -6422,14 +6488,20 @@
               "description": "Initialise the Sentry client on every enabled service. Off, every other key here is\ninert. On, a service refuses to boot without a DSN rather than starting with a reporter\nthat reports nowhere, so this and `dsn` are set together.",
               "required": [],
               "title": "enabled",
-              "type": "boolean"
+              "type": [
+                "boolean",
+                "null"
+              ]
             },
             "environment": {
               "default": "",
               "description": "Environment tag on every event. Empty lets the service derive it from `profile`:\n`production` under `profile: production`, `development` otherwise.",
               "required": [],
               "title": "environment",
-              "type": "string"
+              "type": [
+                "string",
+                "null"
+              ]
             },
             "httpTransactions": {
               "default": true,
@@ -6451,7 +6523,10 @@
               "description": "Release tag on every event. Empty uses the version the binary was built from, which is\nwhat makes a regression attributable to a deploy — set this only to match a release you\ncreate in Sentry under a name of your own.",
               "required": [],
               "title": "release",
-              "type": "string"
+              "type": [
+                "string",
+                "null"
+              ]
             },
             "sampleRate": {
               "default": 1,
@@ -6474,7 +6549,10 @@
               "description": "Host tag on every event. Empty reports none, which is the right answer here: the value\nwould be one replica's pod name, not anything an operator chose.",
               "required": [],
               "title": "serverName",
-              "type": "string"
+              "type": [
+                "string",
+                "null"
+              ]
             },
             "shutdownTimeoutSecs": {
               "default": 2,

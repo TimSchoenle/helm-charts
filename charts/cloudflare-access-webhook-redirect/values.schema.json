@@ -1778,7 +1778,7 @@
           "type": "string"
         },
         "tag": {
-          "default": "v2.0.0@sha256:fafea760170ba22bfcfd7f6b07fc590a5347b9349ecb04cde7531eee59a27a52",
+          "default": "v2.1.0@sha256:03b853085aa642eb96dae4280bd9df5a196ab01aa9bd5c4a9a3d6aa084db8b3d",
           "description": "The container image tag, pinned by digest (`vX.Y.Z\npull, while the tag stays on as the readable version marker. Defaults to the chart's\n`appVersion` when empty.",
           "required": [],
           "title": "tag",
@@ -2839,14 +2839,20 @@
               "description": "Initialise the Sentry client (`telemetry.sentry.enabled`). Off, every other key here is\ninert. On, the proxy refuses to boot without a DSN rather than starting with a reporter\nthat reports nowhere, so this and `dsn` are set together.",
               "required": [],
               "title": "enabled",
-              "type": "boolean"
+              "type": [
+                "boolean",
+                "null"
+              ]
             },
             "environment": {
               "default": "",
               "description": "Environment tag on every event (`telemetry.sentry.environment`). Empty falls to the\nimage's own default of `production`. The proxy always sends one, so `SENTRY_ENVIRONMENT` —\na channel that would bypass the layered loader and its shadow-key rejection entirely — is\nnever consulted.",
               "required": [],
               "title": "environment",
-              "type": "string"
+              "type": [
+                "string",
+                "null"
+              ]
             },
             "httpTransactions": {
               "default": true,
@@ -2868,7 +2874,10 @@
               "description": "Release tag on every event (`telemetry.sentry.release`). Empty uses the crate name and\nversion the binary was built from, which is what makes a regression attributable to a\ndeploy — set this only to match a release you create in Sentry under a name of your own.",
               "required": [],
               "title": "release",
-              "type": "string"
+              "type": [
+                "string",
+                "null"
+              ]
             },
             "sampleRate": {
               "default": 1,
@@ -2891,7 +2900,10 @@
               "description": "Host tag on every event (`telemetry.sentry.server_name`). Empty reports none, which is\nthe right answer here: the value would be one replica's pod name, gone by the time anyone\nreads the issue.",
               "required": [],
               "title": "serverName",
-              "type": "string"
+              "type": [
+                "string",
+                "null"
+              ]
             },
             "shutdownTimeoutSecs": {
               "default": 2,
@@ -2959,21 +2971,36 @@
         "paths": {
           "additionalProperties": {
             "items": {
+              "enum": [
+                "ALL",
+                "GET",
+                "POST",
+                "PUT",
+                "PATCH",
+                "DELETE"
+              ],
               "type": "string"
             },
-            "type": "array"
+            "type": "array",
+            "uniqueItems": true
           },
           "description": "Path regex to the methods allowed on it (`webhook.paths`). Patterns are anchored, so\n`/webhook/.*` matches `/webhook/github` but not `/api/webhook/github`. Methods are `ALL`,\n`GET`, `POST`, `PUT`, `PATCH` or `DELETE`. Required — a proxy with no allowed path\nforwards nothing.\nExample:\n  \"/webhook/.*\":\n    - ALL\n  \"/api/public/.*\":\n    - GET\n    - POST",
           "required": [],
           "title": "paths",
-          "type": "object"
+          "type": [
+            "object",
+            "null"
+          ]
         },
         "targetBase": {
           "default": "",
           "description": "The Cloudflare Access protected service every allowed path is joined onto\n(`webhook.target_base`). Required.",
           "required": [],
           "title": "targetBase",
-          "type": "string"
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [],

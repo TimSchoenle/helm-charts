@@ -29,24 +29,36 @@ documented recurring failure here — an automated bump repins the digest and si
 everything else — and a marker per value is what turns "the chart has a contract" into "every key
 of that contract has an operator-facing value, or a written reason why it has none".
 
-**2. Retargeting the generated round-trip probes — later, and an addition rather than a rewrite.**
-The generated suites write their probes into the raw `config` escape hatch, so they pass whether
-or not the chart's hand-written camelCase-to-snake_case mapping is right. `Marker.values_path` is
-the dotted path of the chart value itself, so a probe can be written *there* instead and finally
-exercise the mapping. `condition` and `optional` are carried for the same reason: a probe on a
-gated value has to switch its gate on first, and a probe on an optional one has to assert the key
-is *absent* when the value is empty rather than present and empty. Nothing here uses either field;
-both are recorded because a generator that had to re-derive them would have to re-parse the
-templates.
+**2. Retargeting the generated round-trip probes — done, and it found defects immediately.**
+The generated suites used to write every probe into the raw `config` escape hatch, so they passed
+whether or not the chart's hand-written camelCase-to-snake_case mapping was right.
+`Marker.values_path` is the dotted path of the chart value itself, so `config_testgen.Route`
+writes the probe *there* and the case exercises the mapping; `condition` is read with it, because
+a probe on a gated value has to switch its gate on first or the key never reaches the document.
+That retargeting is what caught `bootstrap:seed_admin_email`, whose marker did not name the
+`bootstrap.seedAdmin.enabled` gate the template reads — a defect invisible from either side alone,
+since the marker looked complete and the chart looked correct.
 
-**3. Carrying contract prose into `values.schema.json` — later, likewise an addition.**
-`keys[].docs` and a value's schema `description` carry the same sentences today, written twice.
-A marker is the join: the description of the value at `Marker.values_path` is the `docs` of the key
-at `Marker.target`.
+`optional` is still carried and still unread: a probe on an optional value should also assert the
+key is *absent* when the value is empty, which is a second case per key rather than a change to
+the first.
+
+**3. Deriving the value's `@schema` block — done, and now the default.** A contract states each
+key's type as JSON Schema, and `config_shapes` writes that into the block of every value carrying
+one of these markers. The marker is the only join between the two: it is what says which key's
+constraint describes this value, and a chart that is not bindings-enrolled therefore has no
+derived schemas at all.
+
+**4. Carrying contract prose into `values.schema.json` — still later.** `keys[].docs` and a
+value's schema `description` overlap today, written twice. A marker is the join here as well, and
+the reason it has not been taken is that the two are not copies: a chart's description says what
+the value does *in this chart* — which probe reads it, which guard refuses it, which volume it
+needs — and the producer's says what the setting means. Replacing one with the other would lose
+the half nobody else writes.
 
 So the model is deliberately (values_path -> target) plus enough about *how* to reproduce the
-mapping, and not a list of covered keys. A coverage-only model would have to be replaced for both
-later payoffs; this one is read by them.
+mapping, and not a list of covered keys. A coverage-only model would have had to be replaced for
+each of the three above; this one is read by all of them.
 
 --------------------------------------------------------------------------------------------
 The grammar
@@ -87,7 +99,7 @@ for some of the documents that declare it and not others.
 The six relationships that actually occur, and where each one lands
 --------------------------------------------------------------------------------------------
 
-Measured across all five charts that map values onto a contract, not designed from one:
+Measured across every chart that maps values onto a contract, not designed from one:
 
 | Relationship      | Real example                            | How it is said                 |
 |-------------------|-----------------------------------------|--------------------------------|
@@ -134,8 +146,9 @@ Refusing to bind them would leave a reader unable to tell "no marker because thi
 configuration" from "no marker because someone forgot", which is the distinction the whole gate
 exists to make. They validate identically — an `external.env` entry carries the same `docs`,
 `default`, `required` and `constraint` fields a key does — so the gate is the same code, and
-payoff 3 works on them unchanged. Payoff 2 does not: an external variable is not in the document,
-so a round-trip probe through `config` was never available for it either way.
+payoffs 3 and 4 work on them unchanged — `config_shapes` derives an external variable's block
+from the same `constraint` field a key carries. Payoff 2 does not: an external variable is not in
+the document, so a round-trip probe through `config` was never available for it either way.
 
 They are **not** counted by the coverage rule. The loader does not own that namespace; a chart
 that surfaces no value for `RUST_LOG` is not delinquent, it simply does not offer to set it.
@@ -163,7 +176,7 @@ entirely, and the marker *is* a comment. `yaml.safe_load` on `values.yaml` retur
 which no marker has ever existed. Nothing in the stdlib round-trips YAML comments, and this
 repository's scripts are stdlib plus PyYAML by rule, so a line-by-line reader is the only
 implementation available. It still has to track indentation, because `Marker.values_path` is the
-value's full dotted path and the leaf name alone is useless to both later payoffs.
+value's full dotted path and the leaf name alone is useless to every payoff above.
 
 --------------------------------------------------------------------------------------------
 Where the marker must sit, which was measured rather than chosen
@@ -209,10 +222,10 @@ it asserts a schema keyword that is not one. Appending to `# type: string` hangs
 token it says nothing about. And the blank-line placement makes a blank line load-bearing in a
 file where the row below it shows what a misplaced one costs — every description in the chart.
 
-Available everywhere it is needed: all 1,128 documented values across the five charts that map
-values onto a contract carry a `@schema` block — 179 in `portfolio`, 114 in `netcup-offer-bot`,
-172, 173 and 490 in the other three. Not one is description-only, so no chart has to be told to
-add a schema block in order to bind a value.
+Available everywhere it is needed: all 1,832 documented values across the seven charts that map
+values onto a contract carry a `@schema` block — 202 in `portfolio`, 136 in `netcup-offer-bot`,
+573 in `tankovault` and 199 to 312 in the other four. Not one is description-only, so no chart has
+to be told to add a schema block in order to bind a value.
 
 What this placement gives up, stated because the first draft of this file used it as the reason
 for the other one: attachment becomes positional again. A trailing comment is *on* the line it
@@ -283,8 +296,8 @@ class Marker:
 
     `values_path` is the dotted path of that value — `csp.cloudflare.scriptNonce` — derived from
     the indentation of the *value* the block belongs to, not of the marker, so it cannot disagree
-    with the file. It is the field the two later payoffs read: the probe target for payoff 2, the
-    description target for payoff 3.
+    with the file. It is the field the payoffs above read: the probe target for payoff 2, the
+    value whose `@schema` block payoff 3 derives, and the description target payoff 4 would use.
 
     `line` is the marker's own line, because that is the line a reader has to edit; the value it
     binds is a few lines below it and named in every message.
@@ -310,6 +323,31 @@ class Marker:
     def where(self) -> str:
         """`chart/values.yaml:LINE`, for a message a reader can jump to."""
         return f"{self.chart}/values.yaml:{self.line}"
+
+
+@dataclass(frozen=True)
+class Block:
+    """One `@schema` block, and the chart value it belongs to.
+
+    The same walk that finds a marker finds this, and for the same reason: a block is attached to
+    its value by contiguity, and the rules for what breaks that contiguity — a blank line, a
+    sequence item, a second block — are the ones `parse_values` already implements. A second
+    reader of this file would have had to get all of them right again.
+
+    `lines` are the raw lines *between* the delimiters, marker run and schema alike, exactly as
+    they appear in the file. `start` and `end` are the delimiters' own line numbers, so a caller
+    rewriting the block replaces `start + 1 .. end - 1` and leaves everything else alone.
+
+    Read by `config_shapes`, which regenerates the schema half of a block from the contract while
+    leaving the marker half — which is hand-written, and says what the block is *for* — untouched.
+    """
+
+    chart: str
+    values_path: str
+    start: int
+    end: int
+    indent: int
+    lines: tuple[str, ...]
 
 
 def split_comment(line: str) -> tuple[str, str | None]:
@@ -417,7 +455,21 @@ def schema_comment(comment: str | None) -> str | None:
 
 
 def parse_values(path: Path, chart: str | None = None) -> list[Marker]:
-    """Every marker in one `values.yaml`, each carrying the dotted path of the value it binds.
+    """Every marker in one `values.yaml`, each carrying the dotted path of the value it binds."""
+    return _walk(path, chart)[0]
+
+
+def parse_blocks(path: Path, chart: str | None = None) -> list[Block]:
+    """Every `@schema` block in one `values.yaml`, each carrying the value it belongs to.
+
+    The other half of the same walk. A block with no marker is still a block — most of them are —
+    so this is not `parse_values` with the markers thrown away.
+    """
+    return _walk(path, chart)[1]
+
+
+def _walk(path: Path, chart: str | None = None) -> tuple[list[Marker], list[Block]]:
+    """Every marker and every `@schema` block in one `values.yaml`, bound to their values.
 
     Walks the file as lines, because the marker is a comment and no YAML reader available here
     keeps one — see the module docstring. Every problem in the file is collected before any is
@@ -433,6 +485,7 @@ def parse_values(path: Path, chart: str | None = None) -> list[Marker]:
     chart = chart or path.parent.name
     problems: list[str] = []
     markers: list[Marker] = []
+    blocks: list[Block] = []
 
     # The mapping nesting, as (indent, name). A key at indent i closes everything at indent >= i.
     stack: list[tuple[int, str]] = []
@@ -445,16 +498,24 @@ def parse_values(path: Path, chart: str | None = None) -> list[Marker]:
     in_marker_run = False
     # The markers read out of a block, waiting for the value that block belongs to.
     pending: list[tuple[int, tuple]] = []
+    # The block they came out of, waiting for the same value: `(start, end, indent, lines)`.
+    pending_block: tuple[int, int, int, list[str]] | None = None
+    # The lines inside the block currently open, collected as they are read.
+    open_block: tuple[int, int, list[str]] | None = None
 
     def strand(what: str) -> None:
         """Markers whose block never reached a value bind nothing. Say so, naming both."""
-        nonlocal pending
+        nonlocal pending, pending_block
         for line_number, _ in pending:
             problems.append(
                 f"{chart}/values.yaml:{line_number}: this `{MARKER}` marker's `@schema` block is "
                 f"followed by {what} rather than by the value it binds, so it binds nothing"
             )
         pending = []
+        # A block that never reached a value describes nothing either, and unlike a stranded
+        # marker that is ordinary: `# @schema` above a comment-only section header is how several
+        # charts open a subtree. Dropped in silence for that reason.
+        pending_block = None
 
     for number, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
         line = raw.rstrip()
@@ -478,13 +539,20 @@ def parse_values(path: Path, chart: str | None = None) -> list[Marker]:
             if in_schema:
                 in_schema = False
                 in_marker_run = False
+                if open_block is not None:
+                    start, block_indent, collected = open_block
+                    pending_block = (start, number, block_indent, collected)
+                    open_block = None
             else:
                 strand("a second `@schema` block")
                 in_schema = True
                 in_marker_run = True
+                open_block = (number, indent, [])
             continue
 
         if in_schema:
+            if open_block is not None:
+                open_block[2].append(line)
             nested = schema_comment(comment)
             if is_marker(nested):
                 if not in_marker_run:
@@ -569,6 +637,19 @@ def parse_values(path: Path, chart: str | None = None) -> list[Marker]:
             )
 
         values_path = ".".join(name for _, name in stack)
+        if pending_block is not None:
+            start, end, block_indent, collected = pending_block
+            blocks.append(
+                Block(
+                    chart=chart,
+                    values_path=values_path,
+                    start=start,
+                    end=end,
+                    indent=block_indent,
+                    lines=tuple(collected),
+                )
+            )
+            pending_block = None
         for marker_line, (cls, documents, target, optional, condition) in pending:
             markers.append(
                 Marker(
@@ -588,7 +669,7 @@ def parse_values(path: Path, chart: str | None = None) -> list[Marker]:
 
     if problems:
         raise BindingError("\n".join(problems))
-    return markers
+    return markers, blocks
 
 
 def _refuse(problems: list[str], chart: str, number: int, comment: str | None, what: str) -> None:

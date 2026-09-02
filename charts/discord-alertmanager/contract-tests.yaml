@@ -27,6 +27,7 @@ documents:
         discord.token: render-prerequisite-token
         alertmanager.endpoints:
           - http://render-prerequisite.invalid:9093
+        existingSecret: discord-alertmanager-contract-probe
 
       reason: >-
         `discord-alertmanager.validateValues` refuses a render that could only produce a
@@ -49,3 +50,28 @@ documents:
         never resolve, which keeps a value that looks like a deployment's real Alertmanager from
         being mistaken for one. The chart merges `.Values.config` over everything it derives from
         these values, so a probe still wins wherever the two would meet.
+
+        `existingSecret` is the third entry, and it answers a third guard. `storage.backend` is a
+        `choice` whose other member is `postgres`, so the case probing it selects that backend —
+        and the chart then refuses the render unless a connection URL is available, because the
+        pool is opened during startup. Naming a Secret satisfies that without a credential-shaped
+        string in a committed file, and changes nothing any case asserts: the URL travels as a
+        file in the secrets directory and never reaches `config.toml`. The Secret does not have
+        to exist for a template render.
+
+    # Keys whose probe stays in the raw configuration tree rather than going into the chart's own
+    # value for them.
+    unrouted:
+      - keys:
+          - storage.sqlite.path
+        reason: >-
+          `discord-alertmanager.validateValues` refuses a `storage.sqlite.path` that is not a file
+          under `persistence.data.mountPath`: the container runs with a read-only root filesystem,
+          so the database can only be created inside the mounted volume, and anywhere else the pod
+          starts, fails to open the file and crash-loops. The probe is a token naming the key it
+          tests, which no rule derived from the contract could place under a mount path the chart
+          decides — the contract types this `String` and says nothing about where the file has to
+          live. The case therefore writes through `config`, where the guard does not read, and
+          proves the raw tree reaches `storage.sqlite.path` in the document; that the chart's own
+          `storage.sqlite.path` value reaches it too is covered by `configmap_test.yaml`, which
+          can pick a path under `/data` because a person wrote it.

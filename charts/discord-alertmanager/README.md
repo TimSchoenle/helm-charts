@@ -1,6 +1,6 @@
 # discord-alertmanager
 
-![Version: 0.3.0](https://img.shields.io/badge/Version-0.3.0-informational?style=flat-square) ![AppVersion: v0.3.0](https://img.shields.io/badge/AppVersion-v0.3.0-informational?style=flat-square)
+![Version: 0.4.0](https://img.shields.io/badge/Version-0.4.0-informational?style=flat-square) ![AppVersion: v0.4.0](https://img.shields.io/badge/AppVersion-v0.4.0-informational?style=flat-square)
 
 This chart deploys discord-alertmanager, a Discord operator surface for Prometheus Alertmanager. It receives the version-4 webhook envelope, renders each alert as a live status card in a Discord channel, and lets an operator acknowledge, ignore, silence or investigate it without leaving the client — with file-backed configuration that reloads in place instead of restarting pods, SQLite or PostgreSQL storage, optional Prometheus metrics and alerting rules, and an optional AlertmanagerConfig that registers the receiver with the Prometheus Operator instead of leaving it to be wired by hand.
 
@@ -66,9 +66,7 @@ CrashLoopBackOff rather than a degraded feature:
 
 ## Credentials
 
-Create the Secret yourself and reference it by name. **The keys are the configuration paths the
-service reads, not free-form names** — the loader takes each credential out of the file name, so
-`discord__token` is required and `token` is not read at all:
+Create the Secret yourself and reference it by name:
 
 ```shell
 kubectl create secret generic discord-alertmanager \
@@ -81,15 +79,24 @@ kubectl create secret generic discord-alertmanager \
 existingSecret: discord-alertmanager
 ```
 
-The five keys this chart knows how to consume:
+<!-- @config-credentials -->
+Every credential below is read from a **file in the secrets directory**, named for the
+configuration path it carries with `.` written as `__`. A file spelt any other way is
+mounted and never read. Those names are the keys of the Secret this chart mounts, except
+where a note below says otherwise.
 
-| Key | Setting | When |
-|---|---|---|
-| `discord__token` | `discord.token` | always |
-| `ingest__webhook_token` | `ingest.webhookToken` | to authenticate the webhook |
-| `alertmanager__bearer_token` | `alertmanager.bearerToken` | Alertmanager behind bearer auth |
-| `alertmanager__basic_password` | `alertmanager.basicPassword` | Alertmanager behind basic auth |
-| `storage__postgres__url` | `storage.postgres.url` | `storage.backend: postgres` |
+| Secrets file | Required | Chart value | When |
+|---|---|---|---|
+| `alertmanager__basic_password` | no | `alertmanager.basicPassword` | Alertmanager behind basic auth |
+| `alertmanager__bearer_token` | no | `alertmanager.bearerToken` | Alertmanager behind bearer auth |
+| `discord__token` | no | `discord.token` | always |
+| `ingest__webhook_token` | no | `ingest.webhookToken` | to authenticate the webhook |
+| `storage__postgres__url` | no | `storage.postgres.url` | `storage.backend: postgres` |
+
+The same value is addressable as the variable `DAM_<PATH>`, upper-cased with `.`
+written as `__`, and that spelling with `_FILE` appended names a file whose contents
+supply it.
+<!-- @config-credentials end -->
 
 The matching chart values are accepted as an alternative and make the chart render the Secret
 itself. That puts the credentials into `values.yaml` and into the Helm release object, where
@@ -510,11 +517,11 @@ also why a pod that cannot reach Alertmanager never becomes ready — check the 
 | gateway.tls.enabled | bool | `false` | Add an HTTPS listener. |
 | gateway.tls.mode | string | `"Terminate"` | TLS mode. |
 | gateway.tls.options | object | `{}` | Implementation-specific TLS options. |
-| image | object | `{"pullPolicy":"","registry":"","repository":"timschoenle/discord-alertmanager","tag":"v0.3.0@sha256:90caa77f3e70bf85433ee682e27ed88208967ef275c81f96bcdc39490ef102f5"}` | Container image the pod runs, composed as `registry/repository:tag`. |
+| image | object | `{"pullPolicy":"","registry":"","repository":"timschoenle/discord-alertmanager","tag":"v0.4.0@sha256:beaf17755283e31cec5e0692da2a05d0b4e96d2daca54f963e1ef5c1bbd507f1"}` | Container image the pod runs, composed as `registry/repository:tag`. |
 | image.pullPolicy | string | `""` | The image pull policy. Empty resolves automatically from the tag/digest. |
 | image.registry | string | `""` | Registry host. Empty means Docker Hub. |
 | image.repository | string | `"timschoenle/discord-alertmanager"` | The container image repository. |
-| image.tag | string | `"v0.3.0@sha256:90caa77f3e70bf85433ee682e27ed88208967ef275c81f96bcdc39490ef102f5"` | The container image tag. Defaults to the chart's `appVersion` when empty. |
+| image.tag | string | `"v0.4.0@sha256:beaf17755283e31cec5e0692da2a05d0b4e96d2daca54f963e1ef5c1bbd507f1"` | The container image tag. Defaults to the chart's `appVersion` when empty. |
 | imagePullSecrets | list | `[]` | Optional image pull secrets for private registries |
 | ingest | object | `{"bind":"0.0.0.0:9099","bodyLimitBytes":1048576,"maxConcurrentRequests":64,"requestTimeoutSecs":10,"shutdownDrainSecs":10,"webhookPath":"/webhook","webhookToken":""}` | The listener Alertmanager posts to. `/healthz`, `/readyz` and `/metrics` are served on the same address, so `bind` decides the container port for all four and the chart takes it from here rather than from a value of its own. |
 | ingest.bind | string | `"0.0.0.0:9099"` | Address and port to listen on (`ingest.bind`). |

@@ -84,9 +84,32 @@ LABEL_PREFIX = "dev.terrace.config.prefix"
 # not recognise it refuses the document by name rather than misreading it.
 ENVELOPE_VERSION = 1
 
-# Keywords a flat `constraint` / `text_constraint` may carry. Anything outside both sets is a
-# vocabulary this validator does not implement, and that is an error rather than a silent skip:
-# under-checking a value is exactly the failure this whole pipeline exists to remove.
+# The highest `schema.schema_version` this repository implements.
+#
+# Version 2 added one thing: `constraint` may nest. A container-typed key whose element type
+# describes itself carries that element under `items` for a sequence and `additionalProperties`
+# for a map, composed as deeply as the containers are stacked, so a `HashMap<String,
+# HashSet<Method>>` reaches the enum. Nothing was removed and nothing changed meaning, so a
+# version-1 document is a version-2 document that happens to nest nowhere — which is why the
+# check below is one-sided: an older document is read exactly as it always was, and a *newer*
+# one is refused by name rather than misread by a walker that assumes the values are scalars.
+#
+# The producer's own guidance is to gate on this field, widen the keyword allowlist, then accept
+# the version. That is what `CONTAINERS` and `COLLECTIONS` below are, and `assert_value` recurses
+# rather than assuming a keyword's value is a scalar.
+SCHEMA_VERSION = 2
+
+# Keywords a `constraint` / `text_constraint` may carry.
+#
+# Split three ways because the three are checked differently, not for tidiness. `ASSERTIONS` are
+# the flat ones — a keyword whose value is a scalar or a list of scalars, and the whole vocabulary
+# before `schema_version: 2`. `config_testgen` re-implements exactly this set to synthesise a
+# value, so it is deliberately left as it was: a keyword this validator can *check* but that
+# generator cannot *satisfy* belongs outside it.
+#
+# Anything outside all four sets is a vocabulary this validator does not implement, and that is an
+# error rather than a silent skip: under-checking a value is exactly the failure this whole
+# pipeline exists to remove.
 ASSERTIONS = frozenset(
     {
         "type",
@@ -102,6 +125,20 @@ ASSERTIONS = frozenset(
         "maxLength",
     }
 )
+
+# Keywords whose value is itself a schema, or a mapping of them. The recursion points.
+#
+# `additionalProperties` is the one that is two things at once: `true` and `false` are the
+# open/closed flag every hand-written `@schema` block in this repository uses, and an *object* is
+# a map's element schema. Both spellings are legal in the same field and they mean different
+# things, so every reader of it has to branch on the type rather than on the name.
+CONTAINERS = frozenset({"items", "additionalProperties", "properties"})
+
+# Flat keywords that describe a container rather than a scalar. Checkable here, and arriving only
+# with `schema_version: 2` — `required` alongside `properties`, the three array bounds alongside
+# `items`.
+COLLECTIONS = frozenset({"required", "uniqueItems", "minItems", "maxItems"})
+
 ANNOTATIONS = frozenset({"description", "title", "default", "examples", "$comment", "format"})
 
 # How to read a variable's text, as `text_form` names it. Every key and every declared external
@@ -225,6 +262,22 @@ def check_envelope(contract: dict[str, Any], origin: str) -> None:
             raise ContractError(f"{origin}: missing the `{section}` section")
 
     schema = contract["schema"]
+
+    # One-sided on purpose: see `SCHEMA_VERSION`. A document below it nests nowhere and is read
+    # as it always was; one above it may use a keyword this repository would walk past, and a
+    # constraint half-read is a value half-checked.
+    schema_version = schema.get("schema_version")
+    if not isinstance(schema_version, int) or isinstance(schema_version, bool):
+        raise ContractError(
+            f"{origin}: `schema.schema_version` is {schema_version!r}, expected an integer"
+        )
+    if schema_version > SCHEMA_VERSION:
+        raise ContractError(
+            f"{origin}: `schema.schema_version` is {schema_version}, and this repository reads "
+            f"up to {SCHEMA_VERSION}. Widen the constraint vocabulary in "
+            f".github/scripts/config_contract.py before vendoring it."
+        )
+
     dialect = schema.get("dialect")
     if not isinstance(dialect, dict):
         raise ContractError(f"{origin}: `schema.dialect` is missing")
@@ -433,6 +486,7 @@ def _merge_schema(
     label: str,
     first_label: str,
     where: str,
+    close: bool = True,
 ) -> dict[str, Any]:
     """Structurally merge two JSON Schema subtrees, closing every object as it goes.
 
@@ -440,6 +494,13 @@ def _merge_schema(
     it rather than being copied wholesale: a document read by a single image — which every one
     declared here is — must come out just as closed as one read by several, or a producer that
     left a level open would leave the gate open there too.
+
+    `close` is false below an *element* schema, and only there. The document's own levels are
+    closed because an unknown key at one of them is a typo nobody can act on — but an element is a
+    struct the producer owns, `serde` accepts a field nobody declared unless the struct says
+    otherwise, and no derive can see `#[serde(deny_unknown_fields)]`. So the producer decides an
+    element's openness and publishes the answer, and closing it here would reject a document the
+    image accepts — the one direction this repository must never be wrong in.
     """
     merged = dict(into or {})
     for keyword, value in other.items():
@@ -447,7 +508,7 @@ def _merge_schema(
             properties = dict(merged.get("properties") or {})
             for name, subschema in value.items():
                 properties[name] = _merge_schema(
-                    properties.get(name), subschema, label, first_label, f"{where}.{name}"
+                    properties.get(name), subschema, label, first_label, f"{where}.{name}", close
                 )
             merged["properties"] = properties
         elif keyword == "required":
@@ -460,13 +521,30 @@ def _merge_schema(
             defs = dict(merged.get(keyword) or {})
             for name, subschema in value.items():
                 defs[name] = _merge_schema(
-                    defs.get(name), subschema, label, first_label, f"{where}#{name}"
+                    defs.get(name), subschema, label, first_label, f"{where}#{name}", close
                 )
             merged[keyword] = defs
-        elif keyword == "additionalProperties":
-            # Forced to false below regardless, so an explicit `true` from either side is not a
-            # disagreement worth failing on — it is simply overruled by the union.
+        elif keyword == "additionalProperties" and not isinstance(value, dict):
+            # The open/closed flag. Forced to false below regardless, so an explicit `true` from
+            # either side is not a disagreement worth failing on — it is simply overruled.
             continue
+        elif keyword in ("additionalProperties", "items"):
+            # An element schema, and a different field wearing the same name in the first case.
+            # Merged structurally rather than compared whole, for the reason `properties` is: two
+            # contracts describing the same map may each name a keyword the other omits, and an
+            # equality test would call that a disagreement. Dropping it — which this branch did
+            # for `additionalProperties` until `schema_version: 2` made the field carry
+            # something — silently discarded the one fact the union exists to preserve, and
+            # `cloudflare-access-webhook-redirect`'s `webhook.paths` had already been losing its
+            # element constraint that way at version 1.
+            merged[keyword] = _merge_schema(
+                merged.get(keyword) if isinstance(merged.get(keyword), dict) else None,
+                value,
+                label,
+                first_label,
+                f"{where}.{keyword}",
+                close=False,
+            )
         elif keyword in merged and merged[keyword] != value:
             raise ContractError(
                 f"{first_label} and {label} disagree about {where}: `{keyword}` is "
@@ -475,12 +553,18 @@ def _merge_schema(
         else:
             merged[keyword] = value
 
-    return _close(merged)
+    return _close(merged) if close else merged
 
 
 def _close(schema: dict[str, Any]) -> dict[str, Any]:
-    """After the union an unknown property is unknown to *every* reader, so it is refused."""
-    if "properties" in schema:
+    """After the union an unknown property is unknown to *every* reader, so it is refused.
+
+    Only where the properties are enumerated. A map's `additionalProperties` is an element schema
+    rather than the flag, and overwriting it with `false` would turn "every value is one of
+    these" into "no key is allowed at all" — a schema that refuses every document the image
+    accepts, which is the one direction this repository must never be wrong in.
+    """
+    if "properties" in schema and not isinstance(schema.get("additionalProperties"), dict):
         schema["additionalProperties"] = False
     return schema
 
@@ -712,15 +796,59 @@ def file_supplyable(entry: dict[str, Any]) -> bool:
     return text_form(entry) == "text"
 
 
-def assert_value(constraint: dict[str, Any], value: Any) -> str | None:
-    """Validate one scalar against the flat JSON Schema subset a contract may use."""
-    unsupported = set(constraint) - ASSERTIONS - ANNOTATIONS
+def element_schema(constraint: dict[str, Any] | None) -> dict[str, Any] | None:
+    """What one element of a container-typed key holds, or `None` when the contract does not say.
+
+    `items` for a sequence and `additionalProperties` for a map, which is the whole of the
+    `schema_version: 2` addition at one level — the stacking is the elements' own business, since
+    each is a constraint in its own right and carries whatever it carries.
+
+    Not every element schema arrives with version 2. A `Vec<String>` published `items: {"type":
+    "string"}` at version 1 already, because the item type is readable from the tokens without a
+    type graph; what version 2 adds is the element that is a *struct* or an *enum*. Callers that
+    care about the difference ask what the element says, not which version said it.
+
+    `additionalProperties: true` and `false` are the open/closed flag rather than a schema, and
+    are not an element description — see `CONTAINERS`.
+    """
+    for keyword in ("items", "additionalProperties"):
+        element = (constraint or {}).get(keyword)
+        if isinstance(element, dict) and element:
+            return element
+    return None
+
+
+def describes_element(constraint: dict[str, Any] | None) -> bool:
+    """Whether the contract says what one element of a container-typed key holds."""
+    return element_schema(constraint) is not None
+
+
+def assert_value(constraint: dict[str, Any], value: Any, where: str = "") -> str | None:
+    """Validate one value against the JSON Schema subset a contract may use.
+
+    Recurses, as of `schema_version: 2`. A container-typed key carries its element under `items`
+    or `additionalProperties`, and a walker that stopped at the top would report an array of the
+    right shape holding elements of the wrong one as correct — the under-check this function's
+    hard error on an unknown keyword exists to prevent, arriving one level down instead.
+
+    `where` names the position inside the value a failure was found at, so the caller's message
+    still points at something a person can edit: `[2].method` rather than the whole array.
+    """
+    unsupported = set(constraint) - ASSERTIONS - COLLECTIONS - CONTAINERS - ANNOTATIONS
     if unsupported:
         raise ContractError(
             "constraint uses keywords this validator does not implement: "
             f"{', '.join(sorted(unsupported))}"
         )
 
+    failure = _assert_flat(constraint, value)
+    if failure is not None:
+        return _at(where, failure)
+    return _assert_container(constraint, value, where)
+
+
+def _assert_flat(constraint: dict[str, Any], value: Any) -> str | None:
+    """The keywords `ASSERTIONS` names: the whole vocabulary before `schema_version: 2`."""
     if "type" in constraint and not is_type(value, constraint["type"]):
         return f"expected {constraint['type']}, got {json.dumps(value)}"
     if "enum" in constraint and value not in constraint["enum"]:
@@ -755,6 +883,81 @@ def assert_value(constraint: dict[str, Any], value: Any) -> str | None:
             return f"{json.dumps(value)} is longer than {constraint['maxLength']} characters"
 
     return None
+
+
+def _assert_container(constraint: dict[str, Any], value: Any, where: str) -> str | None:
+    """The `schema_version: 2` half: a container's own bounds, then each of its elements.
+
+    Every keyword here is skipped when the value is not the shape it applies to, exactly as the
+    numeric and string bounds above are. A `minItems` on a value that is not a list is not a
+    failure of that value — `type` is what says the value is the wrong shape, and reporting the
+    same defect twice makes the first line harder to find.
+    """
+    if isinstance(value, list):
+        if "minItems" in constraint and len(value) < constraint["minItems"]:
+            return _at(where, f"has {len(value)} item(s), fewer than {constraint['minItems']}")
+        if "maxItems" in constraint and len(value) > constraint["maxItems"]:
+            return _at(where, f"has {len(value)} item(s), more than {constraint['maxItems']}")
+        if constraint.get("uniqueItems") and not _unique(value):
+            return _at(where, "has repeated items, and every item has to be distinct")
+
+        items = constraint.get("items")
+        if isinstance(items, dict):
+            for index, item in enumerate(value):
+                failure = assert_value(items, item, f"{where}[{index}]")
+                if failure is not None:
+                    return failure
+
+    if isinstance(value, dict):
+        for name in constraint.get("required") or []:
+            if name not in value:
+                return _at(where, f"is missing the required key {json.dumps(name)}")
+
+        properties = constraint.get("properties")
+        if isinstance(properties, dict):
+            for name, subschema in properties.items():
+                if name in value and isinstance(subschema, dict):
+                    failure = assert_value(subschema, value[name], f"{where}.{name}")
+                    if failure is not None:
+                        return failure
+
+        # Only the object spelling is an element schema. `true` and `false` are the open/closed
+        # flag, and neither says anything about a value — the union is where closure is decided,
+        # and it decides it for the document rather than for one key.
+        additional = constraint.get("additionalProperties")
+        if isinstance(additional, dict):
+            declared = set(properties or {})
+            for name in sorted(value):
+                if name in declared:
+                    continue
+                failure = assert_value(additional, value[name], f"{where}.{name}")
+                if failure is not None:
+                    return failure
+
+    return None
+
+
+def _unique(items: list[Any]) -> bool:
+    """Whether every item differs, by value rather than by hash.
+
+    A contract's elements are JSON, so a list of tables is a list of `dict`s and `set()` refuses
+    them. Quadratic, over arrays whose length is bounded by what somebody typed into a values
+    file — the readable implementation is the right one here.
+    """
+    for index, item in enumerate(items):
+        if item in items[index + 1 :]:
+            return False
+    return True
+
+
+def _at(where: str, message: str) -> str:
+    """One failure, prefixed by its position inside the value when it has one.
+
+    Empty at the top level, where the caller has already named the key and a second name for the
+    same thing is noise — every message this module produced before `schema_version: 2` is
+    unchanged, which is what keeps the gates' output stable for a version-1 contract.
+    """
+    return f"{where}: {message}" if where else message
 
 
 def is_type(value: Any, declared: Any) -> bool:

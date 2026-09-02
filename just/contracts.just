@@ -169,8 +169,8 @@ check-contract-coverage:
 # because a chart that loses them would otherwise leave the report in silence, which is drift of
 # exactly the kind this gate exists to see.
 #
-# All five charts that map values onto a contract are enrolled, `tankovault` included. That chart
-# is where four of this format's rules come from — an unscoped marker binding every document that
+# Every chart that maps values onto a contract is enrolled — all seven. `tankovault` is where
+# four of this format's rules come from — an unscoped marker binding every document that
 # declares the key, several markers on one value, a chart-level `unbound` taking a list of keys,
 # and a lone `composed` being legitimate — because its nine documents falsified the first draft of
 # each. `check-config-bindings.py` records which measurement forced which.
@@ -194,29 +194,67 @@ check-config-bindings:
     {{ resolve_python }}
     "$python" {{ scripts }}/check-config-bindings.py --charts {{ charts }}
 
-# Hold every hand-transcribed config shape against the appVersion it was read at.
+# Write every bound value's `@schema` block in a chart's values.yaml from the contract.
 #
-# A contract states a key's type with a flat keyword set — no `items`, no `properties` — so a
-# setting whose type is a *struct* arrives with its shape missing: `discord-alertmanager`'s
-# `routes` is a `Vec<RouteConfig>` and the contract carries `{"type": "array"}`, which is all
-# the producer can currently say. The chart types it anyway, because a bare `type: array` is not
-# type checking, and that means transcribing a struct somebody else owns.
+# A contract states a key's type as JSON Schema, and as of `schema_version: 2` that object nests:
+# a container-typed key whose element type describes itself carries the element under `items` for
+# a sequence and `additionalProperties` for a map, composed through both when they are stacked.
+# That is a full description of a struct somebody else owns, published by the image that owns it
+# — so a chart that wants an operator's editor to catch a misspelt field before the service does
+# no longer has to transcribe it by hand.
 #
-# A `# @config-shape <values-path> <appVersion> <source>` comment above the value's `@schema`
-# block records which struct, at which version. This fails when the chart's appVersion has moved
-# past one — which is exactly what an automated bump does, repinning the image and touching
-# nothing else, leaving a schema that refuses a field the new release added.
+# **Every value carrying a `# @config projection`, `structured` or `external` marker is written
+# from that key's constraint.** Nothing enrols it: the marker naming the key is the enrolment, and
+# it is also the one statement in this repository of which key a value feeds, so nothing here
+# restates a binding and a chart that is not bindings-enrolled has no derived shapes at all.
 #
-# In `just check` rather than left to the Documentation job, unlike `check-contracts` and the two
-# `$ref` gates: nothing repairs this automatically, because re-reading the struct is a person's
-# job. It reads two committed files per chart — no network, no render, no cluster.
-[doc("Hold every hand-transcribed config shape against the appVersion it was read at")]
+# It was opt-in per value until measurement said what that was worth: nine values were enrolled
+# and 185 were not, and 114 of the 185 already carried the block their contract describes — right
+# by hand, and held there by nothing. 178 are generated now, and the six that are not each say why
+# in a marker.
+#
+# Run by `just schema`, before helm-schema, since it edits helm-schema's input. Deliberately *not*
+# run by `just contracts`: that recipe fetches the contract, and one command that both fetches a
+# document and rewrites the chart from it produces a commit in which nobody can see which caused
+# which.
+[doc("Write every derived `@schema` block in a chart's values.yaml from its contract")]
+[group('contracts')]
+config-shapes:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    {{ resolve_python }}
+    "$python" {{ scripts }}/config_shapes.py --charts {{ charts }}
+
+# Fail when a value's `@schema` block is not what its contract describes.
+#
+# The asserting half of the recipe above, and the gate over the three markers that depart from it:
+#
+#   a bound value with no marker             the block is behind its contract
+#   `@config-shape <path> handwritten ...`   the chart's appVersion moved past the version the key
+#                                            was read at, or the contract describes it now and the
+#                                            hand copy is superseded
+#   `@config-shape-except <path> <sub> ...`  the contract stopped describing the position the
+#                                            chart overrides, so the override is now a narrowing
+#   `@config-shape-narrow <path> <sub> ...`  the contract started describing the position the
+#                                            chart adds, so somebody has to choose between them
+#
+# A transcription is held against the version it was read at — which an automated bump moves
+# while touching nothing else, leaving a schema that refuses a field the new release added. Once
+# the image publishes the key, the hand copy is superseded and the gate says so rather than
+# letting a stale copy sit there looking maintained. The two departure markers age the same way in
+# opposite directions, which is why they are two markers rather than one that accepts either.
+#
+# In `just check` rather than left to the Documentation job. The generated half the docs job does
+# repair, but the hand-written half it cannot: re-reading a struct is a person's job, and the
+# question is not whether the file changed but whether the schema still describes it. Reads
+# committed files only — no network, no render, no cluster.
+[doc("Fail when a derived `@schema` block is not what its contract describes")]
 [group('contracts')]
 check-config-shapes:
     #!/usr/bin/env bash
     set -euo pipefail
     {{ resolve_python }}
-    "$python" {{ scripts }}/check-config-shapes.py --charts {{ charts }}
+    "$python" {{ scripts }}/config_shapes.py --charts {{ charts }} --check
 
 # Unit tests for the contract model, over fixtures rather than over a registry.
 #
@@ -416,11 +454,11 @@ check-config-secrets out='rendered' *args:
 # of the tree rather than a list somebody has to remember to edit, and a chart states there which
 # values every generated case has to carry before it will render at all.
 #
-# Five of the six charts with a contract are enrolled, and the sixth is held back rather than
-# forgotten. The rollout stayed one chart at a time because the probe written into a chart's
-# values is chosen from the contract rather than by a person, and what that is worth against a
-# real image is answered by running it and not by reviewing it. What each chart needed was
-# measured the same way, by enrolling it and reading the failure:
+# Every chart with a contract is enrolled — all seven, 22 suites between them. The rollout ran
+# one chart at a time because the probe written into a chart's values is chosen from the contract
+# rather than by a person, and what that is worth against a real image is answered by running it
+# and not by reviewing it. What each chart needed was measured the same way, by enrolling it and
+# reading the failure:
 #
 #   portfolio               a `baseline`: its own guard refuses the pair its two probes walk into.
 #   mp-stats-legacy-viewer  nothing. Six of its seven keys pass today; enrolling it is one file.
@@ -431,11 +469,14 @@ check-config-secrets out='rendered' *args:
 #                           probing the key it sets, where a prerequisite is dropped from
 #                           nothing — a case without it never renders. Being undroppable is why
 #                           a prerequisite naming a path under `config` is refused outright.
-#   tankovault              the same prerequisites, an order of magnitude larger, plus two of its
-#                           own: nine documents all keyed `config.toml`, which the single-match
-#                           document selector cannot tell apart, and `.Values.config` as the
-#                           *lowest*-precedence layer there, so a probe written into it is
-#                           overwritten by the chart's derived wiring before it reaches the file.
+#   tankovault              the same prerequisites, an order of magnitude larger, plus three of
+#                           its own: nine documents all keyed `config.toml`, told apart by the
+#                           `app.kubernetes.io/component` discriminator the declaration already
+#                           carries; `.Values.config` as the *lowest*-precedence layer there, so
+#                           each document names its own `services.<name>.config` as the probe
+#                           root; and one values path — `internal.identity` — that is both a
+#                           bound contract key and a render prerequisite, whose probe therefore
+#                           goes into the raw tree rather than onto the value.
 #
 # Deliberately NOT run by the Documentation job, unlike `contracts` and `sync-kube-refs`. Those
 # regenerate a fact about an image or a Kubernetes release, which no reviewer has an opinion
@@ -469,6 +510,43 @@ check-contract-tests:
     set -euo pipefail
     {{ resolve_python }}
     "$python" {{ scripts }}/generate-contract-tests.py --check --charts {{ charts }}
+
+# Write the credential reference each contracted chart's README carries, from the contract.
+#
+# Which credentials an image needs, what to name the files that carry them and which of a
+# multi-service chart's binaries reads each one are all published per key — and all of them were
+# transcribed into every README by hand. That transcription drifts silently, because nothing
+# downstream reads a README: `tankovault` documented seven of the sixteen its nine contracts
+# declare, under one name no contract carries.
+#
+# The rows come from the contract now, between two HTML comments the chart places wherever the
+# reference belongs. What stays hand-written is the pair of columns no contract can fill — the
+# chart value that carries a credential, and the condition under which a release needs it — and
+# both live in `config-contract.yaml` beside the keys they describe, where an entry that outlives
+# its credential or names a renamed value fails the gate rather than standing.
+#
+# Run by `just docs` before helm-docs, since it edits helm-docs' input.
+[doc("Write each chart's README credential reference from its contract")]
+[group('contracts')]
+config-readme:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    {{ resolve_python }}
+    "$python" {{ scripts }}/config_readme.py --charts {{ charts }}
+
+# Fail when a chart's README credential reference is not what its contract describes.
+#
+# The asserting half of the recipe above. In `just check` rather than left to the Documentation
+# job, which does repair it: the two hand-written columns are not repairable, and an entry naming
+# a credential the image dropped or a chart value somebody renamed is exactly what an automated
+# digest bump produces. Reads committed files only — no network, no render, no cluster.
+[doc("Fail when a chart's README credential reference is behind its contract")]
+[group('contracts')]
+check-config-readme:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    {{ resolve_python }}
+    "$python" {{ scripts }}/config_readme.py --charts {{ charts }} --check
 
 # --------------------------------------------------------------------------------------------
 # Creating a chart

@@ -16,7 +16,7 @@ has anything trustworthy to say.
 from __future__ import annotations
 
 from collections.abc import Iterable, Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -37,7 +37,15 @@ GATES = {
 
 # Keys each level may carry. Anything else is a typo that would otherwise be ignored in silence,
 # which for a file whose whole job is to be exhaustive is the worst possible failure mode.
-DECLARATION_KEYS = {"documents", "reason", "unconfigured", "bindings", "unbound"}
+DECLARATION_KEYS = {
+    "documents",
+    "reason",
+    "unconfigured",
+    "bindings",
+    "unbound",
+    "credentials",
+}
+CREDENTIAL_KEYS = {"key", "value", "note"}
 DOCUMENT_KEYS = {"name", "source", "images", "consumers", "exempt"}
 SOURCE_KEYS = {"kind", "selector", "key", "format"}
 IMAGE_KEYS = {"values", "contract"}
@@ -141,6 +149,23 @@ class Document:
 
 
 @dataclass(frozen=True)
+class CredentialNote:
+    """What one chart says about one credential its images declare.
+
+    `value` is the chart value an operator may set instead of creating the Secret, and `note` is
+    the condition under which this release needs the credential at all — `services.sync.enabled`,
+    `storage.backend: postgres`, "first install only". Neither is derivable: a credential travels
+    the secrets directory rather than the configuration document, so it carries no `# @config`
+    marker naming the value that feeds it, and no contract knows which of a chart's optional
+    components a release turned on.
+    """
+
+    key: str
+    value: str | None = None
+    note: str | None = None
+
+
+@dataclass(frozen=True)
 class Declaration:
     """One chart's `config-contract.yaml`.
 
@@ -164,6 +189,14 @@ class Declaration:
     unconfigured: list[str]
     bindings: bool
     unbound: list[Unbound]
+    # What this chart adds to the credential reference its README carries, keyed by contract
+    # path. The generated table takes its rows from the contract and these two columns from here,
+    # which is the split the facts actually have: which credentials exist and which are required
+    # is the image's to state, while the chart value that carries one and the condition under
+    # which a release needs it are the chart's. An entry for a key no contract declares secret is
+    # refused by the generator, and a `value` naming a path the chart does not expose is refused
+    # with it — so neither column can outlive what it describes.
+    credentials: dict[str, CredentialNote] = field(default_factory=dict)
 
 
 def load_declaration(chart_dir: Path) -> Declaration | None:
@@ -207,7 +240,59 @@ def load_declaration(chart_dir: Path) -> Declaration | None:
         unconfigured=list(document.get("unconfigured") or []),
         bindings=bindings,
         unbound=_load_unbound(path, document.get("unbound") or [], names),
+        credentials=_load_credentials(path, document.get("credentials") or []),
     )
+
+
+def _load_credentials(path: Path, entries: Iterable[Any]) -> dict[str, CredentialNote]:
+    """What the chart adds to each credential's row, keyed by contract path.
+
+    One entry per key rather than a group against one note, unlike `unbound` above: each of these
+    *is* one row of a table, and `value` names a single chart value, so a group of three keys
+    would have to leave that field empty or claim one value feeds all three. A key named twice is
+    refused — two answers for one credential means one of them is stale, and choosing either
+    would be choosing in silence.
+    """
+    notes: dict[str, CredentialNote] = {}
+    for entry in entries:
+        if not isinstance(entry, dict):
+            raise DeclarationError(
+                f"{path}: every entry of `credentials` must be a mapping carrying `key` and at "
+                "least one of `value` and `note`"
+            )
+        reject_unknown(path, "credentials[]", entry, CREDENTIAL_KEYS)
+
+        key = entry.get("key")
+        value = entry.get("value")
+        note = entry.get("note")
+        if not isinstance(key, str) or not key:
+            raise DeclarationError(f"{path}: an entry of `credentials` names no `key`")
+        if key in notes:
+            raise DeclarationError(
+                f"{path}: {key!r} is named by two `credentials` entries, so one of the two is "
+                "stale"
+            )
+        if value is not None and (not isinstance(value, str) or not value.strip()):
+            raise DeclarationError(
+                f"{path}: the `credentials` entry for {key!r} carries an empty `value`"
+            )
+        if note is not None and (not isinstance(note, str) or not note.strip()):
+            raise DeclarationError(
+                f"{path}: the `credentials` entry for {key!r} carries an empty `note`"
+            )
+        if value is None and note is None:
+            raise DeclarationError(
+                f"{path}: the `credentials` entry for {key!r} adds neither a `value` nor a "
+                "`note`, and the row it describes is generated from the contract without it"
+            )
+
+        notes[key] = CredentialNote(
+            key=key,
+            value=value.strip() if isinstance(value, str) else None,
+            note=" ".join(note.split()) if isinstance(note, str) else None,
+        )
+
+    return notes
 
 
 def _load_document(path: Path, entry: Any) -> Document:
@@ -399,6 +484,41 @@ def _load_unbound(path: Path, entries: Iterable[Any], documents: set[str]) -> li
 # --------------------------------------------------------------------------------------------
 # Walking the tree
 # --------------------------------------------------------------------------------------------
+
+
+class Bound:
+    """One chart's documents, resolved to the contracts that describe them.
+
+    Built without the staleness interlock `bind` applies — a gate that refuses to run during a
+    digest bump withdraws its report from the one pull request it exists for — so this is
+    deliberately not that function and does not pretend to be.
+
+    Lives here rather than in the gate that first needed it because two of them need it now:
+    `check-config-bindings.py` holds a marker against the key it names, and `config_shapes.py`
+    regenerates a value's `@schema` block from that same key's constraint.
+    """
+
+    def __init__(self, chart_dir: Path, declaration: Declaration):
+        self.chart = declaration.chart
+        self.declaration = declaration
+        self.documents: dict[str, Document] = {}
+        self.unions: dict[str, cc.Union] = {}
+
+        for document in declaration.documents:
+            self.documents[document.name] = document
+            self.unions[document.name] = union_for(chart_dir, document)
+
+    def namespace(self, name: str, cls: str) -> dict[str, dict[str, Any]]:
+        """The half of one document's contract a marker of this class may name.
+
+        The class vocabulary is `config_bindings`', and it is compared by value rather than
+        imported: that module imports nothing from here, and a cycle between the two would be a
+        real cost for a constant that has not moved since the format was written.
+        """
+        union = self.unions[name]
+        if cls in ("projection", "structured", "composed"):
+            return union.keys
+        return union.external_env
 
 
 def chart_dirs(charts: Path) -> Iterator[Path]:

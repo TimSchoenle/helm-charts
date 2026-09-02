@@ -43,8 +43,10 @@ looks for the rules, and "the grammar makes it impossible" is no longer the answ
 **Enrolment is opt-in and declared, by `bindings: true` in `config-contract.yaml`.** A gate that
 failed unenrolled charts would be red for work nobody has scheduled and would end up disabled,
 which is worse than absent. A chart that does not set the switch is not checked and not reported.
-All five charts that map values onto a contract set it today: `portfolio`, `netcup-offer-bot`,
-`s3-bucket-perma-link`, `mp-stats-legacy-viewer` and `tankovault`.
+Every chart that vendors a contract sets it today — `portfolio`, `netcup-offer-bot`,
+`s3-bucket-perma-link`, `mp-stats-legacy-viewer`, `discord-alertmanager`,
+`cloudflare-access-webhook-redirect` and `tankovault` — so the switch now guards against a chart
+losing its markers rather than against one that never had any.
 
 **What a nine-document chart changed about all of this.** The format was designed against two
 single-document charts, and `tankovault` — nine documents, 184 distinct key paths in 583
@@ -115,38 +117,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import config_bindings as cb
 import config_contract as cc
 from config_declaration import (
+    Bound,
     Declaration,
     DeclarationError,
-    Document,
     chart_dirs,
     load_declaration,
-    union_for,
 )
 from config_paths import CHARTS_DIR
 from config_report import Report
-
-
-class Bound:
-    """One chart's documents, resolved to the contracts that describe them.
-
-    Built without the staleness interlock `config_declaration.bind` applies — see the module
-    docstring — so this is deliberately not that function and does not pretend to be.
-    """
-
-    def __init__(self, chart_dir: Path, declaration: Declaration):
-        self.chart = declaration.chart
-        self.declaration = declaration
-        self.documents: dict[str, Document] = {}
-        self.unions: dict[str, cc.Union] = {}
-
-        for document in declaration.documents:
-            self.documents[document.name] = document
-            self.unions[document.name] = union_for(chart_dir, document)
-
-    def namespace(self, name: str, cls: str) -> dict[str, dict[str, Any]]:
-        """The half of one document's contract a marker of this class may name."""
-        union = self.unions[name]
-        return union.keys if cls in cb.KEY_CLASSES else union.external_env
 
 
 class Gate:

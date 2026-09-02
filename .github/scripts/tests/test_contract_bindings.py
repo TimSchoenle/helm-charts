@@ -976,6 +976,7 @@ class TestTheEnrolledCharts(unittest.TestCase):
         self.assertEqual(
             [(chart, keys, external) for chart, keys, external in enrolled],
             [
+                ("cloudflare-access-webhook-redirect", 20, 0),
                 ("discord-alertmanager", 58, 0),
                 ("mp-stats-legacy-viewer", 25, 0),
                 ("netcup-offer-bot", 16, 0),

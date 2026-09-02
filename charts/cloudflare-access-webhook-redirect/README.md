@@ -1,6 +1,6 @@
 # cloudflare-access-webhook-redirect
 
-![Version: 6.1.1](https://img.shields.io/badge/Version-6.1.1-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: v2.0.0](https://img.shields.io/badge/AppVersion-v2.0.0-informational?style=flat-square)
+![Version: 6.2.0](https://img.shields.io/badge/Version-6.2.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: v2.1.0](https://img.shields.io/badge/AppVersion-v2.1.0-informational?style=flat-square)
 
 A Helm chart for deploying the Cloudflare Access Webhook Redirect service. This service acts as an authentication proxy that validates requests using Cloudflare Access Service Auth tokens before forwarding them to target backend services.
 
@@ -45,9 +45,7 @@ remove with `helm uninstall [RELEASE_NAME] -n [NAMESPACE]`.
 
 ## Credentials
 
-Create the Secret yourself and reference it by name. **The keys are the configuration paths the
-service reads, not free-form names** — the proxy takes the key out of the file name, so
-`cloudflare__client_id` is required and `client_id` is not read at all:
+Create the Secret yourself and reference it by name:
 
 ```shell
 kubectl create secret generic cloudflare-access-secret   --namespace [NAMESPACE]   --from-literal=cloudflare__client_id='...'   --from-literal=cloudflare__client_secret='...'
@@ -56,6 +54,23 @@ kubectl create secret generic cloudflare-access-secret   --namespace [NAMESPACE]
 ```yaml
 existingSecret: cloudflare-access-secret
 ```
+
+<!-- @config-credentials -->
+Every credential below is read from a **file in the secrets directory**, named for the
+configuration path it carries with `.` written as `__`. A file spelt any other way is
+mounted and never read. Those names are the keys of the Secret this chart mounts, except
+where a note below says otherwise.
+
+| Secrets file | Required | Chart value | When |
+|---|---|---|---|
+| `cloudflare__client_id` | yes | `cloudflare.clientId` | with `cloudflare.clientSecret`, to verify the Access JWT |
+| `cloudflare__client_secret` | yes | `cloudflare.clientSecret` | with `cloudflare.clientId` |
+| `telemetry__sentry__dsn` | no | `telemetry.sentry.dsn` | `telemetry.sentry.enabled` |
+
+The same value is addressable as the variable `WEBHOOK_REDIRECT_<PATH>`, upper-cased with `.`
+written as `__`, and that spelling with `_FILE` appended names a file whose contents
+supply it.
+<!-- @config-credentials end -->
 
 `cloudflare.clientId` / `.clientSecret` are accepted as an alternative and make the chart render
 the Secret itself. That puts the credentials into `values.yaml` and into the Helm release
@@ -523,11 +538,11 @@ policy pointing at the wrong Gateway looks correct and blocks everything.
 | gateway.tls.enabled | bool | `false` | Add an HTTPS listener. |
 | gateway.tls.mode | string | `"Terminate"` | TLS mode. |
 | gateway.tls.options | object | `{}` | Implementation-specific TLS options. |
-| image | object | `{"pullPolicy":"","registry":"","repository":"timmi6790/cloudflare-access-webhook-redirect","tag":"v2.0.0@sha256:fafea760170ba22bfcfd7f6b07fc590a5347b9349ecb04cde7531eee59a27a52"}` | Container image the pod runs, composed as `registry/repository:tag`. |
+| image | object | `{"pullPolicy":"","registry":"","repository":"timmi6790/cloudflare-access-webhook-redirect","tag":"v2.1.0@sha256:03b853085aa642eb96dae4280bd9df5a196ab01aa9bd5c4a9a3d6aa084db8b3d"}` | Container image the pod runs, composed as `registry/repository:tag`. |
 | image.pullPolicy | string | `""` | Image pull policy. Empty resolves automatically from the tag/digest. |
 | image.registry | string | `""` | Registry host. Empty means Docker Hub. |
 | image.repository | string | `"timmi6790/cloudflare-access-webhook-redirect"` | Container image repository (e.g. docker.io/user/image) |
-| image.tag | string | `"v2.0.0@sha256:fafea760170ba22bfcfd7f6b07fc590a5347b9349ecb04cde7531eee59a27a52"` | The container image tag, pinned by digest (`vX.Y.Z@sha256:...`). The digest pins the pull, while the tag stays on as the readable version marker. Defaults to the chart's `appVersion` when empty. |
+| image.tag | string | `"v2.1.0@sha256:03b853085aa642eb96dae4280bd9df5a196ab01aa9bd5c4a9a3d6aa084db8b3d"` | The container image tag, pinned by digest (`vX.Y.Z@sha256:...`). The digest pins the pull, while the tag stays on as the readable version marker. Defaults to the chart's `appVersion` when empty. |
 | imagePullSecrets | list | `[]` | Optional image pull secrets for private registries |
 | ingress | object | `{"annotations":{},"enabled":false,"hosts":[],"ingressClassName":"nginx","tls":[]}` | The Ingress in front of the Service. An independent switch from `gateway`, so a cluster migrating from an Ingress controller to a Gateway implementation can run both. |
 | ingress.annotations | object | `{}` | Additional ingress annotations Example:   cert-manager.io/cluster-issuer: letsencrypt-prod   nginx.ingress.kubernetes.io/rate-limit: "100" |

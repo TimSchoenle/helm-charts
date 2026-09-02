@@ -1,6 +1,6 @@
 # s3-bucket-perma-link
 
-![Version: 5.1.1](https://img.shields.io/badge/Version-5.1.1-informational?style=flat-square) ![AppVersion: v2.0.0](https://img.shields.io/badge/AppVersion-v2.0.0-informational?style=flat-square)
+![Version: 5.2.0](https://img.shields.io/badge/Version-5.2.0-informational?style=flat-square) ![AppVersion: v2.1.0](https://img.shields.io/badge/AppVersion-v2.1.0-informational?style=flat-square)
 
 This chart deploys a simple web server that provides permanent links to specific S3 bucket resources. It allows you to define static URL paths that always point to specific files in your S3 buckets.
 
@@ -21,16 +21,31 @@ bucket has to be made public.
 
 ## Quick start
 
-Create the credential Secret first — the chart never takes the keys as values:
+Create the credential Secret first, and reference it by name:
 
 ```shell
 kubectl create secret generic s3-credentials   --namespace [NAMESPACE]   --from-literal=s3__access_key='...'   --from-literal=s3__secret_key='...'
 ```
 
-**The key names are the configuration paths the service reads, not free-form names.** The
-credential arrives as a file and the service takes the key out of the file *name*, so
-`s3__access_key` is required; a Secret spelled any other way mounts cleanly, supplies nothing,
-and the service refuses to boot naming the missing credential.
+<!-- @config-credentials -->
+Every credential below is read from a **file in the secrets directory**, named for the
+configuration path it carries with `.` written as `__`. A file spelt any other way is
+mounted and never read. Those names are the keys of the Secret this chart mounts, except
+where a note below says otherwise.
+
+| Secrets file | Required | Chart value | When |
+|---|---|---|---|
+| `s3__access_key` | yes | `s3.accessKey` | always, with `s3.secret_key` |
+| `s3__secret_key` | yes | `s3.secretKey` | always, with `s3.access_key` |
+| `telemetry__sentry__dsn` | no | `telemetry.sentry.dsn` | `telemetry.sentry.enabled` |
+
+The same value is addressable as the variable `S3_PERMA_LINK_<PATH>`, upper-cased with `.`
+written as `__`, and that spelling with `_FILE` appended names a file whose contents
+supply it.
+<!-- @config-credentials end -->
+
+A Secret spelled any other way mounts cleanly, supplies nothing, and the service refuses to boot
+naming the missing credential.
 
 ```shell
 helm repo add timschoenle https://timschoenle.github.io/helm-charts
@@ -520,11 +535,11 @@ policy pointing at the wrong Gateway looks correct and blocks everything.
 | gateway.tls.enabled | bool | `false` | Add an HTTPS listener. |
 | gateway.tls.mode | string | `"Terminate"` | TLS mode. |
 | gateway.tls.options | object | `{}` | Implementation-specific TLS options. |
-| image | object | `{"pullPolicy":"","registry":"","repository":"timmi6790/s3-bucket-perma-link","tag":"v2.0.0@sha256:a331869902bd25de2ac46873f6f4188a7a524d8f4717e2bbfdcdfc23c31e6520"}` | Container image the pod runs, composed as `registry/repository:tag`. |
+| image | object | `{"pullPolicy":"","registry":"","repository":"timmi6790/s3-bucket-perma-link","tag":"v2.1.0@sha256:2eca3c6ab285281848f5c30c37a6cf51fd778c53a117a8aa13f0e3b422ed7683"}` | Container image the pod runs, composed as `registry/repository:tag`. |
 | image.pullPolicy | string | `""` | The image pull policy. Empty resolves automatically from the tag/digest. |
 | image.registry | string | `""` | Registry host. Empty means Docker Hub. |
 | image.repository | string | `"timmi6790/s3-bucket-perma-link"` | The container image repository. |
-| image.tag | string | `"v2.0.0@sha256:a331869902bd25de2ac46873f6f4188a7a524d8f4717e2bbfdcdfc23c31e6520"` | The container image tag, pinned by digest (`vX.Y.Z@sha256:...`). The digest pins the pull, while the tag stays on as the readable version marker. Defaults to the chart's `appVersion` when empty. |
+| image.tag | string | `"v2.1.0@sha256:2eca3c6ab285281848f5c30c37a6cf51fd778c53a117a8aa13f0e3b422ed7683"` | The container image tag, pinned by digest (`vX.Y.Z@sha256:...`). The digest pins the pull, while the tag stays on as the readable version marker. Defaults to the chart's `appVersion` when empty. |
 | imagePullSecrets | list | `[]` | Optional image pull secrets for private registries. |
 | ingress | object | `{"annotations":{},"enabled":false,"hosts":[],"ingressClassName":"nginx","tls":[]}` | The Ingress in front of the Service. Off by default; `gateway` is the Gateway API alternative and the two are independent switches. |
 | ingress.annotations | object | `{}` | Custom annotations for the Ingress resource. Useful for configuring ingress controllers (e.g., cert-manager, rate limits). |

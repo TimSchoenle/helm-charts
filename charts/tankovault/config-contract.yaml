@@ -17,6 +17,65 @@
 # A selector matching zero or several objects is reported rather than resolved, so a component
 # that is renamed or dropped fails loudly instead of becoming a skipped check.
 
+# What this chart adds to the credential reference in its README, which `just config-readme`
+# generates from the nine contracts. The rows are theirs — every key any of them marks
+# `secret: true`, whether the image requires it, and which services read it — and these two
+# columns are the chart's: the value an operator may set instead of pre-creating the Secret, and
+# the condition under which a release needs the credential at all. Neither is derivable: a
+# credential travels the secrets directory rather than the configuration document, so it carries
+# no `# @config` marker naming the value that feeds it, and no contract knows which of this
+# chart's nine services a release turned on.
+#
+# Both go stale loudly. An entry for a key the contracts stop declaring secret fails the gate,
+# and so does a `value` this chart's values.yaml no longer exposes.
+credentials:
+  - key: anilist.client_secret
+    value: anilist.clientSecret
+    note: "`services.sync.enabled`, and issued by AniList rather than generated"
+  - key: anilist.token_encryption_key
+    value: anilist.tokenEncryptionKey
+    note: "`services.sync.enabled`; generated when empty"
+  - key: auth.jwt_secret
+    value: auth.jwtSecret
+    note: always; generated when empty
+  - key: auth.mfa_encryption_key
+    value: auth.mfaEncryptionKey
+    note: "`services.api.enabled`; generated when empty"
+  - key: auth.password_pepper
+    value: auth.passwordPepper
+    note: generated on a first install only — see above
+  - key: channels.discord_webhook_url
+    value: channels.discordWebhookUrl
+    note: "`services.notifier.enabled`, for the Discord channel"
+  - key: channels.webhook_url
+    value: channels.webhookUrl
+    note: "`services.notifier.enabled`, for a generic webhook"
+  - key: database.url
+    note: >-
+      derived from `postgresql` or `externalDatabase`; set it only through `config` or an
+      `existingSecret`
+  - key: email.password
+    value: email.password
+    note: with `email.host`
+  - key: email.url
+    note: not surfaced as a value; write it into `config` or the Secret
+  - key: internal.caller.token
+    note: >-
+      `internal.identity=token`; stored under the Secret key `internal__tokens__<caller>` and
+      projected to this file name, one per caller — see above
+  - key: internal.token
+    note: the pre-4.0 shared token, refused at boot upstream; see the migration note above
+  - key: nats.url
+    note: derived from `nats` or `externalNats`
+  - key: redis.url
+    note: derived from `redis` or `externalRedis`
+  - key: seed_admin_password
+    value: bootstrap.seedAdmin.password
+    note: "`bootstrap.seedAdmin.enabled`; generated when empty"
+  - key: telemetry.sentry.dsn
+    value: telemetry.sentry.dsn
+    note: "`telemetry.sentry.enabled`"
+
 # Whether `just check-config-bindings` holds this chart's values against the keys below.
 #
 # Declared rather than inferred from the chart carrying markers: a chart that loses them — a

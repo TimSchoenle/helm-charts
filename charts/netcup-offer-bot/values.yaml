@@ -22,7 +22,7 @@ image:
   # type: string
   # @schema
   # -- The container image tag. Defaults to the chart's `appVersion` when empty.
-  tag: v3.0.0@sha256:973e861a1e546066d87520994643b0d7208c0dfafd583c2055b094caec9d1648
+  tag: v3.1.0@sha256:4157c2598a05d10c9d8f1bbfdc8c9821d822b65fc0ba63f06607cdc31e1748b9
 
   # @schema
   # enum: ["", Always, IfNotPresent, Never]
@@ -57,6 +57,8 @@ discord:
 # -- The RSS poll loop. Only the interval is configurable; which feed the bot watches is not a
 # configuration key.
 feed:
+  # @config-shape-except feed.checkIntervalSecs minimum an interval of 0 polls the feed in a loop with no pause, which the producer's `u64` permits and this chart will not render
+
   # @schema
   # # @config projection feed.check_interval_secs
   # type: integer
@@ -73,6 +75,8 @@ feed:
 # process boots rather than re-read from the mount, so a change here needs a restart —
 # `configMount.rolloutOnChange` is what turns one into a rollout.
 telemetry:
+  # @config-shape telemetry.logLevel handwritten v3.1.0 Level
+
   # @schema
   # # @config projection telemetry.log_level
   # enum: [TRACE, DEBUG, INFO, WARN, ERROR]
@@ -98,7 +102,7 @@ telemetry:
   sentry:
     # @schema
     # # @config projection telemetry.sentry.enabled optional
-    # type: boolean
+    # type: [boolean, 'null']
     # @schema
     # -- Initialise the Sentry client (`telemetry.sentry.enabled`). Off, every other key here is
     # inert. On, the bot refuses to boot without a DSN rather than starting with a reporter that
@@ -117,7 +121,7 @@ telemetry:
 
     # @schema
     # # @config projection telemetry.sentry.environment optional when telemetry.sentry.enabled
-    # type: string
+    # type: [string, 'null']
     # @schema
     # -- Environment tag on every event (`telemetry.sentry.environment`). Empty lets the bot
     # send `production`, or `development` from a debug build.
@@ -125,7 +129,7 @@ telemetry:
 
     # @schema
     # # @config projection telemetry.sentry.release optional when telemetry.sentry.enabled
-    # type: string
+    # type: [string, 'null']
     # @schema
     # -- Release tag on every event (`telemetry.sentry.release`). Empty uses the version the
     # binary was built from, which is what makes a regression attributable to a deploy and what
@@ -135,12 +139,15 @@ telemetry:
 
     # @schema
     # # @config projection telemetry.sentry.server_name optional when telemetry.sentry.enabled
-    # type: string
+    # type: [string, 'null']
     # @schema
     # -- Host tag on every event (`telemetry.sentry.server_name`). Empty reports none, which is
     # the right answer here: the value would be one pod's generated name, not anything an
     # operator chose.
     serverName: ""
+
+    # @config-shape-narrow telemetry.sentry.sampleRate minimum a sample rate is a fraction of events and the producer types it `f64` with no bound, so 0..1 is the chart's own
+    # @config-shape-narrow telemetry.sentry.sampleRate maximum a sample rate is a fraction of events and the producer types it `f64` with no bound, so 0..1 is the chart's own
 
     # @schema
     # # @config projection telemetry.sentry.sample_rate when telemetry.sentry.enabled
@@ -152,6 +159,9 @@ telemetry:
     # volume cap — it drops whole issues, not repetitions of one — so leave it at `1` unless a
     # quota forces otherwise.
     sampleRate: 1.0
+
+    # @config-shape-narrow telemetry.sentry.tracesSampleRate minimum a sample rate is a fraction of events and the producer types it `f64` with no bound, so 0..1 is the chart's own
+    # @config-shape-narrow telemetry.sentry.tracesSampleRate maximum a sample rate is a fraction of events and the producer types it `f64` with no bound, so 0..1 is the chart's own
 
     # @schema
     # # @config projection telemetry.sentry.traces_sample_rate when telemetry.sentry.enabled
@@ -167,7 +177,7 @@ telemetry:
 
     # @schema
     # # @config projection telemetry.sentry.capture_level when telemetry.sentry.enabled
-    # enum: ["off", error, warn, info, debug, trace]
+    # enum: ["off", "error", "warn", "info", "debug", "trace"]
     # @schema
     # -- Least severe `tracing` level reported as a Sentry issue
     # (`telemetry.sentry.capture_level`). Quote `"off"` — unquoted, YAML reads it as the boolean
@@ -177,7 +187,7 @@ telemetry:
 
     # @schema
     # # @config projection telemetry.sentry.breadcrumb_level when telemetry.sentry.enabled
-    # enum: ["off", error, warn, info, debug, trace]
+    # enum: ["off", "error", "warn", "info", "debug", "trace"]
     # @schema
     # -- Least severe `tracing` level kept as a breadcrumb, the trail attached to the next issue
     # (`telemetry.sentry.breadcrumb_level`). Records at or above `captureLevel` become issues
@@ -427,6 +437,8 @@ metrics:
   # `127.0.0.1`, which answers nothing from outside the container — a PodMonitor pointed at it
   # scrapes a refused connection.
   ip: 0.0.0.0
+
+  # @config-shape-except metrics.port minimum port 0 asks the kernel for an ephemeral one, which nothing in this chart can put a Service or a probe in front of
 
   # @schema
   # # @config projection metrics.port when metrics.enabled

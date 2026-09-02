@@ -9,6 +9,18 @@
 # skipped; `documents: []` plus a `reason` is the only permitted opt-out, and
 # `just check-contract-coverage` is what stops it from being escaped by forgetting.
 
+# What this chart adds to the credential reference in its README, which `just config-readme`
+# generates from the contract. The rows are the contract's — every key it marks `secret: true`,
+# and whether the image requires it — and these two columns are the chart's: the value an
+# operator may set instead of pre-creating the Secret, and the condition under which a release
+# needs the credential at all. Neither is derivable, and both are refused once they go stale: an
+# entry for a key the contract stops declaring secret, or a `value` this chart's values.yaml no
+# longer exposes, fails the gate.
+credentials:
+  - key: sentry.dsn
+    value: sentry.dsn
+    note: "`sentry.enabled`"
+
 # Whether `just check-config-bindings` holds this chart's values against the keys below.
 #
 # Declared rather than inferred from the chart carrying markers: a chart that loses them — a

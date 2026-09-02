@@ -29,6 +29,7 @@ documents:
         webhook.paths:
           "/render-prerequisite/.*": [ALL]
         webhook.targetBase: https://render-prerequisite.invalid
+        existingSecret: cloudflare-access-contract-probe
 
       reason: >-
         `cloudflare-access-webhook-redirect.validateValues` refuses a render whose effective
@@ -44,3 +45,11 @@ documents:
         deployment's real target from being mistaken for one. The chart merges `.Values.config`
         over everything it derives from these values, so a probe still wins wherever the two
         would meet.
+
+        `existingSecret` is the third entry, and it answers a different guard. Every
+        `telemetry.sentry.*` key carries a `when telemetry.sentry.enabled` clause, so a case
+        probing one switches Sentry on and the chart then refuses the render unless a DSN is
+        available. Naming a Secret satisfies that without a credential-shaped string in a
+        committed file, and changes nothing the cases assert against: the DSN travels as a file
+        in the secrets directory and never reaches `config.toml`. The Secret does not have to
+        exist for a template render.

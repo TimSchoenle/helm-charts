@@ -1,6 +1,6 @@
 # portfolio
 
-![Version: 5.3.1](https://img.shields.io/badge/Version-5.3.1-informational?style=flat-square) ![AppVersion: v2.10.0](https://img.shields.io/badge/AppVersion-v2.10.0-informational?style=flat-square)
+![Version: 5.4.0](https://img.shields.io/badge/Version-5.4.0-informational?style=flat-square) ![AppVersion: v2.11.0](https://img.shields.io/badge/AppVersion-v2.11.0-informational?style=flat-square)
 
 Personal portfolio built with Rust (Yew frontend, Axum server).
 
@@ -142,10 +142,23 @@ kubectl create secret generic portfolio-sentry   --namespace [NAMESPACE]   --fro
 existingSecret: portfolio-sentry
 ```
 
-**The key name is the configuration path the server reads, not a free-form name.** The DSN
-arrives as a file in a projected volume and the server takes the key out of the file *name*, so
-`sentry__dsn` is required; a Secret spelled any other way mounts cleanly and supplies nothing.
-Switching the feature on with no DSN — neither inline nor in an `existingSecret` — is refused at
+<!-- @config-credentials -->
+Every credential below is read from a **file in the secrets directory**, named for the
+configuration path it carries with `.` written as `__`. A file spelt any other way is
+mounted and never read. Those names are the keys of the Secret this chart mounts, except
+where a note below says otherwise.
+
+| Secrets file | Required | Chart value | When |
+|---|---|---|---|
+| `sentry__dsn` | no | `sentry.dsn` | `sentry.enabled` |
+
+The same value is addressable as the variable `PORTFOLIO_<PATH>`, upper-cased with `.`
+written as `__`, and that spelling with `_FILE` appended names a file whose contents
+supply it.
+<!-- @config-credentials end -->
+
+The DSN arrives as a file in a projected volume, so a Secret spelled any other way mounts
+cleanly and supplies nothing. Switching the feature on with no DSN — neither inline nor in an `existingSecret` — is refused at
 render time, because the server refuses to boot rather than installing a client that reports
 nowhere, and a rejected `helm upgrade` beats a CrashLoopBackOff.
 
@@ -538,11 +551,11 @@ policy pointing at the wrong Gateway looks correct and blocks everything.
 | gateway.tls.enabled | bool | `false` | Add an HTTPS listener. |
 | gateway.tls.mode | string | `"Terminate"` | TLS mode. |
 | gateway.tls.options | object | `{}` | Implementation-specific TLS options. |
-| image | object | `{"pullPolicy":"","registry":"","repository":"timschoenle/portfolio","tag":"v2.10.0@sha256:a6ada5d26c75bad113006bb6889edc4a5d102edf373b0f57747c3722733fd32b"}` | Container image the pod runs, composed as `registry/repository:tag`. |
+| image | object | `{"pullPolicy":"","registry":"","repository":"timschoenle/portfolio","tag":"v2.11.0@sha256:b7886bc801b69e0513c6baae4159c6dea920c41bd8108210d75d19d4aa8d208f"}` | Container image the pod runs, composed as `registry/repository:tag`. |
 | image.pullPolicy | string | `""` | Kubernetes image pull policy. Empty resolves automatically from the tag/digest. |
 | image.registry | string | `""` | Registry host. Empty means Docker Hub. |
 | image.repository | string | `"timschoenle/portfolio"` | Container image repository where the Portfolio application image is stored. |
-| image.tag | string | `"v2.10.0@sha256:a6ada5d26c75bad113006bb6889edc4a5d102edf373b0f57747c3722733fd32b"` | Container image tag to deploy, pinned by digest (`vX.Y.Z@sha256:...`). The digest pins the pull, while the tag stays on as the readable version marker. Defaults to the chart's `appVersion` when empty. |
+| image.tag | string | `"v2.11.0@sha256:b7886bc801b69e0513c6baae4159c6dea920c41bd8108210d75d19d4aa8d208f"` | Container image tag to deploy, pinned by digest (`vX.Y.Z@sha256:...`). The digest pins the pull, while the tag stays on as the readable version marker. Defaults to the chart's `appVersion` when empty. |
 | imagePullSecrets | list | `[]` | Optional image pull secrets for private registries. |
 | ingress | object | `{"annotations":{},"enabled":false,"hosts":[],"ingressClassName":"nginx","tls":[]}` | The Ingress in front of the Service. Off by default; `gateway` is the Gateway API alternative and the two are independent switches. |
 | ingress.annotations | object | `{}` | Custom annotations for the Ingress resource. Example: ```yaml annotations:   cert-manager.io/cluster-issuer: "letsencrypt-prod"   nginx.ingress.kubernetes.io/ssl-redirect: "true" ``` |

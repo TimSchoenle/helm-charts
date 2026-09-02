@@ -22,7 +22,7 @@ image:
   # type: string
   # @schema
   # -- The container image tag. Defaults to the chart's `appVersion` when empty.
-  tag: "v0.3.0@sha256:90caa77f3e70bf85433ee682e27ed88208967ef275c81f96bcdc39490ef102f5"
+  tag: v0.4.0@sha256:beaf17755283e31cec5e0692da2a05d0b4e96d2daca54f963e1ef5c1bbd507f1
 
   # @schema
   # enum: ["", Always, IfNotPresent, Never]
@@ -97,7 +97,7 @@ alertmanager:
   # # @config structured alertmanager.endpoints optional
   # type: [array, 'null']
   # items:
-  #   type: "string"
+  #   type: string
   # @schema
   # -- Base URLs of the Alertmanager peers, tried in order (`alertmanager.endpoints`).
   endpoints: []
@@ -157,11 +157,12 @@ discord:
   # Alertmanager and stops every receiver, the pager included, where `operate` only adds a
   # bot-local ignore that suppresses Discord.
   capabilities:
+
     # @schema
     # # @config structured discord.capabilities.admin optional
     # type: [array, 'null']
     # items:
-    #   type: "string"
+    #   type: string
     # @schema
     # -- Manage routes and read the effective configuration (`discord.capabilities.admin`).
     admin: []
@@ -170,7 +171,7 @@ discord:
     # # @config structured discord.capabilities.operate optional
     # type: [array, 'null']
     # items:
-    #   type: "string"
+    #   type: string
     # @schema
     # -- Acknowledge, assign, and add or remove bot-local ignores
     # (`discord.capabilities.operate`).
@@ -180,7 +181,7 @@ discord:
     # # @config structured discord.capabilities.silence optional
     # type: [array, 'null']
     # items:
-    #   type: "string"
+    #   type: string
     # @schema
     # -- Create, extend and expire Alertmanager silences, which affects every receiver
     # (`discord.capabilities.silence`).
@@ -190,7 +191,7 @@ discord:
     # # @config structured discord.capabilities.view optional
     # type: [array, 'null']
     # items:
-    #   type: "string"
+    #   type: string
     # @schema
     # -- Read alerts, silences and routes. Grants no mutation of any kind
     # (`discord.capabilities.view`).
@@ -448,29 +449,32 @@ ingest:
 # -- Templates for the link buttons on a card, and the host allowlist they are checked
 # against.
 links:
+
   # @schema
   # # @config structured links.allowed_hosts optional
   # type: [array, 'null']
   # items:
-  #   type: "string"
+  #   type: string
   # @schema
   # -- Hosts a rendered button may point at (`links.allowed_hosts`).
   allowedHosts: []
 
-  # `LinkButton` as the image declares it, on the same terms as `routes` above: the contract
-  # carries no element shape, the struct is `deny_unknown_fields`, and every field defaults.
-  # @config-shape links.buttons v0.3.0 crates/discord-alertmanager-config/src/links.rs
+  # `LinkButton` as the image publishes it, on the same terms as `routes` below: derived from the
+  # contract's element schema, open because the contract does not publish the struct's
+  # `deny_unknown_fields`, and with nothing required because every field defaults.
 
   # @schema
   # # @config structured links.buttons optional
   # type: [array, 'null']
   # items:
   #   type: object
-  #   additionalProperties: false
   #   properties:
-  #     label: {type: string}
-  #     url: {type: string}
-  #     when: {type: [string, 'null']}
+  #     label:
+  #       type: string
+  #     url:
+  #       type: string
+  #     when:
+  #       type: string
   # @schema
   # -- The buttons themselves, rendered in order (`links.buttons`).
   buttons: []
@@ -556,7 +560,7 @@ render:
   # # @config structured render.key_labels optional
   # type: [array, 'null']
   # items:
-  #   type: "string"
+  #   type: string
   # @schema
   # -- Labels promoted to their own inline field on the card, in order (`render.key_labels`).
   keyLabels: ["namespace", "instance", "job"]
@@ -578,84 +582,146 @@ render:
   # (`render.thread_archive_after_minutes`).
   threadArchiveAfterMinutes: 1440
 
-# `RouteConfig` as the image declares it, transcribed from the struct named below. The contract
-# cannot carry this: `constraint` is a flat keyword set with no `items`, so a `Vec<RouteConfig>`
-# reaches the chart as a bare `type: array` and the element's shape has nowhere else to live.
-# `just check-config-shapes` fails when the appVersion moves and this has not been re-read.
+# `RouteConfig` as the image publishes it. The block below is derived from the contract's
+# element schema — `just config-shapes` writes it, `just check-config-shapes` holds it there.
 #
-# Closed rather than open, because the image is closed: every struct here is
-# `#[serde(deny_unknown_fields)]`, so a key this schema refuses is one the service refuses at
-# boot. Nothing is required, because every field is `#[serde(default)]`.
+# Open rather than closed: every struct here is `#[serde(deny_unknown_fields)]`, but the
+# contract does not publish that, so a misspelt field is refused by the service at boot rather
+# than by the operator's editor before it. Nothing is required, because every field is
+# `#[serde(default)]`.
 #
-# `guild_id`, `target.id` and the mention and escalation lists are Discord snowflakes, and they
-# are typed as **quoted strings of digits** rather than as integers. That is not a preference:
-# Helm parses a values file through `encoding/json`, so every number in one arrives as a
-# `float64`, and a snowflake is above 2^53 — `guild_id: 123456789012345678` reaches this chart as
-# `123456789012345680`, silently, and the route then posts to whatever channel that names. A
-# quoted string is the only spelling that survives, and `discord-alertmanager.snowflakes` is what
-# writes it back out as the TOML integer the image reads.
-# @config-shape routes v0.3.0 crates/discord-alertmanager-config/src/routes.rs
+# `guild_id`, `target.id` and the mention and escalation lists are Discord snowflakes, and the
+# six `@config-shape-except` markers below keep them as **quoted strings of digits** against a
+# contract that types them as integers. That is not a preference: Helm parses a values file
+# through `encoding/json`, so every number in one arrives as a `float64`, and a snowflake is
+# above 2^53 — `guild_id: 123456789012345678` reaches this chart as `123456789012345680`,
+# silently, and the route then posts to whatever channel that names. A quoted string is the only
+# spelling that survives, and `discord-alertmanager.snowflakes` is what writes it back out as the
+# TOML integer the image reads.
+# @config-shape-except routes items.properties.guild_id a Discord snowflake, above 2^53, which Helm's float64 rounds when it is a bare integer
+# @config-shape-except routes items.properties.target.properties.id a Discord snowflake, above 2^53, which Helm's float64 rounds when it is a bare integer
+# @config-shape-except routes items.properties.mentions.properties.roles a Discord snowflake, above 2^53, which Helm's float64 rounds when it is a bare integer
+# @config-shape-except routes items.properties.mentions.properties.users a Discord snowflake, above 2^53, which Helm's float64 rounds when it is a bare integer
+# @config-shape-except routes items.properties.escalation.properties.roles a Discord snowflake, above 2^53, which Helm's float64 rounds when it is a bare integer
+# @config-shape-except routes items.properties.escalation.properties.users a Discord snowflake, above 2^53, which Helm's float64 rounds when it is a bare integer
 
 # @schema
 # # @config structured routes optional
 # type: [array, 'null']
 # items:
 #   type: object
-#   additionalProperties: false
 #   properties:
-#     name: {type: string}
-#     guild_id: {type: string, pattern: '^[0-9]+$'}
-#     matchers: {type: string}
-#     min_severity: {enum: [info, warning, critical, null]}
-#     group_strategy: {enum: [per_alert, per_group, digest]}
-#     priority: {type: integer, minimum: -2147483648, maximum: 2147483647}
-#     continue_to_next: {type: boolean}
-#     enabled: {type: boolean}
-#     target:
-#       type: object
-#       additionalProperties: false
-#       properties:
-#         kind: {enum: [text, forum, thread, dm]}
-#         id: {type: string, pattern: '^[0-9]+$'}
-#         policy:
-#           type: object
-#           additionalProperties: false
-#           properties:
-#             thread_when: {enum: [never, on_create, on_ack, on_first_reply]}
-#             thread_kind: {enum: [public, private]}
-#             title_template: {type: string}
-#             manage_tags: {type: boolean}
-#             severity_tags: {type: boolean}
-#             label_tags: {type: array, items: {type: string}}
-#             default_tag: {type: string}
-#             auto_archive_minutes: {type: [integer, 'null'], minimum: 0, maximum: 4294967295}
-#             archive_on_resolve: {type: boolean}
-#             lock_on_resolve: {type: boolean}
-#             pin_min_severity: {enum: [info, warning, critical, null]}
-#             max_pinned: {type: integer, minimum: 0, maximum: 4294967295}
-#             bump_on_state_change: {type: boolean}
-#             state_tags:
-#               type: object
-#               additionalProperties: false
-#               properties:
-#                 firing: {type: string}
-#                 acked: {type: string}
-#                 silenced: {type: string}
-#                 resolved: {type: string}
-#     mentions:
-#       type: object
-#       additionalProperties: false
-#       properties:
-#         roles: {type: array, items: {type: string, pattern: '^[0-9]+$'}}
-#         users: {type: array, items: {type: string, pattern: '^[0-9]+$'}}
-#         min_severity: {enum: [info, warning, critical, null]}
+#     continue_to_next:
+#       type: boolean
+#     enabled:
+#       type: boolean
 #     escalation:
 #       type: object
-#       additionalProperties: false
 #       properties:
-#         after_secs: {type: [integer, 'null'], minimum: 0}
-#         roles: {type: array, items: {type: string, pattern: '^[0-9]+$'}}
-#         users: {type: array, items: {type: string, pattern: '^[0-9]+$'}}
+#         after_secs:
+#           type: integer
+#           minimum: 0
+#         roles:
+#           type: array
+#           items:
+#             type: string
+#             pattern: "^[0-9]+$"
+#         users:
+#           type: array
+#           items:
+#             type: string
+#             pattern: "^[0-9]+$"
+#     group_strategy:
+#       type: string
+#       enum: ["per_alert", "per_group", "digest"]
+#     guild_id:
+#       type: string
+#       pattern: "^[0-9]+$"
+#     matchers:
+#       type: string
+#     mentions:
+#       type: object
+#       properties:
+#         min_severity:
+#           type: string
+#           enum: ["info", "warning", "critical"]
+#         roles:
+#           type: array
+#           items:
+#             type: string
+#             pattern: "^[0-9]+$"
+#         users:
+#           type: array
+#           items:
+#             type: string
+#             pattern: "^[0-9]+$"
+#     min_severity:
+#       type: string
+#       enum: ["info", "warning", "critical"]
+#     name:
+#       type: string
+#     priority:
+#       type: integer
+#       minimum: -2147483648
+#       maximum: 2147483647
+#     target:
+#       type: object
+#       properties:
+#         id:
+#           type: string
+#           pattern: "^[0-9]+$"
+#         kind:
+#           type: string
+#           enum: ["text", "forum", "thread", "dm"]
+#         policy:
+#           type: object
+#           properties:
+#             archive_on_resolve:
+#               type: boolean
+#             auto_archive_minutes:
+#               type: integer
+#               minimum: 0
+#               maximum: 4294967295
+#             bump_on_state_change:
+#               type: boolean
+#             default_tag:
+#               type: string
+#             label_tags:
+#               type: array
+#               items:
+#                 type: string
+#             lock_on_resolve:
+#               type: boolean
+#             manage_tags:
+#               type: boolean
+#             max_pinned:
+#               type: integer
+#               minimum: 0
+#               maximum: 4294967295
+#             pin_min_severity:
+#               type: string
+#               enum: ["info", "warning", "critical"]
+#             severity_tags:
+#               type: boolean
+#             state_tags:
+#               type: object
+#               properties:
+#                 acked:
+#                   type: string
+#                 firing:
+#                   type: string
+#                 resolved:
+#                   type: string
+#                 silenced:
+#                   type: string
+#             thread_kind:
+#               type: string
+#               enum: ["public", "private"]
+#             thread_when:
+#               type: string
+#               enum: ["never", "on_create", "on_ack", "on_first_reply"]
+#             title_template:
+#               type: string
 # @schema
 # -- Routes declared in the file, which cannot be edited or deleted from Discord (`routes`).
 # Rendered as `[[routes]]`, with `target`, `mentions` and `escalation` as sub-tables of each

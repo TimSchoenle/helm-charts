@@ -129,9 +129,11 @@ auth:
 # routes — so this chooses only how a caller proves who it is, and the two modes are otherwise
 # indistinguishable.
 internal:
+  # @config-shape-except internal.identity enum `off` turns service-to-service authentication off entirely, and this chart renders no such topology: every template that reads this value writes either mTLS material or a per-caller token
+
   # @schema
   # # @config projection internal.identity
-  # enum: [mtls, token]
+  # enum: ["mtls", "token"]
   # @schema
   # -- Identification mode. `mtls` identifies a caller by the DNS SAN on its verified client
   # certificate; it is the default, it needs no credential in the release at all, and the
@@ -433,7 +435,7 @@ anilist:
 
   # @schema
   # # @config projection sync:anilist.redirect_uri optional
-  # type: string
+  # type: [string, 'null']
   # @schema
   # -- OAuth redirect URI. Left empty it is derived from the ingress as
   # `<external URL>/account/anilist-callback`. It must point at the **frontend**, not the API:
@@ -450,10 +452,12 @@ anilist:
 email:
   # @schema
   # # @config projection email.host optional
-  # type: string
+  # type: [string, 'null']
   # @schema
   # -- SMTP host. Empty disables outbound email entirely.
   host: ""
+
+  # @config-shape-except email.port minimum port 0 asks the kernel for an ephemeral one, which nothing in this chart can put a Service or a probe in front of
 
   # @schema
   # # @config projection email.port
@@ -466,7 +470,7 @@ email:
 
   # @schema
   # # @config projection email.security
-  # enum: [starttls, tls, none]
+  # enum: ["tls", "starttls", "none"]
   # @schema
   # -- Transport security for the relay connection.
   security: starttls
@@ -485,14 +489,14 @@ email:
 
   # @schema
   # # @config projection email.from optional
-  # type: string
+  # type: [string, 'null']
   # @schema
   # -- `From` header, e.g. `TankoVault <no-reply@example.com>`. Required for any mail to be sent.
   from: ""
 
   # @schema
   # # @config projection email.base_url optional
-  # type: string
+  # type: [string, 'null']
   # @schema
   # -- Public base URL used to build links in outgoing mail. Left empty it is derived from the
   # ingress. Leaving it pointed at localhost produces unusable links in real emails.
@@ -505,7 +509,7 @@ email:
 channels:
   # @schema
   # # @config structured notifier:channels.email_to optional
-  # type: array
+  # type: [array, 'null']
   # items:
   #   type: string
   # @schema
@@ -917,7 +921,7 @@ services:
       # type: string
       # @schema
       # -- Image tag, pinned by digest.
-      tag: v8.7.1@sha256:ef4372506a3b8d0b88c9a782719651c9758eea630debd04d3b7013e9623059ff
+      tag: v8.8.0@sha256:84068e5d2e2becbca235f6c432b8dd49b8acf11608f209e41a97b57181e66bf4
 
     # @schema
     # $ref: https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.ResourceRequirements
@@ -1076,7 +1080,7 @@ services:
       # type: string
       # @schema
       # -- Image tag, pinned by digest.
-      tag: v8.7.1@sha256:3a79b4750673fadf0c3f1831aeb4794531697a7cc17a2bfb058bc1afd59936b6
+      tag: v8.8.0@sha256:0d976920413fe12b33a9b83e6e8edc6861bac9f4150748d458b777d1038cf543
 
     # @schema
     # $ref: https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.ResourceRequirements
@@ -1235,7 +1239,7 @@ services:
       # type: string
       # @schema
       # -- Image tag, pinned by digest.
-      tag: v8.7.1@sha256:1690a0d578308af5085171f86eca043c9007a4f74fa33a93a8c6dfb556b9084a
+      tag: v8.8.0@sha256:6216204cbffe5b51bd9d3553976f5275afab54732a851b0c9a4e598d6e6866a8
 
     # @schema
     # $ref: https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.ResourceRequirements
@@ -1356,7 +1360,7 @@ services:
       # type: string
       # @schema
       # -- Image tag, pinned by digest.
-      tag: v8.7.1@sha256:21f471e88ba601d85e97f9326016600de3924a12bc0b900e48c823b39911f406
+      tag: v8.8.0@sha256:a59608ace9b4eab838fff3f8dc2ee779d5fcd0aa93c60bdcef1703b292d48676
 
     # @schema
     # $ref: https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.ResourceRequirements
@@ -1513,7 +1517,7 @@ services:
       # type: string
       # @schema
       # -- Image tag, pinned by digest.
-      tag: v8.7.1@sha256:8bb9b7b37b1c44ea0da88d85106f1b74bdd45967c7b2b282f6be3dfaf1a0330b
+      tag: v8.8.0@sha256:42a42e56341d82c8df7af15c8feffb48ef5ad1099acec7e7a1d9675273743707
 
     # @schema
     # $ref: https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.ResourceRequirements
@@ -1633,7 +1637,7 @@ services:
       # type: string
       # @schema
       # -- Image tag, pinned by digest.
-      tag: v8.7.1@sha256:70ed406ce0261a2fe87bca97bbc51fccb2fc355eb63d822d89c1565cd4dfd01d
+      tag: v8.8.0@sha256:a9d74726de8bb6647fdab532b0639901dd364a88eb3f405728d5e06dee0ef398
 
     # @schema
     # $ref: https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.ResourceRequirements
@@ -1752,7 +1756,7 @@ services:
       # type: string
       # @schema
       # -- Image tag, pinned by digest.
-      tag: v8.7.1@sha256:4444ff22c365d590891bab359ce5fd58eb523a2a127da4988f46a40007514201
+      tag: v8.8.0@sha256:fccd2bd273dd11e15e26410c051c3a1db26f6d26a7e9061120c170121d48caa3
 
     # @schema
     # $ref: https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.ResourceRequirements
@@ -1911,7 +1915,7 @@ services:
       # type: string
       # @schema
       # -- Image tag, pinned by digest.
-      tag: v8.7.1@sha256:922ce8e03e3dd80ae6f9d2ba3ff97cccc100a57b7bb22e4762cae312bfb7cfca
+      tag: v8.8.0@sha256:ac2c539d87c2f7551d2f657333ae48198437ba585c5424bc8d694528afd7b2de
 
     # @schema
     # $ref: https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.ResourceRequirements
@@ -2080,7 +2084,7 @@ bootstrap:
     # type: string
     # @schema
     # -- Image tag, pinned by digest.
-    tag: v8.7.1@sha256:27a730353c32c9fe27a6cc71c88953ec197c5174935e7f7c373ff27f69f89b0c
+    tag: v8.8.0@sha256:5c3f4c14eabb9210dc87749d34f6e148e542cc78d7aaa187590ebf6df4cb98a5
 
   # @schema
   # $ref: https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.ResourceRequirements
@@ -2190,15 +2194,15 @@ bootstrap:
     enabled: false
 
     # @schema
-    # # @config projection bootstrap:seed_admin_username optional
-    # type: string
+    # # @config projection bootstrap:seed_admin_username optional when bootstrap.seedAdmin.enabled
+    # type: [string, 'null']
     # @schema
     # -- Administrator username.
     username: admin
 
     # @schema
-    # # @config projection bootstrap:seed_admin_email optional
-    # type: string
+    # # @config projection bootstrap:seed_admin_email optional when bootstrap.seedAdmin.enabled
+    # type: [string, 'null']
     # @schema
     # -- Administrator email address.
     email: ""
@@ -3054,7 +3058,7 @@ gateway:
 cloudflare:
   # @schema
   # # @config projection frontend:frontend.cloudflare.script_nonce optional
-  # type: boolean
+  # type: [boolean, 'null']
   # @schema
   # -- Send a freshly minted `'nonce-…'` in `script-src` on every response. Set this when the zone
   # runs Bot Fight Mode, JavaScript Detections or the challenge platform: each injects an inline
@@ -3072,7 +3076,7 @@ cloudflare:
 
   # @schema
   # # @config projection frontend:frontend.cloudflare.turnstile optional
-  # type: boolean
+  # type: [boolean, 'null']
   # @schema
   # -- Admit `https://challenges.cloudflare.com` in `script-src` and `frame-src`, for a Turnstile
   # widget embedded **in** a page the frontend serves. One flag reaches both directives because
@@ -3101,7 +3105,7 @@ cloudflare:
 branding:
   # @schema
   # # @config projection api,frontend:branding.name optional
-  # type: string
+  # type: [string, 'null']
   # @schema
   # -- The product name, in prose. Substituted for `{brand}` in every translated message that names
   # it, and used as the WebAuthn relying-party name and the TOTP issuer unless
@@ -3119,7 +3123,7 @@ branding:
   wordmark:
     # @schema
     # # @config projection api:branding.wordmark.lead optional
-    # type: string
+    # type: [string, 'null']
     # @schema
     # -- The half drawn in the body colour. Setting this is what opts into a two-tone lockup:
     # left empty, a deployment that set `name` draws that name as one word, because the shipped
@@ -3129,7 +3133,7 @@ branding:
 
     # @schema
     # # @config projection api:branding.wordmark.accent optional
-    # type: string
+    # type: [string, 'null']
     # @schema
     # -- The half drawn in the accent colour. Empty draws `lead` alone. Meaningless without
     # `lead`, and the chart refuses that combination rather than rendering a lockup nothing reads.
@@ -3137,7 +3141,7 @@ branding:
 
   # @schema
   # # @config projection api,frontend:branding.tagline optional
-  # type: string
+  # type: [string, 'null']
   # @schema
   # -- One line under the wordmark. Empty keeps the shipped tagline, which is **translated**;
   # setting it replaces that with this one string in every language. That is the right trade only
@@ -3151,7 +3155,7 @@ branding:
   copyright:
     # @schema
     # # @config projection api:branding.copyright.holder optional
-    # type: string
+    # type: [string, 'null']
     # @schema
     # -- Who holds it. Empty keeps `Tim Schönle`, which is upstream's — set it on any deployment
     # that publishes its own footer.
@@ -3159,7 +3163,7 @@ branding:
 
     # @schema
     # # @config projection api:branding.copyright.year optional
-    # type: string
+    # type: [string, 'null']
     # @schema
     # -- A year or a range (`2024–2026`). Empty resolves per response to the current year, so a
     # deployment nobody has touched since December is not still claiming last year. Quote it:
@@ -3168,7 +3172,7 @@ branding:
 
     # @schema
     # # @config projection api:branding.copyright.notice optional
-    # type: string
+    # type: [string, 'null']
     # @schema
     # -- The whole notice, verbatim, for when `© {year} {holder}` does not fit. Wins over `holder`
     # and `year` **and** over the catalogue's translation of the line, so those two become dead
@@ -3184,14 +3188,14 @@ branding:
   licence:
     # @schema
     # # @config projection api:branding.licence.name optional
-    # type: string
+    # type: [string, 'null']
     # @schema
     # -- What the footer prints. Empty keeps `PolyForm Noncommercial 1.0.0`.
     name: ""
 
     # @schema
     # # @config projection api:branding.licence.url optional
-    # type: string
+    # type: [string, 'null']
     # @schema
     # -- Absolute `http(s)` URL the label links to. Empty renders it as plain text, which is what
     # a self-hosted deployment with nowhere to point should show rather than a dead link.
@@ -3199,7 +3203,7 @@ branding:
 
   # @schema
   # # @config projection api:branding.project_url optional
-  # type: string
+  # type: [string, 'null']
   # @schema
   # -- Absolute `http(s)` URL for the footer's source link and the desktop client's About tab.
   # Empty keeps this project's repository.
@@ -3207,7 +3211,7 @@ branding:
 
   # @schema
   # # @config projection api:branding.releases_url optional
-  # type: string
+  # type: [string, 'null']
   # @schema
   # -- Absolute `http(s)` URL where a reader downloads the native client. Advertised by the web
   # build only. Empty keeps this project's latest release.
@@ -3215,7 +3219,7 @@ branding:
 
   # @schema
   # # @config projection worker:branding.bot_user_agent optional
-  # type: string
+  # type: [string, 'null']
   # @schema
   # -- The identifiable crawler user-agent the `worker` sends, applied to any provider still
   # carrying the built-in default; a provider whose politeness settings name their own keep it.
@@ -3236,11 +3240,13 @@ branding:
 legal:
   # @schema
   # # @config projection api:legal.dir optional
-  # type: string
+  # type: [string, 'null']
   # @schema
   # -- Directory relative `sources` paths resolve against, and where the chart mounts any
   # document supplied through `content`. An absolute `sources` path ignores it.
   dir: /etc/tankovault/legal
+
+  # @config-shape legal.documents handwritten 8.8.0 LegalDocument
 
   # @schema
   # # @config structured api:legal.documents optional
@@ -3330,7 +3336,7 @@ telemetry:
   sentry:
     # @schema
     # # @config projection telemetry.sentry.enabled optional
-    # type: boolean
+    # type: [boolean, 'null']
     # @schema
     # -- Initialise the Sentry client on every enabled service. Off, every other key here is
     # inert. On, a service refuses to boot without a DSN rather than starting with a reporter
@@ -3349,7 +3355,7 @@ telemetry:
 
     # @schema
     # # @config projection telemetry.sentry.environment optional when telemetry.sentry.enabled
-    # type: string
+    # type: [string, 'null']
     # @schema
     # -- Environment tag on every event. Empty lets the service derive it from `profile`:
     # `production` under `profile: production`, `development` otherwise.
@@ -3357,7 +3363,7 @@ telemetry:
 
     # @schema
     # # @config projection telemetry.sentry.release optional when telemetry.sentry.enabled
-    # type: string
+    # type: [string, 'null']
     # @schema
     # -- Release tag on every event. Empty uses the version the binary was built from, which is
     # what makes a regression attributable to a deploy — set this only to match a release you
@@ -3366,11 +3372,14 @@ telemetry:
 
     # @schema
     # # @config projection telemetry.sentry.server_name optional when telemetry.sentry.enabled
-    # type: string
+    # type: [string, 'null']
     # @schema
     # -- Host tag on every event. Empty reports none, which is the right answer here: the value
     # would be one replica's pod name, not anything an operator chose.
     serverName: ""
+
+    # @config-shape-narrow telemetry.sentry.sampleRate minimum a sample rate is a fraction of events and the producer types it `f64` with no bound, so 0..1 is the chart's own
+    # @config-shape-narrow telemetry.sentry.sampleRate maximum a sample rate is a fraction of events and the producer types it `f64` with no bound, so 0..1 is the chart's own
 
     # @schema
     # # @config projection telemetry.sentry.sample_rate when telemetry.sentry.enabled
@@ -3381,6 +3390,9 @@ telemetry:
     # -- Fraction of captured events actually sent. A blunt volume cap — it drops whole issues,
     # not repetitions of one — so leave it at `1` unless a quota forces otherwise.
     sampleRate: 1.0
+
+    # @config-shape-narrow telemetry.sentry.tracesSampleRate minimum a sample rate is a fraction of events and the producer types it `f64` with no bound, so 0..1 is the chart's own
+    # @config-shape-narrow telemetry.sentry.tracesSampleRate maximum a sample rate is a fraction of events and the producer types it `f64` with no bound, so 0..1 is the chart's own
 
     # @schema
     # # @config projection telemetry.sentry.traces_sample_rate when telemetry.sentry.enabled
@@ -3397,6 +3409,8 @@ telemetry:
     # it exists at all.
     tracesSampleRate: 0.0
 
+    # @config-shape telemetry.sentry.captureLevel handwritten 8.8.0 SentryLevel
+
     # @schema
     # # @config projection telemetry.sentry.capture_level when telemetry.sentry.enabled
     # enum: ["off", error, warn, info, debug, trace]
@@ -3406,6 +3420,8 @@ telemetry:
     # subscriber's own filter, so a record that `config.telemetry.log_filter` drops never reaches
     # Sentry either, whatever is set here.
     captureLevel: error
+
+    # @config-shape telemetry.sentry.breadcrumbLevel handwritten 8.8.0 SentryLevel
 
     # @schema
     # # @config projection telemetry.sentry.breadcrumb_level when telemetry.sentry.enabled

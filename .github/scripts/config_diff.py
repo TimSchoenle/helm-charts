@@ -337,6 +337,24 @@ KEY_KNOWN = set(KEY_FIELDS) | set(DEFAULT_FIELDS) | {"path", "required", "text_f
 EXTERNAL_KNOWN = set(EXTERNAL_FIELDS) | {"name", "default", "required", "text_form"}
 
 
+def _version_severity(old: Any, new: Any) -> str:
+    """How severe a `schema.schema_version` move is, graded by direction rather than by shape.
+
+    A rise to a version this repository implements is additive by the producer's own statement:
+    nothing was removed and nothing changed meaning between 1 and 2, so every key a chart already
+    writes is spelt and checked exactly as before and what arrives is a constraint that says more.
+    Minor, and worth a line in the report — a container key that gains an element schema is the
+    signal to move its `@config-shape` marker from `handwritten` to `generated`.
+
+    Everything else is major. A version *above* what `config_contract` implements is one whose
+    keywords this repository would walk past, and going backwards means the producer withdrew
+    something. Neither is a difference a reviewer should be able to skim.
+    """
+    if isinstance(old, int) and isinstance(new, int) and old < new <= cc.SCHEMA_VERSION:
+        return MINOR
+    return MAJOR
+
+
 def diff_contract(
     chart: str,
     name: str,
@@ -515,18 +533,24 @@ def _diff_envelope(old: dict[str, Any], new: dict[str, Any]) -> list[Change]:
 
     old_schema = old.get("schema") if isinstance(old.get("schema"), dict) else {}
     new_schema = new.get("schema") if isinstance(new.get("schema"), dict) else {}
-    if old_schema.get("schema_version") != new_schema.get("schema_version"):
+    old_version = old_schema.get("schema_version")
+    new_version = new_schema.get("schema_version")
+    if old_version != new_version:
         changes.append(
             Change(
-                MAJOR,
+                _version_severity(old_version, new_version),
                 ENVELOPE,
                 CHANGED,
                 "schema.schema_version",
                 None,
-                old_schema.get("schema_version"),
-                new_schema.get("schema_version"),
-                f"schema version {old_schema.get('schema_version')!r} -> "
-                f"{new_schema.get('schema_version')!r}",
+                old_version,
+                new_version,
+                f"schema version {old_version!r} -> {new_version!r}"
+                + (
+                    ", a widening this repository reads"
+                    if _version_severity(old_version, new_version) is MINOR
+                    else ""
+                ),
             )
         )
 

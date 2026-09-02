@@ -115,10 +115,23 @@ kubectl create secret generic mp-stats-sentry   --namespace [NAMESPACE]   --from
 existingSecret: mp-stats-sentry
 ```
 
-**The key name is the configuration path the server reads, not a free-form name.** The DSN
-arrives as a file in a projected volume and the server takes the key out of the file *name*, so
-`telemetry__sentry__dsn` is required; a Secret spelled any other way mounts cleanly and supplies
-nothing. Switching the feature on with no DSN — neither inline nor in an `existingSecret` — is
+<!-- @config-credentials -->
+Every credential below is read from a **file in the secrets directory**, named for the
+configuration path it carries with `.` written as `__`. A file spelt any other way is
+mounted and never read. Those names are the keys of the Secret this chart mounts, except
+where a note below says otherwise.
+
+| Secrets file | Required | Chart value | When |
+|---|---|---|---|
+| `telemetry__sentry__dsn` | no | `telemetry.sentry.dsn` | `telemetry.sentry.enabled` |
+
+The same value is addressable as the variable `MP_STATS_<PATH>`, upper-cased with `.`
+written as `__`, and that spelling with `_FILE` appended names a file whose contents
+supply it.
+<!-- @config-credentials end -->
+
+The DSN arrives as a file in a projected volume, so a Secret spelled any other way mounts
+cleanly and supplies nothing. Switching the feature on with no DSN — neither inline nor in an `existingSecret` — is
 refused at render time, because the server refuses to boot rather than installing a client that
 reports nowhere, and a rejected `helm upgrade` beats a CrashLoopBackOff.
 

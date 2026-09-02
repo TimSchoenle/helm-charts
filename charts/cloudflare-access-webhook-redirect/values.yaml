@@ -31,7 +31,7 @@ image:
   # -- The container image tag, pinned by digest (`vX.Y.Z@sha256:...`). The digest pins the
   # pull, while the tag stays on as the readable version marker. Defaults to the chart's
   # `appVersion` when empty.
-  tag: v2.0.0@sha256:fafea760170ba22bfcfd7f6b07fc590a5347b9349ecb04cde7531eee59a27a52
+  tag: v2.1.0@sha256:03b853085aa642eb96dae4280bd9df5a196ab01aa9bd5c4a9a3d6aa084db8b3d
 
   # @schema
   # enum: ["", Always, IfNotPresent, Never]
@@ -160,13 +160,17 @@ securityContext: {}
 # into the environment.
 server:
   # @schema
+  # # @config projection server.host
   # type: string
   # @schema
   # -- Bind address (`server.host`). The application's own default is `127.0.0.1`, which in a
   # container answers nothing; `0.0.0.0` is what makes the Service reach it.
   host: 0.0.0.0
 
+  # @config-shape-except server.port minimum port 0 asks the kernel for an ephemeral one, which nothing in this chart can put a Service or a probe in front of
+
   # @schema
+  # # @config projection server.port
   # type: integer
   # minimum: 1
   # maximum: 65535
@@ -182,18 +186,22 @@ server:
 # unless `configExtraToml` is set: the chart never parses that, so it stops checking.
 webhook:
   # @schema
-  # type: string
+  # # @config projection webhook.target_base optional
+  # type: [string, 'null']
   # @schema
   # -- The Cloudflare Access protected service every allowed path is joined onto
   # (`webhook.target_base`). Required.
   targetBase: ""
 
   # @schema
-  # type: object
+  # # @config structured webhook.paths optional
+  # type: [object, 'null']
   # additionalProperties:
   #   type: array
+  #   uniqueItems: true
   #   items:
   #     type: string
+  #     enum: ["ALL", "GET", "POST", "PUT", "PATCH", "DELETE"]
   # @schema
   # -- Path regex to the methods allowed on it (`webhook.paths`). Patterns are anchored, so
   # `/webhook/.*` matches `/webhook/github` but not `/api/webhook/github`. Methods are `ALL`,
@@ -213,7 +221,10 @@ webhook:
 # -- Logging and error reporting. Installed once when the process starts, so a change here needs a
 # restart even though the rest of the configuration reloads in place.
 telemetry:
+  # @config-shape telemetry.logLevel handwritten v2.1.0 Level
+
   # @schema
+  # # @config projection telemetry.log_level
   # enum: [trace, debug, info, warn, error]
   # @schema
   # -- Log level (`telemetry.log_level`).
@@ -245,7 +256,8 @@ telemetry:
   # the next restart. `configMount.rolloutOnChange` is what turns one into a rollout.
   sentry:
     # @schema
-    # type: boolean
+    # # @config projection telemetry.sentry.enabled optional
+    # type: [boolean, 'null']
     # @schema
     # -- Initialise the Sentry client (`telemetry.sentry.enabled`). Off, every other key here is
     # inert. On, the proxy refuses to boot without a DSN rather than starting with a reporter
@@ -263,7 +275,8 @@ telemetry:
     dsn: ""
 
     # @schema
-    # type: string
+    # # @config projection telemetry.sentry.environment optional when telemetry.sentry.enabled
+    # type: [string, 'null']
     # @schema
     # -- Environment tag on every event (`telemetry.sentry.environment`). Empty falls to the
     # image's own default of `production`. The proxy always sends one, so `SENTRY_ENVIRONMENT` —
@@ -272,7 +285,8 @@ telemetry:
     environment: ""
 
     # @schema
-    # type: string
+    # # @config projection telemetry.sentry.release optional when telemetry.sentry.enabled
+    # type: [string, 'null']
     # @schema
     # -- Release tag on every event (`telemetry.sentry.release`). Empty uses the crate name and
     # version the binary was built from, which is what makes a regression attributable to a
@@ -280,14 +294,19 @@ telemetry:
     release: ""
 
     # @schema
-    # type: string
+    # # @config projection telemetry.sentry.server_name optional when telemetry.sentry.enabled
+    # type: [string, 'null']
     # @schema
     # -- Host tag on every event (`telemetry.sentry.server_name`). Empty reports none, which is
     # the right answer here: the value would be one replica's pod name, gone by the time anyone
     # reads the issue.
     serverName: ""
 
+    # @config-shape-narrow telemetry.sentry.sampleRate minimum a sample rate is a fraction of events and the producer types it `f64` with no bound, so 0..1 is the chart's own
+    # @config-shape-narrow telemetry.sentry.sampleRate maximum a sample rate is a fraction of events and the producer types it `f64` with no bound, so 0..1 is the chart's own
+
     # @schema
+    # # @config projection telemetry.sentry.sample_rate when telemetry.sentry.enabled
     # type: number
     # minimum: 0
     # maximum: 1
@@ -297,7 +316,11 @@ telemetry:
     # it loses — so leave it at `1` unless a quota forces otherwise.
     sampleRate: 1.0
 
+    # @config-shape-narrow telemetry.sentry.tracesSampleRate minimum a sample rate is a fraction of events and the producer types it `f64` with no bound, so 0..1 is the chart's own
+    # @config-shape-narrow telemetry.sentry.tracesSampleRate maximum a sample rate is a fraction of events and the producer types it `f64` with no bound, so 0..1 is the chart's own
+
     # @schema
+    # # @config projection telemetry.sentry.traces_sample_rate when telemetry.sentry.enabled
     # type: number
     # minimum: 0
     # maximum: 1
@@ -310,7 +333,10 @@ telemetry:
     # readable across the caller, this hop and the protected service behind it.
     tracesSampleRate: 0.0
 
+    # @config-shape telemetry.sentry.captureLevel handwritten v2.1.0 SentryLevel
+
     # @schema
+    # # @config projection telemetry.sentry.capture_level when telemetry.sentry.enabled
     # enum: ["off", error, warn, info, debug, trace]
     # @schema
     # -- Least severe `tracing` level reported as a Sentry issue
@@ -319,7 +345,10 @@ telemetry:
     # console log does, so a record that level drops is never reported either.
     captureLevel: error
 
+    # @config-shape telemetry.sentry.breadcrumbLevel handwritten v2.1.0 SentryLevel
+
     # @schema
+    # # @config projection telemetry.sentry.breadcrumb_level when telemetry.sentry.enabled
     # enum: ["off", error, warn, info, debug, trace]
     # @schema
     # -- Least severe `tracing` level kept as a breadcrumb, the trail attached to the next issue
@@ -328,6 +357,7 @@ telemetry:
     breadcrumbLevel: info
 
     # @schema
+    # # @config projection telemetry.sentry.max_breadcrumbs when telemetry.sentry.enabled
     # type: integer
     # minimum: 0
     # @schema
@@ -335,6 +365,7 @@ telemetry:
     maxBreadcrumbs: 100
 
     # @schema
+    # # @config projection telemetry.sentry.attach_stacktraces when telemetry.sentry.enabled
     # type: boolean
     # @schema
     # -- Attach a stack trace to events that carry none of their own
@@ -343,6 +374,7 @@ telemetry:
     attachStacktraces: true
 
     # @schema
+    # # @config projection telemetry.sentry.send_default_pii when telemetry.sentry.enabled
     # type: boolean
     # @schema
     # -- Send personally identifying data with every event: the client IP, the whole request
@@ -355,6 +387,7 @@ telemetry:
     sendDefaultPii: false
 
     # @schema
+    # # @config projection telemetry.sentry.http_transactions when telemetry.sentry.enabled
     # type: boolean
     # @schema
     # -- Record one transaction per request, named by the method and the matched path
@@ -364,6 +397,7 @@ telemetry:
     httpTransactions: true
 
     # @schema
+    # # @config projection telemetry.sentry.span_attributes when telemetry.sentry.enabled
     # type: boolean
     # @schema
     # -- Copy `tracing` span fields onto the Sentry span as attributes
@@ -372,6 +406,7 @@ telemetry:
     spanAttributes: false
 
     # @schema
+    # # @config projection telemetry.sentry.shutdown_timeout_secs when telemetry.sentry.enabled
     # type: integer
     # minimum: 0
     # @schema
@@ -382,6 +417,7 @@ telemetry:
     shutdownTimeoutSecs: 2
 
     # @schema
+    # # @config projection telemetry.sentry.debug when telemetry.sentry.enabled
     # type: boolean
     # @schema
     # -- Print the SDK's own diagnostics to stderr (`telemetry.sentry.debug`). For proving a DSN

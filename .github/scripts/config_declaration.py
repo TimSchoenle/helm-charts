@@ -496,6 +496,12 @@ class Bound:
     Lives here rather than in the gate that first needed it because two of them need it now:
     `check-config-bindings.py` holds a marker against the key it names, and `config_shapes.py`
     regenerates a value's `@schema` block from that same key's constraint.
+
+    `releases` is carried beside `unions` because the merge deliberately drops it: a union is what
+    every reader of one document agrees the keys *are*, and which release each reader was built at
+    is not part of that. It is still the answer to a question one gate has to ask — a chart whose
+    services are separate images moves them one at a time, so "has the thing I transcribed moved?"
+    is per image and not per chart. See `config_shapes.check_handwritten`.
     """
 
     def __init__(self, chart_dir: Path, declaration: Declaration):
@@ -503,10 +509,20 @@ class Bound:
         self.declaration = declaration
         self.documents: dict[str, Document] = {}
         self.unions: dict[str, cc.Union] = {}
+        self.releases: dict[str, tuple[str, ...]] = {}
 
         for document in declaration.documents:
             self.documents[document.name] = document
-            self.unions[document.name] = union_for(chart_dir, document)
+            # `union_for`'s body, inlined for the one thing it discards. Loading each contract
+            # twice to keep the one-liner would double the file reads of every gate that builds
+            # a `Bound`, which for `tankovault` is nine documents on every run.
+            loaded = vendored_for(chart_dir, document)
+            self.unions[document.name] = cc.union_contracts(
+                [(item.label, item.vendored.contract) for item in loaded]
+            )
+            self.releases[document.name] = tuple(
+                sorted({published_version(item.vendored.contract) for item in loaded})
+            )
 
     def namespace(self, name: str, cls: str) -> dict[str, dict[str, Any]]:
         """The half of one document's contract a marker of this class may name.
@@ -671,6 +687,30 @@ def union_for(chart_dir: Path, document: Document) -> cc.Union:
     return cc.union_contracts(
         [(item.label, item.vendored.contract) for item in vendored_for(chart_dir, document)]
     )
+
+
+def release(text: str) -> str:
+    """One release, with the `v` prefix that is spelled inconsistently across this estate removed.
+
+    A contract records the image's own tag — `v8.9.1` — and a chart's `appVersion` is the same
+    release, carrying the prefix in some charts here and not in others: `tankovault` writes
+    `8.9.1` and `netcup-offer-bot` writes `v3.1.0`. Both spellings are already committed, in
+    `Chart.yaml` and in every `@config-shape` marker, so normalising is what comparing them can
+    mean; the alternative is a gate that reports drift between `v8.9.1` and `8.9.1`.
+    """
+    text = text.strip()
+    return text[1:] if text.startswith("v") else text
+
+
+def published_version(contract: dict[str, Any]) -> str:
+    """The release one contract was published at, spelled as `release` spells one.
+
+    Empty for a contract carrying no `app.version`, which is a fixture rather than anything a
+    registry serves; the caller decides what to do with that rather than being handed a guess.
+    """
+    app = contract.get("app")
+    version = app.get("version") if isinstance(app, dict) else None
+    return release(str(version or ""))
 
 
 @dataclass(frozen=True)

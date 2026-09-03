@@ -31,7 +31,7 @@ automated bump. The other 71 were not identical, and every one of those differen
 Three markers remain, and each one now says the *opposite* of what the retired `generated` said:
 not "derive this", but "here is where the chart departs from what was derived".
 
-    # @config-shape <values-path> handwritten <appVersion> <source>
+    # @config-shape <values-path> handwritten <release> <source>
     # @config-shape-except <values-path> <sub-path> <reason>
     # @config-shape-narrow <values-path> <sub-path> <reason>
 
@@ -45,9 +45,17 @@ from `{"type": "array"}` alone would type-check nothing, and a key the producer 
 constraint for at all, where the derived block would name all six JSON types and check nothing.
 Five keys in this repository are the second kind, three of them log-level enumerations the chart
 knows the members of and the contract calls `unknown`. The marker asserts "read from `<source>` at
-`<appVersion>`" and fails when the chart's appVersion moves past it, which is what an automated
+`<release>`" and fails when an image publishing the key moves past it, which is what an automated
 bump does — and fails for a second reason once the contract *does* describe the key, because a
 hand copy the image has superseded is a stale copy that looks maintained.
+
+`<release>` is the *image's*, not the chart's, and the two are the same only in a chart shipping
+one image. `tankovault` ships nine under one `appVersion`, bumped as each upstream release
+publishes them, so a bump that moved the frontend to 8.9.1 and left the other eight at 8.8.0 used
+to fail every transcription in the chart — including `legal.documents`, owned by an `api` image
+that had not moved, against a release no `api` image was ever built at. Each transcription is held
+against the newest image publishing *its own* key instead, which the vendored contracts record;
+see `check_handwritten`.
 
 `@config-shape-except` overrides one position the contract *does* describe. `discord-alertmanager`
 is why it exists: `routes[].guild_id` is a Discord snowflake, the contract types it `integer`, and
@@ -137,6 +145,7 @@ import yaml
 
 import config_bindings as cb
 import config_contract as cc
+import config_declaration as cd
 from config_declaration import Bound, DeclarationError, load_declaration
 from config_paths import CHARTS_DIR, read_yaml
 
@@ -228,6 +237,64 @@ class Shape:
 
 
 @dataclass(frozen=True)
+class Producer:
+    """One image publishing a key, and the release its vendored contract was published at."""
+
+    document: str
+    version: str
+
+
+@dataclass(frozen=True)
+class Resolved:
+    """The contract key one value feeds, and everything a caller needs about it.
+
+    `ty` is the producer's own name for the type — `SentryLevel`, `BTreeMap<String,
+    LegalDocument>` — and is carried for one purpose: a refusal that asks for a transcription can
+    name what is being transcribed, so the marker it asks for can be pasted rather than composed.
+    Empty when the contract publishes none, or when the documents disagree about it.
+
+    `producers` is every document that carries the key, paired with the release its image was
+    built at. A single-image chart has one and it is the chart's `appVersion`; `tankovault` has up
+    to nine and they move independently, which is the whole reason this field exists rather than
+    the caller reading `Chart.yaml`. Empty when no contract carries the key.
+    """
+
+    constraint: dict[str, Any] | None
+    optional: bool
+    structured: bool
+    ty: str
+    producers: tuple[Producer, ...] = ()
+
+    @property
+    def newest(self) -> str:
+        """The furthest-ahead release publishing this key — what a transcription is read at.
+
+        A hand copy is one description of a type several images share, so the release to read it
+        at is the newest of them: a block read at the newest is a true statement about that image
+        and at worst a narrowing of an older one, whereas a block read at the oldest says nothing
+        about the field the newest added. Empty when nothing publishes the key.
+        """
+        return max((one.version for one in self.producers), key=_ordinal, default="")
+
+
+def _ordinal(version: str) -> tuple[int, ...]:
+    """A release as a comparable tuple, for the one comparison this module makes.
+
+    Leading numeric segments only, and everything from the first non-numeric one is dropped:
+    `8.9.1` sorts under `8.10.0`, which a string comparison gets backwards, and a tag nobody here
+    writes — a pre-release, a date, a bare word — degrades to `()` rather than raising. Two of
+    those compare equal, which the caller turns into "re-read it" rather than "it is current":
+    see `check_handwritten`.
+    """
+    parts: list[int] = []
+    for segment in cd.release(version).split("."):
+        if not segment.isdigit():
+            break
+        parts.append(int(segment))
+    return tuple(parts)
+
+
+@dataclass(frozen=True)
 class Divergence:
     """One declared departure from the generated shape: a position the chart keeps as its own.
 
@@ -315,7 +382,7 @@ def parse_markers(text: str, chart: str) -> tuple[list[Shape], list[Divergence]]
             if len(words) < 2 or words[1] not in MODES:
                 problems.append(
                     f"{where}: `{SHAPE_MARKER}` takes a values path and then "
-                    f"`{HANDWRITTEN} <appVersion> <source>`, which is the one thing a marker "
+                    f"`{HANDWRITTEN} <release> <source>`, which is the one thing a marker "
                     "still declares"
                 )
                 continue
@@ -323,7 +390,7 @@ def parse_markers(text: str, chart: str) -> tuple[list[Shape], list[Divergence]]
             values_path, mode = words[0], words[1]
             if len(words) != 4:
                 problems.append(
-                    f"{where}: `{SHAPE_MARKER} {values_path} {HANDWRITTEN}` takes the appVersion "
+                    f"{where}: `{SHAPE_MARKER} {values_path} {HANDWRITTEN}` takes the release "
                     "the struct was read at and the file it was read from"
                 )
                 continue
@@ -865,15 +932,8 @@ class Chart:
                 "contract key, so nothing is generated there to depart from"
             )
 
-    def constraint_for(
-        self, shape: Shape, *, report: bool = True
-    ) -> tuple[dict[str, Any] | None, bool, bool, str] | None:
-        """The contract key one value feeds, as `(constraint, optional, structured, ty)`.
-
-        `ty` is the producer's own name for the type — `SentryLevel`, `BTreeMap<String,
-        LegalDocument>` — and is carried for one purpose: a refusal that asks for a transcription
-        can name what is being transcribed, so the marker it asks for can be pasted rather than
-        composed. Empty when the contract publishes none.
+    def constraint_for(self, shape: Shape, *, report: bool = True) -> Resolved | None:
+        """The contract key one value feeds, resolved against every document that carries it.
 
         `None` when the value cannot be resolved. Reported unless the caller is only asking
         whether a resolution exists — a hand transcription in a chart with no contract at all
@@ -913,12 +973,16 @@ class Chart:
         candidates = (
             list(marker.documents) if marker.documents is not None else sorted(self.bound.documents)
         )
-        entries = [
-            self.bound.namespace(name, marker.cls)[marker.target]
+        # Kept paired with the document that carried it, rather than flattened: which images
+        # publish the key is what decides the release a hand transcription is held against, and
+        # for a multi-service chart that is a strict subset of the documents it declares.
+        carried = [
+            (name, self.bound.namespace(name, marker.cls)[marker.target])
             for name in candidates
             if name in self.bound.documents
             and marker.target in self.bound.namespace(name, marker.cls)
         ]
+        entries = [entry for _name, entry in carried]
         if not entries:
             # `check-config-bindings` reports this one properly, with the suggestions and the
             # scope diagnosti Repeating that here would print the same defect twice.
@@ -938,11 +1002,17 @@ class Chart:
 
         forms = {cc.text_form(entry) for entry in entries}
         names = {str(entry.get("ty") or "") for entry in entries}
-        return (
-            constraints[0],
-            marker.optional,
-            forms == {"structured"},
-            names.pop() if len(names) == 1 else "",
+        producers = tuple(
+            Producer(document=name, version=version)
+            for name, _entry in carried
+            for version in self.bound.releases.get(name, ())
+        )
+        return Resolved(
+            constraint=constraints[0],
+            optional=marker.optional,
+            structured=forms == {"structured"},
+            ty=names.pop() if len(names) == 1 else "",
+            producers=producers,
         )
 
     # ------------------------------------------------------------------------------------
@@ -994,9 +1064,13 @@ class Chart:
         resolved = self.constraint_for(shape)
         if resolved is None:
             return None
-        constraint, optional, structured, ty = resolved
+        constraint = resolved.constraint
+        structured = resolved.structured
+        ty = resolved.ty
         source = ty if ty and not re.search(r"[\s,]", ty) else "<source>"
-        version = self.app_version or "<appVersion>"
+        # The release the marker being asked for should record: the newest image publishing the
+        # key, not the chart's `appVersion`, which in a multi-service chart is one service's.
+        version = resolved.newest or self.app_version or "<version>"
 
         if structured and not cc.describes_element(constraint):
             self.problems.append(
@@ -1016,7 +1090,7 @@ class Chart:
             )
             return None
 
-        generated = expected(constraint, optional=optional, structured=structured)
+        generated = expected(constraint, optional=resolved.optional, structured=structured)
         try:
             present = block_schema(block)
         except ShapeError as failure:
@@ -1035,28 +1109,61 @@ class Chart:
 
         return render(wanted, " " * block.indent)
 
-    def superseded(self, shape: Shape) -> bool:
-        """Whether a hand-transcribed shape is one the contract now publishes itself.
 
-        Two ways for that to become true, and they are the two reasons a transcription is allowed
-        in the first place: a container whose element the producer had not described, and a key it
-        published no constraint for at all. Either one arriving retires the hand copy.
-        """
-        resolved = self.constraint_for(shape, report=False)
-        if resolved is None:
-            return False
-        constraint, _, structured, _name = resolved
-        if structured:
-            return cc.describes_element(constraint)
-        return describing(constraint)
+# --------------------------------------------------------------------------------------------
+# Holding a transcription against a release
+# --------------------------------------------------------------------------------------------
+
+
+def _covers(read_at: str, published: str) -> bool:
+    """Whether a block read at `read_at` still describes an image published at `published`.
+
+    True when the two are the same release, and when `read_at` is the later of them: a copy read
+    at 8.9.1 covers a service still at 8.9.0, at worst by narrowing it, and demanding a re-read
+    there would fail a chart the moment its images stopped moving in lockstep.
+
+    Ordering is consulted only when both releases parse as one. A tag nobody in this estate writes
+    — a pre-release, a date, a bare word — degrades to `()` in `_ordinal`, and two of those would
+    compare equal and pass; such a pair is held to equality instead, which errs towards asking for
+    a re-read rather than towards a stale copy that looks maintained.
+    """
+    if cd.release(read_at) == cd.release(published):
+        return True
+    mine, theirs = _ordinal(read_at), _ordinal(published)
+    return bool(mine) and bool(theirs) and mine >= theirs
+
+
+def superseded(resolved: Resolved) -> bool:
+    """Whether a hand-transcribed shape is one the contract now publishes itself.
+
+    Two ways for that to become true, and they are the two reasons a transcription is allowed in
+    the first place: a container whose element the producer had not described, and a key it
+    published no constraint for at all. Either one arriving retires the hand copy.
+    """
+    if resolved.structured:
+        return cc.describes_element(resolved.constraint)
+    return describing(resolved.constraint)
 
 
 def check_handwritten(chart: Chart, shape: Shape) -> None:
-    """The older marker: a copy of a struct, held against the version it was copied at."""
+    """The older marker: a copy of a struct, held against the release it was copied at.
+
+    That release is the newest *image publishing the key*, and only the chart's `appVersion` when
+    no contract publishes it at all. The difference is the whole of this check on a multi-service
+    chart: `tankovault` is nine images under one `appVersion`, and an automated bump moves the one
+    that had a release — so holding every transcription against `appVersion` demanded that a
+    struct owned by the eight that did not move be re-read at a release those eight were never
+    built at. Two of `tankovault`'s three transcriptions were failing that way, and the version
+    the message named did not exist for the image that owns them.
+
+    Held against the newest rather than each one separately because the chart ships one `@schema`
+    block per value: see `Resolved.newest`.
+    """
     if chart.block_for(shape) is None:
         return
 
-    if chart.superseded(shape):
+    resolved = chart.constraint_for(shape, report=False)
+    if resolved is not None and superseded(resolved):
         chart.problems.append(
             f"{shape.where}: {shape.values_path!r} was transcribed by hand, and the contract now "
             f"describes it itself. Delete the marker and run `just config-shapes`, which "
@@ -1065,20 +1172,40 @@ def check_handwritten(chart: Chart, shape: Shape) -> None:
         )
         return
 
-    if not chart.app_version:
+    published = resolved.newest if resolved is not None else ""
+    if not published and not chart.app_version:
         chart.problems.append(
-            f"{shape.where}: declares a shape for {shape.values_path!r}, but the chart has no "
-            "appVersion to hold it against"
+            f"{shape.where}: declares a shape for {shape.values_path!r}, but no contract records "
+            "the release the key was published at and the chart has no appVersion either, so "
+            "there is nothing to hold the transcription against"
         )
         return
 
-    if shape.version != chart.app_version:
-        chart.problems.append(
-            f"{shape.where}: {shape.values_path!r} was transcribed at {shape.version}, and the "
-            f"chart now pins appVersion {chart.app_version}\n"
-            f"    re-read {shape.source} at {chart.app_version}, bring the `@schema` block for "
-            f"{shape.values_path!r} up to it, and move the marker"
-        )
+    if not published:
+        # No contract carries the key — an unbound transcription, whose only release is the
+        # chart's own. Nothing here can be more precise than that, and equality is the check.
+        if shape.version is not None and cd.release(shape.version) != cd.release(chart.app_version):
+            chart.problems.append(
+                f"{shape.where}: {shape.values_path!r} was transcribed at {shape.version}, and "
+                f"the chart now pins appVersion {chart.app_version}\n"
+                f"    re-read {shape.source} at {chart.app_version}, bring the `@schema` block "
+                f"for {shape.values_path!r} up to it, and move the marker"
+            )
+        return
+
+    read_at = shape.version or ""
+    if _covers(read_at, published):
+        return
+
+    ahead = sorted(
+        {one.document for one in resolved.producers if not _covers(read_at, one.version)}
+    )
+    chart.problems.append(
+        f"{shape.where}: {shape.values_path!r} was transcribed at {shape.version}, and "
+        f"{', '.join(ahead)} now publish{'es' if len(ahead) == 1 else ''} it at {published}\n"
+        f"    re-read {shape.source} at {published}, bring the `@schema` block for "
+        f"{shape.values_path!r} up to it, and move the marker"
+    )
 
 
 def rewrite(chart: Chart) -> tuple[str, int]:

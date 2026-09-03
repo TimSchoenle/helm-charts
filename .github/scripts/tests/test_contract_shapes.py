@@ -534,8 +534,8 @@ class ChartBuilder:
         (self.dir / "config-contract.yaml").write_text(DECLARATION, encoding="utf-8")
         self.contract(fixture("deep"))
 
-    def contract(self, contract: dict) -> ChartBuilder:
-        (self.dir / "contracts" / "deep.json").write_text(
+    def contract(self, contract: dict, name: str = "deep") -> ChartBuilder:
+        (self.dir / "contracts" / f"{name}.json").write_text(
             json.dumps(
                 {
                     "source": {
@@ -547,6 +547,32 @@ class ChartBuilder:
                     "contract": contract,
                 }
             ),
+            encoding="utf-8",
+        )
+        return self
+
+    def sibling(self, name: str, version: str) -> ChartBuilder:
+        """A second image, reading a second document, published at its own release.
+
+        What a multi-service chart is, and the case a single-document fixture cannot reach:
+        `tankovault` ships nine of these under one `appVersion` and they are bumped as each
+        upstream release publishes them, so at any moment they hold several different releases.
+        The contract is the same one, at a different version, because what is being exercised is
+        which release a transcription is held against and not what the keys say.
+        """
+        contract = fixture("deep")
+        contract["app"] = {"name": name, "version": version}
+        self.contract(contract, name=name)
+        (self.dir / "config-contract.yaml").write_text(
+            DECLARATION
+            + f"  - name: {name}\n"
+            "    source:\n"
+            "      kind: ConfigMap\n"
+            "      selector: { app: fixture }\n"
+            f"      key: {name}.toml\n"
+            "    images:\n"
+            "      - values: image\n"
+            f"        contract: contracts/{name}.json\n",
             encoding="utf-8",
         )
         return self
@@ -764,6 +790,127 @@ class TestGate(GateCase):
     def test_a_chart_with_no_markers_is_not_walked(self):
         self.chart.values("image: example\n")
         self.assertEqual(self.chart.check(), 0)
+
+
+def transcribed(key: str, version: str, value: str = "peers") -> str:
+    """One value whose block is a hand copy, declared against the release it was read at.
+
+    `internal.peers` is the key throughout: a container whose element the producer does not
+    describe, which is one of the two things that earn a `handwritten` marker in the first place.
+    Generated from `{"type": "object"}` alone it would type-check nothing, so the marker is the
+    only thing keeping the block — and the only thing this suite is asking about.
+    """
+    return (
+        "image: example\n"
+        f"# @config-shape {value} {cs.HANDWRITTEN} {version} src/peers.rs\n"
+        "\n"
+        "# @schema\n"
+        f"# # @config structured {key} optional\n"
+        "# type: object\n"
+        "# additionalProperties: true\n"
+        "# @schema\n"
+        "# -- Peers.\n"
+        f"{value}: {{}}\n"
+    )
+
+
+class TestPartialBump(GateCase):
+    """A chart shipping several images, bumped one at a time.
+
+    The case a single-image chart cannot produce and this repository hits on every automated
+    `tankovault` pull request: one service has a release, the other eight do not, and the chart's
+    `appVersion` follows the one that moved. Holding every transcription against `appVersion`
+    then asks for a re-read of a struct whose own image is still exactly where it was — at a
+    release that image was never built at, so there is nothing to re-read it from.
+
+    The fixture's first document is published at 2.0.0 and its sibling at 2.1.0, which is that
+    situation with the nine reduced to two.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.chart.sibling("shallow", "2.1.0")
+
+    def test_a_transcription_whose_own_image_did_not_move_is_left_alone(self):
+        # `tankovault`'s `legal.documents`: an `api:` key, an `api` image that did not move, and
+        # a bump of the frontend that used to fail it.
+        self.chart.values(transcribed("deep:internal.peers", "2.0.0"))
+        self.assertEqual(self.chart.check(), 0, self.chart.output)
+
+    def test_a_transcription_whose_image_moved_is_refused(self):
+        self.chart.values(transcribed("shallow:internal.peers", "2.0.0"))
+        self.assertEqual(self.chart.check(), 1)
+        self.assertIn("2.1.0", self.chart.output)
+
+    def test_the_refusal_names_the_image_that_moved(self):
+        # Which of nine to go and read is the whole of what the message is for.
+        self.chart.values(transcribed("shallow:internal.peers", "2.0.0"))
+        self.chart.check()
+        self.assertIn("shallow now publishes it at 2.1.0", self.chart.output)
+
+    def test_a_key_several_images_publish_is_held_against_the_newest(self):
+        # One `@schema` block per value, so the release to read at is the furthest ahead: a block
+        # read there is true of that image and at worst narrows an older one.
+        self.chart.values(transcribed("internal.peers", "2.0.0"))
+        self.assertEqual(self.chart.check(), 1)
+
+    def test_reading_at_the_newest_covers_the_image_still_behind(self):
+        self.chart.values(transcribed("internal.peers", "2.1.0"))
+        self.assertEqual(self.chart.check(), 0, self.chart.output)
+
+    def test_the_charts_appversion_does_not_decide(self):
+        # The regression this class exists for. The fixture's `appVersion` is `v1` and neither
+        # image was built at it; a transcription current with its own image passes regardless.
+        self.assertEqual(
+            (self.chart.dir / "Chart.yaml").read_text(encoding="utf-8").count("appVersion: v1"), 1
+        )
+        self.chart.values(transcribed("deep:internal.peers", "2.0.0"))
+        self.assertEqual(self.chart.check(), 0, self.chart.output)
+
+    def test_a_transcription_binding_nothing_is_still_held_against_the_chart(self):
+        # No contract carries the key, so the chart's own release is the only one there is —
+        # unchanged, and the reason the `appVersion` path is kept rather than deleted.
+        self.chart.values(
+            "# @config-shape peers handwritten v0 src/peers.rs\n"
+            "\n"
+            "# @schema\n"
+            "# type: object\n"
+            "# @schema\n"
+            "# -- Peers.\n"
+            "peers: {}\n"
+        )
+        self.assertEqual(self.chart.check(), 1)
+        self.assertIn("appVersion v1", self.chart.output)
+
+
+class TestCovers(unittest.TestCase):
+    """Which releases a transcription read at one of them still describes."""
+
+    def test_the_same_release_is_covered(self):
+        self.assertTrue(cs._covers("2.0.0", "2.0.0"))
+
+    def test_the_prefix_the_estate_spells_inconsistently_is_not_a_difference(self):
+        # `tankovault` writes `8.9.1` and `netcup-offer-bot` writes `v3.1.0`, in `Chart.yaml` and
+        # in the markers both. A gate reporting drift between the two spellings reports nothing.
+        self.assertTrue(cs._covers("v8.9.1", "8.9.1"))
+        self.assertTrue(cs._covers("8.9.1", "v8.9.1"))
+
+    def test_an_older_read_does_not_cover_a_newer_image(self):
+        self.assertFalse(cs._covers("2.0.0", "2.1.0"))
+
+    def test_a_newer_read_covers_an_older_image(self):
+        self.assertTrue(cs._covers("2.1.0", "2.0.0"))
+
+    def test_the_comparison_is_numeric_and_not_lexical(self):
+        # `8.9.1` sorts above `8.10.0` as text, which would pass a transcription a release behind.
+        self.assertFalse(cs._covers("8.9.1", "8.10.0"))
+        self.assertTrue(cs._covers("8.10.0", "8.9.1"))
+
+    def test_a_release_that_does_not_parse_is_held_to_equality(self):
+        # Two unorderable tags would otherwise compare equal and pass each other.
+        self.assertFalse(cs._covers("nightly", "2.0.0"))
+        self.assertFalse(cs._covers("2.0.0", "nightly"))
+        self.assertTrue(cs._covers("nightly", "nightly"))
 
 
 # --------------------------------------------------------------------------------------------

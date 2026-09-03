@@ -230,7 +230,7 @@ config-shapes:
 # The asserting half of the recipe above, and the gate over the three markers that depart from it:
 #
 #   a bound value with no marker             the block is behind its contract
-#   `@config-shape <path> handwritten ...`   the chart's appVersion moved past the version the key
+#   `@config-shape <path> handwritten ...`   an image publishing the key moved past the release it
 #                                            was read at, or the contract describes it now and the
 #                                            hand copy is superseded
 #   `@config-shape-except <path> <sub> ...`  the contract stopped describing the position the
@@ -238,11 +238,18 @@ config-shapes:
 #   `@config-shape-narrow <path> <sub> ...`  the contract started describing the position the
 #                                            chart adds, so somebody has to choose between them
 #
-# A transcription is held against the version it was read at — which an automated bump moves
+# A transcription is held against the release it was read at — which an automated bump moves
 # while touching nothing else, leaving a schema that refuses a field the new release added. Once
 # the image publishes the key, the hand copy is superseded and the gate says so rather than
 # letting a stale copy sit there looking maintained. The two departure markers age the same way in
 # opposite directions, which is why they are two markers rather than one that accepts either.
+#
+# The release is the *image's*, read from the vendored contract, and not the chart's `appVersion`.
+# They differ in a chart shipping several images: `tankovault`'s nine services are bumped as each
+# upstream release publishes them, so one that moved the frontend alone once failed all three of
+# that chart's transcriptions — two of them owned by an `api` image still on the release they were
+# read at, against a version no `api` image was ever built at. Each is now held against the newest
+# image publishing its own key, so a partial bump reports only what it actually moved.
 #
 # In `just check` rather than left to the Documentation job. The generated half the docs job does
 # repair, but the hand-written half it cannot: re-reading a struct is a person's job, and the

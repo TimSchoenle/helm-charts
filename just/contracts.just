@@ -217,6 +217,14 @@ check-config-bindings:
 # run by `just contracts`: that recipe fetches the contract, and one command that both fetches a
 # document and rewrites the chart from it produces a commit in which nobody can see which caused
 # which.
+#
+# Writes and reports; it does not gate. A block behind its contract is rewritten rather than
+# refused, and the one problem no rewrite reaches — a hand transcription behind the image that
+# publishes its key — belongs to `check-config-shapes` alone. It was raised from here as well
+# until an automated `tankovault` bump showed what that costs: this recipe runs in the
+# Documentation job two steps after `just contracts`, the only networked step in the repository,
+# and failing here discarded that refresh before the commit that carries it back to the branch.
+# The offline staleness gate then failed against contracts nothing was going to refresh.
 [doc("Write every derived `@schema` block in a chart's values.yaml from its contract")]
 [group('contracts')]
 config-shapes:
@@ -251,10 +259,11 @@ config-shapes:
 # read at, against a version no `api` image was ever built at. Each is now held against the newest
 # image publishing its own key, so a partial bump reports only what it actually moved.
 #
-# In `just check` rather than left to the Documentation job. The generated half the docs job does
-# repair, but the hand-written half it cannot: re-reading a struct is a person's job, and the
-# question is not whether the file changed but whether the schema still describes it. Reads
-# committed files only — no network, no render, no cluster.
+# In `just check` rather than left to the Documentation job, and the *only* place the four
+# problems above are raised. The generated half the docs job does repair, but the hand-written
+# half it cannot: re-reading a struct is a person's job, and the question is not whether the file
+# changed but whether the schema still describes it. Reads committed files only — no network, no
+# render, no cluster.
 [doc("Fail when a derived `@schema` block is not what its contract describes")]
 [group('contracts')]
 check-config-shapes:

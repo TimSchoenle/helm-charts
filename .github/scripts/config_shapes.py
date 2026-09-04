@@ -49,6 +49,11 @@ knows the members of and the contract calls `unknown`. The marker asserts "read 
 bump does — and fails for a second reason once the contract *does* describe the key, because a
 hand copy the image has superseded is a stale copy that looks maintained.
 
+That failure is `--check`'s alone. Everything else here is a difference the writer removes on the
+same pass, so reporting it from either half is the same statement; a transcription behind its
+image is not, and a writer that refused over it turned the job that repairs this tree into a gate
+over the one thing in it no repair reaches. See `check_handwritten`.
+
 `<release>` is the *image's*, not the chart's, and the two are the same only in a chart shipping
 one image. `tankovault` ships nine under one `appVersion`, bumped as each upstream release
 publishes them, so a bump that moved the frontend to 8.9.1 and left the other eight at 8.8.0 used
@@ -1148,6 +1153,15 @@ def superseded(resolved: Resolved) -> bool:
 def check_handwritten(chart: Chart, shape: Shape) -> None:
     """The older marker: a copy of a struct, held against the release it was copied at.
 
+    Reached from `--check` only. Every other problem this module reports is one the writer repairs
+    on the same pass, so raising it from both halves costs nothing; this one it cannot repair —
+    re-reading a struct somebody else owns is a person's job. Raised from the writer too, it failed
+    `just schema` in the Documentation job, and that job's steps run in one sequence: the contract
+    refresh it had already fetched over the network never reached the commit, and the offline
+    staleness gate then reported nine contracts behind their digests and advised waiting for a
+    commit that could not come. The assertion belongs to the gate, which says so in its own name
+    and runs in the job whose name is about contracts.
+
     That release is the newest *image publishing the key*, and only the chart's `appVersion` when
     no contract publishes it at all. The difference is the whole of this check on a multi-service
     chart: `tankovault` is nine images under one `appVersion`, and an automated bump moves the one
@@ -1312,11 +1326,17 @@ def main(argv: list[str]) -> int:
         for shape in chart.shapes:
             if shape.mode == HANDWRITTEN:
                 transcribed += 1
-                check_handwritten(chart, shape)
             else:
                 generated += 1
 
         if args.check:
+            # Held here and not in the writer. A stale transcription is a person's job — nothing
+            # this module can write repairs it — and asserting it from the writer as well made the
+            # Documentation job fail on a repair it was never asked to make, throwing away the
+            # contract refresh it had already fetched in the same run. See `check_handwritten`.
+            for shape in chart.shapes:
+                if shape.mode == HANDWRITTEN:
+                    check_handwritten(chart, shape)
             check(chart)
         else:
             text, written = rewrite(chart)

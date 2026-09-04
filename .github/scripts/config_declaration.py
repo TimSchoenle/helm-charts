@@ -772,9 +772,15 @@ def bind(
 
         if vendored.digest != pinned.digest:
             problems.append(
-                f"{label} is for {vendored.digest}, but the chart pins {pinned.digest}. The "
-                "Documentation job refreshes it; re-run after its commit, or run "
-                "`just contracts` locally."
+                # Leads with the instruction that always works. The Documentation job is named
+                # second and conditionally, because it is not always going to make that commit:
+                # it does not run on a fork's pull request, and a failure anywhere in it stops the
+                # sequence before the commit step. Advice that assumes the commit is coming reads,
+                # on exactly the runs where it is not, as "wait" — and waiting is what produced a
+                # pull request re-run three times against a job that failed identically each time.
+                f"{label} is for {vendored.digest}, but the chart pins {pinned.digest}. Run "
+                "`just contracts` and commit the result; the Documentation job runs the same "
+                "recipe, so its commit clears this too when that job reaches it."
             )
             continue
 

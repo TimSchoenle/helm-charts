@@ -409,7 +409,15 @@ class TestStalenessInterlock(unittest.TestCase):
     def test_a_bumped_digest_refuses_to_validate_at_all(self):
         binding, problems = self.bind_with(f"v2@{OTHER_DIGEST}")
         self.assertIsNone(binding)
-        self.assertIn("The Documentation job refreshes it", problems[0])
+        self.assertIn(OTHER_DIGEST, problems[0])
+
+    def test_the_refusal_names_the_refresh_before_the_job(self):
+        # The reader of this line is looking at a red gate and deciding what to do next. `just
+        # contracts` always works; the Documentation job's commit is conditional on that job
+        # running and reaching its commit step, so it cannot be the first thing offered.
+        _, problems = self.bind_with(f"v2@{OTHER_DIGEST}")
+        message = problems[0]
+        self.assertLess(message.index("just contracts"), message.index("Documentation job"))
 
     def test_a_mutable_tag_refuses_to_validate(self):
         binding, problems = self.bind_with("latest")

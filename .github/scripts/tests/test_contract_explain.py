@@ -287,7 +287,7 @@ class TestStalenessInterlock(ChartFixture):
         surface, report = self.collect(chart)
         self.assertIsNone(surface)
         self.assertTrue(report.errors)
-        self.assertIn("refreshes it", report.errors[0][1].message)
+        self.assertIn("just contracts", report.errors[0][1].message)
 
     def test_one_stale_document_refuses_the_whole_chart(self):
         # Rather than printing the eight that bound and quietly dropping the ninth: a listing

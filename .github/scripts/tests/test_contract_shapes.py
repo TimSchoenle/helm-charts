@@ -883,6 +883,65 @@ class TestPartialBump(GateCase):
         self.assertIn("appVersion v1", self.chart.output)
 
 
+class TestTheWriterDoesNotGate(GateCase):
+    """A stale transcription is the gate's to report, and the writer's to walk past.
+
+    The writer runs in the Documentation job, immediately after the one networked step in this
+    repository, and that job's steps are one sequence: a refusal here discarded the contracts that
+    step had just refreshed, before the commit that carries them back to the branch. The offline
+    staleness gate then reported all nine behind their digests and told the reader to wait for a
+    commit nobody was going to make. Nothing the writer could have written would have repaired the
+    transcription, so the refusal bought nothing and cost the run.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.chart.sibling("shallow", "2.1.0")
+
+    def test_a_transcription_behind_its_image_does_not_fail_the_writer(self):
+        self.chart.values(transcribed("shallow:internal.peers", "2.0.0"))
+        self.assertEqual(self.chart.write(), 0, self.chart.output)
+
+    def test_the_gate_still_reports_it(self):
+        # The same tree and the same marker: only which half is asked changes the answer.
+        self.chart.values(transcribed("shallow:internal.peers", "2.0.0"))
+        self.assertEqual(self.chart.check(), 1)
+        self.assertIn("shallow now publishes it at 2.1.0", self.chart.output)
+
+    def test_the_generated_block_beside_it_is_still_written(self):
+        # The point of not refusing: a bump that moves a transcription out of date moves generated
+        # blocks with it, and those the writer can repair.
+        self.chart.values(
+            transcribed("shallow:internal.peers", "2.0.0")
+            + "\n"
+            + "# @schema\n"
+            "# # @config structured github.repos optional\n"
+            "# type: string\n"
+            "# @schema\n"
+            "# -- Repositories.\n"
+            "githubRepos: []\n"
+        )
+        self.assertEqual(self.chart.write(), 0, self.chart.output)
+        self.assertIn("# items:", self.chart.read())
+
+    def test_a_superseded_transcription_does_not_fail_the_writer_either(self):
+        # The marker's other way of going stale, and equally not a repair: deleting a superseded
+        # marker is a decision about who owns the block, which no regeneration can make.
+        self.chart.values(
+            "image: example\n"
+            "# @config-shape githubRepos handwritten v1 src/repos.rs\n"
+            "\n"
+            "# @schema\n"
+            "# # @config structured github.repos optional\n"
+            "# type: [array, 'null']\n"
+            "# @schema\n"
+            "# -- Repositories.\n"
+            "githubRepos: []\n"
+        )
+        self.assertEqual(self.chart.write(), 0, self.chart.output)
+        self.assertEqual(self.chart.check(), 1)
+
+
 class TestCovers(unittest.TestCase):
     """Which releases a transcription read at one of them still describes."""
 

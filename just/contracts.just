@@ -258,25 +258,36 @@ adopt-config chart='' *flags:
 # Networked, because its first step is the one networked recipe here. Everything after it reads
 # the file that step wrote.
 #
-# **One generator is chained, and the rest are deliberately not.** With `--write` this also runs
-# `just contract-tests`, and that is not a convenience: a new marker changes what the generated
-# round trip should say, so `just check-contract-tests` is red until it is regenerated. What the
-# regeneration produces is the point — measured on a key added to `netcup-offer-bot`'s contract,
-# the suite gained `delivers feed.user_agent into config.toml from feed.userAgent`, and that case
-# failed against the rendered `[feed]` table with the key absent. That is the printed "wire the
-# projection" note turned into something a machine checks. It is per chart and it writes only
-# where the author asked for writing, which is what the Documentation job cannot say and why that
-# job is still kept away from it.
+# **Two generators are chained under `--write`, and both were learnt from a red run.**
 #
-# `just schema` and `just docs` are not chained, and not because they are hard: the Documentation
-# job already runs both on every pull request and commits the result back to the branch, so a
-# local run adds a diff CI is about to rewrite — helm-docs emits blank lines that job strips, so
-# the next push needs a fast-forward first. They stay printed as the steps they are.
+# `helm schema`, over the named chart alone. `values.schema.json` is committed, Helm validates
+# every render against it, and its root carries `additionalProperties: false` — so a values file
+# holding a block the schema has never seen fails with `additional properties 'telemetry' not
+# allowed` before a single template is evaluated. On the run that taught this, that was every job
+# in the workflow: policy scan, three manifest validations, both unit-test matrices, the contract
+# gates, chart-testing and the end-to-end. The Documentation job *does* regenerate the file and
+# commit it back, which is why the repair looked automatic — but it lands on the push after the
+# red one, and the run everybody was looking at was already scrapped.
+#
+# `just contract-tests`, because a new marker changes what the generated round trip should say and
+# `just check-contract-tests` is red until it is regenerated. What it produces is the point:
+# measured on `discord-alertmanager`, the suite gained fifteen cases, and with the projection now
+# written they pass — 60 of 60 — where before every one of them failed on a `[telemetry]` table
+# the document did not contain.
+#
+# Then the two gates that read only committed files, so a chart that is not finished says so in
+# this terminal instead of in a pull request.
+#
+# `just docs` is still not chained: the Documentation job runs helm-docs on every pull request and
+# commits the result, and a local run adds blank lines that job strips, so the next push needs a
+# fast-forward first. Nothing about a README blocks a render, which is the whole difference from
+# the schema.
 #
 # `Chart.yaml` is not touched either. `contract-diff` above prints the bump its findings suggest
 # and deliberately writes nothing, because only the reviewer knows whether the chart actually
-# writes the key that moved — and the same goes for the two things the contract cannot state: a
-# grouping block's description, and the `note:` saying when a release needs a credential at all.
+# writes the key that moved — and the same goes for the three things the contract cannot state: a
+# grouping block's description, the `note:` saying when a release needs a credential, and a
+# default for a required key whose image publishes none.
 #
 # **Commit the two halves separately.** The refresh is what the image says; the values are what
 # this repository decided to do about it, and a single commit holding both is one in which nobody
@@ -303,20 +314,47 @@ sync-config chart='' *flags: (contracts chart)
     # and the generator is not exempt from that because its output is committed too.
     case " {{ flags }} " in
       *" --write "*)
+        # `values.schema.json` is committed and Helm validates every render against it, with
+        # `additionalProperties: false` at the root — so a values file carrying a block the schema
+        # has never heard of fails *every* job that renders the chart, which on the run this step
+        # was added for was all of them. The Documentation job does regenerate it, but on the push
+        # after the red one; this closes that gap before the push.
+        echo
+        root='{{ charts }}'
+        if [ -n '{{ chart }}' ]; then root='{{ charts }}/{{ chart }}'; fi
+        if helm schema --add-schema-reference --chart-search-root "$root"; then
+          echo "==> regenerated values.schema.json under $root"
+        else
+          echo "warning: values.schema.json was NOT regenerated, and every render will fail" >&2
+          echo "         until it is. Run 'just deps', then 'just schema'." >&2
+        fi
+
         echo
         just contract-tests '{{ chart }}'
+
+        # The two gates that read only committed files, run here so a chart that is not finished
+        # says so in this terminal rather than in a pull request. Both are seconds, neither needs
+        # a cluster, and the writes above are already on disk — so a failure here is a report and
+        # not a half-applied run.
         echo
-        echo "==> the round trip now has a case per new marker, and each fails until the"
-        echo "    projection is wired into templates/_helpers.tpl. That is what it is for."
+        status=0
+        just check-config-bindings || status=1
+        just check-values-docs >/dev/null || {
+          status=1
+          echo "error: a value carries no description; run 'just check-values-docs'" >&2
+        }
         ;;
       *)
+        status=0
         echo
-        echo "==> with --write this would also regenerate the round-trip suites."
+        echo "==> with --write this would also regenerate values.schema.json and the round-trip"
+        echo "    suites, and re-run the two offline gates."
         ;;
     esac
 
     echo
     echo "==> the contract refresh and the values are two changes; commit them separately."
+    exit "$status"
 
 # Write every bound value's `@schema` block in a chart's values.yaml from the contract.
 #

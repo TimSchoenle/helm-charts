@@ -65,21 +65,26 @@ Written into `config-contract.yaml`, under `--write`:
                                goes no further
     a `credentials` row        the `value:` column, which is the chart value just written
 
+Written into `templates/_helpers.tpl`, under `--write`:
+
+    the `derivedConfig` lines  appended at the define's own depth, and only for a key whose root
+                               the define does not already write — a second `telemetry:` beside
+                               an existing one is dropped by `fromYaml` in silence
+    the `secretData` lines     the same rule, by secrets-file name
+
 Printed and never written:
 
-    the `derivedConfig` lines  the chart's own template, whose hand-written shape — its `with`
-                               blocks, its `if` gates — this cannot safely edit
-    the `secretData` lines     the same, for a credential
+    a projection whose root    the define already carries it, so where the new lines belong
+    the define already has     inside it is a question about a hand-written block
     a credential's `note:`     when a release needs one at all is the chart's knowledge
     a `TODO` description       a contract says nothing about the blocks a chart groups keys into
     an invented default        for a required key whose image publishes none
 
-Which means a `--write` run satisfies `just check-config-bindings` and leaves the chart
-*rendering* exactly what it rendered before. The value exists, it is typed, it is documented and
-it is bound or written off; nothing reaches the image until somebody wires the projection, which
-is the one step that needs to know what the chart already does. That state — a value nothing
-reads — is visible in the diff, named line by line in the closing output, and, once
-`just contract-tests` has run, a failing case rather than a note.
+So a `--write` run leaves the chart binding, rendering and testing the new settings, and what is
+left for a person is prose and judgement. Two generated files it does *not* touch are owed
+immediately afterwards, and the closing output leads with them: `values.schema.json`, without
+which every render fails on a values block the schema has not seen, and the round-trip suite,
+whose new cases are what prove the projection above actually arrived.
 
 --------------------------------------------------------------------------------------------
 Where the block goes
@@ -103,6 +108,7 @@ every chart here is the last block before the chassis.
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -212,17 +218,19 @@ class Insertion:
 
 
 @dataclass(frozen=True)
-class DeclarationEdit:
-    """One run of lines for `config-contract.yaml`, and the line it goes after.
+class FileEdit:
+    """One run of lines for a file other than values.yaml, and the line it goes after.
 
-    The second file an adoption touches. A key this command surfaces no value for is owed an
-    `unbound` entry before the gate is satisfied, and a credential it does surface is owed one
-    too — so a run that wrote the values and left the declaration alone would leave the chart red
-    on the same gate it was run to satisfy, which is what happened to `discord-alertmanager`.
+    An adoption touches three files, and the two beyond `values.yaml` are the ones a chart is red
+    without. A key surfaced by no value is owed an `unbound` entry; a value bound to a key is owed
+    the template line that projects it. A run that wrote the values and left either alone leaves
+    the chart failing the very gates it was run to satisfy — which is what happened to
+    `discord-alertmanager`, twice: once on the declaration and once on the helper.
 
-    `what` names the block for the report, so a reader is told which of their two files grew.
+    `what` names the block for the report, so a reader is told what grew and where.
     """
 
+    path: Path
     after: int
     lines: list[str]
     what: str
@@ -237,9 +245,13 @@ class Adoption:
     declaration_path: Path
     plan: sc.Plan = field(default_factory=sc.Plan)
     insertions: list[Insertion] = field(default_factory=list)
-    edits: list[DeclarationEdit] = field(default_factory=list)
+    edits: list[FileEdit] = field(default_factory=list)
     refusals: list[Refusal] = field(default_factory=list)
     blocked: list[str] = field(default_factory=list)
+    # The projections that could not be appended, because the define already carries their root.
+    # Printed rather than written; `projection_edits` is where that line is drawn.
+    owed_projected: list[sc.Placement] = field(default_factory=list)
+    owed_secrets: list[sc.Placement] = field(default_factory=list)
 
     @property
     def owed(self) -> bool:
@@ -558,7 +570,7 @@ def declaration_edits(
     declaration: Declaration,
     plan: sc.Plan,
     occupied: list[sc.Placement],
-) -> list[DeclarationEdit]:
+) -> list[FileEdit]:
     """The `unbound` groups and `credentials` rows this adoption owes `config-contract.yaml`.
 
     **Every reason written here is read off the contract rather than decided.** That is the whole
@@ -581,20 +593,20 @@ def declaration_edits(
     path = chart_dir / "config-contract.yaml"
     regions = {region.values_path: region for region in cb.regions(path)}
 
-    edits: list[DeclarationEdit] = []
+    edits: list[FileEdit] = []
     fresh: list[tuple[str, list[str]]] = []
 
     rows = credential_rows(declaration, plan)
     if rows:
         if "credentials" in regions:
-            edits.append(DeclarationEdit(regions["credentials"].end, rows, "credentials"))
+            edits.append(FileEdit(path, regions["credentials"].end, rows, "credentials"))
         else:
             fresh.append(("credentials", [*CREDENTIALS_HEADER, *rows]))
 
     groups = write_off_lines(plan, occupied, declaration)
     if groups:
         if "unbound" in regions:
-            edits.append(DeclarationEdit(regions["unbound"].end, groups, "unbound"))
+            edits.append(FileEdit(path, regions["unbound"].end, groups, "unbound"))
         else:
             fresh.append(("unbound", [*UNBOUND_HEADER, *groups]))
 
@@ -603,8 +615,8 @@ def declaration_edits(
         for _, lines in fresh:
             body.extend(["", *lines])
         edits.append(
-            DeclarationEdit(
-                before_documents(regions), body, " and ".join(name for name, _ in fresh)
+            FileEdit(
+                path, before_documents(regions), body, " and ".join(name for name, _ in fresh)
             )
         )
 
@@ -686,6 +698,123 @@ def write_off_lines(
 
 
 # --------------------------------------------------------------------------------------------
+# The template: projecting the values into the document
+# --------------------------------------------------------------------------------------------
+
+# The Go-template actions that open a nesting level, and the one that closes it. `else` is
+# neither. Read per action rather than per line, because a line may carry several.
+OPENERS = ("if", "with", "range", "define", "block")
+ACTION = re.compile(r"\{\{-?\s*(\w+)")
+TOP_LEVEL_KEY = re.compile(r"^(?P<name>[A-Za-z0-9_][A-Za-z0-9_.\-]*):")
+
+
+@dataclass(frozen=True)
+class Define:
+    """One `{{- define }}` in a chart's `_helpers.tpl`, as the lines a caller may append to.
+
+    `end` is the line of the define's own closing action, so a new top-level entry is inserted
+    after `end - 1` and lands inside the define. `roots` are the mapping keys already written at
+    the define's own nesting depth — the ones a second block of the same name would shadow.
+    """
+
+    end: int
+    roots: frozenset[str]
+
+
+def read_define(text: str, name: str) -> Define | None:
+    """Find one define and the top-level keys it already writes; `None` when it cannot be read.
+
+    A helper is hand-written Go template, and this reads exactly as much of it as an append needs:
+    where the define ends, and which keys sit at its own depth. Anything deeper is inside an `if`
+    or a `with` and is none of an appender's business — the point of tracking depth at all is to
+    land *outside* every one of them, so that a projection is not silently written under somebody
+    else's condition.
+
+    `None` when the define is absent, or when the actions do not balance — a template shape this
+    cannot read is one it must not edit, and the caller prints the lines instead.
+    """
+    lines = text.splitlines()
+    opening = f'define "{name}"'
+    start = next((number for number, line in enumerate(lines) if opening in line), None)
+    if start is None:
+        return None
+
+    depth = 0
+    roots: set[str] = set()
+    for number in range(start, len(lines)):
+        line = lines[number]
+        if depth == 1:
+            key = TOP_LEVEL_KEY.match(line)
+            if key is not None:
+                roots.add(key.group("name"))
+
+        for action in ACTION.findall(line):
+            if action in OPENERS:
+                depth += 1
+            elif action == "end":
+                depth -= 1
+                if depth == 0:
+                    return Define(end=number + 1, roots=frozenset(roots))
+
+    return None
+
+
+def projection_edits(
+    chart_dir: Path, chart: str, plan: sc.Plan
+) -> tuple[list[FileEdit], list[sc.Placement], list[sc.Placement]]:
+    """The `derivedConfig` and `secretData` lines to append, and the ones that must be printed.
+
+    **The one rule that decides whether a line can be written: does the tree already have this
+    key's root?** A projection is appended at the define's own depth, so it cannot land inside
+    somebody's `if`; what it *can* do is write a second `telemetry:` beside an existing one, and
+    the document is built by `fromYaml`, which keeps the last of two mapping keys and drops
+    everything under the first. That is the defect `test_contract_scaffold` records from the other
+    direction — settings and credentials sharing one values tree — and it is silent: the values
+    file parses, the chart renders, and a setting has vanished. So a key whose root is already in
+    the define is printed for a person to place, and only a new root is written.
+
+    That leaves the common case automatic and the ambiguous one manual, which is the same split
+    every other writer here takes. `discord-alertmanager` is the measured case: fifteen new keys
+    under a `telemetry` root the helper had never heard of, fifteen round-trip cases red until
+    somebody typed them out.
+    """
+    path = chart_dir / "templates" / "_helpers.tpl"
+    if not path.is_file():
+        return [], list(plan.projected), list(plan.secrets)
+
+    text = path.read_bytes().decode("utf-8")
+    edits: list[FileEdit] = []
+
+    derived = read_define(text, f"{chart}.derivedConfig")
+    if derived is None:
+        projected, owed_projected = [], list(plan.projected)
+    else:
+        projected = [
+            item for item in plan.projected if item.path.split(".")[0] not in derived.roots
+        ]
+        owed_projected = [item for item in plan.projected if item not in projected]
+        if projected:
+            edits.append(
+                FileEdit(path, derived.end - 1, sc.derived_for(projected), "derivedConfig")
+            )
+
+    secrets = read_define(text, f"{chart}.secretData")
+    if secrets is None:
+        written, owed_secrets = [], list(plan.secrets)
+    else:
+        written = [
+            item for item in plan.secrets if sc.secrets_file_name(item) not in secrets.roots
+        ]
+        owed_secrets = [item for item in plan.secrets if item not in written]
+        if written:
+            edits.append(
+                FileEdit(path, secrets.end - 1, sc.secret_data_for(written), "secretData")
+            )
+
+    return edits, owed_projected, owed_secrets
+
+
+# --------------------------------------------------------------------------------------------
 # Reading one chart
 # --------------------------------------------------------------------------------------------
 
@@ -754,14 +883,22 @@ def adopt(chart_dir: Path, wanted: set[str]) -> Adoption | None:
     adoption.edits = declaration_edits(
         chart_dir, declaration, adoption.placed, adoption.occupied
     )
+    projections, owed_projected, owed_secrets = projection_edits(
+        chart_dir, chart_dir.name, adoption.placed
+    )
+    adoption.edits.extend(projections)
+    adoption.owed_projected = owed_projected
+    adoption.owed_secrets = owed_secrets
     return adoption
 
 
 def write(adoption: Adoption) -> None:
-    """Apply one chart's edits: the values, then the declaration they oblige.
+    """Apply one chart's edits: the values, the declaration and the helper they oblige.
 
-    Both files, because the pair is what satisfies the gate — values with no write-off leaves the
-    chart red on the rule the command was run to settle.
+    All three, because that set is what a green chart needs. Values with no write-off fail
+    `check-config-bindings`; values with no projection fail the round trip the same run
+    regenerates. A command that wrote one of the three would be a command whose output is never
+    the finished state.
     """
     _apply(
         adoption.values,
@@ -770,7 +907,8 @@ def write(adoption: Adoption) -> None:
             for insertion in adoption.insertions
         ],
     )
-    _apply(adoption.declaration_path, [(edit.after, edit.lines) for edit in adoption.edits])
+    for path in sorted({edit.path for edit in adoption.edits}):
+        _apply(path, [(edit.after, edit.lines) for edit in adoption.edits if edit.path == path])
 
 
 def _apply(path: Path, edits: list[tuple[int, list[str]]]) -> None:
@@ -835,14 +973,18 @@ def still_owed(adoption: Adoption, *, written: bool) -> None:
     """
     plan = adoption.placed
 
-    if plan.projected:
+    if adoption.owed_projected:
         print(f"\n  still owed — {adoption.chart}/templates/_helpers.tpl, in `derivedConfig`:\n")
-        for line in sc.derived_for(plan.projected, "  "):
+        for line in sc.derived_for(adoption.owed_projected, "  "):
             print(f"  {line}")
+        print(
+            "\n    The define already writes this key's root, and a second one would shadow"
+            "\n    the first — `fromYaml` keeps the last. Place these in the block that exists."
+        )
 
-    if plan.secrets:
+    if adoption.owed_secrets:
         print(f"\n  still owed — {adoption.chart}/templates/_helpers.tpl, in `secretData`:\n")
-        for line in sc.secret_data_for(plan.secrets):
+        for line in sc.secret_data_for(adoption.owed_secrets):
             print(f"    {line}")
 
     invented = sc.invented(plan)
@@ -863,13 +1005,34 @@ def still_owed(adoption: Adoption, *, written: bool) -> None:
 
     for edit in adoption.edits:
         state = "written into" if written else "goes into"
-        where = f"{adoption.declaration_path.as_posix()}:{edit.after}"
+        where = f"{edit.path.as_posix()}:{edit.after}"
         print(f"\n  {state} {where}, under `{edit.what}`:\n")
         for line in edit.lines:
             print(f"    {line}" if line else "")
 
 
-def closing(adoptions: list[Adoption], *, written: bool) -> None:
+def counted(charts: Path, adoptions: list[Adoption]) -> list[str]:
+    """The rows the tree-level test asserts, for the charts this run touched.
+
+    `test_every_enrolled_chart_passes_the_gate` holds the per-chart marker counts as literals, so
+    every adoption moves one of them and the suite goes red until somebody edits it. The number is
+    the gate's own — markers times the documents each binds — and re-deriving it here would be a
+    second implementation of exactly the arithmetic that test exists to pin. So it is read back
+    out of the gate, after the write, and printed as the line to paste.
+
+    Not written. A test whose expected values a generator edits silently is a test nobody reads,
+    which is the same argument that keeps `just contract-tests` out of the Documentation job.
+    """
+    touched = {item.chart for item in adoptions if item.insertions}
+    rows = gate.run(charts, Report())
+    return [
+        f'        ("{chart}", {keys}, {external}),'
+        for chart, keys, external in rows
+        if chart in touched
+    ]
+
+
+def closing(adoptions: list[Adoption], charts_dir: Path, *, written: bool) -> None:
     """What the run added up to, and the work that has to follow it."""
     values = sum(len(item.placed.projected) + len(item.placed.secrets) for item in adoptions)
     charts = [item.chart for item in adoptions if item.insertions]
@@ -883,19 +1046,27 @@ def closing(adoptions: list[Adoption], *, written: bool) -> None:
 
     print(
         f"\n==> wrote {values} value(s) into {len(charts)} chart(s): {', '.join(charts)}\n\n"
-        "    Then, in order:\n"
-        "      1. wire each `derivedConfig` and `secretData` line above into that chart's\n"
-        "         templates/_helpers.tpl — until that is done the values reach nothing\n"
-        "      2. replace every `TODO` description and every invented default named above\n"
-        "      3. read the `unbound` reasons that were written, and add a `note:` to each\n"
-        "         credential row saying when a release needs it at all\n"
-        "      4. `just contract-tests <chart>` — the generated round trip gains a case\n"
-        "         per new marker, and each fails until step 1 is done, which is the point\n"
-        "      5. update the per-chart count in tests/test_contract_bindings.py, in\n"
-        "         `test_every_enrolled_chart_passes_the_gate` — each marker moves it\n"
-        "      6. bump the chart version, then `just schema` and `just docs`\n"
-        "      7. `just check-config-bindings`, `just check-config`, `just test`"
+        "    Then, in order — `just sync-config` does 1 and 5 for you:\n"
+        "      1. `just schema`. values.schema.json is committed and Helm validates every\n"
+        "         render against it, so a new block it does not know fails every job\n"
+        "      2. read the `derivedConfig` and `secretData` lines that were written, and\n"
+        "         place by hand any the output above says could not be\n"
+        "      3. replace the text after each `TODO: ` — keep the `# --` line, since a\n"
+        "         value with no description fails `just check-values-docs`\n"
+        "      4. add a `note:` to each credential row saying when a release needs it, and\n"
+        "         choose a default for each invented value named above\n"
+        "      5. `just contract-tests <chart>` — the round trip gains a case per marker\n"
+        "      6. paste the row(s) below into tests/test_contract_bindings.py, in\n"
+        "         `test_every_enrolled_chart_passes_the_gate`\n"
+        "      7. bump the chart version, then `just docs`\n"
+        "      8. `just check-config-bindings`, `just check-values-docs`, `just test`"
     )
+
+    rows = counted(charts_dir, adoptions)
+    if rows:
+        print()
+        for row in rows:
+            print(row)
 
 
 def main(argv: list[str]) -> int:
@@ -943,7 +1114,7 @@ def main(argv: list[str]) -> int:
             write(adoption)
         report_chart(adoption, written=args.write)
 
-    closing(adoptions, written=args.write)
+    closing(adoptions, args.charts, written=args.write)
 
     if any(item.blocked or item.refusals for item in adoptions):
         return 1

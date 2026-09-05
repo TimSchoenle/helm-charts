@@ -149,6 +149,22 @@ resources: {}
 """
 
 
+# The shape every contracted chart's helper has: one define per partial, mapping keys at the
+# define's own depth, and `with` blocks under them. Written out rather than generated, because
+# what these cases are about is a *hand-written* template.
+HELPERS = """\
+{{- define "fixture.derivedConfig" -}}
+auth:
+  {{- with .Values.auth.sessionTtl }}
+  session_ttl: {{ . }}
+  {{- end }}
+{{- end -}}
+
+{{- define "fixture.secretData" -}}
+{{- end -}}
+"""
+
+
 class Chart:
     """A throwaway `charts/` tree holding one chart, for the command to read and write."""
 
@@ -157,11 +173,13 @@ class Chart:
         self.name = name
         self.dir = root / name
         (self.dir / "contracts").mkdir(parents=True)
+        (self.dir / "templates").mkdir(parents=True)
         (self.dir / "Chart.yaml").write_text(
             f"name: {name}\nversion: 1.0.0\nappVersion: v1\n", encoding="utf-8"
         )
         self.declaration(DECLARATION)
         self.values(VALUES)
+        self.helpers(HELPERS)
 
     def contract(self, document: str, contract: dict) -> Chart:
         (self.dir / "contracts" / f"{document}.json").write_text(
@@ -183,6 +201,13 @@ class Chart:
     def declaration(self, body: str) -> Chart:
         (self.dir / "config-contract.yaml").write_text(body, encoding="utf-8")
         return self
+
+    def helpers(self, text: str) -> Chart:
+        (self.dir / "templates" / "_helpers.tpl").write_text(text, encoding="utf-8")
+        return self
+
+    def helper_text(self) -> str:
+        return (self.dir / "templates" / "_helpers.tpl").read_text(encoding="utf-8")
 
     def values(self, text: str, *, crlf: bool = False) -> Chart:
         body = text.replace("\n", "\r\n") if crlf else text
@@ -707,6 +732,112 @@ class TheDeclaration(unittest.TestCase):
 
             self.assertTrue(planned.edits)
             self.assertEqual(self.declaration_of(chart), before)
+
+
+class Projection(unittest.TestCase):
+    """The template lines, and the one shape that decides whether they can be written.
+
+    A projection is appended at the define's own depth, so it cannot land inside somebody's `if`.
+    What it can still do is write a second `telemetry:` beside one already there, and the document
+    is built with `fromYaml` — which keeps the last of two mapping keys and drops everything under
+    the first. The values file parses, the chart renders, and a block of settings has vanished. So
+    the root decides: new, and it is written; already present, and it is printed for a person.
+
+    The case this exists for is measured. `discord-alertmanager` gained fifteen keys under a
+    `telemetry` root its helper had never written, and every one of the round-trip cases the same
+    run generated failed against a `[telemetry]` table the rendered document did not contain.
+    """
+
+    def adopted(self, workspace: str, *keys: dict[str, Any]) -> Chart:
+        chart = Chart(Path(workspace))
+        chart.contract(
+            "api",
+            contract_of(
+                key("auth.session_ttl", text_form="integer", constraint={"type": "integer"}),
+                *keys,
+            ),
+        )
+        chart.write()
+        return chart
+
+    def test_a_new_root_is_appended_to_the_derived_config(self):
+        with tempfile.TemporaryDirectory() as workspace:
+            chart = self.adopted(workspace, key("log.level", default_value="info"))
+            body = chart.helper_text()
+
+            self.assertIn("log:", body)
+            self.assertIn("{{- with .Values.log.level }}", body)
+            self.assertIn("level: {{ . | quote }}", body)
+            # Inside the define it belongs to, after everything that was already there.
+            self.assertLess(body.index("session_ttl"), body.index("log:"))
+            self.assertLess(body.index("log:"), body.index('define "fixture.secretData"'))
+
+    def test_a_root_the_define_already_writes_is_printed_instead(self):
+        with tempfile.TemporaryDirectory() as workspace:
+            chart = Chart(Path(workspace))
+            chart.contract(
+                "api",
+                contract_of(
+                    key("auth.session_ttl", text_form="integer", constraint={"type": "integer"}),
+                    key("auth.issuer"),
+                ),
+            )
+            planned = chart.write()
+
+            self.assertEqual(chart.helper_text().count("auth:"), 1)
+            self.assertEqual([item.path for item in planned.owed_projected], ["auth.issuer"])
+
+    def test_a_credential_is_appended_to_the_secret_data(self):
+        with tempfile.TemporaryDirectory() as workspace:
+            chart = self.adopted(workspace, key("database.url", secret=True, required=True))
+            self.assertIn(
+                "database__url: {{ .Values.database.url | quote }}", chart.helper_text()
+            )
+
+    def test_a_chart_with_no_helper_prints_every_line(self):
+        with tempfile.TemporaryDirectory() as workspace:
+            chart = Chart(Path(workspace))
+            (chart.dir / "templates" / "_helpers.tpl").unlink()
+            chart.contract(
+                "api",
+                contract_of(
+                    key("auth.session_ttl", text_form="integer", constraint={"type": "integer"}),
+                    key("log.level"),
+                ),
+            )
+            planned = chart.write()
+            self.assertEqual([item.path for item in planned.owed_projected], ["log.level"])
+
+    def test_a_define_whose_actions_do_not_balance_is_left_alone(self):
+        """A template shape this cannot read is one it must not edit."""
+        with tempfile.TemporaryDirectory() as workspace:
+            chart = Chart(Path(workspace))
+            chart.helpers('{{- define "fixture.derivedConfig" -}}\nauth:\n')
+            chart.contract(
+                "api",
+                contract_of(
+                    key("auth.session_ttl", text_form="integer", constraint={"type": "integer"}),
+                    key("log.level"),
+                ),
+            )
+            planned = chart.write()
+
+            self.assertEqual([item.path for item in planned.owed_projected], ["log.level"])
+            self.assertNotIn("log:", chart.helper_text())
+
+    def test_planning_writes_no_template(self):
+        with tempfile.TemporaryDirectory() as workspace:
+            chart = Chart(Path(workspace))
+            chart.contract(
+                "api",
+                contract_of(
+                    key("auth.session_ttl", text_form="integer", constraint={"type": "integer"}),
+                    key("log.level"),
+                ),
+            )
+            before = chart.helper_text()
+            chart.plan()
+            self.assertEqual(chart.helper_text(), before)
 
 
 class RoundTrip(unittest.TestCase):

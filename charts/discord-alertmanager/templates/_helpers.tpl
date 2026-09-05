@@ -194,6 +194,53 @@ storage:
     {{- with .Values.storage.sqlite.path }}
     path: {{ . | quote }}
     {{- end }}
+telemetry:
+  {{- with .Values.telemetry.logFormat }}
+  log_format: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.telemetry.logLevel }}
+  log_level: {{ . | quote }}
+  {{- end }}
+  sentry:
+    {{- with .Values.telemetry.sentry.attachStacktrace }}
+    attach_stacktrace: {{ . }}
+    {{- end }}
+    {{- with .Values.telemetry.sentry.breadcrumbLevel }}
+    breadcrumb_level: {{ . | quote }}
+    {{- end }}
+    {{- with .Values.telemetry.sentry.debug }}
+    debug: {{ . }}
+    {{- end }}
+    {{- with .Values.telemetry.sentry.environment }}
+    environment: {{ . | quote }}
+    {{- end }}
+    {{- with .Values.telemetry.sentry.eventLevel }}
+    event_level: {{ . | quote }}
+    {{- end }}
+    {{- with .Values.telemetry.sentry.maxBreadcrumbs }}
+    max_breadcrumbs: {{ . }}
+    {{- end }}
+    {{- with .Values.telemetry.sentry.release }}
+    release: {{ . | quote }}
+    {{- end }}
+    {{- with .Values.telemetry.sentry.sampleRate }}
+    sample_rate: {{ . }}
+    {{- end }}
+    {{- with .Values.telemetry.sentry.sendDefaultPii }}
+    send_default_pii: {{ . }}
+    {{- end }}
+    {{- with .Values.telemetry.sentry.serverName }}
+    server_name: {{ . | quote }}
+    {{- end }}
+    {{- with .Values.telemetry.sentry.shutdownTimeoutSecs }}
+    shutdown_timeout_secs: {{ . }}
+    {{- end }}
+    {{- with .Values.telemetry.sentry.spanLevel }}
+    span_level: {{ . | quote }}
+    {{- end }}
+    {{- with .Values.telemetry.sentry.tracesSampleRate }}
+    traces_sample_rate: {{ . }}
+    {{- end }}
 {{- end -}}
 
 {{/*
@@ -250,6 +297,7 @@ alertmanager__bearer_token: {{ .Values.alertmanager.bearerToken | quote }}
 discord__token: {{ .Values.discord.token | quote }}
 ingest__webhook_token: {{ .Values.ingest.webhookToken | quote }}
 storage__postgres__url: {{ .Values.storage.postgres.url | quote }}
+telemetry__sentry__dsn: {{ .Values.telemetry.sentry.dsn | quote }}
 {{- end -}}
 
 {{/*

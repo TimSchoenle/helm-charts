@@ -275,8 +275,19 @@ adopt-config chart='' *flags:
 # written they pass — 60 of 60 — where before every one of them failed on a `[telemetry]` table
 # the document did not contain.
 #
-# Then the two gates that read only committed files, so a chart that is not finished says so in
-# this terminal instead of in a pull request.
+# `just update-snapshots`, over the same chart, because a snapshot suite asserts the whole
+# rendered object: the ConfigMap gains a `[telemetry]` section and three cases fail while nothing
+# is actually wrong.
+#
+# `just config-readme`, because the `credentials` row this command now writes is a column of the
+# generated credential table and `just check-config-readme` is blocking.
+#
+# The last two were each the sole thing left red on a run where every other generated file had
+# already been brought up to date. Which is the pattern worth naming: a values block invalidates
+# five committed artefacts, and finding them one CI run at a time is what this chain replaces.
+#
+# Then the gates that read only committed files, so a chart that is not finished says so in this
+# terminal instead of in a pull request.
 #
 # `just docs` is still not chained: the Documentation job runs helm-docs on every pull request and
 # commits the result, and a local run adds blank lines that job strips, so the next push needs a
@@ -332,10 +343,22 @@ sync-config chart='' *flags: (contracts chart)
         echo
         just contract-tests '{{ chart }}'
 
-        # The two gates that read only committed files, run here so a chart that is not finished
-        # says so in this terminal rather than in a pull request. Both are seconds, neither needs
-        # a cluster, and the writes above are already on disk — so a failure here is a report and
-        # not a half-applied run.
+        # The rendered document gains a section, so every snapshot case that covers the ConfigMap
+        # fails until the committed `.snap` is rewritten. Read that diff: `-u` accepts whatever
+        # the chart renders today, and `just test-unit` is what asserts it afterwards.
+        echo
+        just update-snapshots '{{ chart }}'
+
+        # The `credentials` row this adoption wrote is a column of the generated credential table,
+        # and `just check-config-readme` is blocking. Rewrites only the text between the two
+        # `@config-credentials` comments, in every chart, which is a no-op wherever nothing moved.
+        echo
+        just config-readme
+
+        # The gates that read only committed files, run here so a chart that is not finished says
+        # so in this terminal rather than in a pull request. Seconds each, no cluster, and the
+        # writes above are already on disk — so a failure here is a report and not a half-applied
+        # run.
         echo
         status=0
         just check-config-bindings || status=1
@@ -347,8 +370,8 @@ sync-config chart='' *flags: (contracts chart)
       *)
         status=0
         echo
-        echo "==> with --write this would also regenerate values.schema.json and the round-trip"
-        echo "    suites, and re-run the two offline gates."
+        echo "==> with --write this would also regenerate values.schema.json, the round-trip"
+        echo "    suites and the rendered snapshots, and re-run the offline gates."
         ;;
     esac
 

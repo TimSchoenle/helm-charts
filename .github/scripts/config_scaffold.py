@@ -94,6 +94,7 @@ a fixture with the network policy on, one with the ingress off — are per chart
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -577,8 +578,21 @@ def tree_of(placements: list[Placement]) -> dict[str, Any]:
     return tree
 
 
-def render_tree(tree: dict[str, Any], indent: str = "", depth: int = 0) -> list[str]:
-    """The values blocks for one level of the tree, deepest structure last."""
+def render_tree(
+    tree: dict[str, Any],
+    indent: str = "",
+    depth: int = 0,
+    describe: Callable[[dict[str, Any], int], str] = None,  # noqa: RUF013
+) -> list[str]:
+    """The values blocks for one level of the tree, deepest structure last.
+
+    `describe` writes the `# --` line of a grouping block, and it is a parameter because the two
+    callers want different things from a sentence nobody can derive well. A chart being scaffolded
+    gets `branch_placeholder`'s `TODO`, and its author is reading all sixteen of them at once. A
+    block adopted into a chart that already exists gets a plain derived sentence instead — see
+    `adopt-config.py`, where the cost of the `TODO` was measured twice on the same pull request.
+    """
+    describe = describe or branch_placeholder
     lines: list[str] = []
     for name in sorted(tree):
         node = tree[name]
@@ -590,9 +604,9 @@ def render_tree(tree: dict[str, Any], indent: str = "", depth: int = 0) -> list[
             lines.append(f"{indent}# @schema")
             lines.append(f"{indent}# additionalProperties: true")
             lines.append(f"{indent}# @schema")
-            lines.extend(described(branch_placeholder(node, depth + 1), indent))
+            lines.extend(described(describe(node, depth + 1), indent))
             lines.append(f"{indent}{name}:")
-            lines.extend(render_tree(node, indent + "  ", depth + 1))
+            lines.extend(render_tree(node, indent + "  ", depth + 1, describe))
     return lines
 
 

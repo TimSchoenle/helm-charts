@@ -338,8 +338,8 @@ class NewValues(unittest.TestCase):
             self.assertEqual(len(planned.insertions), 1)
             self.assertEqual(chart.text().count("\nsentry:"), 1)
             self.assertEqual(sorted(chart.parsed()["sentry"]), ["dsnUrl", "environment"])
-            # The block a contract says nothing about, and the placeholder it therefore carries.
-            self.assertIn("TODO: what the `sentry` settings have in common", chart.text())
+            # The block a contract says nothing about, and the plainest true sentence for it.
+            self.assertIn("-- The `sentry` settings.", chart.text())
             self.assertEqual(planned.insertions[0].branches, ("sentry",))
 
     def test_a_credential_gets_a_value_with_no_marker_and_a_write_off(self):

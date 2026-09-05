@@ -469,7 +469,7 @@ def insertions_for(
         insertions.append(
             Insertion(
                 after=after,
-                lines=sc.render_tree(tree, indent, depth),
+                lines=sc.render_tree(tree, indent, depth, describe=branch_description),
                 paths=tuple(sorted(placement.path for placement in placements)),
                 branches=tuple(_branches(tree, ancestor)),
                 spaced=not ancestor or after != by_path[ancestor].line,
@@ -516,6 +516,23 @@ def _subtree(placements: list[sc.Placement], depth: int) -> dict[str, Any]:
             node = node.setdefault(segment, {})
         node[segments[-1]] = placement
     return tree
+
+
+def branch_description(node: dict[str, Any], depth: int) -> str:
+    """The `# --` line a grouping block created here is given, and why it is not a `TODO`.
+
+    A contract says nothing about the blocks a chart groups its keys into, so neither this nor the
+    scaffold can write the sentence somebody would. The scaffold's answer is a `TODO` an author
+    reads while writing the chart; here that answer was measured, twice, on one pull request:
+    the placeholder was deleted rather than filled in, `just check-values-docs` went red on a
+    block with no description at all, and in between a `TODO` was published into the README table
+    and into `values.schema.json`.
+
+    So this writes the plainest true sentence instead — the same fallback `summary_of` gives a key
+    whose producer wrote no prose. Nothing is left to delete, the README row is dull rather than
+    wrong, and the closing output still names every block worth a better sentence.
+    """
+    return f"The `{sc.branch_prefix(node, depth)}` settings."
 
 
 def _branches(tree: dict[str, Any], prefix: str) -> list[str]:
@@ -997,10 +1014,10 @@ def still_owed(adoption: Adoption, *, written: bool) -> None:
             "\n    above is a legal one drawn from the constraint rather than a chosen one."
         )
 
-    undescribed = [path for insertion in adoption.insertions for path in insertion.branches]
-    if undescribed:
-        print("\n  still owed — a `# --` description, in place of the `TODO` written into:\n")
-        for path in undescribed:
+    described = [path for insertion in adoption.insertions for path in insertion.branches]
+    if described:
+        print("\n  worth a sentence — these blocks were described from their key prefix:\n")
+        for path in described:
             print(f"    {path}")
 
     for edit in adoption.edits:
@@ -1046,7 +1063,7 @@ def closing(adoptions: list[Adoption], charts_dir: Path, *, written: bool) -> No
 
     print(
         f"\n==> wrote {values} value(s) into {len(charts)} chart(s): {', '.join(charts)}\n\n"
-        "    Then, in order — `just sync-config` does 1 and 5 for you:\n"
+        "    Then, in order — `just sync-config --write` does 1 and 5 for you:\n"
         "      1. `just schema`. values.schema.json is committed and Helm validates every\n"
         "         render against it, so a new block it does not know fails every job\n"
         "      2. read the `derivedConfig` and `secretData` lines that were written, and\n"
@@ -1055,10 +1072,13 @@ def closing(adoptions: list[Adoption], charts_dir: Path, *, written: bool) -> No
         "         value with no description fails `just check-values-docs`\n"
         "      4. add a `note:` to each credential row saying when a release needs it, and\n"
         "         choose a default for each invented value named above\n"
-        "      5. `just contract-tests <chart>` — the round trip gains a case per marker\n"
+        "      5. `just contract-tests <chart>`, then `just update-snapshots <chart>` —\n"
+        "         the round trip gains a case per marker, and every snapshot case that\n"
+        "         covers the ConfigMap fails until the committed `.snap` is rewritten\n"
         "      6. paste the row(s) below into tests/test_contract_bindings.py, in\n"
         "         `test_every_enrolled_chart_passes_the_gate`\n"
-        "      7. bump the chart version, then `just docs`\n"
+        "      7. `just config-readme` — the `credentials` row is a column of the\n"
+        "         generated table — then bump the chart version and run `just docs`\n"
         "      8. `just check-config-bindings`, `just check-values-docs`, `just test`"
     )
 

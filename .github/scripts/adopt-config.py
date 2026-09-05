@@ -57,20 +57,29 @@ Written into `values.yaml`, under `--write`:
     a credential               a value with no marker, for the Secret rather than the document
     a missing grouping block   the `telemetry:` the new value needs, with a `TODO` description
 
+Written into `config-contract.yaml`, under `--write`:
+
+    an `unbound` group         for a `reserved` key and for a credential — the two write-offs
+                               whose reason the contract states rather than a person deciding it.
+                               `declaration_edits` is where that licence is drawn, and why it
+                               goes no further
+    a `credentials` row        the `value:` column, which is the chart value just written
+
 Printed and never written:
 
-    the `unbound` entries      a key nobody surfaces needs a reason, and a canned one is not a
-                               reason. `config_declaration.Unbound` is where that is argued
     the `derivedConfig` lines  the chart's own template, whose hand-written shape — its `with`
                                blocks, its `if` gates — this cannot safely edit
     the `secretData` lines     the same, for a credential
+    a credential's `note:`     when a release needs one at all is the chart's knowledge
+    a `TODO` description       a contract says nothing about the blocks a chart groups keys into
+    an invented default        for a required key whose image publishes none
 
-Which means a `--write` run leaves the chart *rendering* exactly what it rendered before. The
-value exists, it is typed, it is documented and it is bound; nothing reaches the image until
-somebody wires the projection, which is the one step that needs to know what the chart already
-does. `just check-config-bindings` goes green at the end of this command and `just check-config`
-never went red, so the state in between is a chart with a value nothing reads — visible in the
-diff, and named line by line in the closing output.
+Which means a `--write` run satisfies `just check-config-bindings` and leaves the chart
+*rendering* exactly what it rendered before. The value exists, it is typed, it is documented and
+it is bound or written off; nothing reaches the image until somebody wires the projection, which
+is the one step that needs to know what the chart already does. That state — a value nothing
+reads — is visible in the diff, named line by line in the closing output, and, once
+`just contract-tests` has run, a failing case rather than a note.
 
 --------------------------------------------------------------------------------------------
 Where the block goes
@@ -106,6 +115,7 @@ import config_contract as cc
 import config_scaffold as sc
 from config_declaration import (
     Bound,
+    Declaration,
     DeclarationError,
     chart_dirs,
     load_declaration,
@@ -174,6 +184,11 @@ class Refusal:
 
     path: str
     reason: str
+    # Whether the refusal is "the chart already has this value". A credential refused that way is
+    # still owed its `unbound` entry — the write-off says the key does not travel the
+    # configuration document, which is true of the key and not of whoever wrote the value — so
+    # the two refusal kinds are told apart rather than counted together.
+    occupied: bool = False
 
 
 @dataclass
@@ -196,20 +211,51 @@ class Insertion:
     spaced: bool = True
 
 
+@dataclass(frozen=True)
+class DeclarationEdit:
+    """One run of lines for `config-contract.yaml`, and the line it goes after.
+
+    The second file an adoption touches. A key this command surfaces no value for is owed an
+    `unbound` entry before the gate is satisfied, and a credential it does surface is owed one
+    too — so a run that wrote the values and left the declaration alone would leave the chart red
+    on the same gate it was run to satisfy, which is what happened to `discord-alertmanager`.
+
+    `what` names the block for the report, so a reader is told which of their two files grew.
+    """
+
+    after: int
+    lines: list[str]
+    what: str
+
+
 @dataclass
 class Adoption:
     """What one chart is owed, and the edit that would settle it."""
 
     chart: str
     values: Path
+    declaration_path: Path
     plan: sc.Plan = field(default_factory=sc.Plan)
     insertions: list[Insertion] = field(default_factory=list)
+    edits: list[DeclarationEdit] = field(default_factory=list)
     refusals: list[Refusal] = field(default_factory=list)
     blocked: list[str] = field(default_factory=list)
 
     @property
     def owed(self) -> bool:
-        return bool(self.insertions or self.refusals or self.blocked)
+        return bool(self.insertions or self.edits or self.refusals or self.blocked)
+
+    @property
+    def occupied(self) -> list[sc.Placement]:
+        """The credentials whose chart value was already there, so nothing was written for them.
+
+        Still owed the write-off, which is why they are kept: a credential travels the secrets
+        directory rather than the configuration document, and that is a property of the key. The
+        reason written for one of these names the secrets file and not the chart value — naming
+        the value would be the claim the refusal was issued to avoid making.
+        """
+        refused = {item.path for item in self.refusals if item.occupied}
+        return [item for item in self.plan.secrets if item.path in refused]
 
     @property
     def placed(self) -> sc.Plan:
@@ -373,7 +419,7 @@ def insertions_for(
     # children, and every other scalar is a value that cannot also be a mapping.
     for placement in plan.projected + plan.secrets:
         if placement.values_path in placed or cb.has_path(values, placement.values_path):
-            refusals.append(Refusal(placement.path, _occupied(placement)))
+            refusals.append(Refusal(placement.path, _occupied(placement), occupied=True))
             continue
 
         ancestor = ""
@@ -482,6 +528,164 @@ def _branches(tree: dict[str, Any], prefix: str) -> list[str]:
 
 
 # --------------------------------------------------------------------------------------------
+# The declaration: the write-offs and the credential columns
+# --------------------------------------------------------------------------------------------
+
+# The block a chart gets when it has none, in the spelling `config_scaffold.render_declaration`
+# writes for a chart being created. One wording for the same fact, so a chart that grew its
+# declaration here reads like one that was scaffolded with it.
+UNBOUND_HEADER = (
+    "# Contract keys no chart value binds, each group with the reason it does not.",
+    "#",
+    "# Chart-level: a key nothing surfaces is unsurfaced in every document that declares",
+    "# it. `documents:` would narrow an entry where that is untrue.",
+    "unbound:",
+)
+
+CREDENTIALS_HEADER = (
+    "# What this chart adds to the credential reference in its README, which",
+    "# `just config-readme` generates from the contract. The rows are the contract's — every",
+    "# key it marks `secret: true`, and whether the image requires it — and these columns are",
+    "# the chart's: the value an operator may set instead of pre-creating the Secret, and the",
+    "# condition under which a release needs the credential at all. The second is nobody's to",
+    "# derive and is written by hand, as a `note:` beside the `value:`.",
+    "credentials:",
+)
+
+
+def declaration_edits(
+    chart_dir: Path,
+    declaration: Declaration,
+    plan: sc.Plan,
+    occupied: list[sc.Placement],
+) -> list[DeclarationEdit]:
+    """The `unbound` groups and `credentials` rows this adoption owes `config-contract.yaml`.
+
+    **Every reason written here is read off the contract rather than decided.** That is the whole
+    licence for writing them, and it is narrower than it looks: a write-off says *why no chart
+    value surfaces this key*, and this command produces exactly two answers to that — `reserved`,
+    which is the image saying the loader sets the key itself, and `secret`, where the repository's
+    standing rule sends a credential down the secrets directory and never through a ConfigMap.
+    Both are facts in the document. The third kind of write-off — a chart choosing not to expose
+    an ordinary setting — is a judgement, and it is never produced here, because an ordinary key
+    gets a value instead. `config_scaffold.render_declaration` already writes these same two
+    sentences for a chart being created; this is that, one key at a time.
+
+    The `credentials` row is the same argument once more. `value` is the chart value carrying the
+    credential, which is a fact this command has because it just wrote that value — the reason
+    `CredentialNote` calls it underivable is that a credential carries no marker, and at the
+    moment of writing there is nothing to derive it *from* except the placement that produced it.
+    `note` — when a release needs the credential at all — is genuinely the chart's, and is left
+    for a person.
+    """
+    path = chart_dir / "config-contract.yaml"
+    regions = {region.values_path: region for region in cb.regions(path)}
+
+    edits: list[DeclarationEdit] = []
+    fresh: list[tuple[str, list[str]]] = []
+
+    rows = credential_rows(declaration, plan)
+    if rows:
+        if "credentials" in regions:
+            edits.append(DeclarationEdit(regions["credentials"].end, rows, "credentials"))
+        else:
+            fresh.append(("credentials", [*CREDENTIALS_HEADER, *rows]))
+
+    groups = write_off_lines(plan, occupied, declaration)
+    if groups:
+        if "unbound" in regions:
+            edits.append(DeclarationEdit(regions["unbound"].end, groups, "unbound"))
+        else:
+            fresh.append(("unbound", [*UNBOUND_HEADER, *groups]))
+
+    if fresh:
+        body: list[str] = []
+        for _, lines in fresh:
+            body.extend(["", *lines])
+        edits.append(
+            DeclarationEdit(
+                before_documents(regions), body, " and ".join(name for name, _ in fresh)
+            )
+        )
+
+    return edits
+
+
+def before_documents(regions: dict[str, cb.Region]) -> int:
+    """The line a block that must sit above `documents:` goes after.
+
+    The end of the last top-level key before it, rather than the line above `documents:` itself:
+    every declaration here opens each of its blocks with a paragraph of prose, and an insertion
+    between that paragraph and the key it explains would attach it to the wrong one.
+    """
+    documents = regions["documents"].line
+    above = [region.end for region in regions.values() if region.line < documents]
+    return max(above) if above else 0
+
+
+def written_off_anywhere(declaration: Declaration) -> set[str]:
+    """Every key the declaration already writes off, in any document.
+
+    A second entry for a key that has one is not a worse file than a missing entry — it is the
+    same drift the `unbound` docstring is about, one reason saying what another already said —
+    and `check-config-bindings` would not catch it, because both are true.
+    """
+    return {key for entry in declaration.unbound for key in entry.keys}
+
+
+def occupied_reason(placement: sc.Placement) -> str:
+    """Why a credential the chart already carries a value for is bound by no marker."""
+    return (
+        "Delivered as a file in the secrets directory — from the Secret this chart renders, or "
+        f"from `existingSecret` under the file name `{sc.secrets_file_name(placement)}` — and "
+        "never written into the configuration document, because a credential in a ConfigMap is "
+        "readable by anything that can read the namespace. `just check-config-secrets` is what "
+        "reconciles that channel, and it does it from the rendered manifests rather than from a "
+        "comment."
+    )
+
+
+def credential_rows(declaration: Declaration, plan: sc.Plan) -> list[str]:
+    """A `credentials` row per credential this adoption surfaced and the chart has not described."""
+    lines: list[str] = []
+    for item in plan.secrets:
+        if item.path in declaration.credentials:
+            continue
+        lines.append(f"  - key: {item.path}")
+        lines.append(f"    value: {item.values_path}")
+    return lines
+
+
+def write_off_lines(
+    plan: sc.Plan, occupied: list[sc.Placement], declaration: Declaration
+) -> list[str]:
+    """The `unbound` groups for this adoption, in `render_declaration`'s layout.
+
+    `occupied` are the credentials whose value the chart already had. They get the same sentence
+    with one clause removed — the one naming the chart value that carries the credential, which
+    is the claim this command refuses to make about a value it did not write.
+    """
+    already = written_off_anywhere(declaration)
+    groups = [
+        (paths, reason)
+        for paths, reason in sc.write_off_groups(plan)
+        if not set(paths) <= already
+    ]
+    for item in occupied:
+        if item.path in already:
+            continue
+        groups.append(([item.path], occupied_reason(item)))
+
+    lines: list[str] = []
+    for paths, reason in groups:
+        lines.append("  - keys:")
+        lines.extend(f"      - {path}" for path in paths)
+        lines.append("    reason: >-")
+        lines.extend(sc.wrap(reason, "      ", sc.WIDTH))
+    return lines
+
+
+# --------------------------------------------------------------------------------------------
 # Reading one chart
 # --------------------------------------------------------------------------------------------
 
@@ -500,7 +704,11 @@ def adopt(chart_dir: Path, wanted: set[str]) -> Adoption | None:
     if declaration is None or not declaration.bindings or not values_path.is_file():
         return None
 
-    adoption = Adoption(chart=chart_dir.name, values=values_path)
+    adoption = Adoption(
+        chart=chart_dir.name,
+        values=values_path,
+        declaration_path=chart_dir / "config-contract.yaml",
+    )
     if not declaration.documents:
         adoption.blocked.append(
             "declares `bindings: true` and no configuration contract, so there is nothing to "
@@ -540,16 +748,43 @@ def adopt(chart_dir: Path, wanted: set[str]) -> Adoption | None:
     )
     adoption.insertions = insertions
     adoption.refusals.extend(conflicts)
+    # After the insertions, because the write-offs owed are the ones for values that will be
+    # written: a credential whose value was refused is a credential this chart already delivers,
+    # and an entry claiming otherwise would be describing an edit nobody made.
+    adoption.edits = declaration_edits(
+        chart_dir, declaration, adoption.placed, adoption.occupied
+    )
     return adoption
 
 
 def write(adoption: Adoption) -> None:
-    """Apply one chart's insertions, bottom-up, keeping the file's line endings.
+    """Apply one chart's edits: the values, then the declaration they oblige.
 
-    Read and written as bytes for the reason `config_shapes` records: this working tree is CRLF,
-    and a rewrite that normalised it would reflow every line of every file it touched.
+    Both files, because the pair is what satisfies the gate — values with no write-off leaves the
+    chart red on the rule the command was run to settle.
     """
-    text = adoption.values.read_bytes().decode("utf-8")
+    _apply(
+        adoption.values,
+        [
+            (insertion.after, ([""] if insertion.spaced else []) + insertion.lines)
+            for insertion in adoption.insertions
+        ],
+    )
+    _apply(adoption.declaration_path, [(edit.after, edit.lines) for edit in adoption.edits])
+
+
+def _apply(path: Path, edits: list[tuple[int, list[str]]]) -> None:
+    """Insert each run of lines after the line it names, bottom-up, keeping the line endings.
+
+    Bottom-up so an earlier insertion cannot move a line number a later one was read at, which is
+    how `config_shapes` rewrites blocks and for the same reason. Read and written as bytes for the
+    reason it records too: this working tree is CRLF, and a rewrite that normalised it would
+    reflow every line of every file it touched.
+    """
+    if not edits:
+        return
+
+    text = path.read_bytes().decode("utf-8")
     ending = "\r\n" if text.count("\r\n") else "\n"
     lines = text.splitlines(keepends=True)
 
@@ -557,12 +792,10 @@ def write(adoption: Adoption) -> None:
     if lines and not lines[-1].endswith(("\n", "\r")):
         lines[-1] += ending
 
-    for insertion in sorted(adoption.insertions, key=lambda item: item.after, reverse=True):
-        above = [""] if insertion.spaced else []
-        body = [f"{line}{ending}" for line in [*above, *insertion.lines]]
-        lines[insertion.after : insertion.after] = body
+    for after, body in sorted(edits, key=lambda item: item[0], reverse=True):
+        lines[after:after] = [f"{line}{ending}" for line in body]
 
-    adoption.values.write_bytes("".join(lines).encode("utf-8"))
+    path.write_bytes("".join(lines).encode("utf-8"))
 
 
 # --------------------------------------------------------------------------------------------
@@ -590,11 +823,11 @@ def report_chart(adoption: Adoption, *, written: bool) -> None:
     for refusal in adoption.refusals:
         print(f"\n  refused: {refusal.path} {refusal.reason}")
 
-    still_owed(adoption)
+    still_owed(adoption, written=written)
 
 
-def still_owed(adoption: Adoption) -> None:
-    """The three hand edits this command deliberately does not make.
+def still_owed(adoption: Adoption, *, written: bool) -> None:
+    """What is left for a person, and the one edit that is not.
 
     Printed on a dry run as well, because the values block on its own is the half that reads as
     done — a value that is typed, documented and bound but that no template projects is a setting
@@ -628,16 +861,12 @@ def still_owed(adoption: Adoption) -> None:
         for path in undescribed:
             print(f"    {path}")
 
-    groups = sc.write_off_groups(plan)
-    if groups:
-        print(f"\n  still owed — {adoption.chart}/config-contract.yaml, under `unbound:`:\n")
-        for paths, reason in groups:
-            print("    - keys:")
-            for path in paths:
-                print(f"        - {path}")
-            print("      reason: >-")
-            for line in sc.wrap(reason, "        ", sc.WIDTH):
-                print(line)
+    for edit in adoption.edits:
+        state = "written into" if written else "goes into"
+        where = f"{adoption.declaration_path.as_posix()}:{edit.after}"
+        print(f"\n  {state} {where}, under `{edit.what}`:\n")
+        for line in edit.lines:
+            print(f"    {line}" if line else "")
 
 
 def closing(adoptions: list[Adoption], *, written: bool) -> None:
@@ -658,9 +887,14 @@ def closing(adoptions: list[Adoption], *, written: bool) -> None:
         "      1. wire each `derivedConfig` and `secretData` line above into that chart's\n"
         "         templates/_helpers.tpl — until that is done the values reach nothing\n"
         "      2. replace every `TODO` description and every invented default named above\n"
-        "      3. add the `unbound` entries above, with reasons somebody stands behind\n"
-        "      4. bump the chart version, then `just schema` and `just docs`\n"
-        "      5. `just check-config-bindings`, then `just check-config`"
+        "      3. read the `unbound` reasons that were written, and add a `note:` to each\n"
+        "         credential row saying when a release needs it at all\n"
+        "      4. `just contract-tests <chart>` — the generated round trip gains a case\n"
+        "         per new marker, and each fails until step 1 is done, which is the point\n"
+        "      5. update the per-chart count in tests/test_contract_bindings.py, in\n"
+        "         `test_every_enrolled_chart_passes_the_gate` — each marker moves it\n"
+        "      6. bump the chart version, then `just schema` and `just docs`\n"
+        "      7. `just check-config-bindings`, `just check-config`, `just test`"
     )
 
 
@@ -705,7 +939,7 @@ def main(argv: list[str]) -> int:
         return 0
 
     for adoption in adoptions:
-        if args.write and adoption.insertions:
+        if args.write and (adoption.insertions or adoption.edits):
             write(adoption)
         report_chart(adoption, written=args.write)
 

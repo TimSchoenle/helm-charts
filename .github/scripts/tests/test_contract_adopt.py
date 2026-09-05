@@ -53,6 +53,7 @@ sys.path.insert(0, str(SCRIPTS))
 
 import config_bindings as cb  # noqa: E402
 import config_shapes as cs  # noqa: E402
+from config_declaration import load_declaration  # noqa: E402
 from config_report import Report  # noqa: E402
 from entry import load  # noqa: E402
 
@@ -557,6 +558,155 @@ class Documents(unittest.TestCase):
             self.assertEqual(len(planned.insertions), 1)
             self.assertEqual(chart.text().count("@config projection log.level"), 1)
             self.assertEqual(chart.parsed()["log"]["level"], "info")
+
+
+class TheDeclaration(unittest.TestCase):
+    """The second file an adoption writes, and the one licence it takes to write it.
+
+    A write-off says why no chart value surfaces a key, and that is a judgement in general — which
+    is why `config_declaration.Unbound` requires a sentence somebody stands behind. The two this
+    command writes are not: `reserved` is the image saying the loader sets the key itself, and a
+    credential's channel is this repository's standing rule, already written in the same words by
+    `config_scaffold.render_declaration` for a chart being created. An ordinary key never reaches
+    the declaration at all, because it gets a value instead — so there is no path here that writes
+    a judgement, and these cases are what holds that shut.
+    """
+
+    def declaration_of(self, chart: Chart) -> str:
+        return (chart.dir / "config-contract.yaml").read_text(encoding="utf-8")
+
+    def test_a_credential_is_written_off_and_given_its_value_column(self):
+        with tempfile.TemporaryDirectory() as workspace:
+            chart = Chart(Path(workspace))
+            chart.contract(
+                "api",
+                contract_of(
+                    key("auth.session_ttl", text_form="integer", constraint={"type": "integer"}),
+                    key("database.url", secret=True, required=True),
+                ),
+            )
+            chart.write()
+            body = self.declaration_of(chart)
+
+            self.assertIn("unbound:", body)
+            self.assertIn("      - database.url", body)
+            self.assertIn("`database__url`", body)
+            self.assertIn("  - key: database.url", body)
+            self.assertIn("    value: database.url", body)
+
+            declaration = load_declaration(chart.dir)
+            self.assertEqual([entry.keys for entry in declaration.unbound], [("database.url",)])
+            self.assertEqual(declaration.credentials["database.url"].value, "database.url")
+            self.assertIsNone(declaration.credentials["database.url"].note)
+
+    def test_a_reserved_key_is_written_off_with_the_loader_reason(self):
+        with tempfile.TemporaryDirectory() as workspace:
+            chart = Chart(Path(workspace))
+            chart.contract(
+                "api",
+                contract_of(
+                    key("auth.session_ttl", text_form="integer", constraint={"type": "integer"}),
+                    key("runtime.node_id", reserved=True),
+                ),
+            )
+            chart.write()
+
+            declaration = load_declaration(chart.dir)
+            self.assertEqual([entry.keys for entry in declaration.unbound], [("runtime.node_id",)])
+            self.assertIn("Reserved by the loader", declaration.unbound[0].reason)
+            self.assertEqual(declaration.credentials, {})
+
+    def test_a_credential_the_chart_already_has_a_value_for_is_still_written_off(self):
+        """The state a run leaves behind if it wrote the value before this file was written to.
+
+        The refusal stands — nothing claims that value feeds this key — but the write-off does not
+        depend on who wrote the value, so the reason drops the clause naming it and the gate is
+        satisfied. Without this, running the command twice leaves a chart it could not finish.
+        """
+        with tempfile.TemporaryDirectory() as workspace:
+            chart = Chart(Path(workspace))
+            chart.values(VALUES + 'database:\n  url: ""\n')
+            chart.contract(
+                "api",
+                contract_of(
+                    key("auth.session_ttl", text_form="integer", constraint={"type": "integer"}),
+                    key("database.url", secret=True, required=True),
+                ),
+            )
+            planned = chart.write()
+
+            self.assertEqual(planned.insertions, [])
+            self.assertTrue(planned.refusals)
+            declaration = load_declaration(chart.dir)
+            self.assertEqual([entry.keys for entry in declaration.unbound], [("database.url",)])
+            self.assertNotIn("is the value that carries it", declaration.unbound[0].reason)
+            # The `value:` column names a value this command did not write, so it is not claimed.
+            self.assertEqual(declaration.credentials, {})
+            self.assertEqual(messages(chart.gate()), "")
+
+    def test_a_key_already_written_off_is_not_written_off_twice(self):
+        with tempfile.TemporaryDirectory() as workspace:
+            chart = Chart(Path(workspace))
+            chart.declaration(
+                DECLARATION
+                + "unbound:\n"
+                + "  - keys:\n"
+                + "      - database.url\n"
+                + "    reason: Already decided.\n"
+            )
+            chart.contract(
+                "api",
+                contract_of(
+                    key("auth.session_ttl", text_form="integer", constraint={"type": "integer"}),
+                    key("database.url", secret=True, required=True),
+                ),
+            )
+            chart.write()
+
+            declaration = load_declaration(chart.dir)
+            self.assertEqual([entry.reason for entry in declaration.unbound], ["Already decided."])
+
+    def test_a_group_appends_to_the_block_a_chart_already_has(self):
+        with tempfile.TemporaryDirectory() as workspace:
+            chart = Chart(Path(workspace))
+            chart.declaration(
+                DECLARATION
+                + "unbound:\n"
+                + "  - keys:\n"
+                + "      - log.level\n"
+                + "    reason: Not surfaced.\n"
+            )
+            chart.contract(
+                "api",
+                contract_of(
+                    key("auth.session_ttl", text_form="integer", constraint={"type": "integer"}),
+                    key("log.level"),
+                    key("runtime.node_id", reserved=True),
+                ),
+            )
+            chart.write()
+
+            declaration = load_declaration(chart.dir)
+            self.assertEqual(
+                [entry.keys for entry in declaration.unbound],
+                [("log.level",), ("runtime.node_id",)],
+            )
+
+    def test_planning_writes_no_declaration(self):
+        with tempfile.TemporaryDirectory() as workspace:
+            chart = Chart(Path(workspace))
+            chart.contract(
+                "api",
+                contract_of(
+                    key("auth.session_ttl", text_form="integer", constraint={"type": "integer"}),
+                    key("runtime.node_id", reserved=True),
+                ),
+            )
+            before = self.declaration_of(chart)
+            planned = chart.plan()
+
+            self.assertTrue(planned.edits)
+            self.assertEqual(self.declaration_of(chart), before)
 
 
 class RoundTrip(unittest.TestCase):

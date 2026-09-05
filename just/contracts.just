@@ -206,13 +206,17 @@ check-config-bindings:
 # from the prose the producer published, the default the binary compiles in, and the marker naming
 # the key — and every one of them is in the vendored contract already.
 #
-# So it writes them, and prints the three things it will not write: the `derivedConfig` and
-# `secretData` lines, because a chart's template is hand-written and an edit made blind to its
-# `with` blocks and its gates is one nobody can review; and the `unbound` entries, because a key
-# nobody surfaces is owed a *reason* and a canned sentence is not one. A `--write` run therefore
-# leaves the chart rendering exactly what it rendered before — the value exists, is typed,
-# documented and bound, and reaches nothing until somebody wires the projection, which the closing
-# output names line by line.
+# So it writes them — and the `config-contract.yaml` entries they oblige: an `unbound` group for
+# each `reserved` key and each credential, and the `value:` column of the credential's row. Those
+# two write-offs are the only ones whose *reason* the contract states rather than a person
+# deciding it, which is the whole licence for writing them and is why an ordinary key never
+# reaches that file: it gets a value instead. `adopt-config.py` argues the boundary.
+#
+# What it will not write is the `derivedConfig` and `secretData` lines: a chart's template is
+# hand-written, and an edit made blind to its `with` blocks and its `if` gates is one nobody can
+# review. So a `--write` run leaves the chart rendering exactly what it rendered before — the
+# value exists, is typed, documented and bound or written off, and reaches nothing until somebody
+# wires the projection.
 #
 # **It never touches a value that already exists.** That is the boundary `config_bindings.py`
 # draws in bold and it holds: on an existing value a generated marker is a guess about which key
@@ -254,6 +258,26 @@ adopt-config chart='' *flags:
 # Networked, because its first step is the one networked recipe here. Everything after it reads
 # the file that step wrote.
 #
+# **One generator is chained, and the rest are deliberately not.** With `--write` this also runs
+# `just contract-tests`, and that is not a convenience: a new marker changes what the generated
+# round trip should say, so `just check-contract-tests` is red until it is regenerated. What the
+# regeneration produces is the point — measured on a key added to `netcup-offer-bot`'s contract,
+# the suite gained `delivers feed.user_agent into config.toml from feed.userAgent`, and that case
+# failed against the rendered `[feed]` table with the key absent. That is the printed "wire the
+# projection" note turned into something a machine checks. It is per chart and it writes only
+# where the author asked for writing, which is what the Documentation job cannot say and why that
+# job is still kept away from it.
+#
+# `just schema` and `just docs` are not chained, and not because they are hard: the Documentation
+# job already runs both on every pull request and commits the result back to the branch, so a
+# local run adds a diff CI is about to rewrite — helm-docs emits blank lines that job strips, so
+# the next push needs a fast-forward first. They stay printed as the steps they are.
+#
+# `Chart.yaml` is not touched either. `contract-diff` above prints the bump its findings suggest
+# and deliberately writes nothing, because only the reviewer knows whether the chart actually
+# writes the key that moved — and the same goes for the two things the contract cannot state: a
+# grouping block's description, and the `note:` saying when a release needs a credential at all.
+#
 # **Commit the two halves separately.** The refresh is what the image says; the values are what
 # this repository decided to do about it, and a single commit holding both is one in which nobody
 # can see which caused which — the reason `just contracts` does not run `just config-shapes`
@@ -274,6 +298,22 @@ sync-config chart='' *flags: (contracts chart)
     just contract-diff '{{ chart }}' HEAD
 
     just adopt-config '{{ chart }}' {{ flags }}
+
+    # Only when values were actually written. A command invoked without `--write` writes nothing,
+    # and the generator is not exempt from that because its output is committed too.
+    case " {{ flags }} " in
+      *" --write "*)
+        echo
+        just contract-tests '{{ chart }}'
+        echo
+        echo "==> the round trip now has a case per new marker, and each fails until the"
+        echo "    projection is wired into templates/_helpers.tpl. That is what it is for."
+        ;;
+      *)
+        echo
+        echo "==> with --write this would also regenerate the round-trip suites."
+        ;;
+    esac
 
     echo
     echo "==> the contract refresh and the values are two changes; commit them separately."

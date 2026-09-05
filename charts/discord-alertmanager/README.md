@@ -92,7 +92,7 @@ where a note below says otherwise.
 | `discord__token` | no | `discord.token` | always |
 | `ingest__webhook_token` | no | `ingest.webhookToken` | to authenticate the webhook |
 | `storage__postgres__url` | no | `storage.postgres.url` | `storage.backend: postgres` |
-| `telemetry__sentry__dsn` | no |  |  |
+| `telemetry__sentry__dsn` | no | `telemetry.sentry.dsn` |  |
 
 The same value is addressable as the variable `DAM_<PATH>`, upper-cased with `.`
 written as `__`, and that spelling with `_FILE` appended names a file whose contents
@@ -714,6 +714,22 @@ also why a pod that cannot reach Alertmanager never becomes ready — check the 
 | storage.sqlite.migrateOnStart | bool | `true` | Run pending migrations during startup (`storage.sqlite.migrate_on_start`). |
 | storage.sqlite.path | string | `"/data/discord-alertmanager.db"` | Path to the database file, created on first start if it does not exist (`storage.sqlite.path`).  Not the image's own default, which is the relative `discord-alertmanager.db` and resolves inside the read-only `/app` working directory — the one place in this container the file cannot be created. It has to be an absolute path under `persistence.data.mountPath`, and the render is refused when it is not, because the alternative is a pod that starts, fails to open its database and crash-loops with an errno. |
 | strategy | object | `{}` | Deployment update strategy. Empty uses the Kubernetes default rolling update. |
+| telemetry.logFormat | string | `"plain"` | How each log line is written (`telemetry.log_format`). |
+| telemetry.logLevel | string | `"warn,discord_alertmanager=info,dam_=info"` | Filter directives for the log stream, in `RUST_LOG` syntax (`telemetry.log_level`). |
+| telemetry.sentry.attachStacktrace | bool | `false` | Attach a stack trace to every event, not only to panics (`telemetry.sentry.attach_stacktrace`). |
+| telemetry.sentry.breadcrumbLevel | string | `"info"` | Level at or above which a log record is kept as a breadcrumb behind the next event (`telemetry.sentry.breadcrumb_level`). |
+| telemetry.sentry.debug | bool | `false` | Log what the Sentry client itself is doing (`telemetry.sentry.debug`). |
+| telemetry.sentry.dsn | string | `""` | Project DSN. Reporting is off while this is unset (`telemetry.sentry.dsn`). Delivered as the secrets-directory file `telemetry__sentry__dsn`. |
+| telemetry.sentry.environment | string | `"production"` | Deployment this process belongs to, which every event is tagged with (`telemetry.sentry.environment`). |
+| telemetry.sentry.eventLevel | string | `"error"` | Level at or above which a log record is sent as an event of its own (`telemetry.sentry.event_level`). |
+| telemetry.sentry.maxBreadcrumbs | int | `100` | How many breadcrumbs are kept behind an event (`telemetry.sentry.max_breadcrumbs`). |
+| telemetry.sentry.release | string | `nil` | Release every event is attributed to. Defaults to the bot's own version (`telemetry.sentry.release`). |
+| telemetry.sentry.sampleRate | float | `1` | Fraction of events that are sent, from `0.0` to `1.0` (`telemetry.sentry.sample_rate`). |
+| telemetry.sentry.sendDefaultPii | bool | `false` | Send the IP addresses, headers and user identifiers Sentry calls default PII (`telemetry.sentry.send_default_pii`). |
+| telemetry.sentry.serverName | string | `nil` | Host name reported with each event. Defaults to the machine's own (`telemetry.sentry.server_name`). |
+| telemetry.sentry.shutdownTimeoutSecs | int | `2` | Seconds to spend delivering whatever is still queued during shutdown (`telemetry.sentry.shutdown_timeout_secs`). |
+| telemetry.sentry.spanLevel | string | `"info"` | Level at or above which a span joins the trace (`telemetry.sentry.span_level`). |
+| telemetry.sentry.tracesSampleRate | float | `0` | Fraction of traces that are sent, from `0.0` to `1.0`. Tracing is off at `0.0` (`telemetry.sentry.traces_sample_rate`). |
 | terminationGracePeriodSeconds | int | `30` | Grace period for pod shutdown. |
 | tolerations | list | `[]` | Tolerations for pod assignment. |
 | topologySpreadConstraints | list | `[]` | Pod topology spread constraints for availability. |

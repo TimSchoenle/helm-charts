@@ -24,6 +24,40 @@ test-unit chart='':
       fi
     done
 
+# Rewrite the committed rendered-manifest snapshots from what the charts render now.
+#
+# A snapshot suite asserts the whole rendered object, so *any* change to what a chart emits fails
+# it — which is the point, and which makes it the artefact most easily forgotten after a change
+# that was correct. A new configuration key reaching `config.toml` is exactly that: the ConfigMap
+# gains a line, three snapshot cases fail, and nothing else in the repository is wrong. Measured
+# on `discord-alertmanager`, whose pull request went red on this alone after every other generated
+# file had been brought up to date.
+#
+# Deliberately does not touch `charts/*/charts/`. Rebuilding a chart's dependencies during a
+# `helm unittest -u` run empties the committed `.snap` in silence — the suite renders against a
+# half-extracted tree and writes *that* down — so this recipe assumes `just deps` has already run
+# and never runs it itself.
+#
+# Read the diff. A snapshot is a record of what a chart renders, and `-u` accepts whatever it
+# renders today, including a regression. `just test-unit` is what asserts it afterwards.
+[doc("Rewrite the committed rendered-manifest snapshots from what the charts render now")]
+[group('test')]
+update-snapshots chart='':
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    if [ -n '{{ chart }}' ]; then
+      helm unittest -u '{{ charts }}/{{ chart }}'
+      exit 0
+    fi
+
+    for dir in {{ charts }}/*/; do
+      if [ -d "${dir}tests" ]; then
+        echo "==> snapshots: ${dir%/}"
+        helm unittest -u "${dir%/}"
+      fi
+    done
+
 # A library chart renders nothing on its own, so `charts/common` cannot be tested directly. This
 # fixture instantiates every partial it ships.
 [doc("helm unittest the fixture that instantiates every partial the common library ships")]

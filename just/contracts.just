@@ -160,8 +160,11 @@ check-contract-coverage:
 # two generated artefacts impose and every deliberate omission are in `config_bindings.py`'s and
 # `check-config-bindings.py`'s docstrings, which is where they belong rather than repeated here.
 #
-# **Nothing writes a marker.** They are hand-written, and a generator would have had to land in
-# the same change as the format it depends on, which is the one shape a reviewer cannot check.
+# **Nothing writes a marker onto a value that already exists.** Such a marker is a claim about
+# somebody else's value, and a generator guessing which key that value feeds guesses wrong in a
+# way that reads exactly like a right answer. A marker written *with* the value it belongs to,
+# from one key, is a different artefact — that is `just new-chart` and `just adopt-config`, and
+# each says so where it is defined.
 #
 # Enrolment is opt-in and declared, by `bindings: true` in `config-contract.yaml`, so a gate that
 # failed unenrolled charts is not red for work nobody has scheduled — and does not end up
@@ -193,6 +196,188 @@ check-config-bindings:
     set -euo pipefail
     {{ resolve_python }}
     "$python" {{ scripts }}/check-config-bindings.py --charts {{ charts }}
+
+# Write the chart values a contract's unbound keys are owed, from the contract itself.
+#
+# The writer for the failure the gate above reports. `check-config-bindings` says, per key, that
+# the contract declares it and no chart value binds it, and it names the two repairs: a marker on
+# the value that feeds it, or an `unbound` entry with a reason. The first is the same twenty lines
+# every time — a `@schema` block typed from the key's constraint, a `# --` description written
+# from the prose the producer published, the default the binary compiles in, and the marker naming
+# the key — and every one of them is in the vendored contract already.
+#
+# So it writes them — and the `config-contract.yaml` entries they oblige: an `unbound` group for
+# each `reserved` key and each credential, and the `value:` column of the credential's row. Those
+# two write-offs are the only ones whose *reason* the contract states rather than a person
+# deciding it, which is the whole licence for writing them and is why an ordinary key never
+# reaches that file: it gets a value instead. `adopt-config.py` argues the boundary.
+#
+# What it will not write is the `derivedConfig` and `secretData` lines: a chart's template is
+# hand-written, and an edit made blind to its `with` blocks and its `if` gates is one nobody can
+# review. So a `--write` run leaves the chart rendering exactly what it rendered before — the
+# value exists, is typed, documented and bound or written off, and reaches nothing until somebody
+# wires the projection.
+#
+# **It never touches a value that already exists.** That is the boundary `config_bindings.py`
+# draws in bold and it holds: on an existing value a generated marker is a guess about which key
+# that value feeds, and a wrong guess reads exactly like a right one. Here the value does not
+# exist — the key is the fact, and the value and its marker are emitted together from it, so the
+# marker *is* the mapping. A key whose chart value is already there is refused, with the marker
+# line to write by hand.
+#
+# Prints by default and writes under `--write`, as `just add-tunable` does. Deliberately NOT in
+# `just check`: it is a generator, and an aggregate whose whole output is a pass or a fail is not
+# where one belongs. Offline, like everything in this group but the refresh.
+#
+#   just adopt-config                             every enrolled chart, planned and printed
+#   just adopt-config netcup-offer-bot            one chart
+#   just adopt-config netcup-offer-bot --write    insert the blocks
+#   just adopt-config tankovault --key metrics.enabled --write    one key of one chart
+[doc("Write the values a chart's unbound contract keys are owed, from the contract")]
+[group('contracts')]
+adopt-config chart='' *flags:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    {{ resolve_python }}
+    "$python" {{ scripts }}/adopt-config.py '{{ chart }}' --charts {{ charts }} {{ flags }}
+
+# Refresh a chart's contracts from the image it pins, then write the values the new keys are owed.
+#
+# The whole of the recurring failure, in one command: an image release adds a setting, the bump
+# repins the digest, and the chart is now missing a value nobody knows about. `just contracts`
+# fetches what the new build declares, `just contract-diff` says what moved, and
+# `just adopt-config` writes the values for whatever the chart no longer covers. Each of the three
+# is useful alone and each is still its own recipe; this is the order they are wanted in.
+#
+# **The pin decides which build.** The refresh resolves `image.tag` out of values.yaml — digest
+# and all — so running this against an unchanged pin re-fetches the contract the chart already
+# has and finds nothing new. A newer build reaches the chart when the pin moves: the Renovate
+# pull request, or an edit to `image.tag`. Run this *on* that pull request and it turns a digest
+# bump into the values that bump implies.
+#
+# Networked, because its first step is the one networked recipe here. Everything after it reads
+# the file that step wrote.
+#
+# **Two generators are chained under `--write`, and both were learnt from a red run.**
+#
+# `helm schema`, over the named chart alone. `values.schema.json` is committed, Helm validates
+# every render against it, and its root carries `additionalProperties: false` — so a values file
+# holding a block the schema has never seen fails with `additional properties 'telemetry' not
+# allowed` before a single template is evaluated. On the run that taught this, that was every job
+# in the workflow: policy scan, three manifest validations, both unit-test matrices, the contract
+# gates, chart-testing and the end-to-end. The Documentation job *does* regenerate the file and
+# commit it back, which is why the repair looked automatic — but it lands on the push after the
+# red one, and the run everybody was looking at was already scrapped.
+#
+# `just contract-tests`, because a new marker changes what the generated round trip should say and
+# `just check-contract-tests` is red until it is regenerated. What it produces is the point:
+# measured on `discord-alertmanager`, the suite gained fifteen cases, and with the projection now
+# written they pass — 60 of 60 — where before every one of them failed on a `[telemetry]` table
+# the document did not contain.
+#
+# `just update-snapshots`, over the same chart, because a snapshot suite asserts the whole
+# rendered object: the ConfigMap gains a `[telemetry]` section and three cases fail while nothing
+# is actually wrong.
+#
+# `just config-readme`, because the `credentials` row this command now writes is a column of the
+# generated credential table and `just check-config-readme` is blocking.
+#
+# The last two were each the sole thing left red on a run where every other generated file had
+# already been brought up to date. Which is the pattern worth naming: a values block invalidates
+# five committed artefacts, and finding them one CI run at a time is what this chain replaces.
+#
+# Then the gates that read only committed files, so a chart that is not finished says so in this
+# terminal instead of in a pull request.
+#
+# `just docs` is still not chained: the Documentation job runs helm-docs on every pull request and
+# commits the result, and a local run adds blank lines that job strips, so the next push needs a
+# fast-forward first. Nothing about a README blocks a render, which is the whole difference from
+# the schema.
+#
+# `Chart.yaml` is not touched either. `contract-diff` above prints the bump its findings suggest
+# and deliberately writes nothing, because only the reviewer knows whether the chart actually
+# writes the key that moved — and the same goes for the three things the contract cannot state: a
+# grouping block's description, the `note:` saying when a release needs a credential, and a
+# default for a required key whose image publishes none.
+#
+# **Commit the two halves separately.** The refresh is what the image says; the values are what
+# this repository decided to do about it, and a single commit holding both is one in which nobody
+# can see which caused which — the reason `just contracts` does not run `just config-shapes`
+# either. What makes it defensible here is that a person asked for both, in that order, and sees
+# the diff between them on the way past.
+#
+#   just sync-config netcup-offer-bot             refresh, explain, and plan the values
+#   just sync-config netcup-offer-bot --write     ... and write them
+#   just sync-config                              every chart with a contract
+[doc("Refresh a chart's contracts from the image it pins, then write the values the new keys are owed")]
+[group('contracts')]
+sync-config chart='' *flags: (contracts chart)
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    # Against HEAD rather than `origin/main`: the refresh above wrote into the working tree, so
+    # the committed file is the before and this is a report of what that fetch just changed.
+    just contract-diff '{{ chart }}' HEAD
+
+    just adopt-config '{{ chart }}' {{ flags }}
+
+    # Only when values were actually written. A command invoked without `--write` writes nothing,
+    # and the generator is not exempt from that because its output is committed too.
+    case " {{ flags }} " in
+      *" --write "*)
+        # `values.schema.json` is committed and Helm validates every render against it, with
+        # `additionalProperties: false` at the root — so a values file carrying a block the schema
+        # has never heard of fails *every* job that renders the chart, which on the run this step
+        # was added for was all of them. The Documentation job does regenerate it, but on the push
+        # after the red one; this closes that gap before the push.
+        echo
+        root='{{ charts }}'
+        if [ -n '{{ chart }}' ]; then root='{{ charts }}/{{ chart }}'; fi
+        if helm schema --add-schema-reference --chart-search-root "$root"; then
+          echo "==> regenerated values.schema.json under $root"
+        else
+          echo "warning: values.schema.json was NOT regenerated, and every render will fail" >&2
+          echo "         until it is. Run 'just deps', then 'just schema'." >&2
+        fi
+
+        echo
+        just contract-tests '{{ chart }}'
+
+        # The rendered document gains a section, so every snapshot case that covers the ConfigMap
+        # fails until the committed `.snap` is rewritten. Read that diff: `-u` accepts whatever
+        # the chart renders today, and `just test-unit` is what asserts it afterwards.
+        echo
+        just update-snapshots '{{ chart }}'
+
+        # The `credentials` row this adoption wrote is a column of the generated credential table,
+        # and `just check-config-readme` is blocking. Rewrites only the text between the two
+        # `@config-credentials` comments, in every chart, which is a no-op wherever nothing moved.
+        echo
+        just config-readme
+
+        # The gates that read only committed files, run here so a chart that is not finished says
+        # so in this terminal rather than in a pull request. Seconds each, no cluster, and the
+        # writes above are already on disk — so a failure here is a report and not a half-applied
+        # run.
+        echo
+        status=0
+        just check-config-bindings || status=1
+        just check-values-docs >/dev/null || {
+          status=1
+          echo "error: a value carries no description; run 'just check-values-docs'" >&2
+        }
+        ;;
+      *)
+        status=0
+        echo
+        echo "==> with --write this would also regenerate values.schema.json, the round-trip"
+        echo "    suites and the rendered snapshots, and re-run the offline gates."
+        ;;
+    esac
+
+    echo
+    echo "==> the contract refresh and the values are two changes; commit them separately."
+    exit "$status"
 
 # Write every bound value's `@schema` block in a chart's values.yaml from the contract.
 #

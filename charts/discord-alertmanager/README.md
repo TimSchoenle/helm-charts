@@ -1,6 +1,6 @@
 # discord-alertmanager
 
-![Version: 0.4.1](https://img.shields.io/badge/Version-0.4.1-informational?style=flat-square) ![AppVersion: v0.4.1](https://img.shields.io/badge/AppVersion-v0.4.1-informational?style=flat-square)
+![Version: 0.4.2](https://img.shields.io/badge/Version-0.4.2-informational?style=flat-square) ![AppVersion: v0.5.0](https://img.shields.io/badge/AppVersion-v0.5.0-informational?style=flat-square)
 
 This chart deploys discord-alertmanager, a Discord operator surface for Prometheus Alertmanager. It receives the version-4 webhook envelope, renders each alert as a live status card in a Discord channel, and lets an operator acknowledge, ignore, silence or investigate it without leaving the client — with file-backed configuration that reloads in place instead of restarting pods, SQLite or PostgreSQL storage, optional Prometheus metrics and alerting rules, and an optional AlertmanagerConfig that registers the receiver with the Prometheus Operator instead of leaving it to be wired by hand.
 
@@ -92,6 +92,7 @@ where a note below says otherwise.
 | `discord__token` | no | `discord.token` | always |
 | `ingest__webhook_token` | no | `ingest.webhookToken` | to authenticate the webhook |
 | `storage__postgres__url` | no | `storage.postgres.url` | `storage.backend: postgres` |
+| `telemetry__sentry__dsn` | no | `telemetry.sentry.dsn` |  |
 
 The same value is addressable as the variable `DAM_<PATH>`, upper-cased with `.`
 written as `__`, and that spelling with `_FILE` appended names a file whose contents
@@ -517,11 +518,11 @@ also why a pod that cannot reach Alertmanager never becomes ready — check the 
 | gateway.tls.enabled | bool | `false` | Add an HTTPS listener. |
 | gateway.tls.mode | string | `"Terminate"` | TLS mode. |
 | gateway.tls.options | object | `{}` | Implementation-specific TLS options. |
-| image | object | `{"pullPolicy":"","registry":"","repository":"timschoenle/discord-alertmanager","tag":"v0.4.1@sha256:a981200bae6139e88a0a2327793f1f60970e79c04e3afd4014848f9fe078959e"}` | Container image the pod runs, composed as `registry/repository:tag`. |
+| image | object | `{"pullPolicy":"","registry":"","repository":"timschoenle/discord-alertmanager","tag":"v0.5.0@sha256:3eb0c2e12158cd292331540e97c33909dd9592d299351fa91f71fd8841c69a76"}` | Container image the pod runs, composed as `registry/repository:tag`. |
 | image.pullPolicy | string | `""` | The image pull policy. Empty resolves automatically from the tag/digest. |
 | image.registry | string | `""` | Registry host. Empty means Docker Hub. |
 | image.repository | string | `"timschoenle/discord-alertmanager"` | The container image repository. |
-| image.tag | string | `"v0.4.1@sha256:a981200bae6139e88a0a2327793f1f60970e79c04e3afd4014848f9fe078959e"` | The container image tag. Defaults to the chart's `appVersion` when empty. |
+| image.tag | string | `"v0.5.0@sha256:3eb0c2e12158cd292331540e97c33909dd9592d299351fa91f71fd8841c69a76"` | The container image tag. Defaults to the chart's `appVersion` when empty. |
 | imagePullSecrets | list | `[]` | Optional image pull secrets for private registries |
 | ingest | object | `{"bind":"0.0.0.0:9099","bodyLimitBytes":1048576,"maxConcurrentRequests":64,"requestTimeoutSecs":10,"shutdownDrainSecs":10,"webhookPath":"/webhook","webhookToken":""}` | The listener Alertmanager posts to. `/healthz`, `/readyz` and `/metrics` are served on the same address, so `bind` decides the container port for all four and the chart takes it from here rather than from a value of its own. |
 | ingest.bind | string | `"0.0.0.0:9099"` | Address and port to listen on (`ingest.bind`). |
@@ -713,6 +714,24 @@ also why a pod that cannot reach Alertmanager never becomes ready — check the 
 | storage.sqlite.migrateOnStart | bool | `true` | Run pending migrations during startup (`storage.sqlite.migrate_on_start`). |
 | storage.sqlite.path | string | `"/data/discord-alertmanager.db"` | Path to the database file, created on first start if it does not exist (`storage.sqlite.path`).  Not the image's own default, which is the relative `discord-alertmanager.db` and resolves inside the read-only `/app` working directory — the one place in this container the file cannot be created. It has to be an absolute path under `persistence.data.mountPath`, and the render is refused when it is not, because the alternative is a pod that starts, fails to open its database and crash-loops with an errno. |
 | strategy | object | `{}` | Deployment update strategy. Empty uses the Kubernetes default rolling update. |
+| telemetry | object | `{"logFormat":"plain","logLevel":"warn,discord_alertmanager=info,dam_=info","sentry":{"attachStacktrace":false,"breadcrumbLevel":"info","debug":false,"dsn":"","environment":"production","eventLevel":"error","maxBreadcrumbs":100,"release":null,"sampleRate":1,"sendDefaultPii":false,"serverName":null,"shutdownTimeoutSecs":2,"spanLevel":"info","tracesSampleRate":0}}` | The `telemetry` settings. |
+| telemetry.logFormat | string | `"plain"` | How each log line is written (`telemetry.log_format`). |
+| telemetry.logLevel | string | `"warn,discord_alertmanager=info,dam_=info"` | Filter directives for the log stream, in `RUST_LOG` syntax (`telemetry.log_level`). |
+| telemetry.sentry | object | `{"attachStacktrace":false,"breadcrumbLevel":"info","debug":false,"dsn":"","environment":"production","eventLevel":"error","maxBreadcrumbs":100,"release":null,"sampleRate":1,"sendDefaultPii":false,"serverName":null,"shutdownTimeoutSecs":2,"spanLevel":"info","tracesSampleRate":0}` | The `telemetry.sentry` settings. |
+| telemetry.sentry.attachStacktrace | bool | `false` | Attach a stack trace to every event, not only to panics (`telemetry.sentry.attach_stacktrace`). |
+| telemetry.sentry.breadcrumbLevel | string | `"info"` | Level at or above which a log record is kept as a breadcrumb behind the next event (`telemetry.sentry.breadcrumb_level`). |
+| telemetry.sentry.debug | bool | `false` | Log what the Sentry client itself is doing (`telemetry.sentry.debug`). |
+| telemetry.sentry.dsn | string | `""` | Project DSN. Reporting is off while this is unset (`telemetry.sentry.dsn`). Delivered as the secrets-directory file `telemetry__sentry__dsn`. |
+| telemetry.sentry.environment | string | `"production"` | Deployment this process belongs to, which every event is tagged with (`telemetry.sentry.environment`). |
+| telemetry.sentry.eventLevel | string | `"error"` | Level at or above which a log record is sent as an event of its own (`telemetry.sentry.event_level`). |
+| telemetry.sentry.maxBreadcrumbs | int | `100` | How many breadcrumbs are kept behind an event (`telemetry.sentry.max_breadcrumbs`). |
+| telemetry.sentry.release | string | `nil` | Release every event is attributed to. Defaults to the bot's own version (`telemetry.sentry.release`). |
+| telemetry.sentry.sampleRate | float | `1` | Fraction of events that are sent, from `0.0` to `1.0` (`telemetry.sentry.sample_rate`). |
+| telemetry.sentry.sendDefaultPii | bool | `false` | Send the IP addresses, headers and user identifiers Sentry calls default PII (`telemetry.sentry.send_default_pii`). |
+| telemetry.sentry.serverName | string | `nil` | Host name reported with each event. Defaults to the machine's own (`telemetry.sentry.server_name`). |
+| telemetry.sentry.shutdownTimeoutSecs | int | `2` | Seconds to spend delivering whatever is still queued during shutdown (`telemetry.sentry.shutdown_timeout_secs`). |
+| telemetry.sentry.spanLevel | string | `"info"` | Level at or above which a span joins the trace (`telemetry.sentry.span_level`). |
+| telemetry.sentry.tracesSampleRate | float | `0` | Fraction of traces that are sent, from `0.0` to `1.0`. Tracing is off at `0.0` (`telemetry.sentry.traces_sample_rate`). |
 | terminationGracePeriodSeconds | int | `30` | Grace period for pod shutdown. |
 | tolerations | list | `[]` | Tolerations for pod assignment. |
 | topologySpreadConstraints | list | `[]` | Pod topology spread constraints for availability. |

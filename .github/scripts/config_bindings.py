@@ -13,10 +13,16 @@ that is the fact this file gives a name to:
     sentryDsn: ""
 
 One line inside the value's `@schema` block, naming the contract key that value feeds and how it
-gets there. Nothing generates these — they are written by whoever maps the chart onto the image,
-and `check-config-bindings.py` is the gate that holds them against the vendored contract. Why that
-line and not the value's own is the longest section below, because it was measured rather than
-chosen and the obvious answers are all wrong.
+gets there. Nothing generates one for a value that already exists — that marker is a claim about
+a value somebody else wrote, and a generator guessing which key it feeds produces a wrong guess
+that reads exactly like a right one. The two generators that do write markers write the *value*
+in the same breath, from the key, so the marker is the mapping rather than a claim about one:
+`config_scaffold.py` for a chart being created and `adopt-config.py` for a key a chart has no
+value for yet, each with its argument in its own docstring. `check-config-bindings.py` is the
+gate that holds every marker, written by either hand, against the vendored contract.
+
+Why that line and not the value's own is the longest section below, because it was measured
+rather than chosen and the obvious answers are all wrong.
 
 Why the fact is worth writing down at all, in the order the payoffs arrive:
 
@@ -696,3 +702,112 @@ def has_path(values: object, path: str) -> bool:
             return False
         current = current[part]
     return True
+
+
+# --------------------------------------------------------------------------------------------
+# Reading a values.yaml as regions, for a writer rather than for a reader
+# --------------------------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Region:
+    """One mapping value in a `values.yaml`, as the lines it occupies.
+
+    The third thing the walk above already knows and no caller could ask for: `parse_values` and
+    `parse_blocks` return what a value *says*, and a writer needs to know where it *ends* — the
+    last line belonging to it, so a new sibling can be placed after that line and nowhere else.
+
+    `end` is the last line of content under the key, and deliberately not the last line before the
+    next sibling: the comment run between two values belongs to the second one, and an insertion
+    that landed inside it would separate a value from its `@schema` block, which is the one
+    placement `_walk` refuses to read. A leaf's `end` is its own line.
+
+    Lines are 1-based, as they are everywhere else in this module, so `Region.end` indexes a
+    `splitlines()` list at `end - 1`.
+    """
+
+    values_path: str
+    line: int
+    indent: int
+    end: int
+
+
+def regions(path: Path) -> list[Region]:
+    """Every mapping value in one `values.yaml`, with the lines it spans, in file order.
+
+    The same walk `parse_values` does, over the same three regexes and with the same blind spots
+    — a sequence item's interior, a block scalar's body and a key `_MAPPING_KEY` cannot spell, of
+    which every chart here has two (`app.kubernetes.io/name` and its neighbour under
+    `networkPolicy`). None of the three holds a values path a marker may be written against, so
+    none is reported; all three are counted as content, so the value they belong to ends after
+    them rather than before.
+
+    Written here rather than in the one script that needs it because reading `values.yaml` as
+    lines is this module's job and the rules for it are subtle enough that a second reader would
+    have had to get them right again — which is the argument the module docstring already makes
+    about the marker itself.
+    """
+    lines = path.read_text(encoding="utf-8").splitlines()
+
+    # Every line that is neither blank nor comment-only, as `(number, indent)`. A value ends at
+    # the last of these below it and more indented than it.
+    content: list[tuple[int, int]] = []
+    # `(line, indent, values_path)` for each mapping key, closed in the second pass.
+    keys: list[tuple[int, int, str]] = []
+
+    stack: list[tuple[int, str]] = []
+    skip_deeper_than: int | None = None
+    in_schema = False
+
+    for number, raw in enumerate(lines, start=1):
+        line = raw.rstrip()
+        if not line.strip():
+            continue
+
+        indent = len(line) - len(line.lstrip(" "))
+
+        if _SCHEMA_DELIM.match(line):
+            in_schema = not in_schema
+            continue
+        if in_schema:
+            continue
+
+        code, _ = split_comment(line)
+        if not code.strip():
+            continue
+
+        content.append((number, indent))
+
+        if skip_deeper_than is not None:
+            if indent > skip_deeper_than:
+                continue
+            skip_deeper_than = None
+
+        if _SEQUENCE_ITEM.match(code):
+            skip_deeper_than = indent
+            continue
+
+        key = _MAPPING_KEY.match(code.rstrip())
+        if key is None:
+            continue
+
+        while stack and stack[-1][0] >= indent:
+            stack.pop()
+        stack.append((indent, key.group("name")))
+
+        if _BLOCK_SCALAR.match(key.group("rest").strip()):
+            skip_deeper_than = indent
+
+        keys.append((number, indent, ".".join(name for _, name in stack)))
+
+    found: list[Region] = []
+    for line, indent, values_path in keys:
+        end = line
+        for number, other in content:
+            if number <= line:
+                continue
+            if other <= indent:
+                break
+            end = number
+        found.append(Region(values_path=values_path, line=line, indent=indent, end=end))
+    return found

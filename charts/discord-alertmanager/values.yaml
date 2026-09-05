@@ -22,7 +22,7 @@ image:
   # type: string
   # @schema
   # -- The container image tag. Defaults to the chart's `appVersion` when empty.
-  tag: v0.4.1@sha256:a981200bae6139e88a0a2327793f1f60970e79c04e3afd4014848f9fe078959e
+  tag: v0.5.0@sha256:3eb0c2e12158cd292331540e97c33909dd9592d299351fa91f71fd8841c69a76
 
   # @schema
   # enum: ["", Always, IfNotPresent, Never]
@@ -826,6 +826,139 @@ storage:
     # the render is refused when it is not, because the alternative is a pod that starts, fails
     # to open its database and crash-loops with an errno.
     path: "/data/discord-alertmanager.db"
+
+# @schema
+# additionalProperties: true
+# @schema
+# -- The `telemetry` settings.
+telemetry:
+  # @schema
+  # # @config projection telemetry.log_format optional
+  # enum: ["plain", "json", null]
+  # @schema
+  # -- How each log line is written (`telemetry.log_format`).
+  logFormat: "plain"
+
+  # @schema
+  # # @config projection telemetry.log_level optional
+  # type: [string, 'null']
+  # @schema
+  # -- Filter directives for the log stream, in `RUST_LOG` syntax (`telemetry.log_level`).
+  logLevel: "warn,discord_alertmanager=info,dam_=info"
+
+  # @schema
+  # additionalProperties: true
+  # @schema
+  # -- The `telemetry.sentry` settings.
+  sentry:
+    # @schema
+    # # @config projection telemetry.sentry.attach_stacktrace optional
+    # type: [boolean, 'null']
+    # @schema
+    # -- Attach a stack trace to every event, not only to panics
+    # (`telemetry.sentry.attach_stacktrace`).
+    attachStacktrace: false
+
+    # @schema
+    # # @config projection telemetry.sentry.breadcrumb_level optional
+    # enum: ["off", "error", "warn", "info", "debug", "trace", null]
+    # @schema
+    # -- Level at or above which a log record is kept as a breadcrumb behind the next event
+    # (`telemetry.sentry.breadcrumb_level`).
+    breadcrumbLevel: "info"
+
+    # @schema
+    # # @config projection telemetry.sentry.debug optional
+    # type: [boolean, 'null']
+    # @schema
+    # -- Log what the Sentry client itself is doing (`telemetry.sentry.debug`).
+    debug: false
+
+    # @schema
+    # type: [string, 'null']
+    # @schema
+    # -- Project DSN. Reporting is off while this is unset (`telemetry.sentry.dsn`). Delivered
+    # as the secrets-directory file `telemetry__sentry__dsn`.
+    dsn: ""
+
+    # @schema
+    # # @config projection telemetry.sentry.environment optional
+    # type: [string, 'null']
+    # @schema
+    # -- Deployment this process belongs to, which every event is tagged with
+    # (`telemetry.sentry.environment`).
+    environment: "production"
+
+    # @schema
+    # # @config projection telemetry.sentry.event_level optional
+    # enum: ["off", "error", "warn", "info", "debug", "trace", null]
+    # @schema
+    # -- Level at or above which a log record is sent as an event of its own
+    # (`telemetry.sentry.event_level`).
+    eventLevel: "error"
+
+    # @schema
+    # # @config projection telemetry.sentry.max_breadcrumbs optional
+    # type: [integer, 'null']
+    # minimum: 0
+    # @schema
+    # -- How many breadcrumbs are kept behind an event (`telemetry.sentry.max_breadcrumbs`).
+    maxBreadcrumbs: 100
+
+    # @schema
+    # # @config projection telemetry.sentry.release optional
+    # type: [string, 'null']
+    # @schema
+    # -- Release every event is attributed to. Defaults to the bot's own version
+    # (`telemetry.sentry.release`).
+    release: null
+
+    # @schema
+    # # @config projection telemetry.sentry.sample_rate optional
+    # type: [number, 'null']
+    # @schema
+    # -- Fraction of events that are sent, from `0.0` to `1.0` (`telemetry.sentry.sample_rate`).
+    sampleRate: 1.0
+
+    # @schema
+    # # @config projection telemetry.sentry.send_default_pii optional
+    # type: [boolean, 'null']
+    # @schema
+    # -- Send the IP addresses, headers and user identifiers Sentry calls default PII
+    # (`telemetry.sentry.send_default_pii`).
+    sendDefaultPii: false
+
+    # @schema
+    # # @config projection telemetry.sentry.server_name optional
+    # type: [string, 'null']
+    # @schema
+    # -- Host name reported with each event. Defaults to the machine's own
+    # (`telemetry.sentry.server_name`).
+    serverName: null
+
+    # @schema
+    # # @config projection telemetry.sentry.shutdown_timeout_secs optional
+    # type: [integer, 'null']
+    # minimum: 0
+    # @schema
+    # -- Seconds to spend delivering whatever is still queued during shutdown
+    # (`telemetry.sentry.shutdown_timeout_secs`).
+    shutdownTimeoutSecs: 2
+
+    # @schema
+    # # @config projection telemetry.sentry.span_level optional
+    # enum: ["off", "error", "warn", "info", "debug", "trace", null]
+    # @schema
+    # -- Level at or above which a span joins the trace (`telemetry.sentry.span_level`).
+    spanLevel: "info"
+
+    # @schema
+    # # @config projection telemetry.sentry.traces_sample_rate optional
+    # type: [number, 'null']
+    # @schema
+    # -- Fraction of traces that are sent, from `0.0` to `1.0`. Tracing is off at `0.0`
+    # (`telemetry.sentry.traces_sample_rate`).
+    tracesSampleRate: 0.0
 
 # @schema
 # type: string

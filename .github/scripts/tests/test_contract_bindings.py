@@ -43,6 +43,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import yaml
+
 SCRIPTS = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SCRIPTS))
 
@@ -977,7 +979,7 @@ class TestTheEnrolledCharts(unittest.TestCase):
             [(chart, keys, external) for chart, keys, external in enrolled],
             [
                 ("cloudflare-access-webhook-redirect", 20, 0),
-                ("discord-alertmanager", 58, 0),
+                ("discord-alertmanager", 73, 0),
                 ("mp-stats-legacy-viewer", 25, 0),
                 ("netcup-offer-bot", 16, 0),
                 ("portfolio", 21, 3),
@@ -1019,6 +1021,63 @@ class TestTheEnrolledCharts(unittest.TestCase):
         self.assertLess(len(declaration.unbound), 10)
         for entry in declaration.unbound:
             self.assertTrue(entry.reason.strip())
+
+
+class TestRegions(unittest.TestCase):
+    """`regions`: the same walk, reported as the lines each value occupies.
+
+    Its one reader writes into the file, so what it gets wrong is where a block lands. Two answers
+    matter and neither is the obvious one: a block ends at its last line of *content*, not at the
+    line before the next key — the comment run in between belongs to that next value, and an
+    insertion there would separate it from its `@schema` block, which is the one placement the
+    parser above refuses to read. And a value inside a sequence item has no values path at all,
+    while still counting toward the end of the value that holds it.
+    """
+
+    def regions(self, text: str) -> dict[str, cb.Region]:
+        with tempfile.TemporaryDirectory() as workspace:
+            path = Path(workspace) / "values.yaml"
+            path.write_text(text, encoding="utf-8")
+            return {region.values_path: region for region in cb.regions(path)}
+
+    def test_a_leaf_begins_and_ends_on_its_own_line(self):
+        found = self.regions("a: 1\nb: 2\n")
+        self.assertEqual((found["a"].line, found["a"].end), (1, 1))
+        self.assertEqual((found["b"].line, found["b"].end), (2, 2))
+
+    def test_a_block_ends_at_its_last_content_line(self):
+        found = self.regions("parent:\n  first: 1\n  second: 2\nafter: 3\n")
+        self.assertEqual((found["parent"].line, found["parent"].end), (1, 3))
+        self.assertEqual(found["parent.second"].values_path, "parent.second")
+
+    def test_the_comment_run_of_the_next_value_is_not_part_of_this_one(self):
+        found = self.regions(
+            "parent:\n"
+            "  first: 1\n"
+            "\n"
+            "# @schema\n"
+            "# type: string\n"
+            "# @schema\n"
+            "# -- Next.\n"
+            "next: x\n"
+        )
+        self.assertEqual(found["parent"].end, 2)
+
+    def test_a_sequence_holds_no_values_path_and_still_ends_its_value(self):
+        found = self.regions("items:\n  - name: a\n    port: 1\nafter: 2\n")
+        self.assertEqual(found["items"].end, 3)
+        self.assertNotIn("items.name", found)
+
+    def test_every_region_of_every_chart_names_a_value_that_parses(self):
+        """The walk against PyYAML, over the tree rather than over a fixture."""
+        charts = Path(__file__).resolve().parents[3] / "charts"
+        for values in sorted(charts.glob("*/values.yaml")):
+            parsed = yaml.safe_load(values.read_text(encoding="utf-8")) or {}
+            for region in cb.regions(values):
+                self.assertTrue(
+                    cb.has_path(parsed, region.values_path),
+                    f"{values}: {region.values_path} is not in the parsed document",
+                )
 
 
 if __name__ == "__main__":

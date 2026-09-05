@@ -9,7 +9,7 @@
 # Chart:       discord-alertmanager
 # Declaration: charts/discord-alertmanager/config-contract.yaml (document `discord-alertmanager`)
 # Contract:    charts/discord-alertmanager/contracts/discord-alertmanager.json
-# Coverage:    46 of 63 contract keys carry a probe, 45 through the chart's own value
+# Coverage:    59 of 79 contract keys carry a probe, 58 through the chart's own value
 #
 # Regenerate with `just contract-tests`. `just check-contract-tests` fails a pull request whose
 # committed copy has drifted from the contract it was generated against.
@@ -686,6 +686,175 @@ tests:
           path: data["config.toml"]
           pattern: '(?m)^\[storage\.sqlite\]$\n(?:[^\[\n][^\n]*\n|\n)*^path = "contract-probe-storage-sqlite-path"$'
 
+  - it: delivers telemetry.log_format into config.toml from telemetry.logFormat
+    documentSelector:
+      path: data["config.toml"]
+    set:
+      alertmanager.endpoints: ["http://render-prerequisite.invalid:9093"]
+      discord.token: render-prerequisite-token
+      existingSecret: discord-alertmanager-contract-probe
+      telemetry.logFormat: json
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '(?m)^\[telemetry\]$\n(?:[^\[\n][^\n]*\n|\n)*^log_format = "json"$'
+
+  - it: delivers telemetry.log_level into config.toml from telemetry.logLevel
+    documentSelector:
+      path: data["config.toml"]
+    set:
+      alertmanager.endpoints: ["http://render-prerequisite.invalid:9093"]
+      discord.token: render-prerequisite-token
+      existingSecret: discord-alertmanager-contract-probe
+      telemetry.logLevel: contract-probe-telemetry-log-level
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '(?m)^\[telemetry\]$\n(?:[^\[\n][^\n]*\n|\n)*^log_level = "contract-probe-telemetry-log-level"$'
+
+  - it: delivers telemetry.sentry.attach_stacktrace into config.toml from telemetry.sentry.attachStacktrace
+    documentSelector:
+      path: data["config.toml"]
+    set:
+      alertmanager.endpoints: ["http://render-prerequisite.invalid:9093"]
+      discord.token: render-prerequisite-token
+      existingSecret: discord-alertmanager-contract-probe
+      telemetry.sentry.attachStacktrace: true
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '(?m)^\[telemetry\.sentry\]$\n(?:[^\[\n][^\n]*\n|\n)*^attach_stacktrace = true$'
+
+  - it: delivers telemetry.sentry.breadcrumb_level into config.toml from telemetry.sentry.breadcrumbLevel
+    documentSelector:
+      path: data["config.toml"]
+    set:
+      alertmanager.endpoints: ["http://render-prerequisite.invalid:9093"]
+      discord.token: render-prerequisite-token
+      existingSecret: discord-alertmanager-contract-probe
+      telemetry.sentry.breadcrumbLevel: off
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '(?m)^\[telemetry\.sentry\]$\n(?:[^\[\n][^\n]*\n|\n)*^breadcrumb_level = "off"$'
+
+  - it: delivers telemetry.sentry.debug into config.toml from telemetry.sentry.debug
+    documentSelector:
+      path: data["config.toml"]
+    set:
+      alertmanager.endpoints: ["http://render-prerequisite.invalid:9093"]
+      discord.token: render-prerequisite-token
+      existingSecret: discord-alertmanager-contract-probe
+      telemetry.sentry.debug: true
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '(?m)^\[telemetry\.sentry\]$\n(?:[^\[\n][^\n]*\n|\n)*^debug = true$'
+
+  - it: delivers telemetry.sentry.environment into config.toml from telemetry.sentry.environment
+    documentSelector:
+      path: data["config.toml"]
+    set:
+      alertmanager.endpoints: ["http://render-prerequisite.invalid:9093"]
+      discord.token: render-prerequisite-token
+      existingSecret: discord-alertmanager-contract-probe
+      telemetry.sentry.environment: contract-probe-telemetry-sentry-environment
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '(?m)^\[telemetry\.sentry\]$\n(?:[^\[\n][^\n]*\n|\n)*^environment = "contract-probe-telemetry-sentry-environment"$'
+
+  - it: delivers telemetry.sentry.event_level into config.toml from telemetry.sentry.eventLevel
+    documentSelector:
+      path: data["config.toml"]
+    set:
+      alertmanager.endpoints: ["http://render-prerequisite.invalid:9093"]
+      discord.token: render-prerequisite-token
+      existingSecret: discord-alertmanager-contract-probe
+      telemetry.sentry.eventLevel: off
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '(?m)^\[telemetry\.sentry\]$\n(?:[^\[\n][^\n]*\n|\n)*^event_level = "off"$'
+
+  - it: delivers telemetry.sentry.max_breadcrumbs into config.toml from telemetry.sentry.maxBreadcrumbs
+    documentSelector:
+      path: data["config.toml"]
+    set:
+      alertmanager.endpoints: ["http://render-prerequisite.invalid:9093"]
+      discord.token: render-prerequisite-token
+      existingSecret: discord-alertmanager-contract-probe
+      telemetry.sentry.maxBreadcrumbs: 4242
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '(?m)^\[telemetry\.sentry\]$\n(?:[^\[\n][^\n]*\n|\n)*^max_breadcrumbs = 4242$'
+
+  - it: delivers telemetry.sentry.release into config.toml from telemetry.sentry.release
+    documentSelector:
+      path: data["config.toml"]
+    set:
+      alertmanager.endpoints: ["http://render-prerequisite.invalid:9093"]
+      discord.token: render-prerequisite-token
+      existingSecret: discord-alertmanager-contract-probe
+      telemetry.sentry.release: contract-probe-telemetry-sentry-release
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '(?m)^\[telemetry\.sentry\]$\n(?:[^\[\n][^\n]*\n|\n)*^release = "contract-probe-telemetry-sentry-release"$'
+
+  - it: delivers telemetry.sentry.send_default_pii into config.toml from telemetry.sentry.sendDefaultPii
+    documentSelector:
+      path: data["config.toml"]
+    set:
+      alertmanager.endpoints: ["http://render-prerequisite.invalid:9093"]
+      discord.token: render-prerequisite-token
+      existingSecret: discord-alertmanager-contract-probe
+      telemetry.sentry.sendDefaultPii: true
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '(?m)^\[telemetry\.sentry\]$\n(?:[^\[\n][^\n]*\n|\n)*^send_default_pii = true$'
+
+  - it: delivers telemetry.sentry.server_name into config.toml from telemetry.sentry.serverName
+    documentSelector:
+      path: data["config.toml"]
+    set:
+      alertmanager.endpoints: ["http://render-prerequisite.invalid:9093"]
+      discord.token: render-prerequisite-token
+      existingSecret: discord-alertmanager-contract-probe
+      telemetry.sentry.serverName: contract-probe-telemetry-sentry-server-name
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '(?m)^\[telemetry\.sentry\]$\n(?:[^\[\n][^\n]*\n|\n)*^server_name = "contract-probe-telemetry-sentry-server-name"$'
+
+  - it: delivers telemetry.sentry.shutdown_timeout_secs into config.toml from telemetry.sentry.shutdownTimeoutSecs
+    documentSelector:
+      path: data["config.toml"]
+    set:
+      alertmanager.endpoints: ["http://render-prerequisite.invalid:9093"]
+      discord.token: render-prerequisite-token
+      existingSecret: discord-alertmanager-contract-probe
+      telemetry.sentry.shutdownTimeoutSecs: 4242
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '(?m)^\[telemetry\.sentry\]$\n(?:[^\[\n][^\n]*\n|\n)*^shutdown_timeout_secs = 4242$'
+
+  - it: delivers telemetry.sentry.span_level into config.toml from telemetry.sentry.spanLevel
+    documentSelector:
+      path: data["config.toml"]
+    set:
+      alertmanager.endpoints: ["http://render-prerequisite.invalid:9093"]
+      discord.token: render-prerequisite-token
+      existingSecret: discord-alertmanager-contract-probe
+      telemetry.sentry.spanLevel: off
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '(?m)^\[telemetry\.sentry\]$\n(?:[^\[\n][^\n]*\n|\n)*^span_level = "off"$'
+
   # Contract keys carrying no case, and why. An unexplained absence is indistinguishable from an
   # oversight, so every one of them is named here rather than simply left out.
   #
@@ -732,3 +901,9 @@ tests:
   #         describes the container and not its contents and no probe addresses a leaf
   # storage.postgres.url: `secret: true`: the probe would be committed to this repository, and a
   #                       credential-shaped value in a test file is a credential
+  # telemetry.sentry.dsn: `secret: true`: the probe would be committed to this repository, and a
+  #                       credential-shaped value in a test file is a credential
+  # telemetry.sentry.sample_rate: `unknown`: the producer publishes no constraint for this key,
+  #                               so no probe can be known-valid
+  # telemetry.sentry.traces_sample_rate: `unknown`: the producer publishes no constraint for
+  #                                      this key, so no probe can be known-valid

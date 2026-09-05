@@ -160,8 +160,11 @@ check-contract-coverage:
 # two generated artefacts impose and every deliberate omission are in `config_bindings.py`'s and
 # `check-config-bindings.py`'s docstrings, which is where they belong rather than repeated here.
 #
-# **Nothing writes a marker.** They are hand-written, and a generator would have had to land in
-# the same change as the format it depends on, which is the one shape a reviewer cannot check.
+# **Nothing writes a marker onto a value that already exists.** Such a marker is a claim about
+# somebody else's value, and a generator guessing which key that value feeds guesses wrong in a
+# way that reads exactly like a right answer. A marker written *with* the value it belongs to,
+# from one key, is a different artefact — that is `just new-chart` and `just adopt-config`, and
+# each says so where it is defined.
 #
 # Enrolment is opt-in and declared, by `bindings: true` in `config-contract.yaml`, so a gate that
 # failed unenrolled charts is not red for work nobody has scheduled — and does not end up
@@ -193,6 +196,87 @@ check-config-bindings:
     set -euo pipefail
     {{ resolve_python }}
     "$python" {{ scripts }}/check-config-bindings.py --charts {{ charts }}
+
+# Write the chart values a contract's unbound keys are owed, from the contract itself.
+#
+# The writer for the failure the gate above reports. `check-config-bindings` says, per key, that
+# the contract declares it and no chart value binds it, and it names the two repairs: a marker on
+# the value that feeds it, or an `unbound` entry with a reason. The first is the same twenty lines
+# every time — a `@schema` block typed from the key's constraint, a `# --` description written
+# from the prose the producer published, the default the binary compiles in, and the marker naming
+# the key — and every one of them is in the vendored contract already.
+#
+# So it writes them, and prints the three things it will not write: the `derivedConfig` and
+# `secretData` lines, because a chart's template is hand-written and an edit made blind to its
+# `with` blocks and its gates is one nobody can review; and the `unbound` entries, because a key
+# nobody surfaces is owed a *reason* and a canned sentence is not one. A `--write` run therefore
+# leaves the chart rendering exactly what it rendered before — the value exists, is typed,
+# documented and bound, and reaches nothing until somebody wires the projection, which the closing
+# output names line by line.
+#
+# **It never touches a value that already exists.** That is the boundary `config_bindings.py`
+# draws in bold and it holds: on an existing value a generated marker is a guess about which key
+# that value feeds, and a wrong guess reads exactly like a right one. Here the value does not
+# exist — the key is the fact, and the value and its marker are emitted together from it, so the
+# marker *is* the mapping. A key whose chart value is already there is refused, with the marker
+# line to write by hand.
+#
+# Prints by default and writes under `--write`, as `just add-tunable` does. Deliberately NOT in
+# `just check`: it is a generator, and an aggregate whose whole output is a pass or a fail is not
+# where one belongs. Offline, like everything in this group but the refresh.
+#
+#   just adopt-config                             every enrolled chart, planned and printed
+#   just adopt-config netcup-offer-bot            one chart
+#   just adopt-config netcup-offer-bot --write    insert the blocks
+#   just adopt-config tankovault --key metrics.enabled --write    one key of one chart
+[doc("Write the values a chart's unbound contract keys are owed, from the contract")]
+[group('contracts')]
+adopt-config chart='' *flags:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    {{ resolve_python }}
+    "$python" {{ scripts }}/adopt-config.py '{{ chart }}' --charts {{ charts }} {{ flags }}
+
+# Refresh a chart's contracts from the image it pins, then write the values the new keys are owed.
+#
+# The whole of the recurring failure, in one command: an image release adds a setting, the bump
+# repins the digest, and the chart is now missing a value nobody knows about. `just contracts`
+# fetches what the new build declares, `just contract-diff` says what moved, and
+# `just adopt-config` writes the values for whatever the chart no longer covers. Each of the three
+# is useful alone and each is still its own recipe; this is the order they are wanted in.
+#
+# **The pin decides which build.** The refresh resolves `image.tag` out of values.yaml — digest
+# and all — so running this against an unchanged pin re-fetches the contract the chart already
+# has and finds nothing new. A newer build reaches the chart when the pin moves: the Renovate
+# pull request, or an edit to `image.tag`. Run this *on* that pull request and it turns a digest
+# bump into the values that bump implies.
+#
+# Networked, because its first step is the one networked recipe here. Everything after it reads
+# the file that step wrote.
+#
+# **Commit the two halves separately.** The refresh is what the image says; the values are what
+# this repository decided to do about it, and a single commit holding both is one in which nobody
+# can see which caused which — the reason `just contracts` does not run `just config-shapes`
+# either. What makes it defensible here is that a person asked for both, in that order, and sees
+# the diff between them on the way past.
+#
+#   just sync-config netcup-offer-bot             refresh, explain, and plan the values
+#   just sync-config netcup-offer-bot --write     ... and write them
+#   just sync-config                              every chart with a contract
+[doc("Refresh a chart's contracts from the image it pins, then write the values the new keys are owed")]
+[group('contracts')]
+sync-config chart='' *flags: (contracts chart)
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    # Against HEAD rather than `origin/main`: the refresh above wrote into the working tree, so
+    # the committed file is the before and this is a report of what that fetch just changed.
+    just contract-diff '{{ chart }}' HEAD
+
+    just adopt-config '{{ chart }}' {{ flags }}
+
+    echo
+    echo "==> the contract refresh and the values are two changes; commit them separately."
 
 # Write every bound value's `@schema` block in a chart's values.yaml from the contract.
 #

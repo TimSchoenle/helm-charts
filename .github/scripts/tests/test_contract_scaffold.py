@@ -603,7 +603,7 @@ class Declaration(unittest.TestCase):
         plan = sc.plan_keys(
             union_of(key("a.x", reserved=True), key("a.y", reserved=True), key("a.z"))
         )
-        groups = sc._write_off_groups(plan)
+        groups = sc.write_off_groups(plan)
         self.assertEqual(len(groups), 1)
         self.assertEqual(groups[0][0], ["a.x", "a.y"])
 

@@ -400,6 +400,8 @@ class Gate:
         value for one of them has declined to expose somebody else's variable, which is not the
         omission this gate is looking for.
         """
+        missing = missing_keys(bound, resolved)
+
         for name in sorted(bound.documents):
             union = bound.unions[name]
             where = f"{bound.chart}: {name}"
@@ -418,7 +420,7 @@ class Gate:
                     "of date, and the reason recorded here is the one that will be believed",
                 )
 
-            for key in sorted(set(union.keys) - bound_here - written_off):
+            for key in missing[name]:
                 entry = union.keys[key]
                 self.report.fail(
                     where,
@@ -428,6 +430,30 @@ class Gate:
                     + (" (it is a credential; `just check-config-secrets` is what checks how "
                        "those are delivered)" if entry.get("secret") else ""),
                 )
+
+
+def missing_keys(bound: Bound, resolved: list[tuple[cb.Marker, str]]) -> dict[str, list[str]]:
+    """The keys of each document that no value binds and no `unbound` entry writes off.
+
+    Rule 5's subject, lifted out of the check that reports it because a second caller now acts on
+    the same set: `adopt-config.py` writes the values that would satisfy it. Two readers of "which
+    keys are owed" would agree today and disagree the first time a scope or a write-off changed,
+    and the one that drifts is the writer — it would either scaffold a value for a key somebody
+    deliberately wrote off, or leave the gate red after a run that reported success.
+
+    Keyed by document and never sparse: a document whose keys are all bound maps to an empty list,
+    so a caller can walk the chart's documents without asking whether each is present.
+    """
+    missing: dict[str, list[str]] = {}
+    for name in sorted(bound.documents):
+        bound_here = {
+            marker.target
+            for marker, in_document in resolved
+            if in_document == name and marker.cls in cb.KEY_CLASSES
+        }
+        keys = set(bound.unions[name].keys)
+        missing[name] = sorted(keys - bound_here - written_off_in(bound.declaration, name))
+    return missing
 
 
 def written_off_in(declaration: Declaration, document: str) -> set[str]:

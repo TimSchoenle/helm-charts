@@ -23,18 +23,21 @@ each of those judgements as a rule rather than leaving them to be made once per 
 Why generating `# @config` markers here is not the thing `config_bindings.py` refuses
 --------------------------------------------------------------------------------------------
 
-`config_bindings.py` says, in bold, that nothing generates a marker: they are hand-written,
-because a generator would have to land in the same change as the format it depends on, and a
-generated marker on an existing chart asserts a mapping the reviewer did not write and cannot
-check against anything.
+`config_bindings.py` says, in bold, that nothing generates a marker onto a value that already
+exists: such a marker asserts a mapping the reviewer did not write and cannot check against
+anything.
 
-Neither objection reaches this module, and the difference is which artefact is derived. On an
+That objection does not reach this module, and the difference is which artefact is derived. On an
 existing chart the *value* is the fact and the marker is a claim about it — a generator would be
 guessing which of `telemetry.logLevel` and `logging.level` feeds `telemetry.log_level`, and a
 wrong guess reads exactly like a right one. Here the value does not exist yet: the key is the
 fact, and the value and its marker are emitted together from that one key by one rule. There is
 no prior mapping for the marker to be wrong about, because the marker *is* the mapping and the
 value was named to match it.
+
+`adopt-config.py` claims the same exemption for one key at a time, on a chart that does exist, and
+enforces the boundary rather than assuming it: a key whose chart value is already there is refused
+with the marker to write by hand.
 
 The gate is unchanged either way. `just check-config-bindings` holds what comes out of here
 against the same contract, so a scaffold whose rules are wrong fails on the chart's first run and
@@ -513,7 +516,7 @@ def description_lines(placement: Placement, indent: str) -> list[str]:
     summary = summary_of(key).rstrip(".")
     text = f"{summary} (`{key['path']}`)."
     if placement.where == SECRET_FILE:
-        text += f" Delivered as the secrets-directory file `{_file_name(placement)}`."
+        text += f" Delivered as the secrets-directory file `{secrets_file_name(placement)}`."
 
     return described(text, indent)
 
@@ -897,6 +900,19 @@ def _derived_lines(tree: dict[str, Any], indent: str = "") -> list[str]:
     return lines
 
 
+def derived_for(placements: list[Placement], indent: str = "") -> list[str]:
+    """The `derivedConfig` lines for some of a plan's placements, at a caller's indent.
+
+    `render_helpers` below writes the whole helper for a chart that does not exist yet.
+    `adopt-config.py` has the other half of the problem — a chart whose helper is hand-written and
+    which is owed the lines for a handful of new keys — and the projection rules are the same for
+    both: an optional key wrapped in `with` so that unset means absent, a structured one written
+    through `toYaml`, a number left unquoted. A second rendering of those rules would be a second
+    chance to get "unset" wrong, which is the one mistake in this file that is silent.
+    """
+    return _derived_lines(toml_tree(placements), indent)
+
+
 def _comment(*lines: str) -> str:
     """A Go-template comment block, wrapped, in the house style."""
     body: list[str] = []
@@ -908,7 +924,21 @@ def _comment(*lines: str) -> str:
     return "{{/*\n" + "\n".join(body) + "\n*/}}\n"
 
 
-def _file_name(placement: Placement) -> str:
+def secret_data_for(placements: list[Placement]) -> list[str]:
+    """The `secretData` lines for some credentials, keyed by the file the loader reads each from.
+
+    Public for the same reason `derived_for` is: `adopt-config.py` writes credentials into a chart
+    whose helper already exists, and the file name is the one part of the line that must not be
+    computed twice — it is what the producer published, and a second spelling of it would be right
+    until the day the producer changed a separator.
+    """
+    return [
+        f"{secrets_file_name(item)}: {{{{ .Values.{item.values_path} | quote }}}}"
+        for item in placements
+    ]
+
+
+def secrets_file_name(placement: Placement) -> str:
     """The secrets-directory file name one credential is read from.
 
     Taken from the contract rather than derived from the path: `secrets_file` is what the producer
@@ -998,10 +1028,7 @@ def render_helpers(chart: str, surface: Surface) -> str:
     )
 
     separator = union.dialect.get("nesting_separator", "__")
-    secret_lines = [
-        f"{_file_name(item)}: {{{{ .Values.{item.values_path} | quote }}}}"
-        for item in plan.secrets
-    ]
+    secret_lines = secret_data_for(plan.secrets)
     parts.append(
         _comment(
             "The credentials this chart manages, each keyed by the file name the loader reads it "
@@ -1053,10 +1080,10 @@ def _validate_values(chart: str, plan: Plan) -> str:
         )
 
     conditions = "".join(
-        f'{{{{- if not (has "{_file_name(item)}" $projected) -}}}}\n'
+        f'{{{{- if not (has "{secrets_file_name(item)}" $projected) -}}}}\n'
         f'{{{{- fail (printf "\\n\\nVALUES VALIDATION FAILED for chart %q:\\n  - '
         f"{item.values_path} is required unless existingSecret supplies "
-        f'`{_file_name(item)}`\\n" .Chart.Name) -}}}}\n'
+        f'`{secrets_file_name(item)}`\\n" .Chart.Name) -}}}}\n'
         "{{- end -}}\n"
         for item in required
     )
@@ -1119,7 +1146,7 @@ def render_declaration(
             "# it. `documents:` would narrow an entry where that is untrue.",
             "unbound:",
         ]
-        for group in _write_off_groups(plan):
+        for group in write_off_groups(plan):
             lines.append("  - keys:")
             lines.extend(f"      - {path}" for path in group[0])
             lines.append("    reason: >-")
@@ -1161,8 +1188,12 @@ def render_declaration(
     return "\n".join(lines) + "\n"
 
 
-def _write_off_groups(plan: Plan) -> list[tuple[list[str], str]]:
+def write_off_groups(plan: Plan) -> list[tuple[list[str], str]]:
     """Every unsurfaced key, grouped by the reason it is unsurfaced.
+
+    Public because `adopt-config.py` prints these groups for a chart that already has a
+    declaration, where they are a suggestion rather than a file: writing a key off is a decision
+    with a reason attached, and the one thing a generator must not do is make it silently.
 
     Grouped rather than listed one entry per key for the reason `config_declaration.Unbound`
     records: `tankovault` has 127 of them, and one entry each turned a handful of sentences into
@@ -1174,7 +1205,7 @@ def _write_off_groups(plan: Plan) -> list[tuple[list[str], str]]:
     for item in plan.secrets:
         reason = (
             "Delivered as a file in the secrets directory — from the Secret this chart renders, "
-            f"or from `existingSecret` under the file name `{_file_name(item)}` — and never "
+            f"or from `existingSecret` under the file name `{secrets_file_name(item)}` — and never "
             "written into the configuration document, because a credential in a ConfigMap is "
             f"readable by anything that can read the namespace. `{item.values_path}` is the value "
             "that carries it, so the binding does exist; it simply does not run through the "
@@ -1249,7 +1280,7 @@ def render_enrolment(chart: str, document: str, plan: Plan) -> str:
     lines.extend(
         wrap(
             f"`{chart}.validateValues` refuses a render that projects no "
-            + ", ".join(f"`{_file_name(item)}`" for item in required)
+            + ", ".join(f"`{secrets_file_name(item)}`" for item in required)
             + " file, and it runs from `configmap.yaml`, so without one there is no document for "
             "any case to assert against. The guard reads the projected key list rather than the "
             "value, so `existingSecret` would satisfy it as well; the first-class value is used "

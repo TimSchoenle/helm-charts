@@ -239,7 +239,7 @@ naming the offending key rather than starting a pod on the defaults.
 |---|---|
 | `env.webHook` | `discord.webhookUrl` |
 | `env.checkInterval` | `feed.checkIntervalSecs` |
-| `env.logLevel` | `telemetry.logLevel` (now `TRACE`/`DEBUG`/`INFO`/`WARN`/`ERROR`) |
+| `env.logLevel` | `telemetry.logLevel` (now `trace`/`debug`/`info`/`warn`/`error`) |
 | `env.sentryDns` | `telemetry.sentryDsn` |
 
 **An existing Secret has to be re-keyed** from `webHook` to `discord__webhook_url`:

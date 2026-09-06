@@ -1,6 +1,6 @@
 # netcup-offer-bot
 
-![Version: 6.2.0](https://img.shields.io/badge/Version-6.2.0-informational?style=flat-square) ![AppVersion: v3.1.0](https://img.shields.io/badge/AppVersion-v3.1.0-informational?style=flat-square)
+![Version: 6.2.1](https://img.shields.io/badge/Version-6.2.1-informational?style=flat-square) ![AppVersion: v3.3.0](https://img.shields.io/badge/AppVersion-v3.3.0-informational?style=flat-square)
 
 This chart deploys the Netcup Offer Bot, which monitors https://www.netcup-sonderangebote.de/ RSS feed and sends notifications to Discord webhooks when new offers are available.
 
@@ -239,7 +239,7 @@ naming the offending key rather than starting a pod on the defaults.
 |---|---|
 | `env.webHook` | `discord.webhookUrl` |
 | `env.checkInterval` | `feed.checkIntervalSecs` |
-| `env.logLevel` | `telemetry.logLevel` (now `TRACE`/`DEBUG`/`INFO`/`WARN`/`ERROR`) |
+| `env.logLevel` | `telemetry.logLevel` (now `trace`/`debug`/`info`/`warn`/`error`) |
 | `env.sentryDns` | `telemetry.sentryDsn` |
 
 **An existing Secret has to be re-keyed** from `webHook` to `discord__webhook_url`:
@@ -326,11 +326,11 @@ policy pointing at the wrong Gateway looks correct and blocks everything.
 | feed | object | `{"checkIntervalSecs":180}` | The RSS poll loop. Only the interval is configurable; which feed the bot watches is not a configuration key. |
 | feed.checkIntervalSecs | int | `180` | Seconds between two RSS feed checks (`feed.check_interval_secs`). |
 | fullnameOverride | string | `""` | Override the full generated resource name. |
-| image | object | `{"pullPolicy":"","registry":"","repository":"timmi6790/netcup-offer-bot","tag":"v3.1.0@sha256:4157c2598a05d10c9d8f1bbfdc8c9821d822b65fc0ba63f06607cdc31e1748b9"}` | Container image the pod runs, composed as `registry/repository:tag`. |
+| image | object | `{"pullPolicy":"","registry":"","repository":"timmi6790/netcup-offer-bot","tag":"v3.3.0@sha256:2515063e5cf1e0c0294be108210d9df495b6ecd07735ce4bcaffd3f145ffd38e"}` | Container image the pod runs, composed as `registry/repository:tag`. |
 | image.pullPolicy | string | `""` | The image pull policy. Empty resolves automatically from the tag/digest. |
 | image.registry | string | `""` | Registry host. Empty means Docker Hub. |
 | image.repository | string | `"timmi6790/netcup-offer-bot"` | The container image repository. |
-| image.tag | string | `"v3.1.0@sha256:4157c2598a05d10c9d8f1bbfdc8c9821d822b65fc0ba63f06607cdc31e1748b9"` | The container image tag. Defaults to the chart's `appVersion` when empty. |
+| image.tag | string | `"v3.3.0@sha256:2515063e5cf1e0c0294be108210d9df495b6ecd07735ce4bcaffd3f145ffd38e"` | The container image tag. Defaults to the chart's `appVersion` when empty. |
 | imagePullSecrets | list | `[]` | Optional image pull secrets for private registries |
 | kubeVersionOverride | string | `""` | Kubernetes version to target when branching on API availability. Lets `helm template` render for a specific cluster version without a live connection. |
 | metrics | object | `{"enabled":false,"ip":"0.0.0.0","podMonitor":{"enabled":true,"interval":"1m","labels":{},"scrapeTimeout":"30s"},"port":9184}` | The Prometheus exporter and the PodMonitor that scrapes it. The bot binds no metrics listener at all until `enabled` is set. |
@@ -425,8 +425,8 @@ policy pointing at the wrong Gateway looks correct and blocks everything.
 | serviceAccount.create | bool | `true` | Whether to create a dedicated service account |
 | serviceAccount.name | string | `""` | Custom service account name (auto-generated if empty) |
 | strategy | object | `{}` | Deployment update strategy. Empty uses the Kubernetes default rolling update. |
-| telemetry | object | `{"logLevel":"INFO","sentry":{"attachStacktraces":true,"breadcrumbLevel":"info","captureLevel":"error","debug":false,"dsn":"","enabled":false,"environment":"","maxBreadcrumbs":100,"release":"","sampleRate":1,"serverName":"","shutdownTimeoutSecs":2,"tracesSampleRate":0}}` | Logging and error reporting. `log_level` is rendered under `telemetry` in `config.toml`; the Sentry DSN is a credential and goes to the Secret instead. Both are read once as the process boots rather than re-read from the mount, so a change here needs a restart — `configMount.rolloutOnChange` is what turns one into a rollout. |
-| telemetry.logLevel | string | `"INFO"` | Log level (`telemetry.log_level`). |
+| telemetry | object | `{"logLevel":"info","sentry":{"attachStacktraces":true,"breadcrumbLevel":"info","captureLevel":"error","debug":false,"dsn":"","enabled":false,"environment":"","maxBreadcrumbs":100,"release":"","sampleRate":1,"serverName":"","shutdownTimeoutSecs":2,"tracesSampleRate":0}}` | Logging and error reporting. `log_level` is rendered under `telemetry` in `config.toml`; the Sentry DSN is a credential and goes to the Secret instead. Both are read once as the process boots rather than re-read from the mount, so a change here needs a restart — `configMount.rolloutOnChange` is what turns one into a rollout. |
+| telemetry.logLevel | string | `"info"` | Log level (`telemetry.log_level`). |
 | telemetry.sentry | object | `{"attachStacktraces":true,"breadcrumbLevel":"info","captureLevel":"error","debug":false,"dsn":"","enabled":false,"environment":"","maxBreadcrumbs":100,"release":"","sampleRate":1,"serverName":"","shutdownTimeoutSecs":2,"tracesSampleRate":0}` | Sentry error reporting and tracing. **Off**, and wholly inert while it is: no client, no panic hook and no layer is installed, and nothing leaves the process.  Two things the chart deliberately does not do for you. It never reads the DSN, so it cannot name the ingest host in the NetworkPolicies. The defaults do happen to cover it — `networkPolicy.egress.https` permits TCP/443 to `0.0.0.0/0` minus private space — but a deployment that narrowed `networkPolicy.egress.cidr`, turned `egress.https` off, or replaced the CIDR rule with `networkPolicy.cilium.egress.toFQDNs` has to name the endpoint itself, and getting that wrong is silent: an SDK that cannot reach its endpoint queues events and then discards them, so the project stays empty, which reads as "no errors". And it configures nothing inside Sentry — the project, its quota and its server-side data-scrubbing rules are yours. |
 | telemetry.sentry.attachStacktraces | bool | `true` | Attach a stack trace to events that carry none of their own (`telemetry.sentry.attach_stacktraces`). |
 | telemetry.sentry.breadcrumbLevel | string | `"info"` | Least severe `tracing` level kept as a breadcrumb, the trail attached to the next issue (`telemetry.sentry.breadcrumb_level`). Records at or above `captureLevel` become issues instead. Independent of `logLevel` on purpose: the trail keeps being collected however quiet stdout is. Quote `"off"`. |

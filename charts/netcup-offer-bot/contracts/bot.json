@@ -1,15 +1,15 @@
 {
   "source": {
     "image": "docker.io/timmi6790/netcup-offer-bot",
-    "digest": "sha256:4157c2598a05d10c9d8f1bbfdc8c9821d822b65fc0ba63f06607cdc31e1748b9",
-    "sha256": "8af6dd11d7f009f00613cfba32ee9b90096f045ea2113885e8622109424f6251",
-    "fetched": "2026-09-02T09:51:38Z"
+    "digest": "sha256:2515063e5cf1e0c0294be108210d9df495b6ecd07735ce4bcaffd3f145ffd38e",
+    "sha256": "b8c55c3c2dbc67284b0186ed2b3893d47e0fd321226292e92b039a687c12f770",
+    "fetched": "2026-09-06T17:17:11Z"
   },
   "contract": {
     "terrace_contract": 1,
     "app": {
       "name": "netcup-offer-bot",
-      "version": "v3.1.0",
+      "version": "v3.3.0",
       "source": "https://github.com/TimSchoenle/netcup-offer-bot"
     },
     "schema": {
@@ -66,7 +66,7 @@
           "ty": "u64",
           "values": [],
           "constraint": {
-            "minimum": 0,
+            "minimum": 1,
             "type": "integer"
           },
           "text_constraint": {
@@ -142,16 +142,36 @@
           "env": "NETCUP_OFFER_BOT_TELEMETRY__LOG_LEVEL",
           "env_file": "NETCUP_OFFER_BOT_TELEMETRY__LOG_LEVEL_FILE",
           "secrets_file": "telemetry__log_level",
-          "docs": "The maximum verbosity that reaches stdout: `TRACE`, `DEBUG`, `INFO`, `WARN` or `ERROR`,\nin any case.\n\nParsed at boot so an unusable value fails the load rather than the first log line.\n`DEBUG` and `TRACE` additionally print which layer supplied each configuration key.",
-          "ty": "Level",
-          "values": [],
-          "text_form": "unknown",
+          "docs": "The maximum verbosity that reaches stdout: `error`, `warn`, `info`, `debug` or `trace`.\n\nRead at boot, so a spelling this is not fails the load rather than the first log line.\n`debug` and `trace` additionally print which layer supplied each configuration key.",
+          "ty": "LogLevel",
+          "values": [
+            "error",
+            "warn",
+            "info",
+            "debug",
+            "trace"
+          ],
+          "constraint": {
+            "enum": [
+              "error",
+              "warn",
+              "info",
+              "debug",
+              "trace"
+            ],
+            "type": "string"
+          },
+          "text_constraint": {
+            "pattern": "^\\s*(error|warn|info|debug|trace)\\s*$",
+            "type": "string"
+          },
+          "text_form": "choice",
           "aliases": [],
           "env_aliases": [],
           "env_file_aliases": [],
           "secrets_file_aliases": [],
-          "default": "INFO",
-          "default_value": "INFO",
+          "default": "info",
+          "default_value": "info",
           "note": null,
           "required": false,
           "secret": false,
@@ -285,6 +305,8 @@
           "ty": "f32",
           "values": [],
           "constraint": {
+            "maximum": 1.0,
+            "minimum": 0.0,
             "type": "number"
           },
           "text_form": "unknown",
@@ -308,6 +330,8 @@
           "ty": "f32",
           "values": [],
           "constraint": {
+            "maximum": 1.0,
+            "minimum": 0.0,
             "type": "number"
           },
           "text_form": "unknown",
@@ -538,7 +562,7 @@
           "properties": {
             "check_interval_secs": {
               "description": "Seconds between two RSS feed checks.\n\nSpelled in seconds rather than as a [`Duration`] so the TOML and the environment layer\nagree on one representation.",
-              "minimum": 0,
+              "minimum": 1,
               "type": "integer"
             }
           },
@@ -566,8 +590,16 @@
           "additionalProperties": false,
           "properties": {
             "log_level": {
-              "default": "INFO",
-              "description": "The maximum verbosity that reaches stdout: `TRACE`, `DEBUG`, `INFO`, `WARN` or `ERROR`,\nin any case.\n\nParsed at boot so an unusable value fails the load rather than the first log line.\n`DEBUG` and `TRACE` additionally print which layer supplied each configuration key."
+              "default": "info",
+              "description": "The maximum verbosity that reaches stdout: `error`, `warn`, `info`, `debug` or `trace`.\n\nRead at boot, so a spelling this is not fails the load rather than the first log line.\n`debug` and `trace` additionally print which layer supplied each configuration key.",
+              "enum": [
+                "error",
+                "warn",
+                "info",
+                "debug",
+                "trace"
+              ],
+              "type": "string"
             },
             "sentry": {
               "additionalProperties": false,
@@ -635,6 +667,8 @@
                 "sample_rate": {
                   "default": 1.0,
                   "description": "Fraction of captured events actually sent, `0.0`–`1.0`.\n\nA blunt volume cap: it drops whole issues rather than repetitions of one, so leave it at\n`1.0` unless a quota forces otherwise.",
+                  "maximum": 1.0,
+                  "minimum": 0.0,
                   "type": "number"
                 },
                 "server_name": {
@@ -650,6 +684,8 @@
                 "traces_sample_rate": {
                   "default": 0.0,
                   "description": "Fraction of traces that are recorded, `0.0`–`1.0`. `0.0` records none.\n\nThis process starts every trace it has — nothing hands it one — so at `0.0` no spans are\nbuilt at all rather than built and dropped by the sampler. `0.05`–`0.2` is an ordinary\nproduction figure; the previous hard-coded value was `0.2`.",
+                  "maximum": 1.0,
+                  "minimum": 0.0,
                   "type": "number"
                 }
               },

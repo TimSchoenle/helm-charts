@@ -9,7 +9,7 @@
 # Chart:       cloudflare-access-webhook-redirect
 # Declaration: charts/cloudflare-access-webhook-redirect/config-contract.yaml (document `redirect`)
 # Contract:    charts/cloudflare-access-webhook-redirect/contracts/redirect.json
-# Coverage:    13 of 23 contract keys carry a probe, 13 through the chart's own value
+# Coverage:    16 of 23 contract keys carry a probe, 16 through the chart's own value
 #
 # Regenerate with `just contract-tests`. `just check-contract-tests` fails a pull request whose
 # committed copy has drifted from the contract it was generated against.
@@ -93,6 +93,19 @@ tests:
           path: data["config.toml"]
           pattern: '(?m)^\[server\]$\n(?:[^\[\n][^\n]*\n|\n)*^port = 4242$'
 
+  - it: delivers telemetry.log_level into config.toml from telemetry.logLevel
+    documentSelector:
+      path: data["config.toml"]
+    set:
+      existingSecret: cloudflare-access-contract-probe
+      webhook.paths: {"/render-prerequisite/.*": ["ALL"]}
+      webhook.targetBase: 'https://render-prerequisite.invalid'
+      telemetry.logLevel: error
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '(?m)^\[telemetry\]$\n(?:[^\[\n][^\n]*\n|\n)*^log_level = "error"$'
+
   - it: delivers telemetry.sentry.attach_stacktraces into config.toml from telemetry.sentry.attachStacktraces
     documentSelector:
       path: data["config.toml"]
@@ -106,6 +119,34 @@ tests:
       - matchRegex:
           path: data["config.toml"]
           pattern: '(?m)^\[telemetry\.sentry\]$\n(?:[^\[\n][^\n]*\n|\n)*^attach_stacktraces = false$'
+
+  - it: delivers telemetry.sentry.breadcrumb_level into config.toml from telemetry.sentry.breadcrumbLevel
+    documentSelector:
+      path: data["config.toml"]
+    set:
+      existingSecret: cloudflare-access-contract-probe
+      webhook.paths: {"/render-prerequisite/.*": ["ALL"]}
+      webhook.targetBase: 'https://render-prerequisite.invalid'
+      telemetry.sentry.enabled: true
+      telemetry.sentry.breadcrumbLevel: off
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '(?m)^\[telemetry\.sentry\]$\n(?:[^\[\n][^\n]*\n|\n)*^breadcrumb_level = "off"$'
+
+  - it: delivers telemetry.sentry.capture_level into config.toml from telemetry.sentry.captureLevel
+    documentSelector:
+      path: data["config.toml"]
+    set:
+      existingSecret: cloudflare-access-contract-probe
+      webhook.paths: {"/render-prerequisite/.*": ["ALL"]}
+      webhook.targetBase: 'https://render-prerequisite.invalid'
+      telemetry.sentry.enabled: true
+      telemetry.sentry.captureLevel: off
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '(?m)^\[telemetry\.sentry\]$\n(?:[^\[\n][^\n]*\n|\n)*^capture_level = "off"$'
 
   - it: delivers telemetry.sentry.debug into config.toml from telemetry.sentry.debug
     documentSelector:
@@ -253,12 +294,6 @@ tests:
   #                       credential-shaped value in a test file is a credential
   # cloudflare.client_secret: `secret: true`: the probe would be committed to this repository,
   #                           and a credential-shaped value in a test file is a credential
-  # telemetry.log_level: `unknown`: the producer publishes no constraint for this key, so no
-  #                      probe can be known-valid
-  # telemetry.sentry.breadcrumb_level: `unknown`: the producer publishes no constraint for this
-  #                                    key, so no probe can be known-valid
-  # telemetry.sentry.capture_level: `unknown`: the producer publishes no constraint for this
-  #                                 key, so no probe can be known-valid
   # telemetry.sentry.dsn: `secret: true`: the probe would be committed to this repository, and a
   #                       credential-shaped value in a test file is a credential
   # telemetry.sentry.sample_rate: `unknown`: the producer publishes no constraint for this key,

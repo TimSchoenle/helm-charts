@@ -22,7 +22,7 @@ image:
   # type: string
   # @schema
   # -- The container image tag. Defaults to the chart's `appVersion` when empty.
-  tag: v3.1.0@sha256:4157c2598a05d10c9d8f1bbfdc8c9821d822b65fc0ba63f06607cdc31e1748b9
+  tag: v3.3.0@sha256:2515063e5cf1e0c0294be108210d9df495b6ecd07735ce4bcaffd3f145ffd38e
 
   # @schema
   # enum: ["", Always, IfNotPresent, Never]
@@ -75,14 +75,12 @@ feed:
 # process boots rather than re-read from the mount, so a change here needs a restart —
 # `configMount.rolloutOnChange` is what turns one into a rollout.
 telemetry:
-  # @config-shape telemetry.logLevel handwritten v3.1.0 Level
-
   # @schema
   # # @config projection telemetry.log_level
-  # enum: [TRACE, DEBUG, INFO, WARN, ERROR]
+  # enum: ["error", "warn", "info", "debug", "trace"]
   # @schema
   # -- Log level (`telemetry.log_level`).
-  logLevel: INFO
+  logLevel: info
 
   # @schema
   # additionalProperties: true
@@ -146,28 +144,22 @@ telemetry:
     # operator chose.
     serverName: ""
 
-    # @config-shape-narrow telemetry.sentry.sampleRate minimum a sample rate is a fraction of events and the producer types it `f64` with no bound, so 0..1 is the chart's own
-    # @config-shape-narrow telemetry.sentry.sampleRate maximum a sample rate is a fraction of events and the producer types it `f64` with no bound, so 0..1 is the chart's own
-
     # @schema
     # # @config projection telemetry.sentry.sample_rate when telemetry.sentry.enabled
     # type: number
-    # minimum: 0
-    # maximum: 1
+    # minimum: 0.0
+    # maximum: 1.0
     # @schema
     # -- Fraction of captured events actually sent (`telemetry.sentry.sample_rate`). A blunt
     # volume cap — it drops whole issues, not repetitions of one — so leave it at `1` unless a
     # quota forces otherwise.
     sampleRate: 1.0
 
-    # @config-shape-narrow telemetry.sentry.tracesSampleRate minimum a sample rate is a fraction of events and the producer types it `f64` with no bound, so 0..1 is the chart's own
-    # @config-shape-narrow telemetry.sentry.tracesSampleRate maximum a sample rate is a fraction of events and the producer types it `f64` with no bound, so 0..1 is the chart's own
-
     # @schema
     # # @config projection telemetry.sentry.traces_sample_rate when telemetry.sentry.enabled
     # type: number
-    # minimum: 0
-    # maximum: 1
+    # minimum: 0.0
+    # maximum: 1.0
     # @schema
     # -- Fraction of traces that are recorded (`telemetry.sentry.traces_sample_rate`). `0`
     # records none, and nothing hands this process a trace to continue, so at `0` no spans are

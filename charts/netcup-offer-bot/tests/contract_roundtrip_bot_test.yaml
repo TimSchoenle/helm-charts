@@ -9,7 +9,7 @@
 # Chart:       netcup-offer-bot
 # Declaration: charts/netcup-offer-bot/config-contract.yaml (document `bot`)
 # Contract:    charts/netcup-offer-bot/contracts/bot.json
-# Coverage:    12 of 18 contract keys carry a probe, 12 through the chart's own value
+# Coverage:    13 of 18 contract keys carry a probe, 13 through the chart's own value
 #
 # Regenerate with `just contract-tests`. `just check-contract-tests` fails a pull request whose
 # committed copy has drifted from the contract it was generated against.
@@ -91,6 +91,18 @@ tests:
       - matchRegex:
           path: data["config.toml"]
           pattern: '(?m)^\[metrics\]$\n(?:[^\[\n][^\n]*\n|\n)*^port = 4242$'
+
+  - it: delivers telemetry.log_level into config.toml from telemetry.logLevel
+    documentSelector:
+      path: data["config.toml"]
+    set:
+      discord.webhookUrl: 'https://render-prerequisite.invalid/api/webhooks/0/0'
+      existingSecret: netcup-contract-probe
+      telemetry.logLevel: error
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '(?m)^\[telemetry\]$\n(?:[^\[\n][^\n]*\n|\n)*^log_level = "error"$'
 
   - it: delivers telemetry.sentry.attach_stacktraces into config.toml from telemetry.sentry.attachStacktraces
     documentSelector:
@@ -228,8 +240,6 @@ tests:
   #                      credential-shaped value in a test file is a credential
   # metrics.ip: `unknown`: the producer publishes no constraint for this key, so no probe can be
   #             known-valid
-  # telemetry.log_level: `unknown`: the producer publishes no constraint for this key, so no
-  #                      probe can be known-valid
   # telemetry.sentry.dsn: `secret: true`: the probe would be committed to this repository, and a
   #                       credential-shaped value in a test file is a credential
   # telemetry.sentry.sample_rate: `unknown`: the producer publishes no constraint for this key,

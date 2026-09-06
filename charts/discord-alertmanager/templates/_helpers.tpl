@@ -2,9 +2,21 @@
 The configuration this chart derives from its own first-class values, as the tree the image
 reads.
 
-Optional settings are wrapped in `with` rather than written empty. To the loader an empty value
-is a *supplied* value, so writing one would configure the setting blank rather than leaving the
-binary on its compiled default — which is what an operator who set nothing meant.
+Optional settings are guarded rather than written empty. To the loader an empty value is a
+*supplied* value, so writing one would configure the setting blank rather than leaving the binary
+on its compiled default — which is what an operator who set nothing meant.
+
+Which guard depends on what the setting's zero value means. A string or a list is guarded by
+`with`: the schema types every one of them `null`, and an empty one carries no setting a blank
+could not. A number or a boolean is guarded by `kindIs "invalid"` — a nil test — because `0` and
+`false` are settings in their own right and `with` would drop them: `render.description_budget`
+is `minimum: 0` and `telemetry.sentry.sample_rate` is `minimum: 0.0`, so an operator turning
+either off under `with` would silently get the compiled default instead.
+
+No setting is written unguarded. The schema types every one of them `null` — the spelling for
+"leave this to the image" — and a bare `{{ .Values.x }}` renders that null as an empty scalar,
+which reaches the loader as `persist_events = ""`: a string where a boolean belongs, and a
+container that fails to parse its own configuration at boot.
 */}}
 {{- define "discord-alertmanager.derivedConfig" -}}
 alertmanager:
@@ -14,25 +26,25 @@ alertmanager:
   {{- with .Values.alertmanager.caBundle }}
   ca_bundle: {{ . | quote }}
   {{- end }}
-  {{- with .Values.alertmanager.connectTimeoutSecs }}
-  connect_timeout_secs: {{ . }}
+  {{- if not (kindIs "invalid" .Values.alertmanager.connectTimeoutSecs) }}
+  connect_timeout_secs: {{ .Values.alertmanager.connectTimeoutSecs }}
   {{- end }}
   {{- with .Values.alertmanager.endpoints }}
   endpoints:
     {{- toYaml . | nindent 4 }}
   {{- end }}
   retry:
-    {{- with .Values.alertmanager.retry.initialBackoffMs }}
-    initial_backoff_ms: {{ . }}
+    {{- if not (kindIs "invalid" .Values.alertmanager.retry.initialBackoffMs) }}
+    initial_backoff_ms: {{ .Values.alertmanager.retry.initialBackoffMs }}
     {{- end }}
-    {{- with .Values.alertmanager.retry.maxBackoffSecs }}
-    max_backoff_secs: {{ . }}
+    {{- if not (kindIs "invalid" .Values.alertmanager.retry.maxBackoffSecs) }}
+    max_backoff_secs: {{ .Values.alertmanager.retry.maxBackoffSecs }}
     {{- end }}
-    {{- with .Values.alertmanager.retry.maxElapsedSecs }}
-    max_elapsed_secs: {{ . }}
+    {{- if not (kindIs "invalid" .Values.alertmanager.retry.maxElapsedSecs) }}
+    max_elapsed_secs: {{ .Values.alertmanager.retry.maxElapsedSecs }}
     {{- end }}
-  {{- with .Values.alertmanager.timeoutSecs }}
-  timeout_secs: {{ . }}
+  {{- if not (kindIs "invalid" .Values.alertmanager.timeoutSecs) }}
+  timeout_secs: {{ .Values.alertmanager.timeoutSecs }}
   {{- end }}
 discord:
   capabilities:
@@ -52,76 +64,78 @@ discord:
     view:
       {{- toYaml . | nindent 6 }}
     {{- end }}
-  {{- with .Values.discord.captureReplyText }}
-  capture_reply_text: {{ . }}
+  {{- if not (kindIs "invalid" .Values.discord.captureReplyText) }}
+  capture_reply_text: {{ .Values.discord.captureReplyText }}
   {{- end }}
-  {{- with .Values.discord.devGuildId }}
-  dev_guild_id: {{ . }}
+  {{- if not (kindIs "invalid" .Values.discord.devGuildId) }}
+  dev_guild_id: {{ .Values.discord.devGuildId }}
   {{- end }}
 engine:
-  {{- with .Values.engine.deadmanWindowSecs }}
-  deadman_window_secs: {{ . }}
+  {{- if not (kindIs "invalid" .Values.engine.deadmanWindowSecs) }}
+  deadman_window_secs: {{ .Values.engine.deadmanWindowSecs }}
   {{- end }}
-  {{- with .Values.engine.dispatchers }}
-  dispatchers: {{ . }}
+  {{- if not (kindIs "invalid" .Values.engine.dispatchers) }}
+  dispatchers: {{ .Values.engine.dispatchers }}
   {{- end }}
-  {{- with .Values.engine.escalationIntervalSecs }}
-  escalation_interval_secs: {{ . }}
+  {{- if not (kindIs "invalid" .Values.engine.escalationIntervalSecs) }}
+  escalation_interval_secs: {{ .Values.engine.escalationIntervalSecs }}
   {{- end }}
-  {{- with .Values.engine.outboxBatchSize }}
-  outbox_batch_size: {{ . }}
+  {{- if not (kindIs "invalid" .Values.engine.outboxBatchSize) }}
+  outbox_batch_size: {{ .Values.engine.outboxBatchSize }}
   {{- end }}
-  {{- with .Values.engine.outboxLeaseSecs }}
-  outbox_lease_secs: {{ . }}
+  {{- if not (kindIs "invalid" .Values.engine.outboxLeaseSecs) }}
+  outbox_lease_secs: {{ .Values.engine.outboxLeaseSecs }}
   {{- end }}
+  {{- if not (kindIs "invalid" .Values.engine.persistEvents) }}
   persist_events: {{ .Values.engine.persistEvents }}
-  {{- with .Values.engine.pruneIntervalSecs }}
-  prune_interval_secs: {{ . }}
   {{- end }}
-  {{- with .Values.engine.reconcileIntervalSecs }}
-  reconcile_interval_secs: {{ . }}
+  {{- if not (kindIs "invalid" .Values.engine.pruneIntervalSecs) }}
+  prune_interval_secs: {{ .Values.engine.pruneIntervalSecs }}
   {{- end }}
-  {{- with .Values.engine.regroupWindowSecs }}
-  regroup_window_secs: {{ . }}
+  {{- if not (kindIs "invalid" .Values.engine.reconcileIntervalSecs) }}
+  reconcile_interval_secs: {{ .Values.engine.reconcileIntervalSecs }}
+  {{- end }}
+  {{- if not (kindIs "invalid" .Values.engine.regroupWindowSecs) }}
+  regroup_window_secs: {{ .Values.engine.regroupWindowSecs }}
   {{- end }}
   retention:
-    {{- with .Values.engine.retention.auditDays }}
-    audit_days: {{ . }}
+    {{- if not (kindIs "invalid" .Values.engine.retention.auditDays) }}
+    audit_days: {{ .Values.engine.retention.auditDays }}
     {{- end }}
-    {{- with .Values.engine.retention.eventsDays }}
-    events_days: {{ . }}
+    {{- if not (kindIs "invalid" .Values.engine.retention.eventsDays) }}
+    events_days: {{ .Values.engine.retention.eventsDays }}
     {{- end }}
-    {{- with .Values.engine.retention.resolvedDays }}
-    resolved_days: {{ . }}
+    {{- if not (kindIs "invalid" .Values.engine.retention.resolvedDays) }}
+    resolved_days: {{ .Values.engine.retention.resolvedDays }}
     {{- end }}
-  {{- with .Values.engine.silenceSyncIntervalSecs }}
-  silence_sync_interval_secs: {{ . }}
+  {{- if not (kindIs "invalid" .Values.engine.silenceSyncIntervalSecs) }}
+  silence_sync_interval_secs: {{ .Values.engine.silenceSyncIntervalSecs }}
   {{- end }}
   storm:
-    {{- with .Values.engine.storm.forumThreshold }}
-    forum_threshold: {{ . }}
+    {{- if not (kindIs "invalid" .Values.engine.storm.forumThreshold) }}
+    forum_threshold: {{ .Values.engine.storm.forumThreshold }}
     {{- end }}
-    {{- with .Values.engine.storm.threshold }}
-    threshold: {{ . }}
+    {{- if not (kindIs "invalid" .Values.engine.storm.threshold) }}
+    threshold: {{ .Values.engine.storm.threshold }}
     {{- end }}
-    {{- with .Values.engine.storm.windowSecs }}
-    window_secs: {{ . }}
+    {{- if not (kindIs "invalid" .Values.engine.storm.windowSecs) }}
+    window_secs: {{ .Values.engine.storm.windowSecs }}
     {{- end }}
 ingest:
   {{- with .Values.ingest.bind }}
   bind: {{ . | quote }}
   {{- end }}
-  {{- with .Values.ingest.bodyLimitBytes }}
-  body_limit_bytes: {{ . }}
+  {{- if not (kindIs "invalid" .Values.ingest.bodyLimitBytes) }}
+  body_limit_bytes: {{ .Values.ingest.bodyLimitBytes }}
   {{- end }}
-  {{- with .Values.ingest.maxConcurrentRequests }}
-  max_concurrent_requests: {{ . }}
+  {{- if not (kindIs "invalid" .Values.ingest.maxConcurrentRequests) }}
+  max_concurrent_requests: {{ .Values.ingest.maxConcurrentRequests }}
   {{- end }}
-  {{- with .Values.ingest.requestTimeoutSecs }}
-  request_timeout_secs: {{ . }}
+  {{- if not (kindIs "invalid" .Values.ingest.requestTimeoutSecs) }}
+  request_timeout_secs: {{ .Values.ingest.requestTimeoutSecs }}
   {{- end }}
-  {{- with .Values.ingest.shutdownDrainSecs }}
-  shutdown_drain_secs: {{ . }}
+  {{- if not (kindIs "invalid" .Values.ingest.shutdownDrainSecs) }}
+  shutdown_drain_secs: {{ .Values.ingest.shutdownDrainSecs }}
   {{- end }}
   {{- with .Values.ingest.webhookPath }}
   webhook_path: {{ . | quote }}
@@ -141,31 +155,35 @@ links:
   {{- with .Values.links.prometheusBase }}
   prometheus_base: {{ . | quote }}
   {{- end }}
-  {{- with .Values.links.windowLeadSecs }}
-  window_lead_secs: {{ . }}
+  {{- if not (kindIs "invalid" .Values.links.windowLeadSecs) }}
+  window_lead_secs: {{ .Values.links.windowLeadSecs }}
   {{- end }}
-  {{- with .Values.links.windowTrailSecs }}
-  window_trail_secs: {{ . }}
+  {{- if not (kindIs "invalid" .Values.links.windowTrailSecs) }}
+  window_trail_secs: {{ .Values.links.windowTrailSecs }}
   {{- end }}
 observability:
-  {{- with .Values.observability.adminChannelId }}
-  admin_channel_id: {{ . }}
+  {{- if not (kindIs "invalid" .Values.observability.adminChannelId) }}
+  admin_channel_id: {{ .Values.observability.adminChannelId }}
   {{- end }}
+  {{- if not (kindIs "invalid" .Values.observability.metricsEnabled) }}
   metrics_enabled: {{ .Values.observability.metricsEnabled }}
-render:
-  {{- with .Values.render.debounceSecs }}
-  debounce_secs: {{ . }}
   {{- end }}
-  {{- with .Values.render.descriptionBudget }}
-  description_budget: {{ . }}
+render:
+  {{- if not (kindIs "invalid" .Values.render.debounceSecs) }}
+  debounce_secs: {{ .Values.render.debounceSecs }}
+  {{- end }}
+  {{- if not (kindIs "invalid" .Values.render.descriptionBudget) }}
+  description_budget: {{ .Values.render.descriptionBudget }}
   {{- end }}
   {{- with .Values.render.keyLabels }}
   key_labels:
     {{- toYaml . | nindent 4 }}
   {{- end }}
+  {{- if not (kindIs "invalid" .Values.render.showFingerprint) }}
   show_fingerprint: {{ .Values.render.showFingerprint }}
-  {{- with .Values.render.threadArchiveAfterMinutes }}
-  thread_archive_after_minutes: {{ . }}
+  {{- end }}
+  {{- if not (kindIs "invalid" .Values.render.threadArchiveAfterMinutes) }}
+  thread_archive_after_minutes: {{ .Values.render.threadArchiveAfterMinutes }}
   {{- end }}
 {{- with .Values.routes }}
 routes:
@@ -176,21 +194,25 @@ storage:
   backend: {{ . | quote }}
   {{- end }}
   postgres:
-    {{- with .Values.storage.postgres.acquireTimeoutSecs }}
-    acquire_timeout_secs: {{ . }}
+    {{- if not (kindIs "invalid" .Values.storage.postgres.acquireTimeoutSecs) }}
+    acquire_timeout_secs: {{ .Values.storage.postgres.acquireTimeoutSecs }}
     {{- end }}
-    {{- with .Values.storage.postgres.maxConnections }}
-    max_connections: {{ . }}
+    {{- if not (kindIs "invalid" .Values.storage.postgres.maxConnections) }}
+    max_connections: {{ .Values.storage.postgres.maxConnections }}
     {{- end }}
+    {{- if not (kindIs "invalid" .Values.storage.postgres.migrateOnStart) }}
     migrate_on_start: {{ .Values.storage.postgres.migrateOnStart }}
+    {{- end }}
   sqlite:
-    {{- with .Values.storage.sqlite.acquireTimeoutSecs }}
-    acquire_timeout_secs: {{ . }}
+    {{- if not (kindIs "invalid" .Values.storage.sqlite.acquireTimeoutSecs) }}
+    acquire_timeout_secs: {{ .Values.storage.sqlite.acquireTimeoutSecs }}
     {{- end }}
-    {{- with .Values.storage.sqlite.maxConnections }}
-    max_connections: {{ . }}
+    {{- if not (kindIs "invalid" .Values.storage.sqlite.maxConnections) }}
+    max_connections: {{ .Values.storage.sqlite.maxConnections }}
     {{- end }}
+    {{- if not (kindIs "invalid" .Values.storage.sqlite.migrateOnStart) }}
     migrate_on_start: {{ .Values.storage.sqlite.migrateOnStart }}
+    {{- end }}
     {{- with .Values.storage.sqlite.path }}
     path: {{ . | quote }}
     {{- end }}
@@ -202,14 +224,14 @@ telemetry:
   log_level: {{ . | quote }}
   {{- end }}
   sentry:
-    {{- with .Values.telemetry.sentry.attachStacktrace }}
-    attach_stacktrace: {{ . }}
+    {{- if not (kindIs "invalid" .Values.telemetry.sentry.attachStacktrace) }}
+    attach_stacktrace: {{ .Values.telemetry.sentry.attachStacktrace }}
     {{- end }}
     {{- with .Values.telemetry.sentry.breadcrumbLevel }}
     breadcrumb_level: {{ . | quote }}
     {{- end }}
-    {{- with .Values.telemetry.sentry.debug }}
-    debug: {{ . }}
+    {{- if not (kindIs "invalid" .Values.telemetry.sentry.debug) }}
+    debug: {{ .Values.telemetry.sentry.debug }}
     {{- end }}
     {{- with .Values.telemetry.sentry.environment }}
     environment: {{ . | quote }}
@@ -217,29 +239,29 @@ telemetry:
     {{- with .Values.telemetry.sentry.eventLevel }}
     event_level: {{ . | quote }}
     {{- end }}
-    {{- with .Values.telemetry.sentry.maxBreadcrumbs }}
-    max_breadcrumbs: {{ . }}
+    {{- if not (kindIs "invalid" .Values.telemetry.sentry.maxBreadcrumbs) }}
+    max_breadcrumbs: {{ .Values.telemetry.sentry.maxBreadcrumbs }}
     {{- end }}
     {{- with .Values.telemetry.sentry.release }}
     release: {{ . | quote }}
     {{- end }}
-    {{- with .Values.telemetry.sentry.sampleRate }}
-    sample_rate: {{ . }}
+    {{- if not (kindIs "invalid" .Values.telemetry.sentry.sampleRate) }}
+    sample_rate: {{ .Values.telemetry.sentry.sampleRate }}
     {{- end }}
-    {{- with .Values.telemetry.sentry.sendDefaultPii }}
-    send_default_pii: {{ . }}
+    {{- if not (kindIs "invalid" .Values.telemetry.sentry.sendDefaultPii) }}
+    send_default_pii: {{ .Values.telemetry.sentry.sendDefaultPii }}
     {{- end }}
     {{- with .Values.telemetry.sentry.serverName }}
     server_name: {{ . | quote }}
     {{- end }}
-    {{- with .Values.telemetry.sentry.shutdownTimeoutSecs }}
-    shutdown_timeout_secs: {{ . }}
+    {{- if not (kindIs "invalid" .Values.telemetry.sentry.shutdownTimeoutSecs) }}
+    shutdown_timeout_secs: {{ .Values.telemetry.sentry.shutdownTimeoutSecs }}
     {{- end }}
     {{- with .Values.telemetry.sentry.spanLevel }}
     span_level: {{ . | quote }}
     {{- end }}
-    {{- with .Values.telemetry.sentry.tracesSampleRate }}
-    traces_sample_rate: {{ . }}
+    {{- if not (kindIs "invalid" .Values.telemetry.sentry.tracesSampleRate) }}
+    traces_sample_rate: {{ .Values.telemetry.sentry.tracesSampleRate }}
     {{- end }}
 {{- end -}}
 

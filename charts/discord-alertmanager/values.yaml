@@ -22,7 +22,7 @@ image:
   # type: string
   # @schema
   # -- The container image tag. Defaults to the chart's `appVersion` when empty.
-  tag: v0.6.0@sha256:8a7872761762579a591228eb6afb93f7cd61936899fea944185174f79bbcf918
+  tag: v0.7.0@sha256:62f1336273569e9a2c760b498629dd2760c366d3f51d78f2c3b8be6d85820f2a
 
   # @schema
   # enum: ["", Always, IfNotPresent, Never]
@@ -87,7 +87,7 @@ alertmanager:
   # @schema
   # # @config projection alertmanager.connect_timeout_secs optional
   # type: [integer, 'null']
-  # minimum: 0
+  # minimum: 1
   # @schema
   # -- Seconds to wait for a connection before trying the next endpoint
   # (`alertmanager.connect_timeout_secs`).
@@ -136,7 +136,7 @@ alertmanager:
   # @schema
   # # @config projection alertmanager.timeout_secs optional
   # type: [integer, 'null']
-  # minimum: 0
+  # minimum: 1
   # @schema
   # -- Seconds to wait for a whole request before giving up (`alertmanager.timeout_secs`).
   timeoutSecs: 10
@@ -238,8 +238,8 @@ engine:
   # @schema
   # # @config projection engine.dispatchers optional
   # type: [integer, 'null']
-  # minimum: 0
-  # maximum: 4294967295
+  # minimum: 1
+  # maximum: 65535
   # @schema
   # -- Outbox dispatcher workers (`engine.dispatchers`).
   dispatchers: 4
@@ -255,7 +255,7 @@ engine:
   # @schema
   # # @config projection engine.outbox_batch_size optional
   # type: [integer, 'null']
-  # minimum: 0
+  # minimum: 1
   # maximum: 4294967295
   # @schema
   # -- Outbox rows one worker claims per pass (`engine.outbox_batch_size`).
@@ -264,7 +264,7 @@ engine:
   # @schema
   # # @config projection engine.outbox_lease_secs optional
   # type: [integer, 'null']
-  # minimum: 0
+  # minimum: 1
   # @schema
   # -- Seconds a claimed outbox row stays claimed before a janitor may reclaim it
   # (`engine.outbox_lease_secs`).
@@ -376,7 +376,7 @@ engine:
     # @schema
     # # @config projection engine.storm.window_secs optional
     # type: [integer, 'null']
-    # minimum: 0
+    # minimum: 1
     # @schema
     # -- Length of the window, in seconds (`engine.storm.window_secs`).
     windowSecs: 60
@@ -475,6 +475,7 @@ links:
   #       type: string
   #     when:
   #       type: string
+  #   additionalProperties: false
   # @schema
   # -- The buttons themselves, rendered in order (`links.buttons`).
   buttons: []
@@ -551,6 +552,7 @@ render:
   # # @config projection render.description_budget optional
   # type: [integer, 'null']
   # minimum: 0
+  # maximum: 4096
   # @schema
   # -- Characters of annotation text a card may carry before it is truncated
   # (`render.description_budget`).
@@ -575,8 +577,8 @@ render:
   # @schema
   # # @config projection render.thread_archive_after_minutes optional
   # type: [integer, 'null']
-  # minimum: 0
-  # maximum: 4294967295
+  # minimum: 60
+  # maximum: 10080
   # @schema
   # -- Minutes of inactivity after which an alert thread archives
   # (`render.thread_archive_after_minutes`).
@@ -631,6 +633,7 @@ render:
 #           items:
 #             type: string
 #             pattern: "^[0-9]+$"
+#       additionalProperties: false
 #     group_strategy:
 #       type: string
 #       enum: ["per_alert", "per_group", "digest"]
@@ -655,6 +658,7 @@ render:
 #           items:
 #             type: string
 #             pattern: "^[0-9]+$"
+#       additionalProperties: false
 #     min_severity:
 #       type: string
 #       enum: ["info", "warning", "critical"]
@@ -680,8 +684,8 @@ render:
 #               type: boolean
 #             auto_archive_minutes:
 #               type: integer
-#               minimum: 0
-#               maximum: 4294967295
+#               minimum: 60
+#               maximum: 10080
 #             bump_on_state_change:
 #               type: boolean
 #             default_tag:
@@ -714,6 +718,7 @@ render:
 #                   type: string
 #                 silenced:
 #                   type: string
+#               additionalProperties: false
 #             thread_kind:
 #               type: string
 #               enum: ["public", "private"]
@@ -722,6 +727,9 @@ render:
 #               enum: ["never", "on_create", "on_ack", "on_first_reply"]
 #             title_template:
 #               type: string
+#           additionalProperties: false
+#       additionalProperties: false
+#   additionalProperties: false
 # @schema
 # -- Routes declared in the file, which cannot be edited or deleted from Discord (`routes`).
 # Rendered as `[[routes]]`, with `target`, `mentions` and `escalation` as sub-tables of each
@@ -751,7 +759,7 @@ storage:
     # @schema
     # # @config projection storage.postgres.acquire_timeout_secs optional
     # type: [integer, 'null']
-    # minimum: 0
+    # minimum: 1
     # @schema
     # -- Seconds to wait for a connection from the pool before failing the operation
     # (`storage.postgres.acquire_timeout_secs`).
@@ -760,7 +768,7 @@ storage:
     # @schema
     # # @config projection storage.postgres.max_connections optional
     # type: [integer, 'null']
-    # minimum: 0
+    # minimum: 1
     # maximum: 4294967295
     # @schema
     # -- Maximum pooled connections (`storage.postgres.max_connections`).
@@ -790,7 +798,7 @@ storage:
     # @schema
     # # @config projection storage.sqlite.acquire_timeout_secs optional
     # type: [integer, 'null']
-    # minimum: 0
+    # minimum: 1
     # @schema
     # -- Seconds to wait for a connection from the pool before failing the operation
     # (`storage.sqlite.acquire_timeout_secs`).
@@ -799,7 +807,7 @@ storage:
     # @schema
     # # @config projection storage.sqlite.max_connections optional
     # type: [integer, 'null']
-    # minimum: 0
+    # minimum: 1
     # maximum: 4294967295
     # @schema
     # -- Size of the read pool. The writer is always one connection
@@ -916,6 +924,8 @@ telemetry:
     # @schema
     # # @config projection telemetry.sentry.sample_rate optional
     # type: [number, 'null']
+    # minimum: 0.0
+    # maximum: 1.0
     # @schema
     # -- Fraction of events that are sent, from `0.0` to `1.0` (`telemetry.sentry.sample_rate`).
     sampleRate: 1.0
@@ -955,6 +965,8 @@ telemetry:
     # @schema
     # # @config projection telemetry.sentry.traces_sample_rate optional
     # type: [number, 'null']
+    # minimum: 0.0
+    # maximum: 1.0
     # @schema
     # -- Fraction of traces that are sent, from `0.0` to `1.0`. Tracing is off at `0.0`
     # (`telemetry.sentry.traces_sample_rate`).

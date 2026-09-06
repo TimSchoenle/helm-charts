@@ -1,6 +1,6 @@
 # netcup-offer-bot
 
-![Version: 6.2.0](https://img.shields.io/badge/Version-6.2.0-informational?style=flat-square) ![AppVersion: v3.1.0](https://img.shields.io/badge/AppVersion-v3.1.0-informational?style=flat-square)
+![Version: 6.2.1](https://img.shields.io/badge/Version-6.2.1-informational?style=flat-square) ![AppVersion: v3.2.0](https://img.shields.io/badge/AppVersion-v3.2.0-informational?style=flat-square)
 
 This chart deploys the Netcup Offer Bot, which monitors https://www.netcup-sonderangebote.de/ RSS feed and sends notifications to Discord webhooks when new offers are available.
 
@@ -326,11 +326,11 @@ policy pointing at the wrong Gateway looks correct and blocks everything.
 | feed | object | `{"checkIntervalSecs":180}` | The RSS poll loop. Only the interval is configurable; which feed the bot watches is not a configuration key. |
 | feed.checkIntervalSecs | int | `180` | Seconds between two RSS feed checks (`feed.check_interval_secs`). |
 | fullnameOverride | string | `""` | Override the full generated resource name. |
-| image | object | `{"pullPolicy":"","registry":"","repository":"timmi6790/netcup-offer-bot","tag":"v3.1.0@sha256:4157c2598a05d10c9d8f1bbfdc8c9821d822b65fc0ba63f06607cdc31e1748b9"}` | Container image the pod runs, composed as `registry/repository:tag`. |
+| image | object | `{"pullPolicy":"","registry":"","repository":"timmi6790/netcup-offer-bot","tag":"v3.2.0@sha256:c2c7580db247ff9b4e81d985c87cf0cb86382f8a9e88d3f2908bf96455cc1e08"}` | Container image the pod runs, composed as `registry/repository:tag`. |
 | image.pullPolicy | string | `""` | The image pull policy. Empty resolves automatically from the tag/digest. |
 | image.registry | string | `""` | Registry host. Empty means Docker Hub. |
 | image.repository | string | `"timmi6790/netcup-offer-bot"` | The container image repository. |
-| image.tag | string | `"v3.1.0@sha256:4157c2598a05d10c9d8f1bbfdc8c9821d822b65fc0ba63f06607cdc31e1748b9"` | The container image tag. Defaults to the chart's `appVersion` when empty. |
+| image.tag | string | `"v3.2.0@sha256:c2c7580db247ff9b4e81d985c87cf0cb86382f8a9e88d3f2908bf96455cc1e08"` | The container image tag. Defaults to the chart's `appVersion` when empty. |
 | imagePullSecrets | list | `[]` | Optional image pull secrets for private registries |
 | kubeVersionOverride | string | `""` | Kubernetes version to target when branching on API availability. Lets `helm template` render for a specific cluster version without a live connection. |
 | metrics | object | `{"enabled":false,"ip":"0.0.0.0","podMonitor":{"enabled":true,"interval":"1m","labels":{},"scrapeTimeout":"30s"},"port":9184}` | The Prometheus exporter and the PodMonitor that scrapes it. The bot binds no metrics listener at all until `enabled` is set. |

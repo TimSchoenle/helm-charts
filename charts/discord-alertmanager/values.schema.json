@@ -53,7 +53,7 @@
         "connectTimeoutSecs": {
           "default": 2,
           "description": "Seconds to wait for a connection before trying the next endpoint\n(`alertmanager.connect_timeout_secs`).",
-          "minimum": 0,
+          "minimum": 1,
           "required": [],
           "title": "connectTimeoutSecs",
           "type": [
@@ -118,7 +118,7 @@
         "timeoutSecs": {
           "default": 10,
           "description": "Seconds to wait for a whole request before giving up (`alertmanager.timeout_secs`).",
-          "minimum": 0,
+          "minimum": 1,
           "required": [],
           "title": "timeoutSecs",
           "type": [
@@ -1836,8 +1836,8 @@
         "dispatchers": {
           "default": 4,
           "description": "Outbox dispatcher workers (`engine.dispatchers`).",
-          "maximum": 4294967295,
-          "minimum": 0,
+          "maximum": 65535,
+          "minimum": 1,
           "required": [],
           "title": "dispatchers",
           "type": [
@@ -1860,7 +1860,7 @@
           "default": 16,
           "description": "Outbox rows one worker claims per pass (`engine.outbox_batch_size`).",
           "maximum": 4294967295,
-          "minimum": 0,
+          "minimum": 1,
           "required": [],
           "title": "outboxBatchSize",
           "type": [
@@ -1871,7 +1871,7 @@
         "outboxLeaseSecs": {
           "default": 30,
           "description": "Seconds a claimed outbox row stays claimed before a janitor may reclaim it\n(`engine.outbox_lease_secs`).",
-          "minimum": 0,
+          "minimum": 1,
           "required": [],
           "title": "outboxLeaseSecs",
           "type": [
@@ -2008,7 +2008,7 @@
             "windowSecs": {
               "default": 60,
               "description": "Length of the window, in seconds (`engine.storm.window_secs`).",
-              "minimum": 0,
+              "minimum": 1,
               "required": [],
               "title": "windowSecs",
               "type": [
@@ -2370,7 +2370,7 @@
           "type": "string"
         },
         "tag": {
-          "default": "v0.6.0@sha256:8a7872761762579a591228eb6afb93f7cd61936899fea944185174f79bbcf918",
+          "default": "v0.7.0@sha256:62f1336273569e9a2c760b498629dd2760c366d3f51d78f2c3b8be6d85820f2a",
           "description": "The container image tag. Defaults to the chart's `appVersion` when empty.",
           "required": [],
           "title": "tag",
@@ -2545,6 +2545,7 @@
         "buttons": {
           "description": "The buttons themselves, rendered in order (`links.buttons`).",
           "items": {
+            "additionalProperties": false,
             "properties": {
               "label": {
                 "required": [],
@@ -3835,6 +3836,7 @@
         "descriptionBudget": {
           "default": 1500,
           "description": "Characters of annotation text a card may carry before it is truncated\n(`render.description_budget`).",
+          "maximum": 4096,
           "minimum": 0,
           "required": [],
           "title": "descriptionBudget",
@@ -3869,8 +3871,8 @@
         "threadArchiveAfterMinutes": {
           "default": 1440,
           "description": "Minutes of inactivity after which an alert thread archives\n(`render.thread_archive_after_minutes`).",
-          "maximum": 4294967295,
-          "minimum": 0,
+          "maximum": 10080,
+          "minimum": 60,
           "required": [],
           "title": "threadArchiveAfterMinutes",
           "type": [
@@ -3905,6 +3907,7 @@
     "routes": {
       "description": "Routes declared in the file, which cannot be edited or deleted from Discord (`routes`).\nRendered as `[[routes]]`, with `target`, `mentions` and `escalation` as sub-tables of each\nelement.",
       "items": {
+        "additionalProperties": false,
         "properties": {
           "continue_to_next": {
             "required": [],
@@ -3915,6 +3918,7 @@
             "type": "boolean"
           },
           "escalation": {
+            "additionalProperties": false,
             "properties": {
               "after_secs": {
                 "minimum": 0,
@@ -3962,6 +3966,7 @@
             "type": "string"
           },
           "mentions": {
+            "additionalProperties": false,
             "properties": {
               "min_severity": {
                 "enum": [
@@ -4014,6 +4019,7 @@
             "type": "integer"
           },
           "target": {
+            "additionalProperties": false,
             "properties": {
               "id": {
                 "pattern": "^[0-9]+$",
@@ -4031,14 +4037,15 @@
                 "type": "string"
               },
               "policy": {
+                "additionalProperties": false,
                 "properties": {
                   "archive_on_resolve": {
                     "required": [],
                     "type": "boolean"
                   },
                   "auto_archive_minutes": {
-                    "maximum": 4294967295,
-                    "minimum": 0,
+                    "maximum": 10080,
+                    "minimum": 60,
                     "required": [],
                     "type": "integer"
                   },
@@ -4086,6 +4093,7 @@
                     "type": "boolean"
                   },
                   "state_tags": {
+                    "additionalProperties": false,
                     "properties": {
                       "acked": {
                         "required": [],
@@ -4326,7 +4334,7 @@
             "acquireTimeoutSecs": {
               "default": 5,
               "description": "Seconds to wait for a connection from the pool before failing the operation\n(`storage.postgres.acquire_timeout_secs`).",
-              "minimum": 0,
+              "minimum": 1,
               "required": [],
               "title": "acquireTimeoutSecs",
               "type": [
@@ -4338,7 +4346,7 @@
               "default": 16,
               "description": "Maximum pooled connections (`storage.postgres.max_connections`).",
               "maximum": 4294967295,
-              "minimum": 0,
+              "minimum": 1,
               "required": [],
               "title": "maxConnections",
               "type": [
@@ -4377,7 +4385,7 @@
             "acquireTimeoutSecs": {
               "default": 5,
               "description": "Seconds to wait for a connection from the pool before failing the operation\n(`storage.sqlite.acquire_timeout_secs`).",
-              "minimum": 0,
+              "minimum": 1,
               "required": [],
               "title": "acquireTimeoutSecs",
               "type": [
@@ -4389,7 +4397,7 @@
               "default": 4,
               "description": "Size of the read pool. The writer is always one connection\n(`storage.sqlite.max_connections`).",
               "maximum": 4294967295,
-              "minimum": 0,
+              "minimum": 1,
               "required": [],
               "title": "maxConnections",
               "type": [
@@ -4549,6 +4557,8 @@
             "sampleRate": {
               "default": 1,
               "description": "Fraction of events that are sent, from `0.0` to `1.0` (`telemetry.sentry.sample_rate`).",
+              "maximum": 1,
+              "minimum": 0,
               "required": [],
               "title": "sampleRate",
               "type": [
@@ -4604,6 +4614,8 @@
             "tracesSampleRate": {
               "default": 0,
               "description": "Fraction of traces that are sent, from `0.0` to `1.0`. Tracing is off at `0.0`\n(`telemetry.sentry.traces_sample_rate`).",
+              "maximum": 1,
+              "minimum": 0,
               "required": [],
               "title": "tracesSampleRate",
               "type": [

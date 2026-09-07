@@ -3246,20 +3246,31 @@ legal:
   # document supplied through `content`. An absolute `sources` path ignores it.
   dir: /etc/tankovault/legal
 
-  # @config-shape legal.documents handwritten 8.9.2 LegalDocument
+  # @config-shape-narrow legal.documents additionalProperties.properties.content `content` is this chart's own way of publishing a body and reaches no image: the API knows only `sources`, and the chart writes the text into a ConfigMap, mounts it, and derives the `sources` paths from it — so the element the contract describes is closed against a field an operator is invited to set
 
   # @schema
   # # @config structured api:legal.documents optional
-  # type: object
+  # type: [object, 'null']
   # additionalProperties:
   #   type: object
-  #   additionalProperties: false
   #   properties:
-  #     title: {type: object, additionalProperties: {type: string}}
-  #     updated: {type: string}
-  #     content: {type: object, additionalProperties: {type: string}}
-  #     sources: {type: object, additionalProperties: {type: string}}
-  #     url: {type: string}
+  #     sources:
+  #       type: object
+  #       additionalProperties:
+  #         type: string
+  #     title:
+  #       type: object
+  #       additionalProperties:
+  #         type: string
+  #     updated:
+  #       type: string
+  #     url:
+  #       type: string
+  #     content:
+  #       type: object
+  #       additionalProperties:
+  #         type: string
+  #   additionalProperties: false
   # @schema
   # -- Published documents, keyed by the URL slug they are served under. Each document names its
   # body exactly once, in one of three ways, and the chart refuses a document that names it
@@ -3378,27 +3389,21 @@ telemetry:
     # would be one replica's pod name, not anything an operator chose.
     serverName: ""
 
-    # @config-shape-narrow telemetry.sentry.sampleRate minimum a sample rate is a fraction of events and the producer types it `f64` with no bound, so 0..1 is the chart's own
-    # @config-shape-narrow telemetry.sentry.sampleRate maximum a sample rate is a fraction of events and the producer types it `f64` with no bound, so 0..1 is the chart's own
-
     # @schema
     # # @config projection telemetry.sentry.sample_rate when telemetry.sentry.enabled
     # type: number
-    # minimum: 0
-    # maximum: 1
+    # minimum: 0.0
+    # maximum: 1.0
     # @schema
     # -- Fraction of captured events actually sent. A blunt volume cap — it drops whole issues,
     # not repetitions of one — so leave it at `1` unless a quota forces otherwise.
     sampleRate: 1.0
 
-    # @config-shape-narrow telemetry.sentry.tracesSampleRate minimum a sample rate is a fraction of events and the producer types it `f64` with no bound, so 0..1 is the chart's own
-    # @config-shape-narrow telemetry.sentry.tracesSampleRate maximum a sample rate is a fraction of events and the producer types it `f64` with no bound, so 0..1 is the chart's own
-
     # @schema
     # # @config projection telemetry.sentry.traces_sample_rate when telemetry.sentry.enabled
     # type: number
-    # minimum: 0
-    # maximum: 1
+    # minimum: 0.0
+    # maximum: 1.0
     # @schema
     # -- Fraction of traces a service **starts** that are recorded. `0` starts none, which is
     # what makes this feature free to switch on for error reporting alone. It does not take a
@@ -3409,11 +3414,9 @@ telemetry:
     # it exists at all.
     tracesSampleRate: 0.0
 
-    # @config-shape telemetry.sentry.captureLevel handwritten 8.9.2 SentryLevel
-
     # @schema
     # # @config projection telemetry.sentry.capture_level when telemetry.sentry.enabled
-    # enum: ["off", error, warn, info, debug, trace]
+    # enum: ["off", "error", "warn", "info", "debug", "trace"]
     # @schema
     # -- Least severe `tracing` level reported as a Sentry issue. Quote `"off"` — unquoted, YAML
     # reads it as the boolean `false`. This and `breadcrumbLevel` both sit *under* the
@@ -3421,11 +3424,9 @@ telemetry:
     # Sentry either, whatever is set here.
     captureLevel: error
 
-    # @config-shape telemetry.sentry.breadcrumbLevel handwritten 8.9.2 SentryLevel
-
     # @schema
     # # @config projection telemetry.sentry.breadcrumb_level when telemetry.sentry.enabled
-    # enum: ["off", error, warn, info, debug, trace]
+    # enum: ["off", "error", "warn", "info", "debug", "trace"]
     # @schema
     # -- Least severe `tracing` level kept as a breadcrumb, the trail attached to the next issue.
     # Records at or above `captureLevel` become issues instead. Quote `"off"`.

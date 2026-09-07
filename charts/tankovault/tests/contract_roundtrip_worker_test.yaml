@@ -9,7 +9,7 @@
 # Chart:       tankovault
 # Declaration: charts/tankovault/config-contract.yaml (document `worker`)
 # Contract:    charts/tankovault/contracts/worker.json
-# Coverage:    61 of 82 contract keys carry a probe, 13 through the chart's own value
+# Coverage:    63 of 88 contract keys carry a probe, 15 through the chart's own value
 #
 # Regenerate with `just contract-tests`. `just check-contract-tests` fails a pull request whose
 # committed copy has drifted from the contract it was generated against.
@@ -1312,6 +1312,60 @@ tests:
           path: data["config.toml"]
           pattern: '(?m)^\[telemetry\.sentry\]$\n(?:[^\[\n][^\n]*\n|\n)*^attach_stacktraces = true$'
 
+  - it: delivers telemetry.sentry.breadcrumb_level into config.toml from telemetry.sentry.breadcrumbLevel
+    documentSelector:
+      path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="worker")].data["config.toml"]'
+    set:
+      anilist.clientId: probe-anilist-client-id
+      anilist.clientSecret: probe-anilist-client-secret
+      anilist.redirectUri: 'https://render-prerequisite.invalid/account/anilist-callback'
+      auth.jwtSecret: probe-jwt-secret-0123456789abcdef0123
+      branding.wordmark.lead: Render
+      email.host: smtp.render-prerequisite.invalid
+      existingSecret: tankovault-contract-probe
+      internal.identity: token
+      internal.tokens.api: probe-internal-token-api-0123456789ab
+      internal.tokens.worker: probe-internal-token-worker-01234567
+      legal.documents: {"render-prerequisite": {"url": "https://render-prerequisite.invalid/legal"}}
+      nats.enabled: true
+      postgresql.auth.password: probe-postgresql-password
+      postgresql.enabled: true
+      services.render.enabled: true
+      trawl.enabled: true
+      telemetry.sentry.enabled: true
+      telemetry.sentry.breadcrumbLevel: off
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '(?m)^\[telemetry\.sentry\]$\n(?:[^\[\n][^\n]*\n|\n)*^breadcrumb_level = "off"$'
+
+  - it: delivers telemetry.sentry.capture_level into config.toml from telemetry.sentry.captureLevel
+    documentSelector:
+      path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="worker")].data["config.toml"]'
+    set:
+      anilist.clientId: probe-anilist-client-id
+      anilist.clientSecret: probe-anilist-client-secret
+      anilist.redirectUri: 'https://render-prerequisite.invalid/account/anilist-callback'
+      auth.jwtSecret: probe-jwt-secret-0123456789abcdef0123
+      branding.wordmark.lead: Render
+      email.host: smtp.render-prerequisite.invalid
+      existingSecret: tankovault-contract-probe
+      internal.identity: token
+      internal.tokens.api: probe-internal-token-api-0123456789ab
+      internal.tokens.worker: probe-internal-token-worker-01234567
+      legal.documents: {"render-prerequisite": {"url": "https://render-prerequisite.invalid/legal"}}
+      nats.enabled: true
+      postgresql.auth.password: probe-postgresql-password
+      postgresql.enabled: true
+      services.render.enabled: true
+      trawl.enabled: true
+      telemetry.sentry.enabled: true
+      telemetry.sentry.captureLevel: off
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '(?m)^\[telemetry\.sentry\]$\n(?:[^\[\n][^\n]*\n|\n)*^capture_level = "off"$'
+
   - it: delivers telemetry.sentry.debug into config.toml from telemetry.sentry.debug
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="worker")].data["config.toml"]'
@@ -1737,8 +1791,27 @@ tests:
   #                be known-valid
   # matching.low: `unknown`: the producer publishes no constraint for this key, so no probe can
   #               be known-valid
-  # metadata.priority: `unknown`: the producer publishes no constraint for this key, so no probe
-  #                    can be known-valid
+  # metadata.priority.content_type: `structured`: the keys beneath it are the operator's own
+  #                                 names, so the contract describes the container and not its
+  #                                 contents and no probe addresses a leaf
+  # metadata.priority.cover: `structured`: the keys beneath it are the operator's own names, so
+  #                          the contract describes the container and not its contents and no
+  #                          probe addresses a leaf
+  # metadata.priority.default: `structured`: the keys beneath it are the operator's own names,
+  #                            so the contract describes the container and not its contents and
+  #                            no probe addresses a leaf
+  # metadata.priority.description: `structured`: the keys beneath it are the operator's own
+  #                                names, so the contract describes the container and not its
+  #                                contents and no probe addresses a leaf
+  # metadata.priority.release_year: `structured`: the keys beneath it are the operator's own
+  #                                 names, so the contract describes the container and not its
+  #                                 contents and no probe addresses a leaf
+  # metadata.priority.status: `structured`: the keys beneath it are the operator's own names, so
+  #                           the contract describes the container and not its contents and no
+  #                           probe addresses a leaf
+  # metadata.priority.title: `structured`: the keys beneath it are the operator's own names, so
+  #                          the contract describes the container and not its contents and no
+  #                          probe addresses a leaf
   # metadata.tags.adult_tags: `structured`: the keys beneath it are the operator's own names, so
   #                           the contract describes the container and not its contents and no
   #                           probe addresses a leaf
@@ -1750,10 +1823,6 @@ tests:
   # security.cors.allowed_origins: `structured`: the keys beneath it are the operator's own
   #                                names, so the contract describes the container and not its
   #                                contents and no probe addresses a leaf
-  # telemetry.sentry.breadcrumb_level: `unknown`: the producer publishes no constraint for this
-  #                                    key, so no probe can be known-valid
-  # telemetry.sentry.capture_level: `unknown`: the producer publishes no constraint for this
-  #                                 key, so no probe can be known-valid
   # telemetry.sentry.dsn: `secret: true`: the probe would be committed to this repository, and a
   #                       credential-shaped value in a test file is a credential
   # telemetry.sentry.sample_rate: `unknown`: the producer publishes no constraint for this key,

@@ -91,6 +91,13 @@ can read and that helm-docs then renders into the published README. The value's 
 is the description this repository publishes, and `just explain` is where the producer's prose is
 read in full.
 
+Dropped where they are *keywords*, and only there. Under `properties` the keys are the producer's
+own field names, and `LegalDocument.title` is a field — a locale-keyed display name an operator
+sets, documented in `tankovault`'s own values and its README example. Stripping by name alone
+deleted it from the generated element and left `additionalProperties: false` standing over the
+hole, so a chart that offered the field rejected it at `helm install` and said nothing about why.
+`description`, `default` and `examples` are all ordinary field names too. See `_copy_keyword`.
+
 **A block for a value with no `@config` marker.** The marker is what says which contract key the
 value feeds, and it is hand-written on purpose — `config_bindings.py` says why in bold. A
 `@config-shape` marker naming a value that binds nothing has no key to generate from, and
@@ -538,7 +545,7 @@ def expected(constraint: dict[str, Any] | None, *, optional: bool, structured: b
         # table.
         for keyword in ("required", "properties"):
             if keyword in constraint:
-                schema[keyword] = _copy(constraint[keyword])
+                schema[keyword] = _copy_keyword(keyword, constraint[keyword])
         # `additionalProperties: true` is the open flag, and an element schema replaces it: a map
         # whose values are all one shape is not open, it is uniform. Written even beside enumerated
         # properties, because helm-schema injects `additionalProperties: false` into a top-level
@@ -549,7 +556,7 @@ def expected(constraint: dict[str, Any] | None, *, optional: bool, structured: b
         for keyword in ORDER:
             if keyword in ("type", "enum") or keyword not in constraint:
                 continue
-            schema[keyword] = _copy(constraint[keyword])
+            schema[keyword] = _copy_keyword(keyword, constraint[keyword])
 
     if not types:
         # The constraint names no type. Rather than guess one, accept every JSON type — the
@@ -567,22 +574,40 @@ def expected(constraint: dict[str, Any] | None, *, optional: bool, structured: b
 
 
 def _copy(value: Any) -> Any:
-    """One constraint keyword's value, with every annotation dropped at every level.
+    """One subschema, with every annotation dropped at every level.
 
     See the module docstring for why the prose does not come across. `format` is kept: it is the
     one member of `ANNOTATIONS` a validator acts on. Everything else is copied rather than
     translated — `constraint` is JSON Schema and so is an `@schema` block, so a `minimum` means the
     same thing on both sides.
+
+    The argument is a *schema*, so its keys are keywords. A keyword whose value is not one —
+    `properties` — is dispatched through `_copy_keyword`, which is also the entry point for a
+    caller holding one keyword's value rather than the schema around it.
     """
     if isinstance(value, dict):
         return {
-            name: _copy(inner)
+            name: _copy_keyword(name, inner)
             for name, inner in value.items()
             if name not in cc.ANNOTATIONS or name == "format"
         }
     if isinstance(value, list):
         return [_copy(item) for item in value]
     return value
+
+
+def _copy_keyword(keyword: str, value: Any) -> Any:
+    """One keyword's value, copied as the thing that keyword holds.
+
+    `properties` is the only keyword in `config_contract.CONTAINERS` whose value is a mapping of
+    *names* to schemas; `items` and `additionalProperties` each hold a schema outright. So it is
+    the one place a key must not be read as a keyword, and the one place `_copy` may not strip by
+    name. The vocabulary is closed — `config_contract.assert_value` refuses a keyword outside
+    it — so there is no `patternProperties` or `$defs` to answer for here.
+    """
+    if keyword == "properties" and isinstance(value, dict):
+        return {name: _copy(subschema) for name, subschema in value.items()}
+    return _copy(value)
 
 
 # --------------------------------------------------------------------------------------------

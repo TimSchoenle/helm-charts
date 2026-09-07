@@ -1,15 +1,15 @@
 {
   "source": {
     "image": "docker.io/timschoenle/tankovault-worker",
-    "digest": "sha256:bb6ac51da41bc4a7838cc86e192ff3b6ad5590c0947dc1695a5bd9da3b921969",
-    "sha256": "3fdba01b62adf64a3567351e7bf4d0f03c2f194cf2f7ddeef64559329b479ba1",
-    "fetched": "2026-09-04T10:47:12Z"
+    "digest": "sha256:14e54ed13096bbb88721b0054d18b9b3b13efc8923876f9ea77110ad0bab902b",
+    "sha256": "f8cf9ba0ac1886440afbb67056831c2891b4ed49a2819296b1c2e7e6d991135b",
+    "fetched": "2026-09-06T19:36:34Z"
   },
   "contract": {
     "terrace_contract": 1,
     "app": {
       "name": "tankovault-worker",
-      "version": "v8.9.2",
+      "version": "v8.10.1",
       "source": "https://github.com/TimSchoenle/TankoVault"
     },
     "schema": {
@@ -350,6 +350,8 @@
           "ty": "f32",
           "values": [],
           "constraint": {
+            "maximum": 1.0,
+            "minimum": 0.0,
             "type": "number"
           },
           "text_form": "unknown",
@@ -373,6 +375,8 @@
           "ty": "f32",
           "values": [],
           "constraint": {
+            "maximum": 1.0,
+            "minimum": 0.0,
             "type": "number"
           },
           "text_form": "unknown",
@@ -394,8 +398,30 @@
           "secrets_file": "telemetry__sentry__capture_level",
           "docs": "Least severe `tracing` level reported as a Sentry **issue**.",
           "ty": "SentryLevel",
-          "values": [],
-          "text_form": "unknown",
+          "values": [
+            "off",
+            "error",
+            "warn",
+            "info",
+            "debug",
+            "trace"
+          ],
+          "constraint": {
+            "enum": [
+              "off",
+              "error",
+              "warn",
+              "info",
+              "debug",
+              "trace"
+            ],
+            "type": "string"
+          },
+          "text_constraint": {
+            "pattern": "^\\s*(off|error|warn|info|debug|trace)\\s*$",
+            "type": "string"
+          },
+          "text_form": "choice",
           "aliases": [],
           "env_aliases": [],
           "env_file_aliases": [],
@@ -414,8 +440,30 @@
           "secrets_file": "telemetry__sentry__breadcrumb_level",
           "docs": "Least severe `tracing` level kept as a **breadcrumb** — the trail attached to the next\nissue. Records at or above [`Self::capture_level`] become issues instead.",
           "ty": "SentryLevel",
-          "values": [],
-          "text_form": "unknown",
+          "values": [
+            "off",
+            "error",
+            "warn",
+            "info",
+            "debug",
+            "trace"
+          ],
+          "constraint": {
+            "enum": [
+              "off",
+              "error",
+              "warn",
+              "info",
+              "debug",
+              "trace"
+            ],
+            "type": "string"
+          },
+          "text_constraint": {
+            "pattern": "^\\s*(off|error|warn|info|debug|trace)\\s*$",
+            "type": "string"
+          },
+          "text_form": "choice",
           "aliases": [],
           "env_aliases": [],
           "env_file_aliases": [],
@@ -1218,6 +1266,7 @@
           "values": [],
           "constraint": {
             "additionalProperties": {
+              "additionalProperties": false,
               "properties": {
                 "san": {
                   "description": "The client-certificate subject alternative name this peer presents under\n`identity = \"mtls\"`, e.g. `api.tankovault.svc`.",
@@ -1569,14 +1618,232 @@
           "reserved": false
         },
         {
-          "path": "metadata.priority",
-          "env": "TANKOVAULT_METADATA__PRIORITY",
-          "env_file": "TANKOVAULT_METADATA__PRIORITY_FILE",
-          "secrets_file": "metadata__priority",
-          "docs": "Per-field source authority order (default: `AniList` before the adapters).",
-          "ty": "MetadataPriority",
+          "path": "metadata.priority.description",
+          "env": "TANKOVAULT_METADATA__PRIORITY__DESCRIPTION",
+          "env_file": "TANKOVAULT_METADATA__PRIORITY__DESCRIPTION_FILE",
+          "secrets_file": "metadata__priority__description",
+          "docs": "Priority order for the long-form series description.",
+          "ty": "Vec<MetadataSource>",
           "values": [],
-          "text_form": "unknown",
+          "constraint": {
+            "items": {
+              "enum": [
+                "anilist",
+                "adapter"
+              ],
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "text_constraint": {
+            "pattern": "^\\s*[\\[\\{][\\s\\S]*[\\]\\}]\\s*$",
+            "type": "string"
+          },
+          "text_form": "structured",
+          "aliases": [],
+          "env_aliases": [],
+          "env_file_aliases": [],
+          "secrets_file_aliases": [],
+          "default": null,
+          "default_value": null,
+          "note": null,
+          "required": false,
+          "secret": false,
+          "reserved": false
+        },
+        {
+          "path": "metadata.priority.title",
+          "env": "TANKOVAULT_METADATA__PRIORITY__TITLE",
+          "env_file": "TANKOVAULT_METADATA__PRIORITY__TITLE_FILE",
+          "secrets_file": "metadata__priority__title",
+          "docs": "Priority order for the canonical/display title.",
+          "ty": "Vec<MetadataSource>",
+          "values": [],
+          "constraint": {
+            "items": {
+              "enum": [
+                "anilist",
+                "adapter"
+              ],
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "text_constraint": {
+            "pattern": "^\\s*[\\[\\{][\\s\\S]*[\\]\\}]\\s*$",
+            "type": "string"
+          },
+          "text_form": "structured",
+          "aliases": [],
+          "env_aliases": [],
+          "env_file_aliases": [],
+          "secrets_file_aliases": [],
+          "default": null,
+          "default_value": null,
+          "note": null,
+          "required": false,
+          "secret": false,
+          "reserved": false
+        },
+        {
+          "path": "metadata.priority.cover",
+          "env": "TANKOVAULT_METADATA__PRIORITY__COVER",
+          "env_file": "TANKOVAULT_METADATA__PRIORITY__COVER_FILE",
+          "secrets_file": "metadata__priority__cover",
+          "docs": "Priority order for the cover image URL.",
+          "ty": "Vec<MetadataSource>",
+          "values": [],
+          "constraint": {
+            "items": {
+              "enum": [
+                "anilist",
+                "adapter"
+              ],
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "text_constraint": {
+            "pattern": "^\\s*[\\[\\{][\\s\\S]*[\\]\\}]\\s*$",
+            "type": "string"
+          },
+          "text_form": "structured",
+          "aliases": [],
+          "env_aliases": [],
+          "env_file_aliases": [],
+          "secrets_file_aliases": [],
+          "default": null,
+          "default_value": null,
+          "note": null,
+          "required": false,
+          "secret": false,
+          "reserved": false
+        },
+        {
+          "path": "metadata.priority.content_type",
+          "env": "TANKOVAULT_METADATA__PRIORITY__CONTENT_TYPE",
+          "env_file": "TANKOVAULT_METADATA__PRIORITY__CONTENT_TYPE_FILE",
+          "secrets_file": "metadata__priority__content_type",
+          "docs": "Priority order for the medium/origin classification.",
+          "ty": "Vec<MetadataSource>",
+          "values": [],
+          "constraint": {
+            "items": {
+              "enum": [
+                "anilist",
+                "adapter"
+              ],
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "text_constraint": {
+            "pattern": "^\\s*[\\[\\{][\\s\\S]*[\\]\\}]\\s*$",
+            "type": "string"
+          },
+          "text_form": "structured",
+          "aliases": [],
+          "env_aliases": [],
+          "env_file_aliases": [],
+          "secrets_file_aliases": [],
+          "default": null,
+          "default_value": null,
+          "note": null,
+          "required": false,
+          "secret": false,
+          "reserved": false
+        },
+        {
+          "path": "metadata.priority.status",
+          "env": "TANKOVAULT_METADATA__PRIORITY__STATUS",
+          "env_file": "TANKOVAULT_METADATA__PRIORITY__STATUS_FILE",
+          "secrets_file": "metadata__priority__status",
+          "docs": "Priority order for the publication status.",
+          "ty": "Vec<MetadataSource>",
+          "values": [],
+          "constraint": {
+            "items": {
+              "enum": [
+                "anilist",
+                "adapter"
+              ],
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "text_constraint": {
+            "pattern": "^\\s*[\\[\\{][\\s\\S]*[\\]\\}]\\s*$",
+            "type": "string"
+          },
+          "text_form": "structured",
+          "aliases": [],
+          "env_aliases": [],
+          "env_file_aliases": [],
+          "secrets_file_aliases": [],
+          "default": null,
+          "default_value": null,
+          "note": null,
+          "required": false,
+          "secret": false,
+          "reserved": false
+        },
+        {
+          "path": "metadata.priority.release_year",
+          "env": "TANKOVAULT_METADATA__PRIORITY__RELEASE_YEAR",
+          "env_file": "TANKOVAULT_METADATA__PRIORITY__RELEASE_YEAR_FILE",
+          "secrets_file": "metadata__priority__release_year",
+          "docs": "Priority order for the year of first publication.",
+          "ty": "Vec<MetadataSource>",
+          "values": [],
+          "constraint": {
+            "items": {
+              "enum": [
+                "anilist",
+                "adapter"
+              ],
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "text_constraint": {
+            "pattern": "^\\s*[\\[\\{][\\s\\S]*[\\]\\}]\\s*$",
+            "type": "string"
+          },
+          "text_form": "structured",
+          "aliases": [],
+          "env_aliases": [],
+          "env_file_aliases": [],
+          "secrets_file_aliases": [],
+          "default": null,
+          "default_value": null,
+          "note": null,
+          "required": false,
+          "secret": false,
+          "reserved": false
+        },
+        {
+          "path": "metadata.priority.default",
+          "env": "TANKOVAULT_METADATA__PRIORITY__DEFAULT",
+          "env_file": "TANKOVAULT_METADATA__PRIORITY__DEFAULT_FILE",
+          "secrets_file": "metadata__priority__default",
+          "docs": "Fallback order for any field whose list was explicitly emptied.",
+          "ty": "Vec<MetadataSource>",
+          "values": [],
+          "constraint": {
+            "items": {
+              "enum": [
+                "anilist",
+                "adapter"
+              ],
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "text_constraint": {
+            "pattern": "^\\s*[\\[\\{][\\s\\S]*[\\]\\}]\\s*$",
+            "type": "string"
+          },
+          "text_form": "structured",
           "aliases": [],
           "env_aliases": [],
           "env_file_aliases": [],
@@ -1650,7 +1917,7 @@
           "env": "TANKOVAULT_METADATA__TAGS__ADULT_TAGS",
           "env_file": "TANKOVAULT_METADATA__TAGS__ADULT_TAGS_FILE",
           "secrets_file": "metadata__tags__adult_tags",
-          "docs": "Additional genre chips that classify a series as adult, matched on their slug.\n\nAdditions only: unlike [`Self::blocklist`] there is no switch that drops the shipped\nterms. See [`tankovault_domain::AdultTagSet`] — an emptied classifier silently stops\nclassifying, where the two supported ways to make adult content visible (the deployment\nflag and the per-reader opt-in) both leave a record of somebody deciding.",
+          "docs": "Additional genre chips that classify a series as adult, matched on their slug.\n\nAdditions only: unlike the refusal list in [`TermBlocklistConfig`] there is no switch\nthat drops the shipped terms. See [`tankovault_domain::AdultTagSet`] — an emptied classifier silently\nstops classifying, where the two supported ways to make adult content visible (the\ndeployment flag and the per-reader opt-in) both leave a record of somebody deciding.",
           "ty": "Vec<String>",
           "values": [],
           "constraint": {
@@ -1767,6 +2034,7 @@
           "ty": "f64",
           "values": [],
           "constraint": {
+            "exclusiveMinimum": 0.0,
             "type": "number"
           },
           "text_form": "unknown",
@@ -1790,6 +2058,7 @@
           "ty": "f64",
           "values": [],
           "constraint": {
+            "exclusiveMinimum": 0.0,
             "type": "number"
           },
           "text_form": "unknown",
@@ -1813,6 +2082,7 @@
           "ty": "f64",
           "values": [],
           "constraint": {
+            "exclusiveMinimum": 0.0,
             "type": "number"
           },
           "text_form": "unknown",
@@ -1836,6 +2106,8 @@
           "ty": "f64",
           "values": [],
           "constraint": {
+            "maximum": 1.0,
+            "minimum": 0.0,
             "type": "number"
           },
           "text_form": "unknown",
@@ -2217,10 +2489,13 @@
             },
             "gap_factor": {
               "description": "Multiple of typical spacing past which a jump is suspicious.",
+              "exclusiveMinimum": 0.0,
               "type": "number"
             },
             "max_rejected_fraction": {
               "description": "Ceiling on the fraction of one listing a scan may reject.",
+              "maximum": 1.0,
+              "minimum": 0.0,
               "type": "number"
             },
             "min_body": {
@@ -2230,6 +2505,7 @@
             },
             "min_gap": {
               "description": "Absolute floor on a suspicious jump, in chapter numbers.",
+              "exclusiveMinimum": 0.0,
               "type": "number"
             },
             "min_sample": {
@@ -2239,6 +2515,7 @@
             },
             "sparse_factor": {
               "description": "Multiple of typical spacing past which a trailing run is noise, not a continuation.",
+              "exclusiveMinimum": 0.0,
               "type": "number"
             }
           },
@@ -2384,13 +2661,93 @@
           "additionalProperties": false,
           "properties": {
             "priority": {
-              "description": "Per-field source authority order (default: `AniList` before the adapters)."
+              "additionalProperties": false,
+              "properties": {
+                "content_type": {
+                  "description": "Priority order for the medium/origin classification.",
+                  "items": {
+                    "enum": [
+                      "anilist",
+                      "adapter"
+                    ],
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "cover": {
+                  "description": "Priority order for the cover image URL.",
+                  "items": {
+                    "enum": [
+                      "anilist",
+                      "adapter"
+                    ],
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "default": {
+                  "description": "Fallback order for any field whose list was explicitly emptied.",
+                  "items": {
+                    "enum": [
+                      "anilist",
+                      "adapter"
+                    ],
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "description": {
+                  "description": "Priority order for the long-form series description.",
+                  "items": {
+                    "enum": [
+                      "anilist",
+                      "adapter"
+                    ],
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "release_year": {
+                  "description": "Priority order for the year of first publication.",
+                  "items": {
+                    "enum": [
+                      "anilist",
+                      "adapter"
+                    ],
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "status": {
+                  "description": "Priority order for the publication status.",
+                  "items": {
+                    "enum": [
+                      "anilist",
+                      "adapter"
+                    ],
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "title": {
+                  "description": "Priority order for the canonical/display title.",
+                  "items": {
+                    "enum": [
+                      "anilist",
+                      "adapter"
+                    ],
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              },
+              "type": "object"
             },
             "tags": {
               "additionalProperties": false,
               "properties": {
                 "adult_tags": {
-                  "description": "Additional genre chips that classify a series as adult, matched on their slug.\n\nAdditions only: unlike [`Self::blocklist`] there is no switch that drops the shipped\nterms. See [`tankovault_domain::AdultTagSet`] — an emptied classifier silently stops\nclassifying, where the two supported ways to make adult content visible (the deployment\nflag and the per-reader opt-in) both leave a record of somebody deciding.",
+                  "description": "Additional genre chips that classify a series as adult, matched on their slug.\n\nAdditions only: unlike the refusal list in [`TermBlocklistConfig`] there is no switch\nthat drops the shipped terms. See [`tankovault_domain::AdultTagSet`] — an emptied classifier silently\nstops classifying, where the two supported ways to make adult content visible (the\ndeployment flag and the per-reader opt-in) both leave a record of somebody deciding.",
                   "items": {
                     "type": "string"
                   },
@@ -2524,10 +2881,28 @@
                   "type": "boolean"
                 },
                 "breadcrumb_level": {
-                  "description": "Least severe `tracing` level kept as a **breadcrumb** — the trail attached to the next\nissue. Records at or above [`Self::capture_level`] become issues instead."
+                  "description": "Least severe `tracing` level kept as a **breadcrumb** — the trail attached to the next\nissue. Records at or above [`Self::capture_level`] become issues instead.",
+                  "enum": [
+                    "off",
+                    "error",
+                    "warn",
+                    "info",
+                    "debug",
+                    "trace"
+                  ],
+                  "type": "string"
                 },
                 "capture_level": {
-                  "description": "Least severe `tracing` level reported as a Sentry **issue**."
+                  "description": "Least severe `tracing` level reported as a Sentry **issue**.",
+                  "enum": [
+                    "off",
+                    "error",
+                    "warn",
+                    "info",
+                    "debug",
+                    "trace"
+                  ],
+                  "type": "string"
                 },
                 "debug": {
                   "description": "Print the SDK's own diagnostics to stderr. For proving a DSN works, not for running.",
@@ -2561,6 +2936,8 @@
                 },
                 "sample_rate": {
                   "description": "Fraction of captured events actually sent, `0.0`-`1.0`. A blunt volume cap — it drops\nwhole issues, not repetitions of one — so leave it at `1.0` unless quota forces it.",
+                  "maximum": 1.0,
+                  "minimum": 0.0,
                   "type": "number"
                 },
                 "send_default_pii": {
@@ -2582,6 +2959,8 @@
                 },
                 "traces_sample_rate": {
                   "description": "Fraction of traces this service **starts** that are recorded, `0.0`-`1.0`.\n\n`0.0` (the default) means it starts none of its own. It does **not** mean this service\nis absent from a trace: a request or a broker message arriving with a trace already\nsampled is continued regardless, which is what keeps one reader action readable across\nthe whole tier rather than ending at the first service configured differently. Set it\nuniformly anyway — `0.05`-`0.2` is an ordinary production figure — since the service\nthat *starts* a trace is the one whose rate decides whether it exists at all.",
+                  "maximum": 1.0,
+                  "minimum": 0.0,
                   "type": "number"
                 }
               },

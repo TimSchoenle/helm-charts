@@ -1,15 +1,15 @@
 {
   "source": {
     "image": "docker.io/timschoenle/tankovault-control-plane",
-    "digest": "sha256:0204808761334269338390ef2b08b76902403665ffc78eb7edea52a784a5d5c9",
-    "sha256": "c9bb2e2534a53604cd260a8dfdf967b9c65106c74b9abb77112b95f013b7c7c2",
-    "fetched": "2026-09-04T10:47:08Z"
+    "digest": "sha256:7efb8e3001da1ead940bc3e483febe5ace470afe0992008a8cf2a57c6956074d",
+    "sha256": "3e55a7db9ad4f62b8a5fe7834cd6730c0ab6ddeecbfdb927334be04cc79208cf",
+    "fetched": "2026-09-06T19:36:31Z"
   },
   "contract": {
     "terrace_contract": 1,
     "app": {
       "name": "tankovault-control-plane",
-      "version": "v8.9.2",
+      "version": "v8.10.1",
       "source": "https://github.com/TimSchoenle/TankoVault"
     },
     "schema": {
@@ -350,6 +350,8 @@
           "ty": "f32",
           "values": [],
           "constraint": {
+            "maximum": 1.0,
+            "minimum": 0.0,
             "type": "number"
           },
           "text_form": "unknown",
@@ -373,6 +375,8 @@
           "ty": "f32",
           "values": [],
           "constraint": {
+            "maximum": 1.0,
+            "minimum": 0.0,
             "type": "number"
           },
           "text_form": "unknown",
@@ -394,8 +398,30 @@
           "secrets_file": "telemetry__sentry__capture_level",
           "docs": "Least severe `tracing` level reported as a Sentry **issue**.",
           "ty": "SentryLevel",
-          "values": [],
-          "text_form": "unknown",
+          "values": [
+            "off",
+            "error",
+            "warn",
+            "info",
+            "debug",
+            "trace"
+          ],
+          "constraint": {
+            "enum": [
+              "off",
+              "error",
+              "warn",
+              "info",
+              "debug",
+              "trace"
+            ],
+            "type": "string"
+          },
+          "text_constraint": {
+            "pattern": "^\\s*(off|error|warn|info|debug|trace)\\s*$",
+            "type": "string"
+          },
+          "text_form": "choice",
           "aliases": [],
           "env_aliases": [],
           "env_file_aliases": [],
@@ -414,8 +440,30 @@
           "secrets_file": "telemetry__sentry__breadcrumb_level",
           "docs": "Least severe `tracing` level kept as a **breadcrumb** — the trail attached to the next\nissue. Records at or above [`Self::capture_level`] become issues instead.",
           "ty": "SentryLevel",
-          "values": [],
-          "text_form": "unknown",
+          "values": [
+            "off",
+            "error",
+            "warn",
+            "info",
+            "debug",
+            "trace"
+          ],
+          "constraint": {
+            "enum": [
+              "off",
+              "error",
+              "warn",
+              "info",
+              "debug",
+              "trace"
+            ],
+            "type": "string"
+          },
+          "text_constraint": {
+            "pattern": "^\\s*(off|error|warn|info|debug|trace)\\s*$",
+            "type": "string"
+          },
+          "text_form": "choice",
           "aliases": [],
           "env_aliases": [],
           "env_file_aliases": [],
@@ -1837,6 +1885,7 @@
           "values": [],
           "constraint": {
             "additionalProperties": {
+              "additionalProperties": false,
               "properties": {
                 "san": {
                   "description": "The client-certificate subject alternative name this peer presents under\n`identity = \"mtls\"`, e.g. `api.tankovault.svc`.",
@@ -2617,10 +2666,28 @@
                   "type": "boolean"
                 },
                 "breadcrumb_level": {
-                  "description": "Least severe `tracing` level kept as a **breadcrumb** — the trail attached to the next\nissue. Records at or above [`Self::capture_level`] become issues instead."
+                  "description": "Least severe `tracing` level kept as a **breadcrumb** — the trail attached to the next\nissue. Records at or above [`Self::capture_level`] become issues instead.",
+                  "enum": [
+                    "off",
+                    "error",
+                    "warn",
+                    "info",
+                    "debug",
+                    "trace"
+                  ],
+                  "type": "string"
                 },
                 "capture_level": {
-                  "description": "Least severe `tracing` level reported as a Sentry **issue**."
+                  "description": "Least severe `tracing` level reported as a Sentry **issue**.",
+                  "enum": [
+                    "off",
+                    "error",
+                    "warn",
+                    "info",
+                    "debug",
+                    "trace"
+                  ],
+                  "type": "string"
                 },
                 "debug": {
                   "description": "Print the SDK's own diagnostics to stderr. For proving a DSN works, not for running.",
@@ -2654,6 +2721,8 @@
                 },
                 "sample_rate": {
                   "description": "Fraction of captured events actually sent, `0.0`-`1.0`. A blunt volume cap — it drops\nwhole issues, not repetitions of one — so leave it at `1.0` unless quota forces it.",
+                  "maximum": 1.0,
+                  "minimum": 0.0,
                   "type": "number"
                 },
                 "send_default_pii": {
@@ -2675,6 +2744,8 @@
                 },
                 "traces_sample_rate": {
                   "description": "Fraction of traces this service **starts** that are recorded, `0.0`-`1.0`.\n\n`0.0` (the default) means it starts none of its own. It does **not** mean this service\nis absent from a trace: a request or a broker message arriving with a trace already\nsampled is continued regardless, which is what keeps one reader action readable across\nthe whole tier rather than ending at the first service configured differently. Set it\nuniformly anyway — `0.05`-`0.2` is an ordinary production figure — since the service\nthat *starts* a trace is the one whose rate decides whether it exists at all.",
+                  "maximum": 1.0,
+                  "minimum": 0.0,
                   "type": "number"
                 }
               },

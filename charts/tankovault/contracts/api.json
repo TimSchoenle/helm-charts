@@ -1,15 +1,15 @@
 {
   "source": {
     "image": "docker.io/timschoenle/tankovault-api",
-    "digest": "sha256:64808a435b705e83dbf0fb181aacfa146d26d7ae148bdda1788d966524f640a3",
-    "sha256": "9db59c03afdb1a5ef0220fde5fe59526b62445ed8576fd03e979861ae73a4761",
-    "fetched": "2026-09-04T10:47:02Z"
+    "digest": "sha256:495ddce622c97474218b6b7e70117530bb0f14e64455ec3f980197195ace0abd",
+    "sha256": "83fb383ae354b4315fbe3c8f3e5d07e88c41fc94e0d033e7430ae3d5c6f1251a",
+    "fetched": "2026-09-06T19:36:29Z"
   },
   "contract": {
     "terrace_contract": 1,
     "app": {
       "name": "tankovault-api",
-      "version": "v8.9.2",
+      "version": "v8.10.1",
       "source": "https://github.com/TimSchoenle/TankoVault"
     },
     "schema": {
@@ -327,6 +327,8 @@
           "ty": "f32",
           "values": [],
           "constraint": {
+            "maximum": 1.0,
+            "minimum": 0.0,
             "type": "number"
           },
           "text_form": "unknown",
@@ -350,6 +352,8 @@
           "ty": "f32",
           "values": [],
           "constraint": {
+            "maximum": 1.0,
+            "minimum": 0.0,
             "type": "number"
           },
           "text_form": "unknown",
@@ -371,8 +375,30 @@
           "secrets_file": "telemetry__sentry__capture_level",
           "docs": "Least severe `tracing` level reported as a Sentry **issue**.",
           "ty": "SentryLevel",
-          "values": [],
-          "text_form": "unknown",
+          "values": [
+            "off",
+            "error",
+            "warn",
+            "info",
+            "debug",
+            "trace"
+          ],
+          "constraint": {
+            "enum": [
+              "off",
+              "error",
+              "warn",
+              "info",
+              "debug",
+              "trace"
+            ],
+            "type": "string"
+          },
+          "text_constraint": {
+            "pattern": "^\\s*(off|error|warn|info|debug|trace)\\s*$",
+            "type": "string"
+          },
+          "text_form": "choice",
           "aliases": [],
           "env_aliases": [],
           "env_file_aliases": [],
@@ -391,8 +417,30 @@
           "secrets_file": "telemetry__sentry__breadcrumb_level",
           "docs": "Least severe `tracing` level kept as a **breadcrumb** — the trail attached to the next\nissue. Records at or above [`Self::capture_level`] become issues instead.",
           "ty": "SentryLevel",
-          "values": [],
-          "text_form": "unknown",
+          "values": [
+            "off",
+            "error",
+            "warn",
+            "info",
+            "debug",
+            "trace"
+          ],
+          "constraint": {
+            "enum": [
+              "off",
+              "error",
+              "warn",
+              "info",
+              "debug",
+              "trace"
+            ],
+            "type": "string"
+          },
+          "text_constraint": {
+            "pattern": "^\\s*(off|error|warn|info|debug|trace)\\s*$",
+            "type": "string"
+          },
+          "text_form": "choice",
           "aliases": [],
           "env_aliases": [],
           "env_file_aliases": [],
@@ -2207,6 +2255,7 @@
           "values": [],
           "constraint": {
             "additionalProperties": {
+              "additionalProperties": false,
               "properties": {
                 "san": {
                   "description": "The client-certificate subject alternative name this peer presents under\n`identity = \"mtls\"`, e.g. `api.tankovault.svc`.",
@@ -2385,6 +2434,34 @@
           "ty": "BTreeMap<String, LegalDocument>",
           "values": [],
           "constraint": {
+            "additionalProperties": {
+              "additionalProperties": false,
+              "properties": {
+                "sources": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "description": "Markdown file per locale, keyed by the language code the frontend uses (`en`, `de`).\n\nA plain `String` key rather than a shipped-locale enum: an operator publishing French\nterms should not need this build to know about French.",
+                  "type": "object"
+                },
+                "title": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "description": "Per-locale display title. A locale with no entry falls back to the frontend's own\ncatalogue for the slugs it knows, and to the slug itself for the ones it does not.",
+                  "type": "object"
+                },
+                "updated": {
+                  "description": "The \"last updated\" line, as the operator wants it shown (`2026-08-04`).\n\nFree text rather than a date, because it is displayed verbatim and a file mtime is the\nwrong answer — touching a file is not amending a policy.",
+                  "type": "string"
+                },
+                "url": {
+                  "description": "Somewhere else entirely — a corporate imprint already hosted by the operator.\n\nMutually exclusive with [`Self::sources`]; see [`LegalConfig::validate`].",
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
             "type": "object"
           },
           "text_constraint": {
@@ -2749,88 +2826,11 @@
           "reserved": false
         },
         {
-          "path": "metadata.priority",
-          "env": "TANKOVAULT_METADATA__PRIORITY",
-          "env_file": "TANKOVAULT_METADATA__PRIORITY_FILE",
-          "secrets_file": "metadata__priority",
-          "docs": "Per-field source authority order (default: `AniList` before the adapters).",
-          "ty": "MetadataPriority",
-          "values": [],
-          "text_form": "unknown",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "metadata.tags.use_defaults",
-          "env": "TANKOVAULT_METADATA__TAGS__USE_DEFAULTS",
-          "env_file": "TANKOVAULT_METADATA__TAGS__USE_DEFAULTS_FILE",
-          "secrets_file": "metadata__tags__use_defaults",
-          "docs": "Whether the shipped [`tankovault_domain::DEFAULT_BLOCKED_TERMS`] apply.\n\nAn escape hatch for a deployment whose catalogue genuinely uses one of them as a genre.\nTurning it off does not remove what is already stored — nothing in the normal path\nretracts a tag or a credit — but stops it being refused from the next scan onwards.",
-          "ty": "bool",
-          "values": [],
-          "constraint": {
-            "type": "boolean"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*(true|false)\\s*$",
-            "type": "string"
-          },
-          "text_form": "boolean",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "metadata.tags.blocklist",
-          "env": "TANKOVAULT_METADATA__TAGS__BLOCKLIST",
-          "env_file": "TANKOVAULT_METADATA__TAGS__BLOCKLIST_FILE",
-          "secrets_file": "metadata__tags__blocklist",
-          "docs": "Additional refused terms, matched on their slug: `N/A`, `n/a` and `n-a` are one entry.",
-          "ty": "Vec<String>",
-          "values": [],
-          "constraint": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*[\\[\\{][\\s\\S]*[\\]\\}]\\s*$",
-            "type": "string"
-          },
-          "text_form": "structured",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
           "path": "metadata.tags.adult_tags",
           "env": "TANKOVAULT_METADATA__TAGS__ADULT_TAGS",
           "env_file": "TANKOVAULT_METADATA__TAGS__ADULT_TAGS_FILE",
           "secrets_file": "metadata__tags__adult_tags",
-          "docs": "Additional genre chips that classify a series as adult, matched on their slug.\n\nAdditions only: unlike [`Self::blocklist`] there is no switch that drops the shipped\nterms. See [`tankovault_domain::AdultTagSet`] — an emptied classifier silently stops\nclassifying, where the two supported ways to make adult content visible (the deployment\nflag and the per-reader opt-in) both leave a record of somebody deciding.",
+          "docs": "Additional genre chips that classify a series as adult, matched on their slug.\n\nAdditions only: unlike the refusal list in [`TermBlocklistConfig`] there is no switch\nthat drops the shipped terms. See [`tankovault_domain::AdultTagSet`] — an emptied classifier silently\nstops classifying, where the two supported ways to make adult content visible (the\ndeployment flag and the per-reader opt-in) both leave a record of somebody deciding.",
           "ty": "Vec<String>",
           "values": [],
           "constraint": {
@@ -3222,6 +3222,34 @@
               "type": "string"
             },
             "documents": {
+              "additionalProperties": {
+                "additionalProperties": false,
+                "properties": {
+                  "sources": {
+                    "additionalProperties": {
+                      "type": "string"
+                    },
+                    "description": "Markdown file per locale, keyed by the language code the frontend uses (`en`, `de`).\n\nA plain `String` key rather than a shipped-locale enum: an operator publishing French\nterms should not need this build to know about French.",
+                    "type": "object"
+                  },
+                  "title": {
+                    "additionalProperties": {
+                      "type": "string"
+                    },
+                    "description": "Per-locale display title. A locale with no entry falls back to the frontend's own\ncatalogue for the slugs it knows, and to the slug itself for the ones it does not.",
+                    "type": "object"
+                  },
+                  "updated": {
+                    "description": "The \"last updated\" line, as the operator wants it shown (`2026-08-04`).\n\nFree text rather than a date, because it is displayed verbatim and a file mtime is the\nwrong answer — touching a file is not amending a policy.",
+                    "type": "string"
+                  },
+                  "url": {
+                    "description": "Somewhere else entirely — a corporate imprint already hosted by the operator.\n\nMutually exclusive with [`Self::sources`]; see [`LegalConfig::validate`].",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
               "description": "The published documents, keyed by the slug their URL uses (`terms`, `privacy`,\n`imprint`, …).\n\nA map rather than a struct of known documents on purpose — see the module docs.",
               "type": "object"
             }
@@ -3231,29 +3259,15 @@
         "metadata": {
           "additionalProperties": false,
           "properties": {
-            "priority": {
-              "description": "Per-field source authority order (default: `AniList` before the adapters)."
-            },
             "tags": {
               "additionalProperties": false,
               "properties": {
                 "adult_tags": {
-                  "description": "Additional genre chips that classify a series as adult, matched on their slug.\n\nAdditions only: unlike [`Self::blocklist`] there is no switch that drops the shipped\nterms. See [`tankovault_domain::AdultTagSet`] — an emptied classifier silently stops\nclassifying, where the two supported ways to make adult content visible (the deployment\nflag and the per-reader opt-in) both leave a record of somebody deciding.",
+                  "description": "Additional genre chips that classify a series as adult, matched on their slug.\n\nAdditions only: unlike the refusal list in [`TermBlocklistConfig`] there is no switch\nthat drops the shipped terms. See [`tankovault_domain::AdultTagSet`] — an emptied classifier silently\nstops classifying, where the two supported ways to make adult content visible (the\ndeployment flag and the per-reader opt-in) both leave a record of somebody deciding.",
                   "items": {
                     "type": "string"
                   },
                   "type": "array"
-                },
-                "blocklist": {
-                  "description": "Additional refused terms, matched on their slug: `N/A`, `n/a` and `n-a` are one entry.",
-                  "items": {
-                    "type": "string"
-                  },
-                  "type": "array"
-                },
-                "use_defaults": {
-                  "description": "Whether the shipped [`tankovault_domain::DEFAULT_BLOCKED_TERMS`] apply.\n\nAn escape hatch for a deployment whose catalogue genuinely uses one of them as a genre.\nTurning it off does not remove what is already stored — nothing in the normal path\nretracts a tag or a credit — but stops it being refused from the next scan onwards.",
-                  "type": "boolean"
                 }
               },
               "type": "object"
@@ -3463,10 +3477,28 @@
                   "type": "boolean"
                 },
                 "breadcrumb_level": {
-                  "description": "Least severe `tracing` level kept as a **breadcrumb** — the trail attached to the next\nissue. Records at or above [`Self::capture_level`] become issues instead."
+                  "description": "Least severe `tracing` level kept as a **breadcrumb** — the trail attached to the next\nissue. Records at or above [`Self::capture_level`] become issues instead.",
+                  "enum": [
+                    "off",
+                    "error",
+                    "warn",
+                    "info",
+                    "debug",
+                    "trace"
+                  ],
+                  "type": "string"
                 },
                 "capture_level": {
-                  "description": "Least severe `tracing` level reported as a Sentry **issue**."
+                  "description": "Least severe `tracing` level reported as a Sentry **issue**.",
+                  "enum": [
+                    "off",
+                    "error",
+                    "warn",
+                    "info",
+                    "debug",
+                    "trace"
+                  ],
+                  "type": "string"
                 },
                 "debug": {
                   "description": "Print the SDK's own diagnostics to stderr. For proving a DSN works, not for running.",
@@ -3500,6 +3532,8 @@
                 },
                 "sample_rate": {
                   "description": "Fraction of captured events actually sent, `0.0`-`1.0`. A blunt volume cap — it drops\nwhole issues, not repetitions of one — so leave it at `1.0` unless quota forces it.",
+                  "maximum": 1.0,
+                  "minimum": 0.0,
                   "type": "number"
                 },
                 "send_default_pii": {
@@ -3521,6 +3555,8 @@
                 },
                 "traces_sample_rate": {
                   "description": "Fraction of traces this service **starts** that are recorded, `0.0`-`1.0`.\n\n`0.0` (the default) means it starts none of its own. It does **not** mean this service\nis absent from a trace: a request or a broker message arriving with a trace already\nsampled is continued regardless, which is what keeps one reader action readable across\nthe whole tier rather than ending at the first service configured differently. Set it\nuniformly anyway — `0.05`-`0.2` is an ordinary production figure — since the service\nthat *starts* a trace is the one whose rate decides whether it exists at all.",
+                  "maximum": 1.0,
+                  "minimum": 0.0,
                   "type": "number"
                 }
               },

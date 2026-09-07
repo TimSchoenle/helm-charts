@@ -294,6 +294,32 @@ class TestExpected(unittest.TestCase):
         self.assertNotIn("description", built["items"])
         self.assertNotIn("description", built["items"]["properties"]["name"])
 
+    def test_a_field_named_like_an_annotation_survives(self):
+        # `tankovault`'s `LegalDocument.title` is the field this is written from: a locale-keyed
+        # display name an operator sets, deleted from the generated element by a stripper that
+        # read `properties` keys as keywords. `additionalProperties: false` then stood over the
+        # hole and the chart rejected a value its own README gives an example of.
+        built = cs.expected(
+            {
+                "type": "object",
+                "description": "the struct's own prose, which does not come across",
+                "additionalProperties": False,
+                "properties": {
+                    "title": {"type": "object", "additionalProperties": {"type": "string"}},
+                    "description": {"type": "string"},
+                    "default": {"type": "string"},
+                    "examples": {"type": "array", "items": {"type": "string"}},
+                },
+            },
+            optional=False,
+            structured=True,
+        )
+        self.assertEqual(
+            sorted(built["properties"]), ["default", "description", "examples", "title"]
+        )
+        self.assertEqual(built["properties"]["title"]["additionalProperties"], {"type": "string"})
+        self.assertNotIn("description", built)
+
     def test_a_constraint_naming_no_type_accepts_every_one(self):
         built = cs.expected({}, optional=False, structured=False)
         self.assertEqual(

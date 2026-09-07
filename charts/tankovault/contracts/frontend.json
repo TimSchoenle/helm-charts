@@ -1,15 +1,15 @@
 {
   "source": {
     "image": "docker.io/timschoenle/tankovault-frontend",
-    "digest": "sha256:132cf08baf10851d47e8c4944685afcb17f4edcd38c92210fcd22c03ba2b7790",
-    "sha256": "926b17b485cadb5ef40beab13ce4b958a1762ab72a8459acc51cf177136bde9e",
-    "fetched": "2026-09-04T10:46:57Z"
+    "digest": "sha256:e351d5c58d96cf958ddbd71cfc638fc4a3dea863a7701c4e2525d32955501bfe",
+    "sha256": "04c8d1836e84c3f2c987438edf7aa4eb5739e313f550c59dd79da7f89321a761",
+    "fetched": "2026-09-06T19:36:26Z"
   },
   "contract": {
     "terrace_contract": 1,
     "app": {
       "name": "tankovault-frontend",
-      "version": "v8.9.2",
+      "version": "v8.10.1",
       "source": "https://github.com/TimSchoenle/TankoVault"
     },
     "schema": {
@@ -270,6 +270,8 @@
           "ty": "f32",
           "values": [],
           "constraint": {
+            "maximum": 1.0,
+            "minimum": 0.0,
             "type": "number"
           },
           "text_form": "unknown",
@@ -293,6 +295,8 @@
           "ty": "f32",
           "values": [],
           "constraint": {
+            "maximum": 1.0,
+            "minimum": 0.0,
             "type": "number"
           },
           "text_form": "unknown",
@@ -314,8 +318,30 @@
           "secrets_file": "telemetry__sentry__capture_level",
           "docs": "Least severe `tracing` level reported as a Sentry **issue**.",
           "ty": "SentryLevel",
-          "values": [],
-          "text_form": "unknown",
+          "values": [
+            "off",
+            "error",
+            "warn",
+            "info",
+            "debug",
+            "trace"
+          ],
+          "constraint": {
+            "enum": [
+              "off",
+              "error",
+              "warn",
+              "info",
+              "debug",
+              "trace"
+            ],
+            "type": "string"
+          },
+          "text_constraint": {
+            "pattern": "^\\s*(off|error|warn|info|debug|trace)\\s*$",
+            "type": "string"
+          },
+          "text_form": "choice",
           "aliases": [],
           "env_aliases": [],
           "env_file_aliases": [],
@@ -334,8 +360,30 @@
           "secrets_file": "telemetry__sentry__breadcrumb_level",
           "docs": "Least severe `tracing` level kept as a **breadcrumb** — the trail attached to the next\nissue. Records at or above [`Self::capture_level`] become issues instead.",
           "ty": "SentryLevel",
-          "values": [],
-          "text_form": "unknown",
+          "values": [
+            "off",
+            "error",
+            "warn",
+            "info",
+            "debug",
+            "trace"
+          ],
+          "constraint": {
+            "enum": [
+              "off",
+              "error",
+              "warn",
+              "info",
+              "debug",
+              "trace"
+            ],
+            "type": "string"
+          },
+          "text_constraint": {
+            "pattern": "^\\s*(off|error|warn|info|debug|trace)\\s*$",
+            "type": "string"
+          },
+          "text_form": "choice",
           "aliases": [],
           "env_aliases": [],
           "env_file_aliases": [],
@@ -1285,10 +1333,28 @@
                   "type": "boolean"
                 },
                 "breadcrumb_level": {
-                  "description": "Least severe `tracing` level kept as a **breadcrumb** — the trail attached to the next\nissue. Records at or above [`Self::capture_level`] become issues instead."
+                  "description": "Least severe `tracing` level kept as a **breadcrumb** — the trail attached to the next\nissue. Records at or above [`Self::capture_level`] become issues instead.",
+                  "enum": [
+                    "off",
+                    "error",
+                    "warn",
+                    "info",
+                    "debug",
+                    "trace"
+                  ],
+                  "type": "string"
                 },
                 "capture_level": {
-                  "description": "Least severe `tracing` level reported as a Sentry **issue**."
+                  "description": "Least severe `tracing` level reported as a Sentry **issue**.",
+                  "enum": [
+                    "off",
+                    "error",
+                    "warn",
+                    "info",
+                    "debug",
+                    "trace"
+                  ],
+                  "type": "string"
                 },
                 "debug": {
                   "description": "Print the SDK's own diagnostics to stderr. For proving a DSN works, not for running.",
@@ -1322,6 +1388,8 @@
                 },
                 "sample_rate": {
                   "description": "Fraction of captured events actually sent, `0.0`-`1.0`. A blunt volume cap — it drops\nwhole issues, not repetitions of one — so leave it at `1.0` unless quota forces it.",
+                  "maximum": 1.0,
+                  "minimum": 0.0,
                   "type": "number"
                 },
                 "send_default_pii": {
@@ -1343,6 +1411,8 @@
                 },
                 "traces_sample_rate": {
                   "description": "Fraction of traces this service **starts** that are recorded, `0.0`-`1.0`.\n\n`0.0` (the default) means it starts none of its own. It does **not** mean this service\nis absent from a trace: a request or a broker message arriving with a trace already\nsampled is continued regardless, which is what keeps one reader action readable across\nthe whole tier rather than ending at the first service configured differently. Set it\nuniformly anyway — `0.05`-`0.2` is an ordinary production figure — since the service\nthat *starts* a trace is the one whose rate decides whether it exists at all.",
+                  "maximum": 1.0,
+                  "minimum": 0.0,
                   "type": "number"
                 }
               },

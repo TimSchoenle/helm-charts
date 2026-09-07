@@ -49,11 +49,11 @@ Every chart that vendors a contract sets it today — `portfolio`, `netcup-offer
 losing its markers rather than against one that never had any.
 
 **What a nine-document chart changed about all of this.** The format was designed against two
-single-document charts, and `tankovault` — nine documents, 184 distinct key paths in 583
+single-document charts, and `tankovault` — nine documents, 190 distinct key paths in 591
 declarations — falsified four of its rules at once. Recorded here because each rule read as
 obviously right until a chart of that shape was actually put through it:
 
-1. **A value that feeds several documents could not say so.** 93 of those 184 paths are declared
+1. **A value that feeds several documents could not say so.** 99 of those 190 paths are declared
    by several documents at once, twenty-four of them by eight documents each — `bind_addr`, the
    five `metrics.*` keys and the whole of `telemetry.*`, `telemetry.sentry.*` included. One
    template line writes each into every service.
@@ -62,9 +62,9 @@ obviously right until a chart of that shape was actually put through it:
    marker covers one document and leaves the rest owing. An unscoped marker now binds **every**
    document declaring the key, and a scope narrows it where the chart really does write the key
    for only some of them.
-2. **`unbound` was per document.** Only 53 of the 184 paths are written by any rendered document
-   at all; the other 131 are settings the image reads and this chart does not surface. Per
-   document that was 379 entries repeating a handful of sentences, so `unbound` moved to the chart
+2. **`unbound` was per document.** Only 53 of the 190 paths are written by any rendered document
+   at all; the other 137 are settings the image reads and this chart does not surface. Per
+   document that was 387 entries repeating a handful of sentences, so `unbound` moved to the chart
    and takes a list of keys against one reason. Still one key per line, and still no patterns.
 3. **A lone `composed` was refused.** See rule 4: `metrics.listen` is one value and a literal.
 4. **One value could bind only one key.** `internal.tls.certDir` is the directory
@@ -72,7 +72,7 @@ obviously right until a chart of that shape was actually put through it:
    `printf`s in one template. A value carries a run of markers now — see `config_bindings.py`.
 
 The measurement forced all four. What the chart ended up with: 53 markers resolving to 219
-bindings, and 146 keys written off in six `unbound` entries — eleven the chart derives from its
+bindings, and 152 keys written off in six `unbound` entries — eleven the chart derives from its
 own topology, sixteen delivered through the secrets directory, and the rest settings the image
 reads that this chart offers no value for.
 

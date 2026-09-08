@@ -797,6 +797,13 @@ jobs:
   install:
     name: Install & Verify (${{ matrix.chart }}, k8s ${{ matrix.kubernetes }})
     needs: [lint]
+    # A PR that changes nothing renders `changed-charts` as `[]`, which would otherwise give this
+    # job zero matrix combinations rather than skip it outright. GitHub Actions reports a
+    # zero-combination matrix job as skipped in the UI, but surfaces its `needs.install.result` to
+    # `ci` as `failure`, not `skipped` — a documented runner quirk, not a real failure. Gating the
+    # job itself on `changed` avoids ever hitting the zero-combination path, so it skips for real
+    # and `ci`'s "skipped passes" handling sees the result it expects.
+    if: needs.lint.outputs.changed == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read # to checkout code
@@ -804,9 +811,7 @@ jobs:
     # version that installs every changed chart in turn. A PR touching three charts used to pay
     # for their `ct install --upgrade` runs one after another inside a single job; now they run
     # as separate jobs the runner schedules in parallel. `chart` comes from `lint`'s
-    # `changed-charts` output, a JSON array; a PR that changes nothing renders it `[]`, which
-    # gives this job zero matrix combinations and skips it entirely — the same outcome the
-    # `if: needs.lint.outputs.changed == 'true'` guards on every step used to produce.
+    # `changed-charts` output, a JSON array.
     strategy:
       fail-fast: false
       matrix:

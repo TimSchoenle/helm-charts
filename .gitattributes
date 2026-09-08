@@ -1,0 +1,112 @@
+# Default for everything Git detects as text: normalise to LF on commit, check out LF.
+* text=auto eol=lf
+
+# Explicit declarations for the types this repository actually contains. These make
+# the outcome independent of Git's binary-detection heuristic, which can misfire on a
+# file that happens to contain an unusual byte.
+*.yaml          text eol=lf
+*.yml           text eol=lf
+*.json          text eol=lf
+*.toml          text eol=lf
+*.md            text eol=lf
+*.txt           text eol=lf
+*.py            text eol=lf
+*.sh            text eol=lf
+*.just          text eol=lf
+*.tpl           text eol=lf
+*.gotmpl        text eol=lf
+*.hbs           text eol=lf
+*.snap          text eol=lf
+justfile        text eol=lf
+.helmignore     text eol=lf
+.gitignore      text eol=lf
+.gitattributes  text eol=lf
+LICENSE         text eol=lf
+
+# Windows-native scripts are the one exception: some interpreters still require CRLF.
+*.bat           text eol=crlf
+*.cmd           text eol=crlf
+*.ps1           text eol=crlf
+
+# `binary` is Git's macro for `-text -diff -merge`: no EOL conversion, no textual
+# diff, no line-based merge. Packaged chart dependencies (*.tgz) are gitignored, but
+# the rule stays so that a forced `git add -f` cannot corrupt one.
+
+*.tgz           binary
+*.tar           binary
+*.tar.gz        binary
+*.gz            binary
+*.zip           binary
+*.bz2           binary
+*.xz            binary
+*.7z            binary
+*.png           binary
+*.jpg           binary
+*.jpeg          binary
+*.gif           binary
+*.webp          binary
+*.ico           binary
+*.pdf           binary
+*.woff          binary
+*.woff2         binary
+*.ttf           binary
+*.otf           binary
+*.eot           binary
+*.so            binary
+*.dll           binary
+*.dylib         binary
+*.exe           binary
+*.class         binary
+*.jar           binary
+*.p12           binary
+*.pfx           binary
+
+# SVG is XML: keep it as diffable text rather than folding it into the binary block.
+*.svg           text eol=lf
+
+# Built-in diff drivers give function-aware hunk headers (`@@ ... def foo():`).
+# An unknown driver name is ignored by Git, so these are safe on older versions.
+*.py            diff=python
+*.md            diff=markdown
+*.sh            diff=bash
+
+# Generated artefacts. `linguist-generated=true` collapses these by default in GitHub
+# pull request diffs and excludes them from the repository language statistics, which
+# keeps review focused on the sources they are derived from:
+#   charts/*/README.md          <- helm-docs, from README.md.gotmpl + values.yaml
+#   /README.md                  <- .github/templates/README.md.hbs
+#   charts/*/values.schema.json <- helm-schema, from the @schema blocks in values.yaml
+#   *.snap                      <- helm-unittest snapshot output
+# Trade-off: GitHub also excludes generated files from code search results. Drop the
+# attribute from a path if you would rather keep that path searchable.
+/README.md                              linguist-generated=true
+charts/*/README.md                      linguist-generated=true
+charts/*/values.schema.json             linguist-generated=true
+charts/*/tests/__snapshot__/*.snap      linguist-generated=true
+
+# `.github/templates/chart/README.md` is the scaffolder's source template, not output,
+# and is deliberately not matched by the rules above.
+
+
+# Helm and Handlebars templates would otherwise be attributed to whatever language
+# owns their extension (`.tpl` is reported as Smarty), which misrepresents the repo.
+
+*.tpl           linguist-detectable=false
+*.gotmpl        linguist-detectable=false
+*.hbs           linguist-detectable=false
+
+# Charts are published with `helm package`, which honours `.helmignore` rather than
+# these attributes; this section only affects Git-produced tarballs of the repository.
+
+# Both the directory entry and its contents are listed: `git archive` prunes an
+# ignored tree, but the explicit `/**` form keeps the intent unambiguous.
+/.github/       export-ignore
+/.github/**     export-ignore
+/.serena/       export-ignore
+/.serena/**     export-ignore
+/just/          export-ignore
+/just/**        export-ignore
+/justfile       export-ignore
+/renovate.json  export-ignore
+/.gitattributes export-ignore
+/.gitignore     export-ignore

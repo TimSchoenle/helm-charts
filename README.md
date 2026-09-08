@@ -23,6 +23,7 @@ Helm charts for the applications and utilities I run on Kubernetes, built on one
 
 [![Latest chart](https://img.shields.io/github/v/release/TimSchoenle/helm-charts?sort=date&display_name=tag&label=latest%20chart)](https://github.com/TimSchoenle/helm-charts/releases)
 [![Publish](https://img.shields.io/github/actions/workflow/status/TimSchoenle/helm-charts/release.yml?branch=main&label=publish)](https://github.com/TimSchoenle/helm-charts/actions/workflows/release.yml)
+[![License](https://img.shields.io/github/license/TimSchoenle/helm-charts)](LICENSE)
 
 ## What this is
 
@@ -55,6 +56,7 @@ the chart's own README before installing it.
 - [Documentation](#documentation)
 - [Contributing](#contributing)
 - [Security](#security)
+- [License](#license)
 
 ## Features
 
@@ -212,3 +214,13 @@ rather than in a public issue. There is no separate reporting address.
 
 A vulnerability in an application one of these charts deploys belongs to that application's own
 repository, which the chart's `Chart.yaml` names under `sources`.
+
+## License
+
+This repository — its charts and the shared `common` library — is licensed under the
+[MIT License](LICENSE). Each chart's `Chart.yaml` records the same fact as its
+`artifacthub.io/license` annotation.
+
+That license covers the packaging, not the application a chart deploys. The application's own
+license lives in its own repository, which the chart's `Chart.yaml` names under `sources`.
+Several of those repositories are copyleft or non-commercial.

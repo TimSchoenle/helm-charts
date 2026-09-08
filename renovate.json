@@ -8,6 +8,44 @@
         "helm-values"
       ],
       "enabled": false
+    },
+    {
+      "description": "kube_version and the CRD catalog commit gate the schema surface every chart is validated against (see the comments above each in justfile) and their own docs call bumping them a deliberate act, not a routine one — so unlike the rest of the pinned toolchain, these must not merge on the shared 'auto-merge all non-major updates' rule.",
+      "matchPackageNames": [
+        "kubernetes/kubernetes",
+        "https://github.com/datreeio/CRDs-catalog"
+      ],
+      "automerge": false,
+      "dependencyDashboardApproval": true
+    }
+  ],
+  "customManagers": [
+    {
+      "description": "Pinned build-toolchain versions in justfile and ci.yaml, declared via a `# renovate: datasource=... depName=...` comment on the line above — the same convention already used for PROMETHEUS_OPERATOR_VERSION, extended to the files it didn't previously cover.",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^justfile$/",
+        "/^\\.github/workflows/ci\\.yaml$/"
+      ],
+      "matchStrings": [
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)(?: extractVersion=(?<extractVersion>\\S+))?\\s+\\S+\\s*:=\\s*\"(?<currentValue>[^\":]+)\"",
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)(?: extractVersion=(?<extractVersion>\\S+))?\\s+\\S+:\\s*(?<currentValue>\\S+)",
+        "# renovate: datasource=docker depName=(?<depName>\\S+)\\s+\\S+\\s*:=\\s*\"[^:\"]+:(?<currentValue>[^\"]+)\""
+      ],
+      "datasourceTemplate": "{{{datasource}}}",
+      "depNameTemplate": "{{{depName}}}",
+      "extractVersionTemplate": "{{#if extractVersion}}{{{extractVersion}}}{{/if}}"
+    },
+    {
+      "description": "The community CRD catalog commit justfile pins as crd_catalog_ref — a raw digest, not a released version, so it needs its own git-refs matcher rather than the version-pin one above.",
+      "customType": "regex",
+      "managerFilePatterns": ["/^justfile$/"],
+      "matchStrings": [
+        "# renovate: datasource=git-refs depName=(?<packageName>\\S+) currentValue=(?<currentValue>\\S+)\\s+crd_catalog_ref := \"(?<currentDigest>[a-f0-9]+)\""
+      ],
+      "datasourceTemplate": "git-refs",
+      "depNameTemplate": "{{{packageName}}}",
+      "packageNameTemplate": "{{{packageName}}}"
     }
   ]
 }

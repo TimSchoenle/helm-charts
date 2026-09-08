@@ -54,13 +54,16 @@ api_versions := configs / "render-api-versions.txt"
 
 # `just plugins` installs these and the CI composite action calls that recipe, so a plugin bump is
 # a single edit here rather than one per workflow.
+# renovate: datasource=github-tags depName=helm-unittest/helm-unittest extractVersion=^v(?<version>.*)$
 helm_unittest_version := "1.1.2"
+# renovate: datasource=github-tags depName=dadav/helm-schema
 helm_schema_version := "0.18.1"
 
 # JSON Schema engine for `just check-config`. A pinned single binary installed by release URL,
 # exactly as `kubeconform` already is, rather than a `pip install` inside a recipe: the scripts in
 # `.github/scripts` are stdlib + PyYAML, and on the Git Bash shell this repository is developed
 # from, a pip install is the difference between a gate that runs locally and one that does not.
+# renovate: datasource=github-tags depName=santhosh-tekuri/jsonschema
 jv_version := "v6.0.3"
 
 # Linter for `.github/scripts`, which is 11,000 lines of Python holding every gate here and had
@@ -72,12 +75,15 @@ jv_version := "v6.0.3"
 # Pinned rather than floating because a linter is a gate: a new release that adds a rule would
 # turn a pull request red for something its author did not write, and the fix would be a version
 # bump made under time pressure rather than a considered one.
+# renovate: datasource=github-tags depName=astral-sh/ruff extractVersion=^v(?<version>.*)$
 ruff_version := "0.16.3"
 
 # Registry client and signature verifier for `just contracts`. Only the contract refresh needs
 # these — every gate that reads a contract reads the committed file — which is why they are absent
 # from the `check` aggregate and from every job but the Documentation one.
+# renovate: datasource=github-tags depName=oras-project/oras extractVersion=^v(?<version>.*)$
 oras_version := "1.3.3"
+# renovate: datasource=github-tags depName=sigstore/cosign
 cosign_version := "v3.1.3"
 
 # The workflow identity a contract must be signed by before it will be vendored. Anything else is
@@ -110,9 +116,11 @@ contract_signer := "https://github.com/TimSchoenle/[^/]+/.github/workflows/relea
 # StatefulSet schema to, and the release every chart's Kubernetes `$ref` names. The references are
 # not derived from this value, so `just sync-kube-refs` is what carries a change here into the
 # charts — the CI documentation job runs it, and `just check-kube-refs` reports the gap.
+# renovate: datasource=github-tags depName=kubernetes/kubernetes extractVersion=^v(?<version>.*)$
 kube_version := "1.34.0"
 
 # promtool comes from the official Prometheus image, so there is no binary to pin a checksum for.
+# renovate: datasource=docker depName=prom/prometheus
 prom_image := "prom/prometheus:v3.7.3"
 
 # The namespace the rendered Prometheus rules are scoped to. Every suite's `scoping_test.yml`
@@ -136,6 +144,7 @@ target_branch := "origin/main"
 # `rules[].sessionPersistence`, `filters[].externalAuth`, `spec.useDefaultGateways` — that a
 # standard-channel cluster prunes at apply time. That looseness is inherited rather than chosen;
 # it already applied to `kubeconform` before any chart value referenced the catalog.
+# renovate: datasource=git-refs depName=https://github.com/datreeio/CRDs-catalog currentValue=main
 crd_catalog_ref := "866b2653a5334db9aed20ad74701e20fd464471b"
 
 # PodMonitor and the other operator CRDs are not part of the Kubernetes API surface, so their

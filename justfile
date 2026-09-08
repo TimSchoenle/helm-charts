@@ -82,7 +82,7 @@ ruff_version := "0.16.3"
 # these — every gate that reads a contract reads the committed file — which is why they are absent
 # from the `check` aggregate and from every job but the Documentation one.
 # renovate: datasource=github-tags depName=oras-project/oras extractVersion=^v(?<version>.*)$
-oras_version := "1.3.3"
+oras_version := "1.3.4"
 # renovate: datasource=github-tags depName=sigstore/cosign
 cosign_version := "v3.1.3"
 

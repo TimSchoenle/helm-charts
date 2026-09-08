@@ -422,11 +422,13 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read # to checkout code
-    # Whether any chart changed is derived from the diff against the target branch. The install
-    # job needs the same answer and gates on this one anyway, so it is published here rather
-    # than re-derived by a second `ct list-changed` run there.
+    # Whether any chart changed, and which ones, is derived from the diff against the target
+    # branch. The install job needs the same answer — as a JSON array, to fan its matrix out one
+    # job per changed chart — so it is published here rather than re-derived by a second
+    # `ct list-changed` run there.
     outputs:
       changed: ${{ steps.list-changed.outputs.changed }}
+      changed-charts: ${{ steps.list-changed.outputs.charts }}
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
@@ -456,9 +458,15 @@ jobs:
       - name: Run chart-testing (list-changed)
         id: list-changed
         run: |
-          if [[ -n "$(just lint-changed)" ]]; then
+          changed="$(just lint-changed)"
+          if [[ -n "${changed}" ]]; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
+          {
+            echo "charts<<CHARTS_EOF"
+            jq --raw-input --slurp --compact-output 'split("\n") | map(select(length > 0))' <<< "${changed}"
+            echo "CHARTS_EOF"
+          } >> "$GITHUB_OUTPUT"
 
       # `just lint` covers both halves: `helm lint` for the library chart, which `ct` cannot lint
       # at all, and `ct lint` for every chart that changed. It is a no-op when nothing changed.
@@ -496,7 +504,7 @@ jobs:
       - name: Install kubeconform
         env:
           # renovate: datasource=github-tags depName=yannh/kubeconform
-          KUBECONFORM_VERSION: v0.7.0
+          KUBECONFORM_VERSION: v0.8.0
         run: |
           set -euo pipefail
           curl -fsSL "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz" | sudo tar -xz -C /usr/local/bin kubeconform
@@ -787,15 +795,23 @@ jobs:
             echo '```'
           } >> "${GITHUB_STEP_SUMMARY}"
   install:
-    name: Install & Verify (k8s ${{ matrix.kubernetes }})
+    name: Install & Verify (${{ matrix.chart }}, k8s ${{ matrix.kubernetes }})
     needs: [lint]
     runs-on: ubuntu-latest
     permissions:
       contents: read # to checkout code
+    # One job per changed chart per Kubernetes version, rather than one job per Kubernetes
+    # version that installs every changed chart in turn. A PR touching three charts used to pay
+    # for their `ct install --upgrade` runs one after another inside a single job; now they run
+    # as separate jobs the runner schedules in parallel. `chart` comes from `lint`'s
+    # `changed-charts` output, a JSON array; a PR that changes nothing renders it `[]`, which
+    # gives this job zero matrix combinations and skips it entirely — the same outcome the
+    # `if: needs.lint.outputs.changed == 'true'` guards on every step used to produce.
     strategy:
       fail-fast: false
       matrix:
         kubernetes: ['v1.31.0', 'v1.34.0']
+        chart: ${{ fromJson(needs.lint.outputs['changed-charts']) }}
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
@@ -819,11 +835,38 @@ jobs:
       - name: Set up chart-testing
         uses: helm/chart-testing-action@6ec842c01de15ebb84c8627d2744a0c2f2755c9f # v2.8.0
 
+      # Every chart in the matrix that shares a Kubernetes version pulls the identical
+      # `kindest/node` image — a few hundred MB from Docker Hub. Splitting the old two install
+      # jobs into one per chart multiplies that pull by however many charts a PR touches, run
+      # concurrently, which is exactly the shape that trips Docker Hub's anonymous-pull rate
+      # limit. Restoring a `docker save` tarball from the Actions cache instead means only the
+      # first job for a given Kubernetes version ever pulls from Docker Hub; the rest load it
+      # from cache in a few seconds. Keyed on the version alone: a `kindest/node` tag is a
+      # released image and does not change under us.
+      - name: Cache kind node image
+        id: cache-kind-node-image
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: /tmp/kind-node-image.tar
+          key: kind-node-image-${{ matrix.kubernetes }}
+
+      - name: Load cached kind node image
+        if: steps.cache-kind-node-image.outputs.cache-hit == 'true'
+        run: docker load --input /tmp/kind-node-image.tar
+
+      - name: Pull kind node image
+        if: steps.cache-kind-node-image.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          docker pull "kindest/node:${{ matrix.kubernetes }}"
+          docker save --output /tmp/kind-node-image.tar "kindest/node:${{ matrix.kubernetes }}"
+
       # Three nodes, because `--upgrade` rolls every workload at once and a single node cannot
       # schedule the rolling-update surge alongside the datastore StatefulSets it is also
-      # replacing. See the header of the config for what that deadlock looks like.
+      # replacing. See the header of the config for what that deadlock looks like. kind still
+      # pulls `node_image` if it is missing, but the step above has already loaded it into the
+      # runner's local Docker, so this never touches the network.
       - name: Create kind cluster
-        if: needs.lint.outputs.changed == 'true'
         uses: helm/kind-action@06c1ae10762d3b9c1644e7fe69596ae519e015a2 # v1.15.0
         with:
           config: ./.github/configs/kind.yaml
@@ -834,7 +877,6 @@ jobs:
       # this the install can start while they are still NotReady, land everything on the one node
       # that is, and hit exactly the capacity limit the extra nodes were added to remove.
       - name: Wait for every node to be ready
-        if: needs.lint.outputs.changed == 'true'
         run: kubectl wait --for=condition=Ready nodes --all --timeout=180s
 
       # Charts that ship PodMonitors or PrometheusRules fail to render without the Prometheus
@@ -844,10 +886,9 @@ jobs:
       # Server-side apply because the CRD schemas exceed the annotation size limit that
       # client-side `kubectl apply` would hit.
       - name: Install Prometheus Operator CRDs
-        if: needs.lint.outputs.changed == 'true'
         env:
           # renovate: datasource=github-releases depName=prometheus-operator/prometheus-operator
-          PROMETHEUS_OPERATOR_VERSION: v0.93.0
+          PROMETHEUS_OPERATOR_VERSION: v0.93.1
         run: |
           set -euo pipefail
           base="https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/${PROMETHEUS_OPERATOR_VERSION}/example/prometheus-operator-crd"
@@ -862,8 +903,7 @@ jobs:
       # the recipe explains how new charts are partitioned out of it. `origin/main` is named in
       # both the recipe and ct.yaml — keep the two in step.
       - name: Run chart-testing (install & upgrade)
-        if: needs.lint.outputs.changed == 'true'
-        run: just test-install
+        run: just test-install '${{ matrix.chart }}'
 
   renovate-validate:
     name: Validate Renovate Config
@@ -883,3 +923,52 @@ jobs:
 
       - name: Validate Renovate configuration
         uses: suzuki-shunsuke/github-action-renovate-config-validator@ee9f69e1f683ed0d08225086482b34fc9abe9300 # v2.1.0
+
+  # The single job branch protection requires, instead of every job above individually.
+  #
+  # `install` no longer works as a required check by itself: its matrix is one job per changed
+  # chart, so the set of check names it produces is different on every PR, and a required check
+  # that a PR can simply not produce (nothing changed, so `install` runs zero jobs) blocks the
+  # merge forever rather than passing. Depending on this job instead — one stable name, always
+  # produced — is what makes the deeper matrix compatible with a required check at all.
+  #
+  # `if: always()` is what makes this job run even when something above it failed; without it, a
+  # failed dependency would skip this job too, and a skipped required check blocks a merge no
+  # differently than a pending one, silently rather than with the red X a failure gives.
+  ci:
+    name: CI
+    if: always()
+    needs:
+      - docs
+      - unit-test
+      - rule-test
+      - e2e
+      - lint-python
+      - lint
+      - validate-manifests
+      - immutable-fields
+      - values-docs
+      - policy-scan
+      - config-contracts
+      - contract-diff
+      - install
+      - renovate-validate
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+
+      # "skipped" passes deliberately: `install` and `contract-diff` both skip outright when
+      # there is nothing for them to do (no chart changed; not a pull_request event), and that is
+      # not a failure. Only "failure" and "cancelled" fail this job.
+      - name: Check that every required job passed
+        run: |
+          echo '${{ toJson(needs) }}' | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          if [[ "${{ contains(needs.*.result, 'failure') }}" == "true" ]] || \
+             [[ "${{ contains(needs.*.result, 'cancelled') }}" == "true" ]]; then
+            echo "One or more required jobs did not succeed."
+            exit 1
+          fi

@@ -75,7 +75,7 @@ jv_version := "v6.0.3"
 # Pinned rather than floating because a linter is a gate: a new release that adds a rule would
 # turn a pull request red for something its author did not write, and the fix would be a version
 # bump made under time pressure rather than a considered one.
-# renovate: datasource=github-tags depName=astral-sh/ruff extractVersion=^v(?<version>.*)$
+# renovate: datasource=github-tags depName=astral-sh/ruff extractVersion=^v?(?<version>.*)$
 ruff_version := "0.16.3"
 
 # Registry client and signature verifier for `just contracts`. Only the contract refresh needs

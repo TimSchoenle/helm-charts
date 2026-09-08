@@ -177,7 +177,8 @@ test-rules chart='':
 test-e2e chart:
     bash {{ scripts }}/e2e/{{ chart }}.sh
 
-# chart-testing install & upgrade for every chart that changed. Needs a Kubernetes cluster.
+# chart-testing install & upgrade for one chart, or every chart that changed. Needs a Kubernetes
+# cluster.
 #
 # `--upgrade` is what makes this an upgrade test rather than only an install test: for every changed
 # chart, `ct` first installs the revision on the target branch and then upgrades it in place to the
@@ -197,33 +198,46 @@ test-e2e chart:
 # partitioned by whether they exist on the target branch, and only the pre-existing ones are put
 # through `--upgrade`; new charts get a plain install, which is the entire test that is meaningful
 # for them.
-[doc("chart-testing install & upgrade for every changed chart; needs a Kubernetes cluster")]
+#
+# `chart` restricts this to a single chart, so CI can fan a matrix out per changed chart instead of
+# installing every one of them, one at a time, inside a single job. Left empty it still installs
+# everything that changed, for a local run of the whole gate.
+[doc("chart-testing install & upgrade for one chart, or every changed chart; needs a Kubernetes cluster")]
 [group('test')]
-test-install:
+test-install chart='':
     #!/usr/bin/env bash
     set -euo pipefail
 
+    charts=()
+    if [ -n '{{ chart }}' ]; then
+      charts=('{{ chart }}')
+    else
+      while read -r c; do
+        [ -n "$c" ] || continue
+        charts+=("$c")
+      done < <(ct list-changed --config {{ configs }}/ct.yaml)
+    fi
+
     existing=()
     added=()
-    while read -r chart; do
-      [ -n "$chart" ] || continue
-      if git cat-file -e "{{ target_branch }}:${chart}/Chart.yaml" 2>/dev/null; then
-        existing+=("$chart")
+    for c in "${charts[@]}"; do
+      if git cat-file -e "{{ target_branch }}:${c}/Chart.yaml" 2>/dev/null; then
+        existing+=("$c")
       else
-        added+=("$chart")
+        added+=("$c")
       fi
-    done < <(ct list-changed --config {{ configs }}/ct.yaml)
+    done
 
     if [ "${#existing[@]}" -gt 0 ]; then
-      charts="$(IFS=,; echo "${existing[*]}")"
-      echo "==> install & upgrade: ${charts}"
-      ct install --config {{ configs }}/ct.yaml --upgrade --skip-missing-values --charts "$charts"
+      names="$(IFS=,; echo "${existing[*]}")"
+      echo "==> install & upgrade: ${names}"
+      ct install --config {{ configs }}/ct.yaml --upgrade --skip-missing-values --charts "$names"
     fi
 
     if [ "${#added[@]}" -gt 0 ]; then
-      charts="$(IFS=,; echo "${added[*]}")"
-      echo "==> install (new chart, no previous revision): ${charts}"
-      ct install --config {{ configs }}/ct.yaml --charts "$charts"
+      names="$(IFS=,; echo "${added[*]}")"
+      echo "==> install (new chart, no previous revision): ${names}"
+      ct install --config {{ configs }}/ct.yaml --charts "$names"
     fi
 
     if [ "${#existing[@]}" -eq 0 ] && [ "${#added[@]}" -eq 0 ]; then

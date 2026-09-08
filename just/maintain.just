@@ -50,6 +50,42 @@ check-kube-refs version=kube_version:
     "$python" {{ scripts }}/kube-schema-refs.py '{{ version }}' --charts {{ charts }} --check
 
 # --------------------------------------------------------------------------------------------
+# Kubernetes version floor
+# --------------------------------------------------------------------------------------------
+#
+# No chart states a `kubeVersion`, so `helm install` never refuses a cluster the chart cannot run
+# on — it fails at apply time instead, on whichever object first needed a newer API. Every piece
+# of knowledge needed to prevent that already exists: `charts/common` ships `common.capabilities.*`
+# that branch on the cluster's surface, and `just validate-manifests` proves every chart against a
+# matrix of Kubernetes releases in `.github/workflows/ci.yaml`. `sync-kube-floor` is what carries
+# the lowest entry of that matrix into every `Chart.yaml`, so the floor Helm enforces at install
+# and the floor `validate-manifests` proves cannot disagree — there is no separate constant either
+# could drift from. The CI documentation job runs it, alongside `sync-kube-refs` and
+# `sync-crd-refs`, for the same reason those are there: a bump to the matrix is corrected on the
+# pull request that made it.
+#
+# What counts as the floor, and why it carries a `-0` suffix, lives in the script's own header.
+
+# Repin every chart's `kubeVersion` to the floor `validate-manifests` proves.
+[doc("Repin every chart's kubeVersion to the floor validate-manifests proves")]
+[group('maintain')]
+sync-kube-floor:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    {{ resolve_python }}
+    "$python" {{ scripts }}/kube-version-floor.py --charts {{ charts }}
+
+# Report every chart whose `kubeVersion` is not pinned to that floor, and fail if any is not.
+# Reads only what is checked in, unlike the rewrite.
+[doc("Report every chart whose kubeVersion is not pinned to the validate-manifests floor")]
+[group('maintain')]
+check-kube-floor:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    {{ resolve_python }}
+    "$python" {{ scripts }}/kube-version-floor.py --charts {{ charts }} --check
+
+# --------------------------------------------------------------------------------------------
 # CRD schema references
 # --------------------------------------------------------------------------------------------
 #

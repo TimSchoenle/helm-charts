@@ -71,6 +71,13 @@ jobs:
       - name: Repin CRD schema references
         run: just sync-crd-refs
 
+      # Every chart's `kubeVersion` floor, derived from the lowest entry in the
+      # `validate-manifests` matrix below so the two cannot disagree. Placed in the same window as
+      # the two repins above, and before the dependency build for the same reason: `charts/common`
+      # has to carry the current floor before it is packaged into its consumers.
+      - name: Repin Kubernetes version floor
+        run: just sync-kube-floor
+
       - name: Build Helm dependencies
         run: just deps
 

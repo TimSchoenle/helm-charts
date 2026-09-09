@@ -167,7 +167,7 @@ Not nameable, on purpose:
   application, and no coverage rule will ever be written over it.
 - **The secrets directory.** A key delivered as a mounted file — `netcup`'s
   `discord.webhook_url` — is genuinely reached by a chart value, and a `secret` class was drafted
-  for it and dropped: `config-secrets.py` already reconciles credential delivery across every
+  for it and dropped: `terrace-contract secrets` already reconciles credential delivery across every
   channel, and it does so from the *rendered manifests*. A comment asserting the same thing would
   be a second and strictly weaker opinion about a fact something else derives. Such keys are
   written off in the declaration's `unbound` list instead, with a reason that names the gate which

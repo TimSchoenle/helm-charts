@@ -11,9 +11,12 @@ pipeline exists to remove, one layer further up.
 
 Proving the round trip needs a *different* value on each side of it, so this module's whole job
 is choosing one: a probe the chart cannot have produced by accident, synthesised from what the
-contract says the key will accept. `check-config.py` supplies the reading half of the pipeline;
-`generate-contract-tests.py` supplies the walking and the writing; this is the model, and it is
-a pure function of a contract key so every rule below is testable by calling it.
+contract says the key will accept.
+
+**Only `satisfying` and `VALUES_ROOT` are still read here**, by `config_scaffold.py`. Everything
+else this module does — the probes, the assertions, the suites — moved to `terrace-contract tests`,
+and the rest of the file is kept only until scaffolding follows it, at which point the whole thing
+goes. Nothing new should be built on it.
 
 Seven rules here are normative rather than convenient. The first four are about the probe, and
 the last three about the shape of the chart it is written into:

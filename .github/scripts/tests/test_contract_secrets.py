@@ -40,8 +40,8 @@ sys.path.insert(0, str(SCRIPTS))
 
 import config_contract as cc  # noqa: E402
 from config_declaration import Consumer, Declaration, Document, Source  # noqa: E402
-from config_gate_container import ContainerView  # noqa: E402
-from config_secrets import (  # noqa: E402
+from config_secrets import (
+    ContainerView,  # noqa: E402
     Declared,
     Ledger,
     Reconciler,

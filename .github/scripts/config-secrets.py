@@ -17,8 +17,8 @@ red pipeline on a pull request that changed nothing. A follow-up promotes it onc
 here are triaged, and the promotion is the last line of `main` — the findings are already
 `config_report.Finding`s at the right level, so nothing else moves.
 
-The model lives in `config_secrets.py`; this file is the loop, the layout and the exit status,
-matching how `check-config.py` sits above the gates it composes.
+The model lives in `config_secrets.py`; this file is the loop, the layout and the exit status —
+the same split `terrace-contract` makes between a rule and the binary that decides an exit code.
 """
 
 from __future__ import annotations

@@ -7,7 +7,7 @@
 #
 # Prerequisites, per group:
 #
-#   contracts                   python3 with PyYAML; jv, for `just check-config`
+#   contracts                   python3 with PyYAML; terrace-contract, for the gates
 #   contracts                   oras and cosign, for `just contracts` alone — the one networked
 #                               recipe in the repository, and not part of `just check`
 #   deps, docs, render, test    helm (+ `just plugins`), python3 with PyYAML
@@ -59,17 +59,26 @@ helm_unittest_version := "1.1.2"
 # renovate: datasource=github-tags depName=dadav/helm-schema
 helm_schema_version := "0.18.1"
 
-# JSON Schema engine for `just check-config`. A pinned single binary installed by release URL,
-# exactly as `kubeconform` already is, rather than a `pip install` inside a recipe: the scripts in
-# `.github/scripts` are stdlib + PyYAML, and on the Git Bash shell this repository is developed
-# from, a pip install is the difference between a gate that runs locally and one that does not.
-# renovate: datasource=github-tags depName=santhosh-tekuri/jsonschema
-jv_version := "v6.0.3"
+# The shared contract toolchain, which is what the gates in `just/contracts.just` now are.
+#
+# It replaces ~2,000 lines of Python here and the pinned `jv` binary that Python delegated JSON
+# Schema to. The rules did not move sideways: they moved *up*, into a binary every implementation
+# of the contract format shares, so a rule this repository proved against nine charts is the same
+# rule a Java service's build runs. See `docs/contract-cli-plan.md` in TimSchoenle/terrace-config.
+#
+# Pinned as a single binary by release URL, exactly as `kubeconform` and `ruff` already are, and
+# for the reason `jv` was: the scripts here are stdlib + PyYAML, and on the Git Bash shell this
+# repository is developed from, an install step that needs a toolchain is the difference between a
+# gate that runs locally and one that does not.
+#
+# `TERRACE_CONTRACT_BIN` overrides it, which is what makes a chart-side fix testable against an
+# unreleased build rather than waiting for a release to prove it.
+# renovate: datasource=github-tags depName=TimSchoenle/terrace-config extractVersion=^terrace-contract-v(?<version>.*)$
+terrace_contract_version := "0.1.0"
 
-# Linter for `.github/scripts`, which is 11,000 lines of Python holding every gate here and had
-# none until `just lint-python` landed. Pinned as a single binary by release URL for exactly the
-# reason `jv` above is: a `pip install` inside a recipe is the difference between a gate that runs
-# on the Git Bash shell this repository is developed from and one that does not. ruff ships that
+# Linter for `.github/scripts`. Pinned as a single binary by release URL for exactly the reason
+# `terrace-contract` above is: a `pip install` inside a recipe is the difference between a gate
+# that runs on the Git Bash shell this repository is developed from and one that does not. ruff ships that
 # way; mypy does not, which is why type checking is not part of the gate — see `just/lint.just`.
 #
 # Pinned rather than floating because a linter is a gate: a new release that adds a rule would
@@ -174,6 +183,24 @@ if [ -z "$python" ]; then
 fi
 '''
 
+# The contract toolchain, resolved the way `resolve_python` resolves an interpreter: an override
+# first, then PATH, and a message naming the fix rather than a skipped gate. A recipe that needs an
+# external binary and cannot find it fails saying so — the posture every pinned tool here takes.
+resolve_contract := '''
+contract="${TERRACE_CONTRACT_BIN:-}"
+if [ -z "$contract" ] && command -v terrace-contract >/dev/null 2>&1; then
+  contract="terrace-contract"
+fi
+if [ -z "$contract" ]; then
+  echo "error: terrace-contract is not on PATH. It is the shared toolchain the configuration" >&2
+  echo "       gates delegate to; install the pinned release, or set TERRACE_CONTRACT_BIN to a" >&2
+  echo "       local build:" >&2
+  echo "         cargo build --release --manifest-path <terrace-config>/cli/Cargo.toml" >&2
+  echo "         export TERRACE_CONTRACT_BIN=<terrace-config>/cli/target/release/terrace-contract" >&2
+  exit 1
+fi
+'''
+
 # --------------------------------------------------------------------------------------------
 # Entry points
 # --------------------------------------------------------------------------------------------
@@ -201,7 +228,7 @@ default:
 # the other three.
 [doc("Every gate CI runs that does not need a Kubernetes cluster")]
 [group('meta')]
-check: deps test validate-manifests check-immutable check-config check-contract-coverage check-config-bindings check-config-shapes check-config-readme check-contract-tests check-values-docs check-preset-schema test-contract-union lint-python lint lint-policy
+check: deps test validate-manifests check-immutable check-config check-contract-coverage check-config-bindings check-config-shapes check-config-readme check-contract-tests check-values-docs check-preset-schema test-contract-scripts lint-python lint lint-policy
 
 # Install the pinned Helm plugins. The CI composite action calls this recipe too, so the versions
 # above are the only place they are declared.

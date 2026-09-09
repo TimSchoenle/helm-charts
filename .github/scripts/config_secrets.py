@@ -3,7 +3,8 @@
 
 Forty-seven key declarations across this repository carry `secret: true`, and until this module
 existed no document anywhere said what they are, how each one reaches the process that reads it,
-or which pods end up holding it. That gap is not cosmetic. The gates in `config_gate_container.py`
+or which pods end up holding it. That gap is not cosmetic. The container gates, now in
+`terrace-contract`,
 are structurally unable to close it: gate 3 asks whether every *delivered* file name is known to
 the contract, so it rejects a name nothing declares and is blind by construction to a declared key
 nothing supplies. A credential that no channel delivers renders cleanly, passes every gate, and
@@ -36,7 +37,7 @@ Three conclusions, and the scope of each is load-bearing:
                   own image's contract does not. A pod holding a credential its binary never reads
                   is a least-privilege defect, and it is scoped per container against that one
                   image's contract — never against the union, for the reason
-                  `config_gate_container.py`'s docstring gives at length.
+                  the container gates' own documentation gives at length.
 
 **Not duplicating gate 3.** Gate 3 already errors on a name unknown to the contract, but only for
 a file inside a *resolved* secrets directory on a container the declaration lists as a consumer of
@@ -69,11 +70,15 @@ cannot yet diverge; if that changes, it changes in `config_contract.py` first.
 
 from __future__ import annotations
 
+import json
 import re
+import tomllib
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+import yaml
 
 import config_contract as cc
 from config_declaration import (
@@ -84,10 +89,70 @@ from config_declaration import (
     declared,
     vendored_for,
 )
-from config_gate_container import ContainerView
-from config_gate_document import parse_document
-from config_manifests import containers_of, digest_of, load_manifests, pod_spec, select
+from config_manifests import (
+    containers_of,
+    digest_of,
+    environment_of,
+    load_manifests,
+    pod_spec,
+    select,
+)
 from config_paths import read_yaml
+
+# Both of these lived in the gates until those moved into `terrace-contract`. Neither is a gate —
+# one reads a container, the other reads a document — and each has exactly one caller left, which
+# is this file. They come here rather than leaving two modules behind whose only remaining purpose
+# would be to hold them.
+
+
+def parse_document(text: str, form: str) -> Any:
+    """One rendered configuration document, read as the format its declaration names."""
+    if form == "toml":
+        return tomllib.loads(text)
+    if form == "json":
+        return json.loads(text)
+    return yaml.safe_load(text)
+
+
+@dataclass
+class ContainerView:
+    """One container, read once: its environment classified, its loader variables resolved.
+
+    Lived in `config_gate_container.py` until the gates moved into `terrace-contract`, and it moved
+    here rather than staying behind in a module whose only remaining purpose would have been to
+    hold it. The credential inventory is not a gate — it reports what a chart hands each pod and
+    fails on nothing — which is why it is still Python while the gates are not.
+    """
+
+    name: str
+    container: dict[str, Any]
+    values: dict[str, str]
+    opaque: set[str]
+    secrets_dir: str | None = None
+    # Paths named by a `_FILE` variable, so a credential read by indirection is told apart from one
+    # merely lying in a volume nothing will open.
+    indirect: dict[str, str] = field(default_factory=dict)
+
+    @classmethod
+    def read(cls, container: dict[str, Any], union: cc.Union) -> ContainerView:
+        values, opaque = environment_of(container)
+        view = cls(
+            name=str(container.get("name") or "?"),
+            container=container,
+            values=values,
+            opaque=opaque,
+        )
+        for variable, value in values.items():
+            decision = cc.classify(union, variable)
+            if decision.kind == cc.LOADER and (decision.entry or {}).get("role") == "secrets_dir":
+                view.secrets_dir = value
+            elif decision.kind == cc.KEY_ENV_FILE and value and variable not in view.opaque:
+                view.indirect[value] = variable
+        return view
+
+    def visible(self, variable: str) -> bool:
+        """Whether the value is readable from the manifest, rather than a runtime `valueFrom`."""
+        return variable not in self.opaque
 
 # The four ways a value can reach the loader, named as the report prints them. The rendered
 # document is among them and is not a mistake: a key written into the plaintext ConfigMap *is*
@@ -345,7 +410,7 @@ class Elevated:
 class Ledger:
     """What one chart's renders were found to deliver, accumulated across every values file.
 
-    The same shape `config_gate_container.Suppliers` takes one level down, and for the same
+    The same shape the container gates' supplier table takes one level down, and for the same
     reason: neither question is answerable from a single container, so the answer has to outlive
     the walk over one. Keyed by the vendored contract as well as the config path, because "who
     supplies this" is a question about one image — two images declaring one path are two

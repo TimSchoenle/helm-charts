@@ -94,7 +94,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import config_contract as cc
 import config_scaffold as sc
-from config_coverage import first_party_patterns
 from config_declaration import DeclarationError, load_declaration
 
 # `FIRST_PARTY` is the list `just check-contract-coverage` decides from, and it is imported rather
@@ -388,6 +387,21 @@ def _pinned(values: Path) -> tuple[str, str]:
     """The repository and tag the scaffolded `values.yaml` already carries."""
     image = (yaml.safe_load(values.read_text(encoding="utf-8")) or {}).get("image") or {}
     return str(image.get("repository") or ""), str(image.get("tag") or "")
+
+
+def first_party_patterns(path: Path) -> list[str]:
+    """The repositories this organisation builds, from its own list.
+
+    Two lines, and they used to live in `config_coverage.py` beside the gate that reads the same
+    file. That gate is now `terrace-contract coverage`, and this is the only remaining Python
+    reader of the list — so the function comes here rather than leaving a module behind whose whole
+    contents is one import.
+    """
+    return [
+        line.strip()
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.strip().startswith("#")
+    ]
 
 
 def owes_a_declaration(first_party: Path, repository: str) -> bool:

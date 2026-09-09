@@ -103,14 +103,18 @@ check-contracts:
 # becomes a networked one and a third party gains a say in what CI accepts.
 #
 # Every violation is reported before it exits, matching `just render` and `validate-manifests`.
+#
+# The rules are `terrace-contract`'s now, not this repository's. They read the same rendered tree,
+# report the same findings and carry the same reasoning — and they are shared with every other
+# consumer of the contract format instead of being one repository's private 2,000 lines.
 [doc("Validate every chart's rendered configuration against its images' contracts")]
 [group('contracts')]
 check-config out='rendered':
     #!/usr/bin/env bash
     set -euo pipefail
-    {{ resolve_python }}
+    {{ resolve_contract }}
     just render '{{ out }}'
-    "$python" {{ scripts }}/check-config.py '{{ out }}' --charts {{ charts }}
+    "$contract" check --manifests '{{ out }}' --charts {{ charts }} --format github
 
 # Report which charts a configuration contract covers, and which it does not.
 #
@@ -130,8 +134,8 @@ check-config out='rendered':
 check-contract-coverage:
     #!/usr/bin/env bash
     set -euo pipefail
-    {{ resolve_python }}
-    "$python" {{ scripts }}/check-config.py --coverage-only --charts {{ charts }}
+    {{ resolve_contract }}
+    "$contract" coverage --charts {{ charts }} --format github
 
 # Hold every configuration binding marker in a chart's values.yaml against the key it names.
 #
@@ -457,17 +461,19 @@ check-config-shapes:
     {{ resolve_python }}
     "$python" {{ scripts }}/config_shapes.py --charts {{ charts }} --check
 
-# Unit tests for the contract model, over fixtures rather than over a registry.
+# Unit tests for the scripts in `.github/scripts` that still read a contract.
 #
-# The union is tested here and nowhere else: every document in the repository binds a single image,
-# so the merge is the identity in production and these fixtures are the only place its rules run.
-# They are worth keeping — a document read by several binaries is what the format is for, and the
-# merge is what such a document would land on. Beside it are the classification order, the two-step
-# value check and the file-supplyable rule — every one of them normative, and every one of them a
-# place where a plausible-looking implementation quietly under-checks.
-[doc("Unit tests for the contract model, over fixtures rather than over a registry")]
+# It used to be `test-contract-union`, and the union is not tested here any more: the contract
+# model, the classification order, the two-step value check and the three gates moved into
+# `terrace-contract`, and their tests moved with them. A rule and the test that holds it belong in
+# the same repository, or one of them is checking a copy.
+#
+# What is left is this repository's own vocabulary — the `@config` markers, the derived `@schema`
+# blocks, the credential inventory, the generated suites, the diff and the writers — every one of
+# which is a chart convention rather than a fact about the format.
+[doc("Unit tests for the scripts that still read a contract")]
 [group('contracts')]
-test-contract-union:
+test-contract-scripts:
     #!/usr/bin/env bash
     set -euo pipefail
     {{ resolve_python }}

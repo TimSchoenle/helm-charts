@@ -198,8 +198,8 @@ check-contract-coverage:
 check-config-bindings:
     #!/usr/bin/env bash
     set -euo pipefail
-    {{ resolve_python }}
-    "$python" {{ scripts }}/check-config-bindings.py --charts {{ charts }}
+    {{ resolve_contract }}
+    "$contract" bindings --charts {{ charts }} --format github
 
 # Write the chart values a contract's unbound keys are owed, from the contract itself.
 #
@@ -419,8 +419,8 @@ sync-config chart='' *flags: (contracts chart)
 config-shapes:
     #!/usr/bin/env bash
     set -euo pipefail
-    {{ resolve_python }}
-    "$python" {{ scripts }}/config_shapes.py --charts {{ charts }}
+    {{ resolve_contract }}
+    "$contract" shapes --charts {{ charts }}
 
 # Fail when a value's `@schema` block is not what its contract describes.
 #
@@ -458,8 +458,8 @@ config-shapes:
 check-config-shapes:
     #!/usr/bin/env bash
     set -euo pipefail
-    {{ resolve_python }}
-    "$python" {{ scripts }}/config_shapes.py --charts {{ charts }} --check
+    {{ resolve_contract }}
+    "$contract" shapes --charts {{ charts }} --check --format github
 
 # Unit tests for the scripts in `.github/scripts` that still read a contract.
 #

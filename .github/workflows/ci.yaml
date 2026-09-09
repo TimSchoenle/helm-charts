@@ -31,7 +31,6 @@ jobs:
     permissions:
       contents: write # to commit documentation changes
       pull-requests: write # to comment on PRs
-      issues: write # to comment on PRs
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
@@ -196,14 +195,14 @@ jobs:
           token: ${{ steps.generate_token.outputs.token }}
           commit_message: "docs: update chart index in README"
 
-      - name: Comment on PR
+      - name: Compose PR comment body
+        id: comment-body
         if: steps.auto-commit.outputs.changes_detected == 'true' || steps.readme.outputs.changes_detected == 'true'
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         env:
           DOCS_CHANGED: ${{ steps.auto-commit.outputs.changes_detected }}
           README_CHANGED: ${{ steps.readme.outputs.changes_detected }}
         with:
-          github-token: ${{ steps.generate_token.outputs.token }}
           script: |
             const updated = [];
             if (process.env.DOCS_CHANGED === 'true') {
@@ -213,12 +212,15 @@ jobs:
               updated.push('the README chart index');
             }
 
-            await github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: `📚 Automatically updated ${updated.join(' and ')}.`
-            })
+            core.setOutput('body', `📚 Automatically updated ${updated.join(' and ')}.`);
+
+      - name: Comment on PR
+        if: steps.auto-commit.outputs.changes_detected == 'true' || steps.readme.outputs.changes_detected == 'true'
+        uses: TimSchoenle/actions/actions/common/upsert-pr-comment@30bc73a560c7aac65f449b23378b9fd7782f8d39 # tag=actions-common-upsert-pr-comment-v1.1.0
+        with:
+          token: ${{ steps.generate_token.outputs.token }}
+          identifier: render-generated-files
+          body: ${{ steps.comment-body.outputs.body }}
 
       # The other half of the `continue-on-error` above: everything a generator did manage to
       # produce is committed by now, and a generator that failed still fails the job. Last so that

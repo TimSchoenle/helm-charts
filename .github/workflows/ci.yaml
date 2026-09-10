@@ -668,12 +668,46 @@ jobs:
       # so a bump stays the single edit the other pinned tools already are — a copy in this file
       # could disagree with the one a contributor reproduces the job with, which is the drift the
       # whole recipe-based topology exists to prevent.
+      # cosign, because the step below verifies what it downloads. The `docs` job installs it too
+      # and for a different reason — it verifies an *image* before vendoring that image's contract
+      # — and neither job depends on the other, so each installs what it uses. The version comes
+      # from `justfile` in both, so a bump stays one edit.
+      - name: Install cosign
+        run: |
+          set -euo pipefail
+          cosign_version="$(just --evaluate cosign_version)"
+          curl -fsSL -o /tmp/cosign "https://github.com/sigstore/cosign/releases/download/${cosign_version}/cosign-linux-amd64"
+          sudo install -m 0755 /tmp/cosign /usr/local/bin/cosign
+          cosign version
+
       - name: Install terrace-contract
         run: |
           set -euo pipefail
           version="$(just --evaluate terrace_contract_version)"
-          curl -fsSL "https://github.com/TimSchoenle/terrace-config/releases/download/terrace-contract-v${version}/terrace-contract-x86_64-unknown-linux-gnu.tar.gz" \
-            | sudo tar -xz -C /usr/local/bin terrace-contract
+          base="https://github.com/TimSchoenle/terrace-config/releases/download/terrace-contract-v${version}"
+          asset="terrace-contract-${version}-x86_64-unknown-linux-musl.tar.gz"
+
+          # musl rather than gnu: the release is statically linked, so it has no glibc floor and
+          # runs on whatever the runner image happens to be this month.
+          work="$(mktemp -d)"
+          for file in "$asset" SHA256SUMS SHA256SUMS.sig SHA256SUMS.pem; do
+            curl -fsSL --retry 3 -o "${work}/${file}" "${base}/${file}"
+          done
+
+          # The signature over the checksum file, then the checksum over the archive. Keyless, so
+          # what is pinned is the workflow identity that built it rather than a key somebody holds
+          # — the same posture this repository already takes towards a signed *contract*. A gate
+          # that verifies documents while installing its own verifier unchecked is a hole in that
+          # argument.
+          cosign verify-blob "${work}/SHA256SUMS" \
+            --signature "${work}/SHA256SUMS.sig" \
+            --certificate "${work}/SHA256SUMS.pem" \
+            --certificate-identity-regexp '^https://github\.com/TimSchoenle/terrace-config/\.github/workflows/release-cli\.yml@' \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com
+          (cd "$work" && grep -- " ${asset}\$" SHA256SUMS | sha256sum -c -)
+
+          sudo tar -xzf "${work}/${asset}" -C /usr/local/bin terrace-contract
+          rm -rf "$work"
           terrace-contract --version
 
       # PyYAML ships with the runner image's system `python3`, which is what the recipes resolve

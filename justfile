@@ -74,7 +74,7 @@ helm_schema_version := "0.18.1"
 # `TERRACE_CONTRACT_BIN` overrides it, which is what makes a chart-side fix testable against an
 # unreleased build rather than waiting for a release to prove it.
 # renovate: datasource=github-tags depName=TimSchoenle/terrace-config extractVersion=^terrace-contract-v(?<version>.*)$
-terrace_contract_version := "0.1.0"
+terrace_contract_version := "0.2.2"
 
 # Linter for `.github/scripts`. Pinned as a single binary by release URL for exactly the reason
 # `terrace-contract` above is: a `pip install` inside a recipe is the difference between a gate

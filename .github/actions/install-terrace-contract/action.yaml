@@ -1,0 +1,64 @@
+name: 'Install terrace-contract'
+description: >-
+  Installs the pinned `terrace-contract` release, verifying its signature and its checksum first.
+  Every configuration gate in this repository delegates to it, so a job that runs one needs it —
+  and three jobs do, which is why this is an action rather than the same twenty lines three times.
+
+runs:
+  using: "composite"
+  steps:
+    # cosign, because the step below verifies what it downloads. The version comes from `justfile`
+    # rather than being repeated here, so a bump stays the single edit every other pinned tool
+    # already is. `docs` installs cosign for a neighbouring reason — it verifies an *image* before
+    # vendoring that image's contract — and a job that has already done so pays nothing here.
+    - name: Install cosign
+      shell: bash
+      run: |
+        set -euo pipefail
+        if command -v cosign >/dev/null 2>&1; then
+          cosign version
+          exit 0
+        fi
+        cosign_version="$(just --evaluate cosign_version)"
+        curl -fsSL -o /tmp/cosign "https://github.com/sigstore/cosign/releases/download/${cosign_version}/cosign-linux-amd64"
+        sudo install -m 0755 /tmp/cosign /usr/local/bin/cosign
+        cosign version
+
+    - name: Install terrace-contract
+      shell: bash
+      run: |
+        set -euo pipefail
+        version="$(just --evaluate terrace_contract_version)"
+        base="https://github.com/TimSchoenle/terrace-config/releases/download/terrace-contract-v${version}"
+        asset="terrace-contract-${version}-x86_64-unknown-linux-musl.tar.gz"
+
+        # musl rather than gnu: the release is statically linked, so it has no glibc floor and runs
+        # on whatever the runner image happens to be this month.
+        work="$(mktemp -d)"
+        for file in "$asset" SHA256SUMS SHA256SUMS.sig SHA256SUMS.pem; do
+          if ! curl -fsSL --retry 3 -o "${work}/${file}" "${base}/${file}"; then
+            # Said plainly, because the bare curl 404 that used to appear here reads like a broken
+            # URL and is usually not one: this repository pins a version of a tool that lives in
+            # another repository, and until that version is released there is nothing to install.
+            echo "error: terrace-contract v${version} publishes no ${file}." >&2
+            echo "       The gates here delegate to that release. If the version was just bumped," >&2
+            echo "       the release has not been cut yet; if you are testing a change to the" >&2
+            echo "       toolchain itself, build it and set TERRACE_CONTRACT_BIN instead." >&2
+            exit 1
+          fi
+        done
+
+        # The signature over the checksum file, then the checksum over the archive. Keyless, so
+        # what is pinned is the workflow identity that built it rather than a key somebody holds —
+        # the same posture this repository already takes towards a signed *contract*. A gate that
+        # verifies documents while installing its own verifier unchecked is a hole in that argument.
+        cosign verify-blob "${work}/SHA256SUMS" \
+          --signature "${work}/SHA256SUMS.sig" \
+          --certificate "${work}/SHA256SUMS.pem" \
+          --certificate-identity-regexp '^https://github\.com/TimSchoenle/terrace-config/\.github/workflows/release-cli\.yml@' \
+          --certificate-oidc-issuer https://token.actions.githubusercontent.com
+        (cd "$work" && grep -- " ${asset}\$" SHA256SUMS | sha256sum -c -)
+
+        sudo tar -xzf "${work}/${asset}" -C /usr/local/bin terrace-contract
+        rm -rf "$work"
+        terrace-contract --version

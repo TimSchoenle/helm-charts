@@ -103,14 +103,18 @@ check-contracts:
 # becomes a networked one and a third party gains a say in what CI accepts.
 #
 # Every violation is reported before it exits, matching `just render` and `validate-manifests`.
+#
+# The rules are `terrace-contract`'s now, not this repository's. They read the same rendered tree,
+# report the same findings and carry the same reasoning — and they are shared with every other
+# consumer of the contract format instead of being one repository's private 2,000 lines.
 [doc("Validate every chart's rendered configuration against its images' contracts")]
 [group('contracts')]
 check-config out='rendered':
     #!/usr/bin/env bash
     set -euo pipefail
-    {{ resolve_python }}
+    {{ resolve_contract }}
     just render '{{ out }}'
-    "$python" {{ scripts }}/check-config.py '{{ out }}' --charts {{ charts }}
+    "$contract" check --manifests '{{ out }}' --charts {{ charts }} --format github
 
 # Report which charts a configuration contract covers, and which it does not.
 #
@@ -130,8 +134,8 @@ check-config out='rendered':
 check-contract-coverage:
     #!/usr/bin/env bash
     set -euo pipefail
-    {{ resolve_python }}
-    "$python" {{ scripts }}/check-config.py --coverage-only --charts {{ charts }}
+    {{ resolve_contract }}
+    "$contract" coverage --charts {{ charts }} --format github
 
 # Hold every configuration binding marker in a chart's values.yaml against the key it names.
 #
@@ -194,8 +198,8 @@ check-contract-coverage:
 check-config-bindings:
     #!/usr/bin/env bash
     set -euo pipefail
-    {{ resolve_python }}
-    "$python" {{ scripts }}/check-config-bindings.py --charts {{ charts }}
+    {{ resolve_contract }}
+    "$contract" bindings --charts {{ charts }} --format github
 
 # Write the chart values a contract's unbound keys are owed, from the contract itself.
 #
@@ -415,8 +419,8 @@ sync-config chart='' *flags: (contracts chart)
 config-shapes:
     #!/usr/bin/env bash
     set -euo pipefail
-    {{ resolve_python }}
-    "$python" {{ scripts }}/config_shapes.py --charts {{ charts }}
+    {{ resolve_contract }}
+    "$contract" shapes --charts {{ charts }}
 
 # Fail when a value's `@schema` block is not what its contract describes.
 #
@@ -454,20 +458,22 @@ config-shapes:
 check-config-shapes:
     #!/usr/bin/env bash
     set -euo pipefail
-    {{ resolve_python }}
-    "$python" {{ scripts }}/config_shapes.py --charts {{ charts }} --check
+    {{ resolve_contract }}
+    "$contract" shapes --charts {{ charts }} --check --format github
 
-# Unit tests for the contract model, over fixtures rather than over a registry.
+# Unit tests for the scripts in `.github/scripts` that still read a contract.
 #
-# The union is tested here and nowhere else: every document in the repository binds a single image,
-# so the merge is the identity in production and these fixtures are the only place its rules run.
-# They are worth keeping — a document read by several binaries is what the format is for, and the
-# merge is what such a document would land on. Beside it are the classification order, the two-step
-# value check and the file-supplyable rule — every one of them normative, and every one of them a
-# place where a plausible-looking implementation quietly under-checks.
-[doc("Unit tests for the contract model, over fixtures rather than over a registry")]
+# It used to be `test-contract-union`, and the union is not tested here any more: the contract
+# model, the classification order, the two-step value check and the three gates moved into
+# `terrace-contract`, and their tests moved with them. A rule and the test that holds it belong in
+# the same repository, or one of them is checking a copy.
+#
+# What is left is this repository's own vocabulary — the `@config` markers, the derived `@schema`
+# blocks, the credential inventory, the generated suites, the diff and the writers — every one of
+# which is a chart convention rather than a fact about the format.
+[doc("Unit tests for the scripts that still read a contract")]
 [group('contracts')]
-test-contract-union:
+test-contract-scripts:
     #!/usr/bin/env bash
     set -euo pipefail
     {{ resolve_python }}
@@ -512,9 +518,8 @@ test-contract-union:
 explain chart='' pattern='' *flags:
     #!/usr/bin/env bash
     set -euo pipefail
-    {{ resolve_python }}
-    "$python" {{ scripts }}/explain-config.py '{{ chart }}' '{{ pattern }}' \
-      --charts {{ charts }} {{ flags }}
+    {{ resolve_contract }}
+    "$contract" explain '{{ chart }}' '{{ pattern }}' --charts {{ charts }} {{ flags }}
 
 # --------------------------------------------------------------------------------------------
 # The review aid — offline
@@ -556,9 +561,8 @@ explain chart='' pattern='' *flags:
 contract-diff chart='' ref='origin/main' *flags='':
     #!/usr/bin/env bash
     set -euo pipefail
-    {{ resolve_python }}
-    "$python" {{ scripts }}/contract-diff.py {{ chart }} --ref '{{ ref }}' \
-      --charts {{ charts }} {{ flags }}
+    {{ resolve_contract }}
+    "$contract" diff {{ chart }} --since '{{ ref }}' --charts {{ charts }} {{ flags }}
 
 # --------------------------------------------------------------------------------------------
 # The credential surface
@@ -590,8 +594,8 @@ contract-diff chart='' ref='origin/main' *flags='':
 config-secrets *args:
     #!/usr/bin/env bash
     set -euo pipefail
-    {{ resolve_python }}
-    "$python" {{ scripts }}/config-secrets.py --charts {{ charts }} {{ args }}
+    {{ resolve_contract }}
+    "$contract" secrets --charts {{ charts }} {{ args }}
 
 # Report what the charts deliver against the credentials the images declare. Report only.
 #
@@ -613,8 +617,8 @@ config-secrets *args:
 # new, and a report over an established repository is where they earn their triage: a finding that
 # turns out to be a considered design decision belongs in a document, not in a red pipeline on a
 # pull request that changed nothing. A follow-up promotes it once these findings are triaged, and
-# the promotion is one line of `config-secrets.py` — the findings are already `Finding`s at the
-# level each has earned, so nothing else moves.
+# the promotion is `--exit-code` on the line below — the findings are already at the level each has
+# earned, so nothing else moves.
 #
 # Deliberately not in `just check` for the same reason: an aggregate a contributor is expected to
 # run before pushing must not be a place where advisory output accumulates.
@@ -623,9 +627,8 @@ config-secrets *args:
 check-config-secrets out='rendered' *args:
     #!/usr/bin/env bash
     set -euo pipefail
-    {{ resolve_python }}
-    just render '{{ out }}'
-    "$python" {{ scripts }}/config-secrets.py --reconcile '{{ out }}' --charts {{ charts }} {{ args }}
+    {{ resolve_contract }}
+    "$contract" secrets --reconcile '{{ out }}' --charts {{ charts }} {{ args }}
 
 # --------------------------------------------------------------------------------------------
 # The round trip — generated
@@ -689,8 +692,8 @@ check-config-secrets out='rendered' *args:
 contract-tests chart='':
     #!/usr/bin/env bash
     set -euo pipefail
-    {{ resolve_python }}
-    "$python" {{ scripts }}/generate-contract-tests.py {{ chart }} --charts {{ charts }}
+    {{ resolve_contract }}
+    "$contract" tests {{ chart }} --charts {{ charts }}
 
 # Report generated suites that no longer match the contracts they were generated from.
 #
@@ -709,8 +712,8 @@ contract-tests chart='':
 check-contract-tests:
     #!/usr/bin/env bash
     set -euo pipefail
-    {{ resolve_python }}
-    "$python" {{ scripts }}/generate-contract-tests.py --check --charts {{ charts }}
+    {{ resolve_contract }}
+    "$contract" tests --check --charts {{ charts }}
 
 # Write the credential reference each contracted chart's README carries, from the contract.
 #
@@ -732,8 +735,8 @@ check-contract-tests:
 config-readme:
     #!/usr/bin/env bash
     set -euo pipefail
-    {{ resolve_python }}
-    "$python" {{ scripts }}/config_readme.py --charts {{ charts }}
+    {{ resolve_contract }}
+    "$contract" readme --charts {{ charts }}
 
 # Fail when a chart's README credential reference is not what its contract describes.
 #
@@ -746,8 +749,8 @@ config-readme:
 check-config-readme:
     #!/usr/bin/env bash
     set -euo pipefail
-    {{ resolve_python }}
-    "$python" {{ scripts }}/config_readme.py --charts {{ charts }} --check
+    {{ resolve_contract }}
+    "$contract" readme --charts {{ charts }} --check
 
 # --------------------------------------------------------------------------------------------
 # Creating a chart

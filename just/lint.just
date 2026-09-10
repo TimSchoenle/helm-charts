@@ -59,8 +59,8 @@ lint-policy out='rendered':
 #
 # **No type checking.** mypy would be the obvious companion and is deliberately absent: it ships
 # as a pip package rather than a single binary, and this repository has already decided, in
-# `justfile`'s note on `jv`, that a `pip install` inside a recipe is the difference between a
-# gate that reproduces locally and one that does not. Adopting it means solving that first, and
+# `justfile`'s note on `terrace_contract_version`, that a `pip install` inside a recipe is the
+# difference between a gate that reproduces locally and one that does not. Adopting it means solving that first, and
 # doing it badly is worse than the gap.
 #
 # In `just check`, because it asserts, needs no network, no cluster and no render, and runs over
@@ -73,7 +73,7 @@ lint-python:
 
     if ! command -v ruff >/dev/null 2>&1; then
       echo "error: ruff is not on PATH. It is pinned as ruff_version in justfile and installed" >&2
-      echo "       by release URL, exactly as jv and kubeconform are:" >&2
+      echo "       by release URL, exactly as terrace-contract and kubeconform are:" >&2
       echo "       https://github.com/astral-sh/ruff/releases/tag/{{ ruff_version }}" >&2
       exit 1
     fi

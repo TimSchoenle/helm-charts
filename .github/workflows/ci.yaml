@@ -56,6 +56,10 @@ jobs:
       - name: Setup toolchain
         uses: ./.github/actions/setup-toolchain
 
+      # Every configuration gate this job runs delegates to it.
+      - name: Install terrace-contract
+        uses: ./.github/actions/install-terrace-contract
+
       # Every chart types its Kubernetes values by URL, pinned to the release `kube_version` names.
       # Nothing derives those URLs from it, so this repins them before the dependencies are built —
       # `charts/common` has to carry the new version before it is packaged into its consumers, or
@@ -403,8 +407,8 @@ jobs:
       - name: Setup toolchain
         uses: ./.github/actions/setup-toolchain
 
-      # A pinned single binary installed by release URL, exactly as `jv` and kubeconform are, and
-      # not `pip install ruff`: this repository has already decided that a pip install inside a
+      # A pinned single binary installed by release URL, exactly as terrace-contract and
+      # kubeconform are, and not `pip install ruff`: this repository has already decided that a pip install inside a
       # gate is the difference between one that reproduces on a contributor's shell and one that
       # does not. The version comes from `ruff_version` in justfile so a bump stays the single
       # edit every other pinned tool already is.
@@ -662,22 +666,15 @@ jobs:
       - name: Build Helm dependencies
         run: just deps
 
-      # A pinned single binary installed by release URL, exactly as kubeconform is above. Not
-      # `pip install jsonschema`: the scripts in `.github/scripts` are stdlib + PyYAML, and a pip
-      # install inside a recipe is the difference between a gate that reproduces locally on the
-      # Git Bash shell this repository is developed from and one that does not.
+      # A pinned single binary, verified before it is unpacked, exactly as kubeconform is above.
+      # It replaces both the ~2,000 lines of Python that held these gates and the `jv` binary that
+      # Python delegated JSON Schema to, so this one step is two fewer things to install.
       #
-      # The version is read from `jv_version` in justfile rather than repeated here, so a bump
-      # stays the single edit the other pinned tools already are — a copy in this file could
-      # disagree with the one a contributor reproduces the job with, which is the drift the whole
-      # recipe-based topology exists to prevent.
-      - name: Install jv
-        run: |
-          set -euo pipefail
-          version="$(just --evaluate jv_version)"
-          curl -fsSL "https://github.com/santhosh-tekuri/jsonschema/releases/download/${version}/jv-${version}-linux-amd64.tar.gz" \
-            | sudo tar -xz -C /usr/local/bin jv
-          jv --version
+      # The version and the verification live in the action rather than here: three jobs run a
+      # contract gate, and the same twenty lines in three places is how two of them end up pinning
+      # different releases.
+      - name: Install terrace-contract
+        uses: ./.github/actions/install-terrace-contract
 
       # PyYAML ships with the runner image's system `python3`, which is what the recipes resolve
       # to. `actions/setup-python` is deliberately not used, for the same reason as in the docs job.
@@ -689,7 +686,7 @@ jobs:
 
       # Key-level, where the step above is chart-level: it fails when an enrolled chart has
       # a contract key no `# @config` marker in its values.yaml reaches. Reads two committed
-      # files per chart, so it needs neither the render above nor the jv install.
+      # files per chart, so it needs neither the render above nor the toolchain install.
       - name: Check configuration binding markers
         run: just check-config-bindings
 
@@ -724,12 +721,12 @@ jobs:
       # the drift it exists to catch arrives on a Renovate bump, which is exactly the pull request
       # nobody runs `just check` on by hand.
       #
-      # Reads two committed files per chart: no render, no cluster, no `jv`.
+      # Reads two committed files per chart: no render, no cluster, no toolchain install.
       - name: Check generated contract suites
         run: just check-contract-tests
 
-      - name: Contract model unit tests
-        run: just test-contract-union
+      - name: Contract script unit tests
+        run: just test-contract-scripts
 
 
   # What changed in the images' configuration contracts, and what it costs the charts.
@@ -751,7 +748,7 @@ jobs:
   # be charging every pull request for a report only bump pull requests read. And it is advisory
   # where that job is blocking; keeping the two apart is what stops the distinction eroding.
   #
-  # Needs no render, no cluster, no `jv` and no network — the other side comes from `git show`,
+  # Needs no render, no cluster, no toolchain and no network — the other side is `git show`,
   # exactly as every gate in the group reads the committed file.
   contract-diff:
     name: Contract Diff
@@ -776,6 +773,10 @@ jobs:
 
       - name: Setup toolchain
         uses: ./.github/actions/setup-toolchain
+
+      # Every configuration gate this job runs delegates to it.
+      - name: Install terrace-contract
+        uses: ./.github/actions/install-terrace-contract
 
       # Written to the step summary rather than printed, because that is where a reviewer of a
       # bump looks first and it is the one surface that survives the log being collapsed. Also

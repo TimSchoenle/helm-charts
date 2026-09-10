@@ -95,7 +95,8 @@ than reporting nothing. That reasoning does not carry here: this gate compares t
 — `values.yaml` and `contracts/*.json` — and whether the second is current is
 `just check-contracts`' question, answered in one line. Refusing to run during the single CI run
 where a bump holds a new digest and the old contract would also remove this report from the exact
-pull request it was written for. Same posture, and the same paragraph, as `config-secrets.py`.
+pull request it was written for. Same posture, and the same paragraph, as `terrace-contract
+secrets`.
 
 Offline and render-free: two committed files per chart, no cluster, no network, no `helm template`.
 

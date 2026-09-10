@@ -112,7 +112,7 @@ writes is exactly what `just check-config-shapes` demands, and neither can drift
 They are also in the same file as the rules they apply, because `config_scaffold` imports those
 rules to write a new chart's blocks — and the alternative was `config-shapes.py` beside
 `config_shapes.py`, a pair differing by one character, which `entry.py` already names as the wart
-it is for `config-secrets.py`. The recipes spell the path either way.
+it is for `check-config.py`. The recipes spell the path either way.
 
 --------------------------------------------------------------------------------------------
 Resolving a value to its key

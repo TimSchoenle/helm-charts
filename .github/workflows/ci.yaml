@@ -57,9 +57,11 @@ jobs:
       - name: Setup toolchain
         uses: ./.github/actions/setup-toolchain
 
-      # Every configuration gate this job runs delegates to it.
+      # Every configuration gate this job runs delegates to it. `$/` rather than `./`: it resolves
+      # the action from this repository *at the running commit* rather than from whatever is on
+      # disk, so a step that modified the checkout before this one cannot change what runs here.
       - name: Install terrace-contract
-        uses: ./.github/actions/install-terrace-contract
+        uses: $/.github/actions/install-terrace-contract
 
       # Every chart types its Kubernetes values by URL, pinned to the release `kube_version` names.
       # Nothing derives those URLs from it, so this repins them before the dependencies are built —
@@ -672,7 +674,7 @@ jobs:
       # contract gate, and the same twenty lines in three places is how two of them end up pinning
       # different releases.
       - name: Install terrace-contract
-        uses: ./.github/actions/install-terrace-contract
+        uses: $/.github/actions/install-terrace-contract
 
       # PyYAML ships with the runner image's system `python3`, which is what the recipes resolve
       # to. `actions/setup-python` is deliberately not used, for the same reason as in the docs job.
@@ -774,7 +776,7 @@ jobs:
 
       # Every configuration gate this job runs delegates to it.
       - name: Install terrace-contract
-        uses: ./.github/actions/install-terrace-contract
+        uses: $/.github/actions/install-terrace-contract
 
       # Written to the step summary rather than printed, because that is where a reviewer of a
       # bump looks first and it is the one surface that survives the log being collapsed. Also

@@ -39,6 +39,12 @@
       "startupProbe" (merge (dict "periodSeconds" 10 "timeoutSeconds" 5 "failureThreshold" 30) (deepCopy $probe))
       "livenessProbe" (merge (dict "periodSeconds" 30 "timeoutSeconds" 5 "failureThreshold" 5) (deepCopy $probe))
       "readinessProbe" (merge (dict "periodSeconds" 10 "timeoutSeconds" 5 "failureThreshold" 3) (deepCopy $probe))
+      "podAntiAffinity" $trawl.podAntiAffinity
+      "affinity" $trawl.affinity
+      "nodeSelector" $trawl.nodeSelector
+      "tolerations" $trawl.tolerations
+      "topologySpreadConstraints" $trawl.topologySpreadConstraints
+      "priorityClassName" $trawl.priorityClassName
     ) | fromYaml }}
 {{- $ctx := dict "Values" $values "Chart" $.Chart "Release" $.Release "Capabilities" $.Capabilities "Template" $.Template "Files" $.Files }}
 {{- $home := "/home/trawl" }}
@@ -85,7 +91,7 @@ kind: Deployment
 metadata:
   {{- include "tankovault.datastore.metadata" (dict "ctx" . "component" "trawl") | nindent 2 }}
 spec:
-  replicas: 1
+  replicas: {{ $trawl.replicaCount }}
   revisionHistoryLimit: 3
   selector:
     matchLabels:

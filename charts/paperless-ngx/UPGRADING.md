@@ -12,6 +12,15 @@ Migration notes, newest first. Only the versions listed here need anything beyon
 The values contract is enforced by `values.schema.json`, so a key a new major removed or renamed
 fails the render with the offending path named, rather than being silently ignored.
 
+## 2.3.4
+
+**Bug fix: `affinity`, `podAntiAffinity` and `topologySpreadConstraints` now reach the bundled
+components.** The scoped context built for `gotenberg`, `tika`, `postgresql` and `valkey` already
+forwarded `nodeSelector`, `tolerations` and `priorityClassName` from the top level, but silently
+dropped these three — so a release that set, say, top-level `podAntiAffinity: hard` got it on the
+main paperless-ngx pod only, with no error or warning that the bundled datastores were exempt. If
+your release already sets any of the three, the bundled components now pick it up too.
+
 ## 2.0.0
 
 ### Resource t-shirt sizes are gone

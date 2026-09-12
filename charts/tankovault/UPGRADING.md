@@ -22,6 +22,34 @@ Some of them require a manual step that nothing will remind you about:
 The values contract is enforced by `values.schema.json`, so a key a new major removed or
 renamed fails the render with the offending path named, rather than being silently ignored.
 
+## 5.9.0
+
+**Per-service node placement, and a replica count for TRAWL.**
+
+`nodeSelector`, `affinity`, `podAntiAffinity`, `tolerations`, `topologySpreadConstraints` and
+`priorityClassName` are now settable under each `services.<name>`, and under `trawl` and
+`valkey`, falling back to `defaults.*` (services) or rendering with no placement constraint at
+all (`trawl`/`valkey`, which have no `defaults` block to fall back to) when left unset. Nothing
+sets these anywhere today, so an existing release renders byte-identical.
+
+This is what lets a subset of a release — say `worker` and `trawl` — run on a different node
+pool than the rest, without moving the whole release:
+
+```yaml
+services:
+  worker:
+    nodeSelector:
+      kubernetes.io/arch: arm64
+trawl:
+  nodeSelector:
+    kubernetes.io/arch: arm64
+```
+
+`trawl.replicaCount` is also new (default `1`). TRAWL is stateless — its solved-session cache
+lives in `redis`, not in the pod — so scaling it is correctness-safe, but each replica keeps its
+own warm browser pool sized by `browserPoolSize`: memory cost scales by `replicaCount *
+browserPoolSize`, not by `replicaCount` alone.
+
 ## 5.4.0
 
 **Sentry error reporting and end-to-end tracing, off by default and inert while it is off.**

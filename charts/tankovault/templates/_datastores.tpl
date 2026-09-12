@@ -33,7 +33,11 @@ app.kubernetes.io/component: {{ .component }}
 A scoped render context for a bundled datastore, so `common.resources`,
 `common.containerSecurityContext` and `common.podSecurityContext` apply to it too.
 
-Args: ctx (root), component, resources, runAsUser, readOnlyRootFilesystem.
+Args: ctx (root), component, resources, runAsUser, readOnlyRootFilesystem, and optionally
+podAntiAffinity/affinity/nodeSelector/tolerations/topologySpreadConstraints/priorityClassName.
+Unlike the per-service workloads, a bundled datastore has no `defaults` block to fall back to —
+these five are taken from the caller's own values verbatim, exactly like `resources` and `image`
+already are, so a datastore that sets none of them renders with no placement constraints at all.
 */}}
 {{- define "tankovault.datastore.values" -}}
 {{- $ctx := .ctx -}}
@@ -59,6 +63,12 @@ Args: ctx (root), component, resources, runAsUser, readOnlyRootFilesystem.
       "startupProbe" (.startupProbe | default (dict "enabled" false))
       "livenessProbe" (.livenessProbe | default (dict "enabled" false))
       "readinessProbe" (.readinessProbe | default (dict "enabled" false))
+      "podAntiAffinity" (.podAntiAffinity | default "")
+      "affinity" (.affinity | default dict)
+      "nodeSelector" (.nodeSelector | default dict)
+      "tolerations" (.tolerations | default list)
+      "topologySpreadConstraints" (.topologySpreadConstraints | default list)
+      "priorityClassName" (.priorityClassName | default "")
 -}}
 {{- toYaml $values -}}
 {{- end -}}

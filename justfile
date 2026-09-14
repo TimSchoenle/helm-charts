@@ -126,7 +126,7 @@ contract_signer := "https://github.com/TimSchoenle/[^/]+/.github/workflows/relea
 # not derived from this value, so `just sync-kube-refs` is what carries a change here into the
 # charts — the CI documentation job runs it, and `just check-kube-refs` reports the gap.
 # renovate: datasource=github-tags depName=kubernetes/kubernetes extractVersion=^v(?<version>.*)$
-kube_version := "1.34.0"
+kube_version := "1.34.11"
 
 # promtool comes from the official Prometheus image, so there is no binary to pin a checksum for.
 # renovate: datasource=docker depName=prom/prometheus

@@ -9,7 +9,7 @@
 # Chart:       tankovault
 # Declaration: charts/tankovault/config-contract.yaml (document `api`)
 # Contract:    charts/tankovault/contracts/api.json
-# Coverage:    90 of 107 contract keys carry a probe, 26 through the chart's own value
+# Coverage:    93 of 110 contract keys carry a probe, 29 through the chart's own value
 #
 # Regenerate with `just contract-tests`. `just check-contract-tests` fails a pull request whose
 # committed copy has drifted from the contract it was generated against.
@@ -2022,6 +2022,84 @@ tests:
       - matchRegex:
           path: data["config.toml"]
           pattern: '(?m)^\[security\]$\n(?:[^\[\n][^\n]*\n|\n)*^trust_request_id = true$'
+
+  - it: delivers statement_timeouts.admin_max_connections into config.toml from statementTimeouts.adminMaxConnections
+    documentSelector:
+      path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="api")].data["config.toml"]'
+    set:
+      anilist.clientId: probe-anilist-client-id
+      anilist.clientSecret: probe-anilist-client-secret
+      anilist.redirectUri: 'https://render-prerequisite.invalid/account/anilist-callback'
+      auth.jwtSecret: probe-jwt-secret-0123456789abcdef0123
+      branding.wordmark.lead: Render
+      email.host: smtp.render-prerequisite.invalid
+      existingSecret: tankovault-contract-probe
+      internal.identity: token
+      internal.tokens.api: probe-internal-token-api-0123456789ab
+      internal.tokens.worker: probe-internal-token-worker-01234567
+      legal.documents: {"render-prerequisite": {"url": "https://render-prerequisite.invalid/legal"}}
+      nats.enabled: true
+      postgresql.auth.password: probe-postgresql-password
+      postgresql.enabled: true
+      services.render.enabled: true
+      trawl.enabled: true
+      statementTimeouts.adminMaxConnections: 4242
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '(?m)^\[statement_timeouts\]$\n(?:[^\[\n][^\n]*\n|\n)*^admin_max_connections = 4242$'
+
+  - it: delivers statement_timeouts.admin_secs into config.toml from statementTimeouts.adminSecs
+    documentSelector:
+      path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="api")].data["config.toml"]'
+    set:
+      anilist.clientId: probe-anilist-client-id
+      anilist.clientSecret: probe-anilist-client-secret
+      anilist.redirectUri: 'https://render-prerequisite.invalid/account/anilist-callback'
+      auth.jwtSecret: probe-jwt-secret-0123456789abcdef0123
+      branding.wordmark.lead: Render
+      email.host: smtp.render-prerequisite.invalid
+      existingSecret: tankovault-contract-probe
+      internal.identity: token
+      internal.tokens.api: probe-internal-token-api-0123456789ab
+      internal.tokens.worker: probe-internal-token-worker-01234567
+      legal.documents: {"render-prerequisite": {"url": "https://render-prerequisite.invalid/legal"}}
+      nats.enabled: true
+      postgresql.auth.password: probe-postgresql-password
+      postgresql.enabled: true
+      services.render.enabled: true
+      trawl.enabled: true
+      statementTimeouts.adminSecs: 4242
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '(?m)^\[statement_timeouts\]$\n(?:[^\[\n][^\n]*\n|\n)*^admin_secs = 4242$'
+
+  - it: delivers statement_timeouts.interactive_secs into config.toml from statementTimeouts.interactiveSecs
+    documentSelector:
+      path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="api")].data["config.toml"]'
+    set:
+      anilist.clientId: probe-anilist-client-id
+      anilist.clientSecret: probe-anilist-client-secret
+      anilist.redirectUri: 'https://render-prerequisite.invalid/account/anilist-callback'
+      auth.jwtSecret: probe-jwt-secret-0123456789abcdef0123
+      branding.wordmark.lead: Render
+      email.host: smtp.render-prerequisite.invalid
+      existingSecret: tankovault-contract-probe
+      internal.identity: token
+      internal.tokens.api: probe-internal-token-api-0123456789ab
+      internal.tokens.worker: probe-internal-token-worker-01234567
+      legal.documents: {"render-prerequisite": {"url": "https://render-prerequisite.invalid/legal"}}
+      nats.enabled: true
+      postgresql.auth.password: probe-postgresql-password
+      postgresql.enabled: true
+      services.render.enabled: true
+      trawl.enabled: true
+      statementTimeouts.interactiveSecs: 4242
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '(?m)^\[statement_timeouts\]$\n(?:[^\[\n][^\n]*\n|\n)*^interactive_secs = 4242$'
 
   - it: delivers sync_url into config.toml
     documentSelector:

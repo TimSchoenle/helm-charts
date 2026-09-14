@@ -29,6 +29,35 @@
 # point: a reviewer of a Renovate bump sees the removed key next to the chart's failing gate.
 
 # --------------------------------------------------------------------------------------------
+# The toolchain
+# --------------------------------------------------------------------------------------------
+
+# Cache the pinned terrace-contract release under a repo-local directory, verified exactly as
+# `.github/actions/install-terrace-contract` verifies it for CI.
+#
+# Every gate below resolves the binary through `resolve_contract` in `justfile`, which checks
+# `TERRACE_CONTRACT_BIN`, then PATH, then this cache — in that order. So the fix for "terrace-
+# contract is not on PATH" is now this recipe rather than a manual install or a Rust build,
+# unless a local build is exactly what is being tested.
+#
+# Cached under `contract_cache` (`.cache/terrace-contract/`), gitignored and keyed by version:
+# bumping `terrace_contract_version` fetches a new copy the next time any gate runs rather than
+# reusing a stale one, and nothing here deletes an old version's directory. Networked, like
+# `contracts` above, but it touches no chart — installing the tool and vendoring a contract with
+# it are different acts, so this stays its own recipe rather than a step folded into another.
+[doc("Cache the pinned terrace-contract release under a repo-local directory")]
+[group('contracts')]
+install-contract *flags:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    {{ resolve_python }}
+    "$python" {{ scripts }}/install-contract-cli.py \
+      --version '{{ terrace_contract_version }}' \
+      --cosign-version '{{ cosign_version }}' \
+      --cache-dir '{{ contract_cache }}' \
+      {{ flags }}
+
+# --------------------------------------------------------------------------------------------
 # The refresh — the only networked recipe
 # --------------------------------------------------------------------------------------------
 

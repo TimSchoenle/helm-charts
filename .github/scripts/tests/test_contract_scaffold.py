@@ -558,6 +558,39 @@ class DerivedHelper(unittest.TestCase):
         )
         self.assertIn("port: {{ .Values.a.port }}", text)
 
+    def test_an_optional_number_is_guarded_against_null_not_falsy(self):
+        """`with` would drop a deliberate `0`, which is a real setting and not "unset"."""
+        text = sc.render_helpers(
+            "app",
+            sc.from_contract(
+                union_of(key("a.count", constraint={"type": ["integer", "null"]}))
+            ),
+        )
+        self.assertIn('{{- if not (kindIs "invalid" .Values.a.count) }}', text)
+        self.assertIn("count: {{ .Values.a.count }}", text)
+        self.assertNotIn("with .Values.a.count", text)
+
+    def test_an_optional_boolean_is_guarded_against_null_not_falsy(self):
+        """`with` would drop a deliberate `false` the same way it would drop a deliberate `0`."""
+        text = sc.render_helpers(
+            "app",
+            sc.from_contract(
+                union_of(key("a.enabled", constraint={"type": ["boolean", "null"]}))
+            ),
+        )
+        self.assertIn('{{- if not (kindIs "invalid" .Values.a.enabled) }}', text)
+        self.assertIn("enabled: {{ .Values.a.enabled }}", text)
+        self.assertNotIn("with .Values.a.enabled", text)
+
+    def test_an_optional_bare_type_given_as_a_plain_string_is_also_guarded(self):
+        """The same rule applies whether the contract spells the type as a list or bare string."""
+        text = sc.render_helpers(
+            "app",
+            sc.from_contract(union_of(key("a.count", constraint={"type": "integer"}))),
+        )
+        self.assertIn('{{- if not (kindIs "invalid" .Values.a.count) }}', text)
+        self.assertNotIn("with .Values.a.count", text)
+
     def test_every_credential_reaches_the_secret_under_its_published_file_name(self):
         text = sc.render_helpers(
             "app", sc.from_contract(union_of(key("a.token", secret=True)))

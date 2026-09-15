@@ -343,7 +343,9 @@ def owed_keys(
             )
             continue
 
-        owed.append(entries[0])
+        entry = dict(entries[0])
+        entry["documents"] = tuple(declares)
+        owed.append(entry)
 
     return owed, refusals
 
@@ -776,8 +778,103 @@ def read_define(text: str, name: str) -> Define | None:
     return None
 
 
+_CTX_ASSIGNMENT = re.compile(r"\$ctx\s*:=\s*\.ctx\b")
+
+
+def wraps_context(text: str) -> bool:
+    """Whether a `derivedConfig` define is included with `.` set to `(dict "ctx" ... "service"
+    ...)` rather than to the root context directly.
+
+    A multi-document chart's `derivedConfig` needs to know which service is rendering, and
+    `tankovault` answers that by wrapping the root context and the service together, unwrapping
+    it again with the define's own `{{- $ctx := .ctx -}}` line. Every reference this generator
+    writes has to agree with that: `.Values` inside such a define is not merely wrong, it is a
+    nil pointer, because the dict passed in has no `Values` field. Read from the text rather than
+    assumed from `len(all_documents) > 1` — a chart that is multi-document but not shaped this
+    way would make `$ctx.Values` exactly as wrong a guess as bare `.Values` is, and there is no
+    third convention to fall back on, so `projection_edits` treats it the same as no define at
+    all rather than pick one.
+    """
+    return bool(_CTX_ASSIGNMENT.search(text))
+
+
+def find_define(chart_dir: Path, name: str) -> tuple[Path, Define] | None:
+    """The `templates/*.tpl` file that opens define `name`, and what `read_define` found there.
+
+    `derivedConfig` and `secretData` usually live in `_helpers.tpl`, which is the only file this
+    used to look at — until `tankovault` measured the gap: its nine services split configuration
+    concerns across several partials, and `derivedConfig` lives in `_config.tpl`. A chart whose
+    helper is not `_helpers.tpl` was therefore invisible to every rule below, silently: `is_file()`
+    was false, so every projection and every credential was printed as still owed and none of them
+    ever got written, on a chart enrolled in bindings like any other. Every `.tpl` file is now a
+    candidate, in a fixed order so two files that both open a define — a shape nothing here
+    produces today — resolve the same way every run.
+    """
+    for path in sorted(chart_dir.glob("templates/*.tpl")):
+        define = read_define(path.read_bytes().decode("utf-8"), name)
+        if define is not None:
+            return path, define
+    return None
+
+
+def scope_new_roots(
+    candidates: list[sc.Placement],
+    all_documents: frozenset[str],
+    service_key_of: dict[str, str],
+) -> tuple[list[sc.Placement], list[sc.Placement], dict[str, tuple[str, ...]]]:
+    """Split brand-new roots into what can be safely written and what must be printed instead.
+
+    A single-document chart's roots always come back writable and unguarded — `all_documents`
+    has one member, so every root's scope trivially covers it. A multi-document chart's
+    `derivedConfig` takes a `$service` argument, and a root every document declares renders the
+    same way; a root only some documents declare needs the matching `eq $service` guard, which
+    `tankovault`'s `scheduler` and `statementTimeouts` are the measured case for.
+
+    That guard is only written when it cannot be wrong: every key under the root has to agree
+    which documents declare it — a root with keys split across different scopes is two settings
+    sharing a table name, not one setting to guard — and every one of those documents has to
+    resolve to a real `$service` value through `service_key_of`, or there is nothing correct to
+    write. Either failure sends the whole root back to the ambiguous, printed-for-a-person pile,
+    the same one an already-occupied root lands in.
+    """
+    by_root: dict[str, list[sc.Placement]] = {}
+    for item in candidates:
+        by_root.setdefault(item.path.split(".")[0], []).append(item)
+
+    writable: list[sc.Placement] = []
+    ambiguous: list[sc.Placement] = []
+    scoped: dict[str, tuple[str, ...]] = {}
+
+    for root, items in by_root.items():
+        scopes = {item.documents for item in items}
+        if len(scopes) != 1:
+            ambiguous.extend(items)
+            continue
+
+        (documents,) = scopes
+        if documents is None or set(documents) == all_documents:
+            writable.extend(items)
+            continue
+
+        service_keys = tuple(
+            service_key_of[name] for name in documents if name in service_key_of
+        )
+        if len(service_keys) != len(documents):
+            ambiguous.extend(items)
+            continue
+
+        writable.extend(items)
+        scoped[root] = service_keys
+
+    return writable, ambiguous, scoped
+
+
 def projection_edits(
-    chart_dir: Path, chart: str, plan: sc.Plan
+    chart_dir: Path,
+    chart: str,
+    plan: sc.Plan,
+    all_documents: frozenset[str] = frozenset(),
+    service_key_of: dict[str, str] | None = None,
 ) -> tuple[list[FileEdit], list[sc.Placement], list[sc.Placement]]:
     """The `derivedConfig` and `secretData` lines to append, and the ones that must be printed.
 
@@ -794,31 +891,55 @@ def projection_edits(
     every other writer here takes. `discord-alertmanager` is the measured case: fifteen new keys
     under a `telemetry` root the helper had never heard of, fifteen round-trip cases red until
     somebody typed them out.
-    """
-    path = chart_dir / "templates" / "_helpers.tpl"
-    if not path.is_file():
-        return [], list(plan.projected), list(plan.secrets)
 
-    text = path.read_bytes().decode("utf-8")
+    On a multi-document chart, `scope_new_roots` above draws a second such line: a root every
+    document reaches is written same as ever, a root only some of them do gets its `$service`
+    guard written *when that is unambiguous*, and anything left uncertain joins the same
+    printed-for-a-person pile as an already-occupied root — never a guess.
+    """
     edits: list[FileEdit] = []
 
-    derived = read_define(text, f"{chart}.derivedConfig")
-    if derived is None:
+    found = find_define(chart_dir, f"{chart}.derivedConfig")
+    if found is None:
         projected, owed_projected = [], list(plan.projected)
     else:
-        projected = [
-            item for item in plan.projected if item.path.split(".")[0] not in derived.roots
-        ]
+        path, derived = found
+        values_prefix = ".Values"
+        multi_document = len(all_documents) > 1
+        # A multi-document chart's define is unusable to this writer unless it is provably
+        # shaped the one way this generator knows how to address — see `wraps_context`. Refusing
+        # to write is the same posture as `find_define` returning `None`: everything is printed.
+        usable = not multi_document or wraps_context(path.read_bytes().decode("utf-8"))
+
+        scoped: dict[str, tuple[str, ...]] | None = None
+        if not usable:
+            candidates: list[sc.Placement] = []
+        else:
+            candidates = [
+                item for item in plan.projected if item.path.split(".")[0] not in derived.roots
+            ]
+            if multi_document:
+                values_prefix = "$ctx.Values"
+                candidates, _ambiguous, scoped = scope_new_roots(
+                    candidates, all_documents, service_key_of or {}
+                )
+        projected = candidates
         owed_projected = [item for item in plan.projected if item not in projected]
         if projected:
             edits.append(
-                FileEdit(path, derived.end - 1, sc.derived_for(projected), "derivedConfig")
+                FileEdit(
+                    path,
+                    derived.end - 1,
+                    sc.derived_for(projected, scoped=scoped, values_prefix=values_prefix),
+                    "derivedConfig",
+                )
             )
 
-    secrets = read_define(text, f"{chart}.secretData")
-    if secrets is None:
+    found = find_define(chart_dir, f"{chart}.secretData")
+    if found is None:
         written, owed_secrets = [], list(plan.secrets)
     else:
+        path, secrets = found
         written = [
             item for item in plan.secrets if sc.secrets_file_name(item) not in secrets.roots
         ]
@@ -866,6 +987,18 @@ def adopt(chart_dir: Path, wanted: set[str]) -> Adoption | None:
     markers = cb.parse_values(values_path, chart_dir.name)
     values = read_yaml(values_path)
 
+    # The `$service` vocabulary a multi-document chart's `derivedConfig` compares against, read
+    # off each document's own `images[].values` rather than guessed from its name — see
+    # `service_key_for`. Empty, harmlessly, for the ordinary one-document chart.
+    all_documents = frozenset(bound.documents)
+    service_key_of: dict[str, str] = {}
+    for name, document in bound.documents.items():
+        for image in document.images:
+            service_key = sc.service_key_for(image.values)
+            if service_key is not None:
+                service_key_of[name] = service_key
+                break
+
     report = Report()
     rules = gate.Gate(report)
     resolved = rules.resolve(bound, markers, values)
@@ -901,7 +1034,7 @@ def adopt(chart_dir: Path, wanted: set[str]) -> Adoption | None:
         chart_dir, declaration, adoption.placed, adoption.occupied
     )
     projections, owed_projected, owed_secrets = projection_edits(
-        chart_dir, chart_dir.name, adoption.placed
+        chart_dir, chart_dir.name, adoption.placed, all_documents, service_key_of
     )
     adoption.edits.extend(projections)
     adoption.owed_projected = owed_projected
@@ -1079,7 +1212,8 @@ def closing(adoptions: list[Adoption], charts_dir: Path, *, written: bool) -> No
         "         `test_every_enrolled_chart_passes_the_gate`\n"
         "      7. `just config-readme` — the `credentials` row is a column of the\n"
         "         generated table — then bump the chart version and run `just docs`\n"
-        "      8. `just check-config-bindings`, `just check-values-docs`, `just test`"
+        "      8. `just check-config-bindings`, `just check-config-wired`,\n"
+        "         `just check-values-docs`, `just test`"
     )
 
     rows = counted(charts_dir, adoptions)

@@ -230,6 +230,36 @@ check-config-bindings:
     {{ resolve_contract }}
     "$contract" bindings --charts {{ charts }} --format github
 
+# Confirm every `# @config` marker's key is actually rendered by some template.
+#
+# `check-config-bindings` above holds a marker against the *contract*: does the key exist, does
+# the class match, is the scope right. None of that opens a single `.tpl` file, so a marker can
+# pass every one of those checks while the chart renders nothing for it — the value exists, is
+# typed and bound, and the define nobody edited still emits exactly what it emitted before.
+# `tankovault`'s `scheduler`/`statementTimeouts` addition (commit `ee094b4`) is the measured case:
+# markers, schema and round-trip tests all present, `[scheduler]`/`[statement_timeouts]` reaching
+# no rendered document, silently, until the generated suite happened to be run.
+#
+# Deliberately crude — a text search for the key's leaf name under `templates/*.tpl`, nothing that
+# parses Go templates or TOML — matching this repository's own conclusion in `config_bindings.py`
+# that nothing round-trips template-plus-comments, so a line-based reader is the only
+# implementation that does not silently disagree with itself. It proves presence, not
+# correctness: whether a hit is wired to the right value, the right service, the right
+# falsy-vs-null guard is still `adopt-config.py`'s job for a brand-new root and a person's job for
+# everything else. What this catches is the one failure with no other net under it at all —
+# nobody wired the key anywhere — across every marker, including the ones no generator will ever
+# write.
+#
+# Offline, and reads only committed files, like `check-config-bindings` beside it. Same
+# enrolled-charts-only posture: a chart declares `bindings: true` or it is not checked.
+[doc("Confirm every `# @config` marker's key is rendered by some template, not just bound")]
+[group('contracts')]
+check-config-wired:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    {{ resolve_python }}
+    "$python" {{ scripts }}/check-config-wired.py --charts {{ charts }}
+
 # Write the chart values a contract's unbound keys are owed, from the contract itself.
 #
 # The writer for the failure the gate above reports. `check-config-bindings` says, per key, that
@@ -401,6 +431,7 @@ sync-config chart='' *flags: (contracts chart)
         echo
         status=0
         just check-config-bindings || status=1
+        just check-config-wired || status=1
         just check-values-docs >/dev/null || {
           status=1
           echo "error: a value carries no description; run 'just check-values-docs'" >&2

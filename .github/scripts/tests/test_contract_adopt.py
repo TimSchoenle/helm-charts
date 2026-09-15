@@ -126,6 +126,45 @@ TWO_DOCUMENTS = DECLARATION + """\
         contract: contracts/worker.json
 """
 
+# Two documents whose `images[].values` follow `tankovault`'s own convention — the one
+# `service_key_for` reads to tell a generated root which `$service` value guards it. `TWO_DOCUMENTS`
+# above deliberately does not: its flat `image` path is the ordinary one-image-per-chart shape, and
+# is what proves a scope that cannot be resolved is printed rather than guessed.
+SCOPED_DOCUMENTS = """\
+bindings: true
+documents:
+  - name: api
+    source:
+      kind: ConfigMap
+      selector: { app.kubernetes.io/component: api }
+      key: config.toml
+    images:
+      - values: services.api.image
+        contract: contracts/api.json
+  - name: worker
+    source:
+      kind: ConfigMap
+      selector: { app.kubernetes.io/component: worker }
+      key: config.toml
+    images:
+      - values: services.worker.image
+        contract: contracts/worker.json
+"""
+
+SCOPED_HELPERS = """\
+{{- define "fixture.derivedConfig" -}}
+{{- $ctx := .ctx -}}
+{{- $service := .service -}}
+auth:
+  {{- with $ctx.Values.auth.sessionTtl }}
+  session_ttl: {{ . }}
+  {{- end }}
+{{- end -}}
+
+{{- define "fixture.secretData" -}}
+{{- end -}}
+"""
+
 # One bound value under a grouping block, then a block with no marker at all — the shape of every
 # chart here: the configuration surface first, the chassis after it.
 VALUES = """\
@@ -208,6 +247,14 @@ class Chart:
 
     def helper_text(self) -> str:
         return (self.dir / "templates" / "_helpers.tpl").read_text(encoding="utf-8")
+
+    def template(self, filename: str, text: str) -> Chart:
+        """Write an arbitrary `templates/*.tpl` file, for a chart split across several partials."""
+        (self.dir / "templates" / filename).write_text(text, encoding="utf-8")
+        return self
+
+    def template_text(self, filename: str) -> str:
+        return (self.dir / "templates" / filename).read_text(encoding="utf-8")
 
     def values(self, text: str, *, crlf: bool = False) -> Chart:
         body = text.replace("\n", "\r\n") if crlf else text
@@ -585,6 +632,159 @@ class Documents(unittest.TestCase):
             self.assertEqual(chart.parsed()["log"]["level"], "info")
 
 
+class MultiDocumentScope(unittest.TestCase):
+    """A new root only some of a multi-document chart's documents declare.
+
+    `tankovault`'s `scheduler` and `statementTimeouts` are the measured case this exists for: a
+    brand-new top-level root whose keys are declared by exactly one of nine documents, never
+    wired because the one automation built for a new root (`Projection` above) had no notion of
+    `$service` at all. Guarding it correctly needs the chart's own `$service` vocabulary, which
+    `service_key_for` reads from `images[].values` rather than guesses — so these cases also
+    cover the two ways that can fail: a root whose keys disagree on scope, and a document whose
+    image path does not name a resolvable service.
+    """
+
+    def test_a_key_only_one_document_declares_is_guarded_by_service(self):
+        with tempfile.TemporaryDirectory() as workspace:
+            chart = Chart(Path(workspace))
+            chart.declaration(SCOPED_DOCUMENTS)
+            chart.template("_helpers.tpl", SCOPED_HELPERS)
+            chart.contract(
+                "api",
+                contract_of(
+                    key("auth.session_ttl", text_form="integer", constraint={"type": "integer"})
+                ),
+            )
+            chart.contract(
+                "worker",
+                contract_of(
+                    key("auth.session_ttl", text_form="integer", constraint={"type": "integer"}),
+                    key(
+                        "queue.workers",
+                        text_form="integer",
+                        constraint={"type": "integer"},
+                        default_value=4,
+                    ),
+                ),
+            )
+            planned = chart.write()
+
+            self.assertEqual(planned.owed_projected, [])
+            body = chart.helper_text()
+            self.assertIn('{{- if eq $service "worker" }}', body)
+            self.assertIn("queue:", body)
+            self.assertIn("workers: {{ $ctx.Values.queue.workers }}", body)
+            # The unguarded root stays exactly as it was; the guard wraps only the new one.
+            self.assertLess(body.index("auth:"), body.index('{{- if eq $service "worker" }}'))
+
+    def test_new_keys_sharing_a_root_with_different_scopes_are_printed_not_guessed(self):
+        with tempfile.TemporaryDirectory() as workspace:
+            chart = Chart(Path(workspace))
+            chart.declaration(SCOPED_DOCUMENTS)
+            chart.template("_helpers.tpl", SCOPED_HELPERS)
+            chart.contract(
+                "api",
+                contract_of(
+                    key("auth.session_ttl", text_form="integer", constraint={"type": "integer"}),
+                    key(
+                        "queue.retries",
+                        text_form="integer",
+                        constraint={"type": "integer"},
+                        default_value=3,
+                    ),
+                ),
+            )
+            chart.contract(
+                "worker",
+                contract_of(
+                    key("auth.session_ttl", text_form="integer", constraint={"type": "integer"}),
+                    key(
+                        "queue.workers",
+                        text_form="integer",
+                        constraint={"type": "integer"},
+                        default_value=4,
+                    ),
+                ),
+            )
+            planned = chart.write()
+
+            self.assertEqual(
+                sorted(item.path for item in planned.owed_projected),
+                ["queue.retries", "queue.workers"],
+            )
+            self.assertNotIn("queue:", chart.helper_text())
+
+    def test_a_scoped_key_with_no_resolvable_service_is_printed_not_guessed(self):
+        with tempfile.TemporaryDirectory() as workspace:
+            chart = Chart(Path(workspace))
+            chart.declaration(TWO_DOCUMENTS)
+            chart.contract(
+                "api",
+                contract_of(
+                    key("auth.session_ttl", text_form="integer", constraint={"type": "integer"}),
+                    key(
+                        "queue.workers",
+                        text_form="integer",
+                        constraint={"type": "integer"},
+                        default_value=4,
+                    ),
+                ),
+            )
+            chart.contract(
+                "worker",
+                contract_of(
+                    key("auth.session_ttl", text_form="integer", constraint={"type": "integer"})
+                ),
+            )
+            planned = chart.write()
+
+            self.assertEqual([item.path for item in planned.owed_projected], ["queue.workers"])
+            self.assertNotIn("queue:", chart.helper_text())
+
+    def test_a_define_that_does_not_wrap_context_is_never_guessed_at(self):
+        """`tankovault`'s `derivedConfig` is included as `(dict "ctx" $ctx "service" $service)`,
+        so inside it `.Values` is not merely wrong, it is a nil pointer — the dict has no
+        `Values` field at all. A multi-document chart whose define is not provably shaped that
+        way (no `$ctx := .ctx` line) gets nothing written, the same as no define at all: writing
+        bare `.Values` would be exactly as much of a guess as `$ctx.Values` would be wrong."""
+        with tempfile.TemporaryDirectory() as workspace:
+            chart = Chart(Path(workspace))
+            chart.declaration(SCOPED_DOCUMENTS)
+            chart.template(
+                "_helpers.tpl",
+                '{{- define "fixture.derivedConfig" -}}\n'
+                "{{- $service := .service -}}\n"
+                "auth:\n"
+                "  {{- with .Values.auth.sessionTtl }}\n"
+                "  session_ttl: {{ . }}\n"
+                "  {{- end }}\n"
+                "{{- end -}}\n\n"
+                '{{- define "fixture.secretData" -}}\n{{- end -}}\n',
+            )
+            chart.contract(
+                "api",
+                contract_of(
+                    key("auth.session_ttl", text_form="integer", constraint={"type": "integer"})
+                ),
+            )
+            chart.contract(
+                "worker",
+                contract_of(
+                    key("auth.session_ttl", text_form="integer", constraint={"type": "integer"}),
+                    key(
+                        "queue.workers",
+                        text_form="integer",
+                        constraint={"type": "integer"},
+                        default_value=4,
+                    ),
+                ),
+            )
+            planned = chart.write()
+
+            self.assertEqual([item.path for item in planned.owed_projected], ["queue.workers"])
+            self.assertNotIn("queue:", chart.helper_text())
+
+
 class TheDeclaration(unittest.TestCase):
     """The second file an adoption writes, and the one licence it takes to write it.
 
@@ -793,6 +993,38 @@ class Projection(unittest.TestCase):
             self.assertIn(
                 "database__url: {{ .Values.database.url | quote }}", chart.helper_text()
             )
+
+    def test_a_derived_config_split_into_another_file_is_still_found(self):
+        """`tankovault` is the measured case: `derivedConfig` lives in `_config.tpl`, not
+        `_helpers.tpl`, because its nine services split configuration concerns across several
+        partials. Before this searched every `.tpl` file, that chart's `_helpers.tpl` carried no
+        `derivedConfig` at all, so every projection was silently printed as still owed and none
+        was ever written — on a chart enrolled in bindings like any other.
+        """
+        with tempfile.TemporaryDirectory() as workspace:
+            chart = Chart(Path(workspace))
+            chart.template("_helpers.tpl", '{{- define "fixture.secretData" -}}\n{{- end -}}\n')
+            chart.template(
+                "_config.tpl",
+                '{{- define "fixture.derivedConfig" -}}\n'
+                "auth:\n"
+                "  {{- with .Values.auth.sessionTtl }}\n"
+                "  session_ttl: {{ . }}\n"
+                "  {{- end }}\n"
+                "{{- end -}}\n",
+            )
+            chart.contract(
+                "api",
+                contract_of(
+                    key("auth.session_ttl", text_form="integer", constraint={"type": "integer"}),
+                    key("log.level", default_value="info"),
+                ),
+            )
+            planned = chart.write()
+
+            self.assertEqual(planned.owed_projected, [])
+            self.assertIn("log:", chart.template_text("_config.tpl"))
+            self.assertNotIn("log:", chart.template_text("_helpers.tpl"))
 
     def test_a_chart_with_no_helper_prints_every_line(self):
         with tempfile.TemporaryDirectory() as workspace:

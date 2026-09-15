@@ -213,6 +213,19 @@ class Placement:
     def optional(self) -> bool:
         return not self.key.get("required")
 
+    @property
+    def documents(self) -> tuple[str, ...] | None:
+        """Which of a multi-document chart's documents declare this key, when that was resolved.
+
+        `None` for every single-document chart's key, and for a key nobody tagged — which is
+        every consumer of `Placement` before `adopt-config.py`'s `owed_keys` started recording
+        it. That function already computes this list, to check the key's declaring documents
+        agree on its shape; keeping it here is what lets a generated `derivedConfig` block for a
+        multi-document chart know whether it needs a `$service` guard at all, and which one.
+        """
+        documents = self.key.get("documents")
+        return tuple(documents) if documents is not None else None
+
 
 @dataclass
 class Plan:
@@ -860,6 +873,38 @@ def _example_key(plan: Plan) -> str:
 # Rendering `templates/_helpers.tpl`
 # --------------------------------------------------------------------------------------------
 
+_SERVICE_IMAGE = re.compile(r"^services\.([A-Za-z][A-Za-z0-9]*)\.image$")
+
+
+def service_key_for(image_values_path: str) -> str | None:
+    """The `$service` value one document's `derivedConfig` branch is gated on, or `None`.
+
+    Read from the document's own `images[].values` — `tankovault`'s `control-plane` document
+    names `services.controlPlane.image`, and `controlPlane` is exactly the map key its
+    `derivedConfig` compares `$service` against (`_config.tpl`'s
+    `include "tankovault.derivedConfig" (dict "ctx" $ctx "service" $service)`, called once per
+    `.Values.services` key). Nothing in the contract states this convention — it is read off a
+    field recorded for an unrelated purpose, image resolution — so a document whose image path
+    does not match it (a chart shaped some other way, should a second multi-document chart ever
+    exist) resolves to `None` rather than a guess, and its keys are left for a person to place.
+    """
+    match = _SERVICE_IMAGE.match(image_values_path)
+    return match.group(1) if match else None
+
+
+def _guarded(body: list[str], service_keys: tuple[str, ...], indent: str) -> list[str]:
+    """Wrap a root's rendered lines in the `$service` guard `tankovault` hand-writes.
+
+    One document: `eq $service "x"`. Several: `or (eq $service "x") (eq $service "y")` — Go
+    templates' `or` short-circuits on the first true argument, same as `if`/`elif` would.
+    """
+    if len(service_keys) == 1:
+        condition = f'eq $service "{service_keys[0]}"'
+    else:
+        checks = " ".join(f'(eq $service "{name}")' for name in service_keys)
+        condition = f"or {checks}"
+    return [f"{indent}{{{{- if {condition} }}}}", *body, f"{indent}{{{{- end }}}}"]
+
 
 def toml_tree(placements: list[Placement]) -> dict[str, Any]:
     """The contract paths of these placements as a nested tree, leaves being the placements."""
@@ -873,36 +918,56 @@ def toml_tree(placements: list[Placement]) -> dict[str, Any]:
     return tree
 
 
-def _derived_lines(tree: dict[str, Any], indent: str = "") -> list[str]:
+def _derived_lines(
+    tree: dict[str, Any], indent: str = "", values_prefix: str = ".Values"
+) -> list[str]:
     """The YAML the `derivedConfig` helper emits, which `common.configToml` turns into TOML.
 
-    An optional setting is wrapped in `with` rather than written empty, and that distinction is
-    the whole reason this helper is generated rather than left to a per-chart hand. To the loader
-    an empty string is a *supplied* value: writing `sentry_dsn = ""` configures Sentry with a
-    blank DSN, which is not what an operator who left the value unset meant. `with` treats every
-    falsey value as absent, so an unset optional key never reaches the document at all.
+    An optional setting must not reach the document at all when it is unset, and that
+    distinction is the whole reason this helper is generated rather than left to a per-chart
+    hand. Two guards say "unset", because one of them is wrong half the time: `with` treats
+    every falsey value as absent, which is right for a string or a structured value — an empty
+    one carries no setting a blank could not — and wrong for a number or a boolean, where `0`
+    and `false` are settings in their own right. Those are guarded with `kindIs "invalid"`
+    instead, a nil test that only catches the value actually being absent. Getting this backwards
+    silently drops every deliberate zero an operator writes, which is indistinguishable from the
+    key never having been set at all.
+
+    `values_prefix` is `.Values` for the ordinary chart, where `derivedConfig` is included with
+    `.` set to the root context directly. A chart whose `derivedConfig` takes a `$service`
+    argument cannot be included that way — it needs both the root context and which service is
+    rendering, so it is included with `(dict "ctx" $ctx "service" $service)` instead, and inside
+    the define `.` is that dict, not the root: `.Values` there is not merely wrong, it is a nil
+    pointer, because the dict has no `Values` field at all. `$ctx.Values` is what the define's own
+    `{{- $ctx := .ctx -}}` line exists to make available, and it is what `adopt-config.py` passes
+    here for such a chart — measured on `tankovault`, whose `derivedConfig` is exactly this shape.
     """
     lines: list[str] = []
     for name in sorted(tree):
         node = tree[name]
         if not isinstance(node, Placement):
             lines.append(f"{indent}{name}:")
-            lines.extend(_derived_lines(node, indent + "  "))
+            lines.extend(_derived_lines(node, indent + "  ", values_prefix))
             continue
 
-        reference = f".Values.{node.values_path}"
+        reference = f"{values_prefix}.{node.values_path}"
         structured = node.key.get("text_form") == "structured"
-        bare = (node.key.get("constraint") or {}).get("type") in ("integer", "number", "boolean")
+        raw_type = (node.key.get("constraint") or {}).get("type")
+        types = raw_type if isinstance(raw_type, list) else [raw_type]
+        bare = any(t in ("integer", "number", "boolean") for t in types)
 
-        if node.optional:
+        if node.optional and bare:
+            lines.append(f'{indent}{{{{- if not (kindIs "invalid" {reference}) }}}}')
+            lines.append(f"{indent}{name}: {{{{ {reference} }}}}")
+            lines.append(f"{indent}{{{{- end }}}}")
+        elif node.optional and structured:
             lines.append(f"{indent}{{{{- with {reference} }}}}")
-            if structured:
-                lines.append(f"{indent}{name}:")
-                lines.append(f"{indent}  {{{{- toYaml . | nindent {len(indent) + 2} }}}}")
-            elif bare:
-                lines.append(f"{indent}{name}: {{{{ . }}}}")
-            else:
-                lines.append(f"{indent}{name}: {{{{ . | quote }}}}")
+            lines.append(f"{indent}{name}:")
+            lines.append(f"{indent}  {{{{- toYaml . | nindent {len(indent) + 2} }}}}")
+            lines.append(f"{indent}{{{{- end }}}}")
+        elif node.optional:
+            lines.append(f"{indent}{{{{- with {reference} }}}}")
+            lines.append(f"{indent}{name}: {{{{ . | quote }}}}")
             lines.append(f"{indent}{{{{- end }}}}")
         elif structured:
             lines.append(f"{indent}{name}:")
@@ -914,17 +979,44 @@ def _derived_lines(tree: dict[str, Any], indent: str = "") -> list[str]:
     return lines
 
 
-def derived_for(placements: list[Placement], indent: str = "") -> list[str]:
+def derived_for(
+    placements: list[Placement],
+    indent: str = "",
+    scoped: dict[str, tuple[str, ...]] | None = None,
+    values_prefix: str = ".Values",
+) -> list[str]:
     """The `derivedConfig` lines for some of a plan's placements, at a caller's indent.
 
     `render_helpers` below writes the whole helper for a chart that does not exist yet.
     `adopt-config.py` has the other half of the problem — a chart whose helper is hand-written and
     which is owed the lines for a handful of new keys — and the projection rules are the same for
-    both: an optional key wrapped in `with` so that unset means absent, a structured one written
-    through `toYaml`, a number left unquoted. A second rendering of those rules would be a second
-    chance to get "unset" wrong, which is the one mistake in this file that is silent.
+    both: an optional string or structured key wrapped in `with` so that unset means absent, an
+    optional number or boolean guarded with `kindIs "invalid"` instead so a real `0` or `false`
+    survives, a number left unquoted. A second rendering of those rules would be a second chance
+    to get "unset" wrong, which is the one mistake in this file that is silent.
+
+    `scoped` names, by top-level root, which roots reach only some of a multi-document chart's
+    services — `tankovault`'s `scheduler` and `statementTimeouts` are the two this was measured
+    against, each reaching one service alone. Every root of a single-document chart, and every
+    root `scoped` says nothing about, renders exactly as before; `adopt-config.py` is the one
+    that decides which roots qualify (every key under it agreeing on the same scope, resolved to
+    a real `$service` value) and refuses to guess for the rest.
+
+    `values_prefix` applies to every root of this call alike, guarded or not — see
+    `_derived_lines` for why. It is a fact about the *define*, not about any one root: a chart's
+    `derivedConfig` is included one way for every key it carries, so a root that needs no
+    `$service` guard still sits inside the same wrapped `.` as one that does.
     """
-    return _derived_lines(toml_tree(placements), indent)
+    tree = toml_tree(placements)
+    if not scoped:
+        return _derived_lines(tree, indent, values_prefix)
+
+    lines: list[str] = []
+    for root in sorted(tree):
+        body = _derived_lines({root: tree[root]}, indent, values_prefix)
+        service_keys = scoped.get(root)
+        lines.extend(_guarded(body, service_keys, indent) if service_keys else body)
+    return lines
 
 
 def _comment(*lines: str) -> str:

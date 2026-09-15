@@ -29,6 +29,35 @@
 # point: a reviewer of a Renovate bump sees the removed key next to the chart's failing gate.
 
 # --------------------------------------------------------------------------------------------
+# The toolchain
+# --------------------------------------------------------------------------------------------
+
+# Cache the pinned terrace-contract release under a repo-local directory, verified exactly as
+# `.github/actions/install-terrace-contract` verifies it for CI.
+#
+# Every gate below resolves the binary through `resolve_contract` in `justfile`, which checks
+# `TERRACE_CONTRACT_BIN`, then PATH, then this cache — in that order. So the fix for "terrace-
+# contract is not on PATH" is now this recipe rather than a manual install or a Rust build,
+# unless a local build is exactly what is being tested.
+#
+# Cached under `contract_cache` (`.cache/terrace-contract/`), gitignored and keyed by version:
+# bumping `terrace_contract_version` fetches a new copy the next time any gate runs rather than
+# reusing a stale one, and nothing here deletes an old version's directory. Networked, like
+# `contracts` above, but it touches no chart — installing the tool and vendoring a contract with
+# it are different acts, so this stays its own recipe rather than a step folded into another.
+[doc("Cache the pinned terrace-contract release under a repo-local directory")]
+[group('contracts')]
+install-contract *flags:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    {{ resolve_python }}
+    "$python" {{ scripts }}/install-contract-cli.py \
+      --version '{{ terrace_contract_version }}' \
+      --cosign-version '{{ cosign_version }}' \
+      --cache-dir '{{ contract_cache }}' \
+      {{ flags }}
+
+# --------------------------------------------------------------------------------------------
 # The refresh — the only networked recipe
 # --------------------------------------------------------------------------------------------
 
@@ -286,7 +315,13 @@ adopt-config chart='' *flags:
 # `just config-readme`, because the `credentials` row this command now writes is a column of the
 # generated credential table and `just check-config-readme` is blocking.
 #
-# The last two were each the sole thing left red on a run where every other generated file had
+# `just update-contract-bindings-snapshot`, last, because a new `# @config` marker also moves the
+# (chart, keys, external) tuples `test_every_enrolled_chart_passes_the_gate` pins in
+# `snapshots/contract_bindings_gate.json` — the one binding test that walks the real chart tree
+# instead of a fixture. Left stale it is the same failure as the other four: not wrong, just a
+# generated file a later, unrelated pull request is left to explain.
+#
+# The five above were each the sole thing left red on a run where every other generated file had
 # already been brought up to date. Which is the pattern worth naming: a values block invalidates
 # five committed artefacts, and finding them one CI run at a time is what this chain replaces.
 #
@@ -370,12 +405,23 @@ sync-config chart='' *flags: (contracts chart)
           status=1
           echo "error: a value carries no description; run 'just check-values-docs'" >&2
         }
+
+        # Last, because it reads the same gate `check-config-bindings` just ran and refuses to
+        # write if that gate is failing. Adopting a value is exactly the change that moves the
+        # (chart, keys, external) tuples `test_every_enrolled_chart_passes_the_gate` pins in
+        # `snapshots/contract_bindings_gate.json` — a new `# @config` marker changes how many
+        # bindings the real chart tree resolves to. Recalculating it here turns that drift into a
+        # reviewable diff in this commit instead of a red `test-contract-scripts` on whatever pull
+        # request runs it next.
+        echo
+        just update-contract-bindings-snapshot || status=1
         ;;
       *)
         status=0
         echo
         echo "==> with --write this would also regenerate values.schema.json, the round-trip"
-        echo "    suites and the rendered snapshots, and re-run the offline gates."
+        echo "    suites, the rendered snapshots and the bindings gate snapshot, and re-run the"
+        echo "    offline gates."
         ;;
     esac
 
@@ -478,6 +524,18 @@ test-contract-scripts:
     set -euo pipefail
     {{ resolve_python }}
     "$python" -m unittest discover -s {{ scripts }}/tests -p 'test_contract_*.py' -v
+
+# `test_every_enrolled_chart_passes_the_gate` walks the real chart tree rather than a fixture, so
+# it is the one binding test that legitimately drifts whenever a chart's `@config` markers gain or
+# lose a key or a document. Regenerating it here, in one command, keeps that drift a reviewable
+# diff instead of a hand-computed number typed into the test.
+[doc("Regenerate the real-chart-tree snapshot the bindings gate test checks against")]
+[group('contracts')]
+update-contract-bindings-snapshot:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    {{ resolve_python }}
+    "$python" {{ scripts }}/tests/update_contract_bindings_snapshot.py
 
 # --------------------------------------------------------------------------------------------
 # Reading a contract, rather than checking against one

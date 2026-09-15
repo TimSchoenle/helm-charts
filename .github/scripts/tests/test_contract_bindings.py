@@ -54,6 +54,7 @@ from config_report import Report  # noqa: E402
 from entry import load  # noqa: E402
 
 FIXTURES = SCRIPTS.parent / "testdata" / "contracts"
+GATE_SNAPSHOT = Path(__file__).resolve().parent / "snapshots" / "contract_bindings_gate.json"
 
 DIGEST = "sha256:" + "1" * 64
 
@@ -973,19 +974,21 @@ class TestTheEnrolledCharts(unittest.TestCase):
             )
 
     def test_every_enrolled_chart_passes_the_gate(self):
+        """The exact (chart, keys, external) tuples live in `snapshots/contract_bindings_gate.json`
+        rather than here, because this is the one test in the file that walks the real chart tree
+        instead of a fixture: a chart legitimately gaining or losing a marker moves these numbers,
+        and that has to stay a reviewable diff rather than a hand-computed literal. Run
+        `just update-contract-bindings-snapshot` after such a change and review what it writes.
+        """
         report = Report()
         enrolled = entry.run(self.charts, report)
+        expected = json.loads(GATE_SNAPSHOT.read_text(encoding="utf-8"))
         self.assertEqual(
-            [(chart, keys, external) for chart, keys, external in enrolled],
-            [
-                ("cloudflare-access-webhook-redirect", 20, 0),
-                ("discord-alertmanager", 73, 0),
-                ("mp-stats-legacy-viewer", 25, 0),
-                ("netcup-offer-bot", 16, 0),
-                ("portfolio", 21, 3),
-                ("s3-bucket-perma-link", 21, 0),
-                ("tankovault", 219, 0),
-            ],
+            [[chart, keys, external] for chart, keys, external in enrolled],
+            expected,
+            "the real chart tree no longer matches snapshots/contract_bindings_gate.json — "
+            "if this is an intended change, run `just update-contract-bindings-snapshot` and "
+            "review the diff",
         )
         self.assertEqual(messages(report), "")
 
@@ -993,8 +996,9 @@ class TestTheEnrolledCharts(unittest.TestCase):
         """The rule that chart forced: unscoped means every document declaring the key.
 
         `metrics.enabled` is one line of `derivedConfig` written into all eight services, and one
-        value carries one marker. 53 markers resolve to 219 bindings here, which is the
-        arithmetic of that rule and the reason the chart is enrolable at all.
+        value carries one marker. An unscoped marker resolving to as many bindings as documents
+        that declare its key is the arithmetic that makes the chart enrolable at all — see
+        `snapshots/contract_bindings_gate.json` for the current marker and binding totals.
         """
         marker = self.markers("tankovault")["metrics.enabled"]
         self.assertIsNone(marker.documents)

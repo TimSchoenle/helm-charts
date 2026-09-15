@@ -1,9 +1,9 @@
 {
   "source": {
     "image": "docker.io/timschoenle/tankovault-api",
-    "digest": "sha256:913a6ff4b21755bbecf4fc06509abbbc53968fcd5988e0afccbb39e23cce3936",
-    "sha256": "ed637361080112607c2678a9ff20ecfc70729c15a642100150000cc0c748b07d",
-    "fetched": "2026-09-13T23:58:26Z"
+    "digest": "sha256:77e2fe1f0c058fed00c73bfd36b953bec5191a95fdbf5571ba8f81e2b5a81caa",
+    "sha256": "85ceacf28f21a32172a95409658fb445e163ec1d49ec3ff29acb38f02bbbdf18",
+    "fetched": "2026-09-14T17:48:27Z"
   },
   "contract": {
     "terrace_contract": 1,
@@ -14,7 +14,7 @@
     },
     "app": {
       "name": "tankovault-api",
-      "version": "v8.11.0",
+      "version": "v9.0.0",
       "source": "https://github.com/TimSchoenle/TankoVault"
     },
     "schema": {
@@ -108,10 +108,95 @@
           "env": "TANKOVAULT_DATABASE__ACQUIRE_TIMEOUT_SECS",
           "env_file": "TANKOVAULT_DATABASE__ACQUIRE_TIMEOUT_SECS_FILE",
           "secrets_file": "database__acquire_timeout_secs",
-          "docs": "Statement/acquire timeout, seconds.",
+          "docs": "How long a caller waits for a pooled connection before failing, in seconds.",
           "ty": "u64",
           "values": [],
           "constraint": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "text_constraint": {
+            "pattern": "^\\s*\\+?[0-9]+\\s*$",
+            "type": "string"
+          },
+          "text_form": "integer",
+          "aliases": [],
+          "env_aliases": [],
+          "env_file_aliases": [],
+          "secrets_file_aliases": [],
+          "default": null,
+          "default_value": null,
+          "note": null,
+          "required": false,
+          "secret": false,
+          "reserved": false
+        },
+        {
+          "path": "statement_timeouts.interactive_secs",
+          "env": "TANKOVAULT_STATEMENT_TIMEOUTS__INTERACTIVE_SECS",
+          "env_file": "TANKOVAULT_STATEMENT_TIMEOUTS__INTERACTIVE_SECS_FILE",
+          "secrets_file": "statement_timeouts__interactive_secs",
+          "docs": "Seconds one statement may run on every non-admin route: `/v1/me`, the public catalogue and\nsign-in. `0` removes the ceiling.",
+          "ty": "u64",
+          "values": [],
+          "constraint": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "text_constraint": {
+            "pattern": "^\\s*\\+?[0-9]+\\s*$",
+            "type": "string"
+          },
+          "text_form": "integer",
+          "aliases": [],
+          "env_aliases": [],
+          "env_file_aliases": [],
+          "secrets_file_aliases": [],
+          "default": null,
+          "default_value": null,
+          "note": null,
+          "required": false,
+          "secret": false,
+          "reserved": false
+        },
+        {
+          "path": "statement_timeouts.admin_secs",
+          "env": "TANKOVAULT_STATEMENT_TIMEOUTS__ADMIN_SECS",
+          "env_file": "TANKOVAULT_STATEMENT_TIMEOUTS__ADMIN_SECS_FILE",
+          "secrets_file": "statement_timeouts__admin_secs",
+          "docs": "Seconds one statement may run on a `/v1/admin` route or in the API's background sweeps.\n`0` removes the ceiling.",
+          "ty": "u64",
+          "values": [],
+          "constraint": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "text_constraint": {
+            "pattern": "^\\s*\\+?[0-9]+\\s*$",
+            "type": "string"
+          },
+          "text_form": "integer",
+          "aliases": [],
+          "env_aliases": [],
+          "env_file_aliases": [],
+          "secrets_file_aliases": [],
+          "default": null,
+          "default_value": null,
+          "note": null,
+          "required": false,
+          "secret": false,
+          "reserved": false
+        },
+        {
+          "path": "statement_timeouts.admin_max_connections",
+          "env": "TANKOVAULT_STATEMENT_TIMEOUTS__ADMIN_MAX_CONNECTIONS",
+          "env_file": "TANKOVAULT_STATEMENT_TIMEOUTS__ADMIN_MAX_CONNECTIONS_FILE",
+          "secrets_file": "statement_timeouts__admin_max_connections",
+          "docs": "Connections the admin pool may hold, on top of `database.max_connections`.",
+          "ty": "u32",
+          "values": [],
+          "constraint": {
+            "maximum": 4294967295,
             "minimum": 0,
             "type": "integer"
           },
@@ -3058,7 +3143,7 @@
           "additionalProperties": false,
           "properties": {
             "acquire_timeout_secs": {
-              "description": "Statement/acquire timeout, seconds.",
+              "description": "How long a caller waits for a pooled connection before failing, in seconds.",
               "minimum": 0,
               "type": "integer"
             },
@@ -3455,6 +3540,28 @@
             "trust_request_id": {
               "description": "Accept an inbound `X-Request-Id` instead of minting one. Requires a trusted proxy —\na client-supplied id could otherwise poison log correlation.",
               "type": "boolean"
+            }
+          },
+          "type": "object"
+        },
+        "statement_timeouts": {
+          "additionalProperties": false,
+          "properties": {
+            "admin_max_connections": {
+              "description": "Connections the admin pool may hold, on top of `database.max_connections`.",
+              "maximum": 4294967295,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "admin_secs": {
+              "description": "Seconds one statement may run on a `/v1/admin` route or in the API's background sweeps.\n`0` removes the ceiling.",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "interactive_secs": {
+              "description": "Seconds one statement may run on every non-admin route: `/v1/me`, the public catalogue and\nsign-in. `0` removes the ceiling.",
+              "minimum": 0,
+              "type": "integer"
             }
           },
           "type": "object"

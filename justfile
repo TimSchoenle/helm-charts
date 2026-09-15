@@ -7,7 +7,9 @@
 #
 # Prerequisites, per group:
 #
-#   contracts                   python3 with PyYAML; terrace-contract, for the gates
+#   contracts                   python3 with PyYAML; terrace-contract, for the gates — `just
+#                               install-contract` caches the pinned release locally if it is not
+#                               already on PATH or named by TERRACE_CONTRACT_BIN
 #   contracts                   oras and cosign, for `just contracts` alone — the one networked
 #                               recipe in the repository, and not part of `just check`
 #   deps, docs, render, test    helm (+ `just plugins`), python3 with PyYAML
@@ -73,8 +75,19 @@ helm_schema_version := "0.18.1"
 #
 # `TERRACE_CONTRACT_BIN` overrides it, which is what makes a chart-side fix testable against an
 # unreleased build rather than waiting for a release to prove it.
+#
+# `just install-contract` is the third way in: it caches the pinned release under `contract_cache`
+# below, verified exactly as `.github/actions/install-terrace-contract` verifies it for CI, so a
+# contributor gets a working gate without `sudo` and without building from source. `resolve_contract`
+# checks that cache after `TERRACE_CONTRACT_BIN` and PATH.
 # renovate: datasource=github-tags depName=TimSchoenle/terrace-config extractVersion=^terrace-contract-v(?<version>.*)$
 terrace_contract_version := "0.2.2"
+
+# Where `just install-contract` caches the binary it downloads, keyed by version underneath so a
+# bump fetches a fresh copy on next use rather than silently reusing a stale one. Relative and
+# gitignored: the cache belongs to this checkout, not to the machine, so two worktrees of this
+# repository never fight over it.
+contract_cache := ".cache/terrace-contract"
 
 # Linter for `.github/scripts`. Pinned as a single binary by release URL for exactly the reason
 # `terrace-contract` above is: a `pip install` inside a recipe is the difference between a gate
@@ -184,17 +197,31 @@ fi
 '''
 
 # The contract toolchain, resolved the way `resolve_python` resolves an interpreter: an override
-# first, then PATH, and a message naming the fix rather than a skipped gate. A recipe that needs an
-# external binary and cannot find it fails saying so — the posture every pinned tool here takes.
+# first, then PATH, then the repo-local cache `just install-contract` fills, and a message naming
+# the fix rather than a skipped gate. A recipe that needs an external binary and cannot find it
+# fails saying so — the posture every pinned tool here takes.
+#
+# The cache is checked by version and by both the POSIX and the Windows binary name, because
+# `install-contract-cli.py` writes whichever one `platform.system()` says the release ships as —
+# there is no per-OS branch here to keep in step with it.
 resolve_contract := '''
 contract="${TERRACE_CONTRACT_BIN:-}"
 if [ -z "$contract" ] && command -v terrace-contract >/dev/null 2>&1; then
   contract="terrace-contract"
 fi
 if [ -z "$contract" ]; then
+  cached="''' + contract_cache + "/" + terrace_contract_version + '''/terrace-contract"
+  if [ -x "$cached" ]; then
+    contract="$cached"
+  elif [ -x "${cached}.exe" ]; then
+    contract="${cached}.exe"
+  fi
+fi
+if [ -z "$contract" ]; then
   echo "error: terrace-contract is not on PATH. It is the shared toolchain the configuration" >&2
-  echo "       gates delegate to; install the pinned release, or set TERRACE_CONTRACT_BIN to a" >&2
-  echo "       local build:" >&2
+  echo "       gates delegate to. Run 'just install-contract' to cache the pinned release" >&2
+  echo "       locally (no sudo, nothing outside this checkout), or set TERRACE_CONTRACT_BIN to" >&2
+  echo "       a local build:" >&2
   echo "         cargo build --release --manifest-path <terrace-config>/cli/Cargo.toml" >&2
   echo "         export TERRACE_CONTRACT_BIN=<terrace-config>/cli/target/release/terrace-contract" >&2
   exit 1

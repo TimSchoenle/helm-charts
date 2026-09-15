@@ -210,6 +210,71 @@ branding:
 legal:
   {{- . | nindent 2 }}
 {{- end }}
+{{- with include "tankovault.statementTimeouts.config" $ctx }}
+statement_timeouts:
+  {{- . | nindent 2 }}
+{{- end }}
+{{- end }}
+{{- if eq $service "controlPlane" }}
+{{- with include "tankovault.scheduler.config" $ctx }}
+scheduler:
+  {{- . | nindent 2 }}
+{{- end }}
+{{- end }}
+{{- end -}}
+
+{{/*
+The `[statement_timeouts]` block, or empty when every timeout is left null.
+
+Only `api` reads it: `api.json` is the sole contract declaring these keys. Each field is
+`[integer, 'null']` and `0` is a meaningful value on the wire — "remove the ceiling" — so a plain
+`with` guard would drop a deliberate `0` along with an unset one; `kindIs "invalid"` tells the two
+apart.
+
+Args: ctx (root).
+*/}}
+{{- define "tankovault.statementTimeouts.config" -}}
+{{- $timeouts := .Values.statementTimeouts -}}
+{{- if not (kindIs "invalid" $timeouts.adminMaxConnections) }}
+admin_max_connections: {{ $timeouts.adminMaxConnections }}
+{{- end }}
+{{- if not (kindIs "invalid" $timeouts.adminSecs) }}
+admin_secs: {{ $timeouts.adminSecs }}
+{{- end }}
+{{- if not (kindIs "invalid" $timeouts.interactiveSecs) }}
+interactive_secs: {{ $timeouts.interactiveSecs }}
+{{- end }}
+{{- end -}}
+
+{{/*
+The five newer `[scheduler]` keys, or empty when every one is left null.
+
+Only `control-plane` reads them, for the same reason as `statementTimeouts` above: they are the
+keys `control-plane.json` declares and no other document does. The chart's older scheduler keys
+(`failure_backoff_max_secs` and the rest) still reach `[scheduler]` only through
+`services.controlPlane.config`, since nothing here has ever offered a first-class value for them.
+
+Args: ctx (root).
+*/}}
+{{- define "tankovault.scheduler.config" -}}
+{{- $scheduler := .Values.scheduler -}}
+{{- if not (kindIs "invalid" $scheduler.chapterRollupVerifyIntervalSecs) }}
+chapter_rollup_verify_interval_secs: {{ $scheduler.chapterRollupVerifyIntervalSecs }}
+{{- end }}
+{{- if not (kindIs "invalid" $scheduler.scanHistoryPruneIntervalSecs) }}
+scan_history_prune_interval_secs: {{ $scheduler.scanHistoryPruneIntervalSecs }}
+{{- end }}
+{{- if not (kindIs "invalid" $scheduler.scanHistoryRetentionDays) }}
+scan_history_retention_days: {{ $scheduler.scanHistoryRetentionDays }}
+{{- end }}
+{{- if not (kindIs "invalid" $scheduler.seriesBrowseVerifyIntervalSecs) }}
+series_browse_verify_interval_secs: {{ $scheduler.seriesBrowseVerifyIntervalSecs }}
+{{- end }}
+{{- if not (kindIs "invalid" $scheduler.unreadReconcileIntervalSecs) }}
+unread_reconcile_interval_secs: {{ $scheduler.unreadReconcileIntervalSecs }}
+{{- end }}
+{{- if not (kindIs "invalid" $scheduler.unreadUnlockIntervalSecs) }}
+unread_unlock_interval_secs: {{ $scheduler.unreadUnlockIntervalSecs }}
 {{- end }}
 {{- end -}}
 

@@ -1,9 +1,9 @@
 {
   "source": {
     "image": "docker.io/timschoenle/tankovault-control-plane",
-    "digest": "sha256:3df1623ef3680da37422196df75072b2414fd785b7c264770e055a391ebfa9b8",
-    "sha256": "1d7fcbe19afffd35d7c2ee596cdf44bcd4f18ab3938fe6f43060cd76fdc0820d",
-    "fetched": "2026-09-15T11:53:23Z"
+    "digest": "sha256:14f570cb30beedaa0675b57af94414ddb1814b9b692cdd3bff98757b6125fd3d",
+    "sha256": "1138c9813efd5701e96bc1f1efd85179b97bab6d9e93c19b0e1eed314ad5785d",
+    "fetched": "2026-09-17T08:25:34Z"
   },
   "contract": {
     "terrace_contract": 1,
@@ -14,7 +14,7 @@
     },
     "app": {
       "name": "tankovault-control-plane",
-      "version": "v10.0.1",
+      "version": "v10.1.0",
       "source": "https://github.com/TimSchoenle/TankoVault"
     },
     "schema": {
@@ -1199,6 +1199,34 @@
           "env_file": "TANKOVAULT_SCHEDULER__UNREAD_RECONCILE_INTERVAL_SECS_FILE",
           "secrets_file": "scheduler__unread_reconcile_interval_secs",
           "docs": "Seconds between passes that re-verify stored unread figures against the live computation\nand repair any that drifted. 0 disables.",
+          "ty": "u64",
+          "values": [],
+          "constraint": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "text_constraint": {
+            "pattern": "^\\s*\\+?[0-9]+\\s*$",
+            "type": "string"
+          },
+          "text_form": "integer",
+          "aliases": [],
+          "env_aliases": [],
+          "env_file_aliases": [],
+          "secrets_file_aliases": [],
+          "default": null,
+          "default_value": null,
+          "note": null,
+          "required": false,
+          "secret": false,
+          "reserved": false
+        },
+        {
+          "path": "scheduler.watchlist_import_resolve_interval_secs",
+          "env": "TANKOVAULT_SCHEDULER__WATCHLIST_IMPORT_RESOLVE_INTERVAL_SECS",
+          "env_file": "TANKOVAULT_SCHEDULER__WATCHLIST_IMPORT_RESOLVE_INTERVAL_SECS_FILE",
+          "secrets_file": "scheduler__watchlist_import_resolve_interval_secs",
+          "docs": "Seconds between passes that retry imported watchlist entries still waiting for their\nseries, attaching each one a scan has since brought into the catalogue. 0 disables.",
           "ty": "u64",
           "values": [],
           "constraint": {
@@ -2787,6 +2815,11 @@
             },
             "unread_unlock_interval_secs": {
               "description": "Seconds between passes that recompute stored unread figures whose early-access unlock time\nhas passed. 0 disables.\n\nNothing is written when a paywall timer expires, so no trigger recomputes the reader's\ncounts; this pass is what makes the chapter count. The interval is the longest a reader\nwaits to see it.",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "watchlist_import_resolve_interval_secs": {
+              "description": "Seconds between passes that retry imported watchlist entries still waiting for their\nseries, attaching each one a scan has since brought into the catalogue. 0 disables.",
               "minimum": 0,
               "type": "integer"
             }

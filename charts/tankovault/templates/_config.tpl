@@ -221,6 +221,12 @@ scheduler:
   {{- . | nindent 2 }}
 {{- end }}
 {{- end }}
+{{- if eq $service "controlPlane" }}
+scheduler:
+  {{- if not (kindIs "invalid" $ctx.Values.scheduler.watchlistImportResolveIntervalSecs) }}
+  watchlist_import_resolve_interval_secs: {{ $ctx.Values.scheduler.watchlistImportResolveIntervalSecs }}
+  {{- end }}
+{{- end }}
 {{- end -}}
 
 {{/*

@@ -733,7 +733,9 @@ class Define:
 
     `end` is the line of the define's own closing action, so a new top-level entry is inserted
     after `end - 1` and lands inside the define. `roots` are the mapping keys already written at
-    the define's own nesting depth — the ones a second block of the same name would shadow.
+    column zero — the ones a second block of the same name would shadow — regardless of whether
+    an `if`/`with`/`range` wraps them, since this codebase never lets one of those add YAML
+    indentation of its own; every nested value reaches its indent through an explicit `nindent`.
     """
 
     end: int
@@ -744,10 +746,18 @@ def read_define(text: str, name: str) -> Define | None:
     """Find one define and the top-level keys it already writes; `None` when it cannot be read.
 
     A helper is hand-written Go template, and this reads exactly as much of it as an append needs:
-    where the define ends, and which keys sit at its own depth. Anything deeper is inside an `if`
-    or a `with` and is none of an appender's business — the point of tracking depth at all is to
-    land *outside* every one of them, so that a projection is not silently written under somebody
-    else's condition.
+    where the define ends, and which keys are already occupying its rendered top level. Depth is
+    tracked only to find that closing `end` — a projection is always appended at the define's own
+    depth (`end - 1`), landing *outside* every `if`/`with`/`range`, so it is never silently written
+    under somebody else's condition.
+
+    An occupied root, however, is detected by column alone, at any depth: this codebase never lets
+    an `if`/`with`/`range` add YAML indentation of its own, so a key written from two or three
+    actions deep — `tankovault.derivedConfig`'s `scheduler` and `statement_timeouts`, each guarded
+    by `{{- if eq $service ... }}` around a `{{- with include ... }}` — still lands at column zero
+    in the rendered document. Gating this on depth 1 previously missed both: a scaffolded key would
+    be treated as a brand-new root and appended as a second, colliding `scheduler:` block, which
+    `fromYaml` resolves by keeping only the second one and dropping the first silently.
 
     `None` when the define is absent, or when the actions do not balance — a template shape this
     cannot read is one it must not edit, and the caller prints the lines instead.
@@ -762,7 +772,7 @@ def read_define(text: str, name: str) -> Define | None:
     roots: set[str] = set()
     for number in range(start, len(lines)):
         line = lines[number]
-        if depth == 1:
+        if depth >= 1:
             key = TOP_LEVEL_KEY.match(line)
             if key is not None:
                 roots.add(key.group("name"))

@@ -677,6 +677,63 @@ class MultiDocumentScope(unittest.TestCase):
             # The unguarded root stays exactly as it was; the guard wraps only the new one.
             self.assertLess(body.index("auth:"), body.index('{{- if eq $service "worker" }}'))
 
+    def test_a_new_key_under_a_root_already_guarded_by_service_is_printed_instead(self):
+        """`tankovault`'s own `scheduler` and `statementTimeouts` are the shape this covers: a
+        root already written, but from inside `{{- if eq $service ... }}` around a
+        `{{- with include ... }}`, not at the define's own unguarded depth. A root-detector keyed
+        to that depth alone cannot see it, so a new key under the same root looks like a brand-new
+        root and gets appended as a second, colliding block — which `fromYaml` resolves by
+        keeping only the second one and dropping the first silently. This is the exact defect that
+        slipped `watchlistImportResolveIntervalSecs` past review as a duplicate `scheduler:`."""
+        with tempfile.TemporaryDirectory() as workspace:
+            chart = Chart(Path(workspace))
+            chart.declaration(SCOPED_DOCUMENTS)
+            chart.template(
+                "_helpers.tpl",
+                '{{- define "fixture.derivedConfig" -}}\n'
+                "{{- $ctx := .ctx -}}\n"
+                "{{- $service := .service -}}\n"
+                "auth:\n"
+                "  {{- with $ctx.Values.auth.sessionTtl }}\n"
+                "  session_ttl: {{ . }}\n"
+                "  {{- end }}\n"
+                '{{- if eq $service "worker" }}\n'
+                '{{- with include "fixture.queue.config" $ctx }}\n'
+                "queue:\n"
+                "  {{- . | nindent 2 }}\n"
+                "{{- end }}\n"
+                "{{- end }}\n"
+                "{{- end -}}\n\n"
+                '{{- define "fixture.queue.config" -}}\n'
+                '{{- if not (kindIs "invalid" .Values.queue.workers) }}\n'
+                "workers: {{ .Values.queue.workers }}\n"
+                "{{- end }}\n"
+                "{{- end -}}\n\n"
+                '{{- define "fixture.secretData" -}}\n{{- end -}}\n',
+            )
+            chart.contract(
+                "api",
+                contract_of(
+                    key("auth.session_ttl", text_form="integer", constraint={"type": "integer"})
+                ),
+            )
+            chart.contract(
+                "worker",
+                contract_of(
+                    key("auth.session_ttl", text_form="integer", constraint={"type": "integer"}),
+                    key(
+                        "queue.retries",
+                        text_form="integer",
+                        constraint={"type": "integer"},
+                        default_value=3,
+                    ),
+                ),
+            )
+            planned = chart.write()
+
+            self.assertEqual([item.path for item in planned.owed_projected], ["queue.retries"])
+            self.assertEqual(chart.helper_text().count("queue:"), 1)
+
     def test_new_keys_sharing_a_root_with_different_scopes_are_printed_not_guessed(self):
         with tempfile.TemporaryDirectory() as workspace:
             chart = Chart(Path(workspace))

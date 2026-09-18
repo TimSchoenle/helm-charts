@@ -221,12 +221,6 @@ scheduler:
   {{- . | nindent 2 }}
 {{- end }}
 {{- end }}
-{{- if eq $service "controlPlane" }}
-scheduler:
-  {{- if not (kindIs "invalid" $ctx.Values.scheduler.watchlistImportResolveIntervalSecs) }}
-  watchlist_import_resolve_interval_secs: {{ $ctx.Values.scheduler.watchlistImportResolveIntervalSecs }}
-  {{- end }}
-{{- end }}
 {{- end -}}
 
 {{/*
@@ -253,7 +247,7 @@ interactive_secs: {{ $timeouts.interactiveSecs }}
 {{- end -}}
 
 {{/*
-The five newer `[scheduler]` keys, or empty when every one is left null.
+The six newer `[scheduler]` keys, or empty when every one is left null.
 
 Only `control-plane` reads them, for the same reason as `statementTimeouts` above: they are the
 keys `control-plane.json` declares and no other document does. The chart's older scheduler keys
@@ -281,6 +275,9 @@ unread_reconcile_interval_secs: {{ $scheduler.unreadReconcileIntervalSecs }}
 {{- end }}
 {{- if not (kindIs "invalid" $scheduler.unreadUnlockIntervalSecs) }}
 unread_unlock_interval_secs: {{ $scheduler.unreadUnlockIntervalSecs }}
+{{- end }}
+{{- if not (kindIs "invalid" $scheduler.watchlistImportResolveIntervalSecs) }}
+watchlist_import_resolve_interval_secs: {{ $scheduler.watchlistImportResolveIntervalSecs }}
 {{- end }}
 {{- end -}}
 

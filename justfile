@@ -167,7 +167,7 @@ target_branch := "origin/main"
 # standard-channel cluster prunes at apply time. That looseness is inherited rather than chosen;
 # it already applied to `kubeconform` before any chart value referenced the catalog.
 # renovate: datasource=git-refs depName=https://github.com/datreeio/CRDs-catalog currentValue=main
-crd_catalog_ref := "866b2653a5334db9aed20ad74701e20fd464471b"
+crd_catalog_ref := "ad3b08c5045129d7bb1eeffd8e61719b2c8dd1e2"
 
 # PodMonitor and the other operator CRDs are not part of the Kubernetes API surface, so their
 # schemas come from the community catalog. Held as a variable because the `{{ ... }}` placeholders

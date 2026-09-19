@@ -98,7 +98,7 @@ contract_cache := ".cache/terrace-contract"
 # turn a pull request red for something its author did not write, and the fix would be a version
 # bump made under time pressure rather than a considered one.
 # renovate: datasource=github-tags depName=astral-sh/ruff extractVersion=^v?(?<version>.*)$
-ruff_version := "0.16.7"
+ruff_version := "0.16.8"
 
 # Registry client and signature verifier for `just contracts`. Only the contract refresh needs
 # these — every gate that reads a contract reads the committed file — which is why they are absent

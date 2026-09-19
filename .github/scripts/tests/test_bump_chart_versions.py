@@ -72,7 +72,9 @@ class BumpChartVersionsTest(unittest.TestCase):
         (self.chart_dir / "Chart.yaml").write_bytes(text.encode("utf-8"))
 
     def write_values(self, main: str, db: str) -> None:
-        (self.chart_dir / "values.yaml").write_text(VALUES.format(main=main, db=db), encoding="utf-8")
+        (self.chart_dir / "values.yaml").write_text(
+            VALUES.format(main=main, db=db), encoding="utf-8"
+        )
 
     def run_script(self) -> list[str]:
         return bump.process_chart(Path("charts/demo"), "main")

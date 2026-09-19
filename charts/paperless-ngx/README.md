@@ -1,6 +1,6 @@
 # paperless-ngx
 
-![Version: 2.3.4](https://img.shields.io/badge/Version-2.3.4-informational?style=flat-square) ![AppVersion: 3.0.5](https://img.shields.io/badge/AppVersion-3.0.5-informational?style=flat-square)
+![Version: 2.3.5](https://img.shields.io/badge/Version-2.3.5-informational?style=flat-square) ![AppVersion: 3.0.5](https://img.shields.io/badge/AppVersion-3.0.5-informational?style=flat-square)
 
 This chart deploys paperless-ngx — a document management system that scans, indexes and archives your paper documents — hardened to the restricted Pod Security Standard, with per-directory persistence, scheduled document_exporter backups and document_importer restores, optional bundled Valkey, PostgreSQL, Gotenberg and Tika, Ingress and Gateway API publishing, Grafana dashboards and Prometheus alerting rules.
 
@@ -1226,13 +1226,13 @@ earlier `image.tag` after a major upgrade is not supported by the application. E
 | tika.server.resources.requests.memory | string | `"512Mi"` | Minimum guaranteed memory allocation. |
 | tolerations | list | `[]` | Tolerations for pod assignment. |
 | topologySpreadConstraints | list | `[]` | Pod topology spread constraints for availability. |
-| valkey | object | `{"enabled":true,"image":{"pullPolicy":"","registry":"","repository":"valkey/valkey","tag":"9.1.1-alpine@sha256:ee91f7a174ac4d6a6b0685b3a60e321f0a9dbbb691f9b0e285be2ba1d1be8328"},"persistence":{"enabled":false,"existingClaim":"","size":"1Gi","storageClassName":""},"resources":{"limits":{"memory":"256Mi"},"requests":{"cpu":"50m","memory":"128Mi"}}}` | A single-instance Valkey bundled with the release. Valkey is the Redis fork upstream's own compose stack moved to. Evaluation tier, like the bundled PostgreSQL: one replica, no failover. |
+| valkey | object | `{"enabled":true,"image":{"pullPolicy":"","registry":"","repository":"valkey/valkey","tag":"9.1.2-alpine@sha256:a0dbf4c1d5708782907c10e2c72deff317518518b5288a58416981d9db95d30b"},"persistence":{"enabled":false,"existingClaim":"","size":"1Gi","storageClassName":""},"resources":{"limits":{"memory":"256Mi"},"requests":{"cpu":"50m","memory":"128Mi"}}}` | A single-instance Valkey bundled with the release. Valkey is the Redis fork upstream's own compose stack moved to. Evaluation tier, like the bundled PostgreSQL: one replica, no failover. |
 | valkey.enabled | bool | `true` | Run Valkey as part of this release. On by default, because paperless-ngx cannot process a single document without a broker and an install that silently does nothing is a worse default than one extra pod. |
-| valkey.image | object | `{"pullPolicy":"","registry":"","repository":"valkey/valkey","tag":"9.1.1-alpine@sha256:ee91f7a174ac4d6a6b0685b3a60e321f0a9dbbb691f9b0e285be2ba1d1be8328"}` | Image for the bundled Valkey, composed as `registry/repository:tag`. |
+| valkey.image | object | `{"pullPolicy":"","registry":"","repository":"valkey/valkey","tag":"9.1.2-alpine@sha256:a0dbf4c1d5708782907c10e2c72deff317518518b5288a58416981d9db95d30b"}` | Image for the bundled Valkey, composed as `registry/repository:tag`. |
 | valkey.image.pullPolicy | string | `""` | The image pull policy. Empty resolves automatically from the tag/digest. |
 | valkey.image.registry | string | `""` | Registry host. Empty means Docker Hub. |
 | valkey.image.repository | string | `"valkey/valkey"` | Image repository. |
-| valkey.image.tag | string | `"9.1.1-alpine@sha256:ee91f7a174ac4d6a6b0685b3a60e321f0a9dbbb691f9b0e285be2ba1d1be8328"` | Image tag, pinned by digest. |
+| valkey.image.tag | string | `"9.1.2-alpine@sha256:a0dbf4c1d5708782907c10e2c72deff317518518b5288a58416981d9db95d30b"` | Image tag, pinned by digest. |
 | valkey.persistence | object | `{"enabled":false,"existingClaim":"","size":"1Gi","storageClassName":""}` | Storage for the broker. |
 | valkey.persistence.enabled | bool | `false` | Persist the queue across restarts. Off by default: what lives here is a work queue, and the cost of losing it is that documents already sitting in the consumption directory are re-consumed on the next scan — while persisting it means a poison task survives every restart. Turn it on when the consumption directory is a hand-fed drop box rather than a watched share. |
 | valkey.persistence.existingClaim | string | `""` | Use an existing PersistentVolumeClaim instead of the StatefulSet's own. |

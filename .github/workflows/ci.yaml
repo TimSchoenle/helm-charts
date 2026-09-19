@@ -52,6 +52,7 @@ jobs:
           ref: ${{ github.head_ref }}
           token: ${{ steps.generate_token.outputs.token }}
           persist-credentials: true
+          fetch-depth: 0
 
       - name: Setup toolchain
         uses: ./.github/actions/setup-toolchain
@@ -59,6 +60,19 @@ jobs:
       # Every configuration gate this job runs delegates to it.
       - name: Install terrace-contract
         uses: ./.github/actions/install-terrace-contract
+
+      # Renovate's image updates rewrite `values.yaml` and nothing else, but `ct lint` demands a new
+      # chart version for them and the release workflow publishes only a chart whose version moved.
+      # This supplies it, and moves `appVersion` with the main image, before the contract refresh
+      # below reads `appVersion` and before the README badges are rendered from the version. Only on
+      # Renovate branches: the first-party charts get theirs from the release pipeline that opened
+      # the pull request, and a contributor bumps by hand. Idempotent, and computed from the merge
+      # base, so a rebase recomputes it instead of stacking a second bump.
+      - name: Bump chart versions for image updates
+        if: startsWith(github.head_ref, 'renovate/')
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: just bump-chart-versions "${BASE_REF}"
 
       # Every chart types its Kubernetes values by URL, pinned to the release `kube_version` names.
       # Nothing derives those URLs from it, so this repins them before the dependencies are built —
@@ -423,6 +437,10 @@ jobs:
 
       - name: Lint
         run: just lint-python
+
+      - name: Test the chart version bump
+        run: just test-bump-chart-versions
+
   lint:
     name: Lint Charts
     runs-on: ubuntu-latest

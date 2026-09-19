@@ -17,6 +17,37 @@
       ],
       "automerge": false,
       "dependencyDashboardApproval": true
+    },
+    {
+      "description": "Container images pinned in a chart's values.yaml as `tag: <version>@sha256:<digest>` (see the image manager below). Registries that publish no release timestamp (ghcr.io) would otherwise be held back forever by the shared minimumReleaseAge, which blocks an update whose age it cannot determine.",
+      "matchManagers": ["custom.regex"],
+      "matchDatasources": ["docker"],
+      "minimumReleaseAgeBehaviour": "timestamp-optional"
+    },
+    {
+      "description": "First-party images are not tracked here: each application's release pipeline opens the `chore/helm/auto-update/*` pull request, which also refreshes the configuration contracts and the chart's documented surface. A second updater would race it for the same pin.",
+      "matchManagers": ["custom.regex"],
+      "matchPackageNames": ["/^(ghcr\\.io\\/)?(timschoenle|timmi6790)\\//"],
+      "enabled": false
+    },
+    {
+      "description": "A PostgreSQL major cannot be applied in place: the server refuses to start on a data directory written by a different major. The pgvector `pgNN` tag is the same major under another name.",
+      "matchManagers": ["custom.regex"],
+      "matchPackageNames": ["postgres", "pgvector/pgvector"],
+      "matchUpdateTypes": ["major"],
+      "enabled": false
+    },
+    {
+      "description": "pgvector is pinned to the floating `pgNN` tag, which is not semver. Reading NN as the only version component makes the digest the routine update and a new PostgreSQL major the only version change.",
+      "matchManagers": ["custom.regex"],
+      "matchPackageNames": ["pgvector/pgvector"],
+      "versioning": "regex:^pg(?<major>\\d+)$"
+    },
+    {
+      "description": "The chart version bump for an image update is made by the CI documentation job (`just bump-chart-versions`), computed from the merge base with main. The TankoVault release pipeline takes this chart's next patch version too, so the branch is rebased whenever main moves; otherwise CI would compute the same version from an older base and two pull requests could merge with one version.",
+      "matchManagers": ["custom.regex"],
+      "matchFileNames": ["charts/tankovault/**"],
+      "rebaseWhen": "behind-base-branch"
     }
   ],
   "customManagers": [
@@ -46,6 +77,15 @@
       "datasourceTemplate": "git-refs",
       "depNameTemplate": "{{{packageName}}}",
       "packageNameTemplate": "{{{packageName}}}"
+    },
+    {
+      "description": "Container images in charts/*/values.yaml, pinned as `repository: <name>` followed by `tag: <version>@sha256:<digest>` with only comment lines between the two. Docker Hub images carry no registry prefix and the others their full host, which is the package name the docker datasource expects.",
+      "customType": "regex",
+      "managerFilePatterns": ["/^charts/[^/]+/values\\.yaml$/"],
+      "matchStrings": [
+        "repository:\\s*(?<depName>[^\\s#]+)(?:\\s*#[^\\n]*)*\\s*tag:\\s*(?<currentValue>[^@\\s]+)@(?<currentDigest>sha256:[a-f0-9]{64})"
+      ],
+      "datasourceTemplate": "docker"
     }
   ]
 }

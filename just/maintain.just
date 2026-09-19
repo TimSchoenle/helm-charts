@@ -198,3 +198,36 @@ add-tunable chart alert name='' literal='' *flags:
     if [ -n '{{ name }}' ]; then args+=(--name '{{ name }}'); fi
     if [ -n '{{ literal }}' ]; then args+=(--literal '{{ literal }}'); fi
     "$python" {{ scripts }}/add-tunable.py "${args[@]}" {{ flags }}
+
+# --------------------------------------------------------------------------------------------
+# Chart version bump for image updates
+# --------------------------------------------------------------------------------------------
+#
+# An image update rewrites `values.yaml` only, but `ct lint` requires a new chart `version` for it
+# and the release workflow publishes a chart only when the version moved. Renovate opens those
+# pull requests for the third-party images, and the release pipelines of the applications open them
+# for the first-party ones, so this recipe is what the CI documentation job runs on a Renovate
+# branch to supply the version and the matching `appVersion`. Everything it compares against is
+# the merge base with the target branch, which keeps a run idempotent and lets a rebase recompute
+# the bump instead of colliding with a version another pull request took. The rules live in the
+# script's header.
+
+# Bump the version of every chart whose image pins moved on this branch, relative to the merge
+# base with `base`.
+[doc("Bump the version of every chart whose image pins moved since the merge base with a branch")]
+[group('maintain')]
+bump-chart-versions base='main':
+    #!/usr/bin/env bash
+    set -euo pipefail
+    {{ resolve_python }}
+    "$python" {{ scripts }}/bump-chart-versions.py \
+      --base "$(git merge-base 'origin/{{ base }}' HEAD)" --charts {{ charts }}
+
+# Unit tests for the version bump script, run against a throwaway git repository.
+[doc("Unit tests for the chart version bump script")]
+[group('maintain')]
+test-bump-chart-versions:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    {{ resolve_python }}
+    "$python" -m unittest discover -s {{ scripts }}/tests -p 'test_bump_*.py' -v

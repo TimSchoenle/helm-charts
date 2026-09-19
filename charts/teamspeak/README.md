@@ -1,6 +1,6 @@
 # teamspeak
 
-![Version: 3.1.3](https://img.shields.io/badge/Version-3.1.3-informational?style=flat-square) ![AppVersion: 3.13.8](https://img.shields.io/badge/AppVersion-3.13.8-informational?style=flat-square)
+![Version: 3.1.4](https://img.shields.io/badge/Version-3.1.4-informational?style=flat-square) ![AppVersion: 3.13.8](https://img.shields.io/badge/AppVersion-3.13.8-informational?style=flat-square)
 
 This chart deploys a TeamSpeak 3 server hardened to the restricted Pod Security Standard, with optional persistence, an optional Prometheus metrics exporter sidecar, Grafana dashboards and Prometheus alerting rules.
 
@@ -421,11 +421,11 @@ Cilium's DNS proxy saw returned for the name, so the DNS rule has to observe the
 | extraVolumeMounts | list | `[]` | Additional volume mounts added to the server container. |
 | extraVolumes | list | `[]` | Additional volumes added to the pod. |
 | fullnameOverride | string | `""` | Override the full generated resource name. |
-| image | object | `{"pullPolicy":"","registry":"","repository":"teamspeak","tag":"3.13.8@sha256:15acbc64c92f57ef1fd8dd203791fa7f70a14707e60ee494132f26b5ca265c6b"}` | Container image the pod runs, composed as `registry/repository:tag`. |
+| image | object | `{"pullPolicy":"","registry":"","repository":"teamspeak","tag":"3.13.8@sha256:6dfdfb22869adf50e1b66d024b360b786d57a85ea09e8e8fdb6cca23949b2813"}` | Container image the pod runs, composed as `registry/repository:tag`. |
 | image.pullPolicy | string | `""` | The image pull policy. Empty resolves automatically from the tag/digest. |
 | image.registry | string | `""` | Registry host. Empty means Docker Hub. |
 | image.repository | string | `"teamspeak"` | The container image repository. Defaults to the official TeamSpeak image, which is published and signed by TeamSpeak Systems GmbH. |
-| image.tag | string | `"3.13.8@sha256:15acbc64c92f57ef1fd8dd203791fa7f70a14707e60ee494132f26b5ca265c6b"` | The container image tag. Defaults to the chart's `appVersion` when empty. |
+| image.tag | string | `"3.13.8@sha256:6dfdfb22869adf50e1b66d024b360b786d57a85ea09e8e8fdb6cca23949b2813"` | The container image tag. Defaults to the chart's `appVersion` when empty. |
 | imagePullSecrets | list | `[]` | Optional image pull secrets for private registries. |
 | kubeVersionOverride | string | `""` | Kubernetes version to target when branching on API availability. Lets `helm template` render for a specific cluster version without a live connection. |
 | license | object | `{"accept":false,"existingSecret":"","existingSecretKey":"licensekey.dat"}` | The TeamSpeak licence. The render fails until `accept` is true; without a licence file the server runs on the free 32-slot licence. |

@@ -42,7 +42,8 @@ import yaml
 
 VERSION_LINE = re.compile(r"^(?P<key>version:[ \t]*)(?P<value>\S+)(?=[ \t]*\r?$)", re.MULTILINE)
 APP_VERSION_LINE = re.compile(
-    r"^(?P<key>appVersion:[ \t]*)(?P<open>[\"']?)(?P<value>[^\"'\s]+)(?P<close>[\"']?)(?=[ \t]*\r?$)",
+    r"^(?P<key>appVersion:[ \t]*)(?P<open>[\"']?)(?P<value>[^\"'\s]+)"
+    r"(?P<close>[\"']?)(?=[ \t]*\r?$)",
     re.MULTILINE,
 )
 SEMVER = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")
@@ -195,8 +196,12 @@ def process_chart(chart_dir: Path, base: str) -> list[str]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
-    parser.add_argument("--base", required=True, help="git ref holding the base branch, e.g. origin/main")
-    parser.add_argument("--charts", default="charts", type=Path, help="directory holding the charts")
+    parser.add_argument(
+        "--base", required=True, help="git ref holding the base branch, e.g. origin/main"
+    )
+    parser.add_argument(
+        "--charts", default="charts", type=Path, help="directory holding the charts"
+    )
     args = parser.parse_args()
 
     if not args.charts.is_dir():

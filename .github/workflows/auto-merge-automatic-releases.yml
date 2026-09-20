@@ -23,7 +23,8 @@ jobs:
     uses: TimSchoenle/actions/.github/workflows/maintenance-timed-auto-pr-approve.yaml@eeabdbd574bf75fbfb4a5eada1bb4fd690ca996a # tag=workflows-maintenance-timed-auto-pr-approve-v1.2.37
     with:
       time_elapsed: ${{ inputs.time_elapsed || '1d' }}
-      branch_pattern: '(chore/helm/auto-update/|renovate/(?!major-|kubernetes-kubernetes|.*datreeio))%'
+      # RE2 (gh --jq) has no lookahead: this admits renovate/ branches except the `major-` and `manual-` prefixes.
+      branch_pattern: '(chore/helm/auto-update/|renovate/([^m]|m[^a]|ma[^jn]|maj[^o]|majo[^r]|major[^-]|man[^u]|manu[^a]|manua[^l]|manual[^-]))%'
       trusted_authors: '253958393,248313786,29139614' # actions-maintenance-bot, automatic-release-manager, renovate[bot]
     secrets:
       app_id: ${{ secrets.ACTIONS_MAINTENANCE_APP_ID }}

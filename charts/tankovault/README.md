@@ -1,6 +1,6 @@
 # tankovault
 
-![Version: 5.10.3](https://img.shields.io/badge/Version-5.10.3-informational?style=flat-square) ![AppVersion: 10.1.2](https://img.shields.io/badge/AppVersion-10.1.2-informational?style=flat-square)
+![Version: 5.10.4](https://img.shields.io/badge/Version-5.10.4-informational?style=flat-square) ![AppVersion: 10.1.2](https://img.shields.io/badge/AppVersion-10.1.2-informational?style=flat-square)
 
 This chart deploys the full TankoVault manga aggregator stack — frontend, api, control-plane, worker, notifier, sync, challenge-solver and render — hardened to the restricted Pod Security Standard, with file-backed configuration that reloads in place instead of restarting pods, optional bundled PostgreSQL, Valkey, NATS JetStream and TRAWL, and optional Prometheus metrics, alerting rules and Grafana dashboards.
 
@@ -1684,11 +1684,11 @@ lookup; the chart fails the render if FQDN destinations are named with the DNS r
 | metrics.serviceMonitor.scrapeTimeout | string | `"10s"` | Scrape timeout. |
 | nameOverride | string | `""` | Override the chart name used in resource names. |
 | namespaceOverride | string | `""` | Override the namespace objects are created in. |
-| nats | object | `{"enabled":false,"image":{"repository":"nats","tag":"2-alpine@sha256:f2123f533c2b0cada0a5c5ec434fb2b8cfe1cf220215ef9d7517e1372917ad66"},"persistence":{"enabled":true,"existingClaim":"","size":"10Gi","storageClassName":""},"resources":{"limits":{"memory":"512Mi"},"requests":{"cpu":"100m","memory":"256Mi"}}}` | Bundled NATS JetStream, the task queue and event bus the control plane, worker and notifier are built on: a single instance with a file store on a PVC. Embedded rather than taken from the NATS authors' chart because that chart ships no `values.schema.json`, so `helm schema` derives a closed one from its own values.yaml and makes the `container.merge` and `podTemplate.merge` patches unsettable — and those patches are the only way to give its pods the security context and resource requests this repository's policy scan requires. Evaluation-tier like the other bundled datastores: no clustering, so no replication and no failover. Use `externalNats` for anything real. |
+| nats | object | `{"enabled":false,"image":{"repository":"nats","tag":"2-alpine@sha256:ac8f88a6494bffc2c2a5289a0ca61cb28a9145c11ba5677cf24265d07f46d8d4"},"persistence":{"enabled":true,"existingClaim":"","size":"10Gi","storageClassName":""},"resources":{"limits":{"memory":"512Mi"},"requests":{"cpu":"100m","memory":"256Mi"}}}` | Bundled NATS JetStream, the task queue and event bus the control plane, worker and notifier are built on: a single instance with a file store on a PVC. Embedded rather than taken from the NATS authors' chart because that chart ships no `values.schema.json`, so `helm schema` derives a closed one from its own values.yaml and makes the `container.merge` and `podTemplate.merge` patches unsettable — and those patches are the only way to give its pods the security context and resource requests this repository's policy scan requires. Evaluation-tier like the other bundled datastores: no clustering, so no replication and no failover. Use `externalNats` for anything real. |
 | nats.enabled | bool | `false` | Deploy the bundled NATS. |
-| nats.image | object | `{"repository":"nats","tag":"2-alpine@sha256:f2123f533c2b0cada0a5c5ec434fb2b8cfe1cf220215ef9d7517e1372917ad66"}` | Repository and tag for the bundled NATS. |
+| nats.image | object | `{"repository":"nats","tag":"2-alpine@sha256:ac8f88a6494bffc2c2a5289a0ca61cb28a9145c11ba5677cf24265d07f46d8d4"}` | Repository and tag for the bundled NATS. |
 | nats.image.repository | string | `"nats"` | Image repository. |
-| nats.image.tag | string | `"2-alpine@sha256:f2123f533c2b0cada0a5c5ec434fb2b8cfe1cf220215ef9d7517e1372917ad66"` | Image tag, pinned by digest. |
+| nats.image.tag | string | `"2-alpine@sha256:ac8f88a6494bffc2c2a5289a0ca61cb28a9145c11ba5677cf24265d07f46d8d4"` | Image tag, pinned by digest. |
 | nats.persistence | object | `{"enabled":true,"existingClaim":"","size":"10Gi","storageClassName":""}` | The volume the JetStream file store lives on. |
 | nats.persistence.enabled | bool | `true` | Persist the JetStream file store. Without it every queued scan task and every undelivered event is lost when the pod is rescheduled. |
 | nats.persistence.existingClaim | string | `""` | Use an existing claim instead of creating one. |

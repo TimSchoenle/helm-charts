@@ -94,8 +94,20 @@ charts/*/tests/__snapshot__/*.snap      linguist-generated=true
 
 # Both the directory entry and its contents are listed: `git archive` prunes an
 # ignored tree, but the explicit `/**` form keeps the intent unambiguous.
-/.github/       export-ignore
-/.github/**     export-ignore
+#
+# `.github` is the exception, and the asymmetry is load-bearing. Its directory
+# entry is deliberately *not* listed, because a pruned tree is never descended
+# into and a `-export-ignore` below it would therefore never be read. The
+# workflows reference their composite actions as `uses: $/.github/actions/...`,
+# which the runner resolves by downloading a repository tarball rather than by
+# reading the checkout - and that tarball honours these rules. Ignore
+# `/.github/` as a directory again, or drop either negation, and every job
+# fails in "Set up job" with "Can't find 'action.yml', 'action.yaml' or
+# 'Dockerfile'". Only the two action directories are exported; the workflows,
+# scripts, templates and testdata that make up the rest of `.github` stay out.
+/.github/**             export-ignore
+/.github/actions/       -export-ignore
+/.github/actions/**     -export-ignore
 /.serena/       export-ignore
 /.serena/**     export-ignore
 /just/          export-ignore

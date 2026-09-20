@@ -1,6 +1,6 @@
 # tankovault
 
-![Version: 5.10.4](https://img.shields.io/badge/Version-5.10.4-informational?style=flat-square) ![AppVersion: 10.1.2](https://img.shields.io/badge/AppVersion-10.1.2-informational?style=flat-square)
+![Version: 5.10.5](https://img.shields.io/badge/Version-5.10.5-informational?style=flat-square) ![AppVersion: 10.1.2](https://img.shields.io/badge/AppVersion-10.1.2-informational?style=flat-square)
 
 This chart deploys the full TankoVault manga aggregator stack — frontend, api, control-plane, worker, notifier, sync, challenge-solver and render — hardened to the restricted Pod Security Standard, with file-backed configuration that reloads in place instead of restarting pods, optional bundled PostgreSQL, Valkey, NATS JetStream and TRAWL, and optional Prometheus metrics, alerting rules and Grafana dashboards.
 
@@ -2032,13 +2032,13 @@ lookup; the chart fails the render if FQDN destinations are named with the DNS r
 | telemetry.sentry.shutdownTimeoutSecs | int | `2` | How long process exit waits for queued events to drain. It is spent on every pod shutdown, so it is time added to every rollout; keep it short. |
 | telemetry.sentry.spanAttributes | bool | `false` | Copy `tracing` span fields onto the Sentry span as attributes. Off: span fields here routinely carry ids and user-supplied titles, and a transaction is retained for longer than a log line. |
 | telemetry.sentry.tracesSampleRate | float | `0` | Fraction of traces a service **starts** that are recorded. `0` starts none, which is what makes this feature free to switch on for error reporting alone. It does not take a service out of a trace: a request or a broker message that arrives already sampled is continued whatever this says, so the tier-wide trace survives one service being set differently. `0.05`-`0.2` is an ordinary production figure, and it is worth setting uniformly, because the service that starts a trace is the one whose rate decides whether it exists at all. |
-| trawl | object | `{"affinity":{},"browserPoolSize":1,"enabled":false,"image":{"repository":"ghcr.io/germondai/trawl","tag":"1.3.1@sha256:1276e2937346190380310e15b3c4cbbf7757827c2ed3056459ad999b10cb90c9"},"nodeSelector":{},"podAntiAffinity":"","priorityClassName":"","redis":{"enabled":true,"url":""},"replicaCount":1,"resources":{"limits":{"memory":"2Gi"},"requests":{"cpu":"500m","memory":"1Gi"}},"runAsUser":1000,"shmSize":"1Gi","tolerations":[],"topologySpreadConstraints":[]}` | Bundled [TRAWL](https://github.com/germondai/trawl), the default backend for the challenge solver. |
+| trawl | object | `{"affinity":{},"browserPoolSize":1,"enabled":false,"image":{"repository":"ghcr.io/germondai/trawl","tag":"1.6.2@sha256:fc39225a890a40b64ac65731dddd66e52f83fc9c20b54b7ed87c6cecdf355b13"},"nodeSelector":{},"podAntiAffinity":"","priorityClassName":"","redis":{"enabled":true,"url":""},"replicaCount":1,"resources":{"limits":{"memory":"2Gi"},"requests":{"cpu":"500m","memory":"1Gi"}},"runAsUser":1000,"shmSize":"1Gi","tolerations":[],"topologySpreadConstraints":[]}` | Bundled [TRAWL](https://github.com/germondai/trawl), the default backend for the challenge solver. |
 | trawl.affinity | object | `{}` | Explicit affinity rules for TRAWL. Wins over `podAntiAffinity` when set. |
 | trawl.browserPoolSize | int | `1` | Number of warm browser instances to keep. Each is a full Firefox, so raising this raises `resources` with it. The image's own default is 3, which fits none of the sizes below. |
 | trawl.enabled | bool | `false` | Deploy the bundled TRAWL. |
-| trawl.image | object | `{"repository":"ghcr.io/germondai/trawl","tag":"1.3.1@sha256:1276e2937346190380310e15b3c4cbbf7757827c2ed3056459ad999b10cb90c9"}` | Repository and tag for the bundled TRAWL. |
+| trawl.image | object | `{"repository":"ghcr.io/germondai/trawl","tag":"1.6.2@sha256:fc39225a890a40b64ac65731dddd66e52f83fc9c20b54b7ed87c6cecdf355b13"}` | Repository and tag for the bundled TRAWL. |
 | trawl.image.repository | string | `"ghcr.io/germondai/trawl"` | Image repository. |
-| trawl.image.tag | string | `"1.3.1@sha256:1276e2937346190380310e15b3c4cbbf7757827c2ed3056459ad999b10cb90c9"` | Image tag, pinned by digest. Never `latest`: it silently changes the bot-management behaviour the adapters are tuned against. |
+| trawl.image.tag | string | `"1.6.2@sha256:fc39225a890a40b64ac65731dddd66e52f83fc9c20b54b7ed87c6cecdf355b13"` | Image tag, pinned by digest. Never `latest`: it silently changes the bot-management behaviour the adapters are tuned against. |
 | trawl.nodeSelector | object | `{}` | Node selector for TRAWL's pods. Useful for pinning TRAWL's browser pool to nodes with more headroom than the rest of the release. |
 | trawl.podAntiAffinity | string | `""` | Pod anti-affinity across nodes for TRAWL. `soft` prefers spreading replicas, `hard` requires it. |
 | trawl.priorityClassName | string | `""` | Priority class for TRAWL's pods. |

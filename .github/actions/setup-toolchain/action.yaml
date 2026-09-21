@@ -10,19 +10,17 @@ inputs:
       signal in any diff.
     required: false
     default: 'v3.21.3'
-  just-version:
-    description: >-
-      just version to install. Pinned for the same reason as Helm — the recipes are the build
-      system, so the runner that interprets them is part of the toolchain.
-    required: false
-    default: '1.58.0'
 runs:
   using: "composite"
   steps:
+    # just is pinned for the same reason as Helm: the recipes are the build system, so the runner
+    # that interprets them is part of the toolchain. The version is a literal rather than an
+    # input default because no caller overrides it, and a literal is what lets zizmor's
+    # `unpinned-tools` audit verify the pin — an expression here is reported as unpinned.
     - name: Install just
       uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
       with:
-        just-version: ${{ inputs.just-version }}
+        just-version: '1.58.0'
 
     - name: Install Helm
       uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1

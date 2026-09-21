@@ -882,10 +882,12 @@ jobs:
 
       - name: Pull kind node image
         if: steps.cache-kind-node-image.outputs.cache-hit != 'true'
+        env:
+          KUBERNETES_VERSION: ${{ matrix.kubernetes }}
         run: |
           set -euo pipefail
-          docker pull "kindest/node:${{ matrix.kubernetes }}"
-          docker save --output /tmp/kind-node-image.tar "kindest/node:${{ matrix.kubernetes }}"
+          docker pull "kindest/node:${KUBERNETES_VERSION}"
+          docker save --output /tmp/kind-node-image.tar "kindest/node:${KUBERNETES_VERSION}"
 
       # Three nodes, because `--upgrade` rolls every workload at once and a single node cannot
       # schedule the rolling-update surge alongside the datastore StatefulSets it is also
@@ -929,7 +931,9 @@ jobs:
       # the recipe explains how new charts are partitioned out of it. `origin/main` is named in
       # both the recipe and ct.yaml — keep the two in step.
       - name: Run chart-testing (install & upgrade)
-        run: just test-install '${{ matrix.chart }}'
+        env:
+          CHART: ${{ matrix.chart }}
+        run: just test-install "${CHART}"
 
   renovate-validate:
     name: Validate Renovate Config
@@ -991,10 +995,13 @@ jobs:
       # there is nothing for them to do (no chart changed; not a pull_request event), and that is
       # not a failure. Only "failure" and "cancelled" fail this job.
       - name: Check that every required job passed
+        env:
+          NEEDS: ${{ toJson(needs) }}
+          ANY_FAILED: ${{ contains(needs.*.result, 'failure') }}
+          ANY_CANCELLED: ${{ contains(needs.*.result, 'cancelled') }}
         run: |
-          echo '${{ toJson(needs) }}' | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
-          if [[ "${{ contains(needs.*.result, 'failure') }}" == "true" ]] || \
-             [[ "${{ contains(needs.*.result, 'cancelled') }}" == "true" ]]; then
+          jq -r 'to_entries[] | "\(.key): \(.value.result)"' <<< "${NEEDS}"
+          if [[ "${ANY_FAILED}" == "true" ]] || [[ "${ANY_CANCELLED}" == "true" ]]; then
             echo "One or more required jobs did not succeed."
             exit 1
           fi

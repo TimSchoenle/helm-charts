@@ -53,15 +53,16 @@
   ],
   "customManagers": [
     {
-      "description": "Pinned build-toolchain versions in justfile and ci.yaml, declared via a `# renovate: datasource=... depName=...` comment on the line above — the same convention already used for PROMETHEUS_OPERATOR_VERSION, extended to the files it didn't previously cover.",
+      "description": "Pinned build-toolchain versions in justfile, ci.yaml and the composite actions, declared via a `# renovate: datasource=... depName=...` comment on the line above — the same convention already used for PROMETHEUS_OPERATOR_VERSION, extended to the files it didn't previously cover. A YAML value may be quoted; the quotes are not part of the version.",
       "customType": "regex",
       "managerFilePatterns": [
         "/^justfile$/",
-        "/^\\.github/workflows/ci\\.yaml$/"
+        "/^\\.github/workflows/ci\\.yaml$/",
+        "/^\\.github/actions/[^/]+/action\\.ya?ml$/"
       ],
       "matchStrings": [
         "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)(?: extractVersion=(?<extractVersion>\\S+))?\\s+\\S+\\s*:=\\s*\"(?<currentValue>[^\":]+)\"",
-        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)(?: extractVersion=(?<extractVersion>\\S+))?\\s+\\S+:\\s*(?<currentValue>\\S+)",
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)(?: extractVersion=(?<extractVersion>\\S+))?\\s+\\S+:\\s*['\"]?(?<currentValue>[^\\s'\"]+)['\"]?",
         "# renovate: datasource=docker depName=(?<depName>\\S+)\\s+\\S+\\s*:=\\s*\"[^:\"]+:(?<currentValue>[^\"]+)\""
       ],
       "datasourceTemplate": "{{{datasource}}}",

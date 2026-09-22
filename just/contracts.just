@@ -332,6 +332,12 @@ adopt-config chart='' *flags:
 # commit it back, which is why the repair looked automatic — but it lands on the push after the
 # red one, and the run everybody was looking at was already scrapped.
 #
+# Run through `resolve_helm`, not the bare binary: this is the one command in the repository that
+# is not content to fail when Helm and its plugins are absent, since a contributor reaching for
+# `sync-config` is usually here *because* an image release just moved and has no reason to have
+# `just plugins` installed yet. `resolve_helm` uses a local `helm` when it already carries both
+# plugins and falls back to running one in a container otherwise — see its definition in `justfile`.
+#
 # `just contract-tests`, because a new marker changes what the generated round trip should say and
 # `just check-contract-tests` is red until it is regenerated. What it produces is the point:
 # measured on `discord-alertmanager`, the suite gained fifteen cases, and with the projection now
@@ -340,7 +346,7 @@ adopt-config chart='' *flags:
 #
 # `just update-snapshots`, over the same chart, because a snapshot suite asserts the whole
 # rendered object: the ConfigMap gains a `[telemetry]` section and three cases fail while nothing
-# is actually wrong.
+# is actually wrong. It resolves the same way, via `HELM_BIN` — see that recipe in `just/test.just`.
 #
 # `just config-readme`, because the `credentials` row this command now writes is a column of the
 # generated credential table and `just check-config-readme` is blocking.
@@ -400,9 +406,10 @@ sync-config chart='' *flags: (contracts chart)
         # was added for was all of them. The Documentation job does regenerate it, but on the push
         # after the red one; this closes that gap before the push.
         echo
+        {{ resolve_helm }}
         root='{{ charts }}'
         if [ -n '{{ chart }}' ]; then root='{{ charts }}/{{ chart }}'; fi
-        if helm schema --add-schema-reference --chart-search-root "$root"; then
+        if "$HELM_BIN" schema --add-schema-reference --chart-search-root "$root"; then
           echo "==> regenerated values.schema.json under $root"
         else
           echo "warning: values.schema.json was NOT regenerated, and every render will fail" >&2

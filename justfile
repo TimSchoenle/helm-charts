@@ -18,6 +18,7 @@
 #   maintain                    python3 with PyYAML
 #   render                      kubeconform, for `just validate-manifests`
 #   test                        docker, for `just test-rules` and `just test-e2e`
+#   contracts (sync-config)     helm, OR docker to run it in a container instead — see `resolve_helm`
 #
 # `just plugins` installs the Helm plugins. The rest are external binaries; a recipe that needs
 # one and cannot find it fails saying so rather than skipping the check.
@@ -61,6 +62,13 @@ helm_unittest_version := "1.1.2"
 # renovate: datasource=github-tags depName=dadav/helm-schema
 helm_schema_version := "0.18.1"
 
+# Helm itself, for `resolve_helm`'s container fallback below. Mirrors the `helm-version` input
+# `.github/actions/setup-toolchain/action.yaml` pins for the runner — kept in step by hand, the
+# same way `target_branch` further down is kept in step with `ct.yaml`, because the two are read by
+# a shell script and a GitHub Action respectively and nothing generates one from the other.
+# renovate: datasource=docker depName=alpine/helm
+helm_version := "3.21.3"
+
 # The shared contract toolchain, which is what the gates in `just/contracts.just` now are.
 #
 # It replaces ~2,000 lines of Python here and the pinned `jv` binary that Python delegated JSON
@@ -88,6 +96,11 @@ terrace_contract_version := "0.2.2"
 # gitignored: the cache belongs to this checkout, not to the machine, so two worktrees of this
 # repository never fight over it.
 contract_cache := ".cache/terrace-contract"
+
+# Where `resolve_helm` writes the Docker-backed `helm` wrapper it falls back to, for the same
+# reason `contract_cache` above is relative and gitignored: it belongs to this checkout, not to the
+# machine.
+helm_docker_cache := ".cache/helm-docker"
 
 # Linter for `.github/scripts`. Pinned as a single binary by release URL for exactly the reason
 # `terrace-contract` above is: a `pip install` inside a recipe is the difference between a gate
@@ -225,6 +238,90 @@ if [ -z "$contract" ]; then
   echo "         cargo build --release --manifest-path <terrace-config>/cli/Cargo.toml" >&2
   echo "         export TERRACE_CONTRACT_BIN=<terrace-config>/cli/target/release/terrace-contract" >&2
   exit 1
+fi
+'''
+
+# Resolves `helm` the way `resolve_contract` resolves the contract toolchain: an override
+# (`HELM_BIN`) first, then a local `helm` that already carries both pinned plugins — so a
+# contributor who has already run `just plugins` sees no change at all — and only then a container,
+# because that is the one case this exists for: `just sync-config` should not require installing
+# Helm and the `schema`/`unittest` plugins just to write a chart's derived values.
+#
+# The container is `alpine/helm`, tagged to `helm_version` above, with `helm-schema` and
+# `helm-unittest` installed into it at the exact versions `just plugins` installs on a host.
+# `helmunittest/helm-unittest` publishes Helm bundled with helm-unittest, but never at a combination
+# matching both of this repository's pins at once, so the pair is built here rather than borrowed —
+# what runs in the container is the same toolchain `just check` already assumes, not a nearby one.
+#
+# What is written to `helm_docker_cache` is a wrapper *script*, not a shell function: `sync-config`
+# calls back into `just` for `update-snapshots`, which runs as its own process and would not see a
+# function defined in this one. `HELM_BIN`, once exported, crosses that boundary as plain
+# environment inheritance — the same way `TERRACE_CONTRACT_BIN` does — and `just/test.just`'s
+# `update-snapshots` reads it for exactly that reason.
+#
+# The plugin install runs once per machine, not once per invocation: it lands in a named Docker
+# volume the wrapper mounts every time, and skips straight to `exec helm "$@"` once that volume
+# already has it. The container runs as root (`-u 0:0`) with `$HOME` pointed at that volume — not
+# because anything here needs root, but because it sidesteps guessing which user `alpine/helm` runs
+# as, and the container is discarded on exit; the only durable side effect on a Linux host is that
+# files it writes under the repository (`values.schema.json`, the snapshot `.snap` files) come back
+# root-owned, which `chown` fixes and Docker Desktop's Windows/macOS file sharing does not exhibit
+# at all.
+resolve_helm := '''
+if [ -z "${HELM_BIN:-}" ]; then
+  if command -v helm >/dev/null 2>&1 \
+    && helm plugin list 2>/dev/null | cut -f1 | grep -qx schema \
+    && helm plugin list 2>/dev/null | cut -f1 | grep -qx unittest; then
+    export HELM_BIN="helm"
+  elif command -v docker >/dev/null 2>&1; then
+    mkdir -p "''' + helm_docker_cache + '''"
+    wrapper="''' + helm_docker_cache + '''/helm"
+
+    # A static wrapper: the pinned versions travel to it as environment variables rather than
+    # being baked into the file, so the file itself needs no per-version rewrite and no escaping
+    # of the `$PWD`/`$@`/`$plugins_dir` it evaluates later, at its own run time. `-e NAME` (with no
+    # `=value`) forwards the current value of `$NAME` from the wrapper's own environment into the
+    # container, which is what carries `HELM_SCHEMA_VERSION` and `HELM_UNITTEST_VERSION` across
+    # that boundary; `HELM_DOCKER_IMAGE` is read on the host side, choosing the image `docker run`
+    # itself pulls.
+    cat > "$wrapper" <<'HELM_WRAPPER_EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+mount="$PWD"
+if command -v cygpath >/dev/null 2>&1; then
+  mount="$(cygpath -w "$PWD")"
+fi
+
+MSYS_NO_PATHCONV=1 docker run --rm -i \
+  -u 0:0 \
+  -e HOME=/helm-docker-home \
+  -e HELM_SCHEMA_VERSION \
+  -e HELM_UNITTEST_VERSION \
+  -v helm-charts-helm-docker-home:/helm-docker-home \
+  -v "${mount}:/repo" -w /repo \
+  --entrypoint sh \
+  "${HELM_DOCKER_IMAGE:?HELM_DOCKER_IMAGE not set}" \
+  -euc '
+    plugins_dir="$(helm env HELM_PLUGINS)"
+    [ -d "$plugins_dir/helm-schema" ] || helm plugin install https://github.com/dadav/helm-schema --version "$HELM_SCHEMA_VERSION"
+    [ -d "$plugins_dir/helm-unittest" ] || helm plugin install https://github.com/helm-unittest/helm-unittest --version "$HELM_UNITTEST_VERSION"
+    exec helm "$@"
+  ' -- "$@"
+HELM_WRAPPER_EOF
+    chmod +x "$wrapper"
+
+    export HELM_BIN="$wrapper"
+    export HELM_DOCKER_IMAGE="alpine/helm:''' + helm_version + '''"
+    export HELM_SCHEMA_VERSION="''' + helm_schema_version + '''"
+    export HELM_UNITTEST_VERSION="''' + helm_unittest_version + '''"
+    echo "==> no local helm with both the schema and unittest plugins; running helm in a container instead (docker run alpine/helm)" >&2
+  else
+    echo "error: neither a 'helm' with the schema and unittest plugins, nor 'docker', is on PATH." >&2
+    echo "       Run 'just plugins' to install the plugins locally, or install Docker so this can" >&2
+    echo "       run helm in a container instead." >&2
+    exit 1
+  fi
 fi
 '''
 

@@ -47,6 +47,12 @@ sentry:
   span_attributes: {{ .Values.sentry.spanAttributes }}
   debug: {{ .Values.sentry.debug }}
 {{- end }}
+legal:
+  {{- with .Values.legal.defaultLocale }}
+  default_locale: {{ . | quote }}
+  {{- end }}
+  documents:
+    {{- toYaml .Values.legal.documents | nindent 4 }}
 {{- end -}}
 
 {{/*

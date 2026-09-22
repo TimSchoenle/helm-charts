@@ -1,20 +1,20 @@
 {
   "source": {
     "image": "docker.io/timschoenle/portfolio",
-    "digest": "sha256:951dc4e43229fece52abc3e4e14f910896fb57a35b266fba4b107a7e632efa6f",
-    "sha256": "130f73b77e587623a979c7750fdb639c00be7521d0f02ccd31aad6d66877a9d2",
-    "fetched": "2026-09-14T03:16:20Z"
+    "digest": "sha256:eb6390828d4563350877390ea995e58510812f98cc3ce32d1cfaa487029841ae",
+    "sha256": "ff4de44cf2e3b9fee63ff3da4047eebace87453eb7d6514b4030a850d95f5253",
+    "fetched": "2026-09-22T12:01:32Z"
   },
   "contract": {
     "terrace_contract": 1,
     "producer": {
       "name": "terrace-config",
-      "version": "0.12.0",
+      "version": "0.13.0",
       "loader": "figment"
     },
     "app": {
       "name": "portfolio",
-      "version": "v2.12.1",
+      "version": "v3.1.0",
       "source": "https://github.com/TimSchoenle/Portfolio"
     },
     "schema": {
@@ -636,6 +636,94 @@
           "required": false,
           "secret": false,
           "reserved": false
+        },
+        {
+          "path": "legal.default_locale",
+          "env": "PORTFOLIO_LEGAL__DEFAULT_LOCALE",
+          "env_file": "PORTFOLIO_LEGAL__DEFAULT_LOCALE_FILE",
+          "secrets_file": "legal__default_locale",
+          "docs": "Locale served when neither the request nor its `Accept-Language` header matches a\npublished one, for example `en`. Without it, the first published locale in alphabetical\norder is served.",
+          "ty": "String",
+          "values": [],
+          "constraint": {
+            "type": "string"
+          },
+          "text_form": "text",
+          "aliases": [],
+          "env_aliases": [],
+          "env_file_aliases": [],
+          "secrets_file_aliases": [],
+          "default": null,
+          "default_value": null,
+          "note": null,
+          "required": false,
+          "secret": false,
+          "reserved": false
+        },
+        {
+          "path": "legal.documents",
+          "env": "PORTFOLIO_LEGAL__DOCUMENTS",
+          "env_file": "PORTFOLIO_LEGAL__DOCUMENTS_FILE",
+          "secrets_file": "legal__documents",
+          "docs": "The published documents, keyed by the slug their URL uses. A slug is lowercase letters,\ndigits, `_` and `-`, at most 64 characters, and starts with a letter or a digit.",
+          "ty": "BTreeMap<String, LegalDocument>",
+          "values": [],
+          "constraint": {
+            "additionalProperties": {
+              "additionalProperties": false,
+              "properties": {
+                "body": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "description": "Markdown text per locale, keyed by locale (`en`, `de-AT`). Usually supplied through a\n`…__BODY__<LOCALE>_FILE` variable naming a mounted file. Each text is at most 1 MiB.\nExclusive with `url`.",
+                  "type": "object"
+                },
+                "order": {
+                  "description": "Position in the index, lowest first. Documents with the same value are ordered by slug.",
+                  "maximum": 2147483647,
+                  "minimum": -2147483648,
+                  "type": "integer"
+                },
+                "title": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "description": "Display title per locale, keyed like `body`.",
+                  "type": "object"
+                },
+                "updated": {
+                  "description": "The \"last updated\" line, displayed verbatim.",
+                  "type": "string"
+                },
+                "url": {
+                  "description": "Absolute `http` or `https` URL of a document hosted elsewhere, without credentials.\nExclusive with `body`.",
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "required": [
+              "imprint",
+              "privacy"
+            ],
+            "type": "object"
+          },
+          "text_constraint": {
+            "pattern": "^\\s*[\\[\\{][\\s\\S]*[\\]\\}]\\s*$",
+            "type": "string"
+          },
+          "text_form": "structured",
+          "aliases": [],
+          "env_aliases": [],
+          "env_file_aliases": [],
+          "secrets_file_aliases": [],
+          "default": null,
+          "default_value": null,
+          "note": null,
+          "required": true,
+          "secret": false,
+          "reserved": false
         }
       ]
     },
@@ -698,6 +786,58 @@
               "description": "Revalidation interval in seconds. Zero means a permanent cache.\n\nEvery page renders from compile-time data, so the only thing that changes the output is a\nnew build, which starts from an empty cache anyway. A positive value opts into a finite,\ntime-based TTL, which is useful only when a *persistent* cache volume is shared across\ndeploys.\n\nDefault: permanent.",
               "minimum": 0,
               "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "legal": {
+          "additionalProperties": false,
+          "properties": {
+            "default_locale": {
+              "description": "Locale served when neither the request nor its `Accept-Language` header matches a\npublished one, for example `en`. Without it, the first published locale in alphabetical\norder is served.",
+              "type": "string"
+            },
+            "documents": {
+              "additionalProperties": {
+                "additionalProperties": false,
+                "properties": {
+                  "body": {
+                    "additionalProperties": {
+                      "type": "string"
+                    },
+                    "description": "Markdown text per locale, keyed by locale (`en`, `de-AT`). Usually supplied through a\n`…__BODY__<LOCALE>_FILE` variable naming a mounted file. Each text is at most 1 MiB.\nExclusive with `url`.",
+                    "type": "object"
+                  },
+                  "order": {
+                    "description": "Position in the index, lowest first. Documents with the same value are ordered by slug.",
+                    "maximum": 2147483647,
+                    "minimum": -2147483648,
+                    "type": "integer"
+                  },
+                  "title": {
+                    "additionalProperties": {
+                      "type": "string"
+                    },
+                    "description": "Display title per locale, keyed like `body`.",
+                    "type": "object"
+                  },
+                  "updated": {
+                    "description": "The \"last updated\" line, displayed verbatim.",
+                    "type": "string"
+                  },
+                  "url": {
+                    "description": "Absolute `http` or `https` URL of a document hosted elsewhere, without credentials.\nExclusive with `body`.",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "description": "The published documents, keyed by the slug their URL uses. A slug is lowercase letters,\ndigits, `_` and `-`, at most 64 characters, and starts with a letter or a digit.",
+              "required": [
+                "imprint",
+                "privacy"
+              ],
+              "type": "object"
             }
           },
           "type": "object"

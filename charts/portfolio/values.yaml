@@ -24,7 +24,7 @@ image:
   # -- Container image tag to deploy, pinned by digest (`vX.Y.Z@sha256:...`). The digest pins
   # the pull, while the tag stays on as the readable version marker. Defaults to the chart's
   # `appVersion` when empty.
-  tag: v2.12.1@sha256:951dc4e43229fece52abc3e4e14f910896fb57a35b266fba4b107a7e632efa6f
+  tag: v3.1.0@sha256:eb6390828d4563350877390ea995e58510812f98cc3ce32d1cfaa487029841ae
 
   # @schema
   # enum: ["", Always, IfNotPresent, Never]
@@ -361,6 +361,50 @@ sentry:
   # -- Print the SDK's own diagnostics to stderr (`sentry.debug`). For proving a DSN works, not
   # for running.
   debug: false
+
+# @schema
+# additionalProperties: true
+# @schema
+# -- The `legal` settings.
+legal:
+  # @schema
+  # # @config projection legal.default_locale optional
+  # type: [string, 'null']
+  # @schema
+  # -- Locale served when neither the request nor its `Accept-Language` header matches a
+  # published one, for example `en`. Without it, the first published locale in alphabetical
+  # order is served (`legal.default_locale`).
+  defaultLocale: null
+
+  # @schema
+  # # @config structured legal.documents
+  # type: object
+  # required: ["imprint", "privacy"]
+  # additionalProperties:
+  #   type: object
+  #   properties:
+  #     body:
+  #       type: object
+  #       additionalProperties:
+  #         type: string
+  #     order:
+  #       type: integer
+  #       minimum: -2147483648
+  #       maximum: 2147483647
+  #     title:
+  #       type: object
+  #       additionalProperties:
+  #         type: string
+  #     updated:
+  #       type: string
+  #     url:
+  #       type: string
+  #   additionalProperties: false
+  # @schema
+  # -- The published documents, keyed by the slug their URL uses. A slug is lowercase letters,
+  # digits, `_` and `-`, at most 64 characters, and starts with a letter or a digit
+  # (`legal.documents`).
+  documents: {}
 
 # @schema
 # type: string

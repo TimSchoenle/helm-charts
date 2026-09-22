@@ -1,6 +1,6 @@
 # portfolio
 
-![Version: 5.4.4](https://img.shields.io/badge/Version-5.4.4-informational?style=flat-square) ![AppVersion: v2.12.1](https://img.shields.io/badge/AppVersion-v2.12.1-informational?style=flat-square)
+![Version: 5.4.5](https://img.shields.io/badge/Version-5.4.5-informational?style=flat-square) ![AppVersion: v3.1.0](https://img.shields.io/badge/AppVersion-v3.1.0-informational?style=flat-square)
 
 Personal portfolio built with Rust (Yew frontend, Axum server).
 
@@ -551,11 +551,11 @@ policy pointing at the wrong Gateway looks correct and blocks everything.
 | gateway.tls.enabled | bool | `false` | Add an HTTPS listener. |
 | gateway.tls.mode | string | `"Terminate"` | TLS mode. |
 | gateway.tls.options | object | `{}` | Implementation-specific TLS options. |
-| image | object | `{"pullPolicy":"","registry":"","repository":"timschoenle/portfolio","tag":"v2.12.1@sha256:951dc4e43229fece52abc3e4e14f910896fb57a35b266fba4b107a7e632efa6f"}` | Container image the pod runs, composed as `registry/repository:tag`. |
+| image | object | `{"pullPolicy":"","registry":"","repository":"timschoenle/portfolio","tag":"v3.1.0@sha256:eb6390828d4563350877390ea995e58510812f98cc3ce32d1cfaa487029841ae"}` | Container image the pod runs, composed as `registry/repository:tag`. |
 | image.pullPolicy | string | `""` | Kubernetes image pull policy. Empty resolves automatically from the tag/digest. |
 | image.registry | string | `""` | Registry host. Empty means Docker Hub. |
 | image.repository | string | `"timschoenle/portfolio"` | Container image repository where the Portfolio application image is stored. |
-| image.tag | string | `"v2.12.1@sha256:951dc4e43229fece52abc3e4e14f910896fb57a35b266fba4b107a7e632efa6f"` | Container image tag to deploy, pinned by digest (`vX.Y.Z@sha256:...`). The digest pins the pull, while the tag stays on as the readable version marker. Defaults to the chart's `appVersion` when empty. |
+| image.tag | string | `"v3.1.0@sha256:eb6390828d4563350877390ea995e58510812f98cc3ce32d1cfaa487029841ae"` | Container image tag to deploy, pinned by digest (`vX.Y.Z@sha256:...`). The digest pins the pull, while the tag stays on as the readable version marker. Defaults to the chart's `appVersion` when empty. |
 | imagePullSecrets | list | `[]` | Optional image pull secrets for private registries. |
 | ingress | object | `{"annotations":{},"enabled":false,"hosts":[],"ingressClassName":"nginx","tls":[]}` | The Ingress in front of the Service. Off by default; `gateway` is the Gateway API alternative and the two are independent switches. |
 | ingress.annotations | object | `{}` | Custom annotations for the Ingress resource. Example: ```yaml annotations:   cert-manager.io/cluster-issuer: "letsencrypt-prod"   nginx.ingress.kubernetes.io/ssl-redirect: "true" ``` |

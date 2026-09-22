@@ -9,7 +9,7 @@
 # Chart:       portfolio
 # Declaration: charts/portfolio/config-contract.yaml (document `server`)
 # Contract:    charts/portfolio/contracts/server.json
-# Coverage:    19 of 22 contract keys carry a probe, 19 through the chart's own value
+# Coverage:    20 of 24 contract keys carry a probe, 20 through the chart's own value
 #
 # Regenerate with `just contract-tests`. `just check-contract-tests` fails a pull request whose
 # committed copy has drifted from the contract it was generated against.
@@ -38,7 +38,12 @@ release:
 # committed test file, which is the same reason no probe is ever synthesised for a `secret:
 # true` key. It changes nothing the cases assert against — the DSN travels as a file in the
 # secrets directory and is never written into `config.toml` — and the Secret it names does not
-# have to exist for a template render.
+# have to exist for a template render. `legal.documents` is required by `values.schema.json` to
+# carry an `imprint` and a `privacy` entry — the image refuses to start without both, and the
+# schema now states that rather than leaving it to a runtime crash. Every case renders the
+# chart, so every case needs both, with real enough content (`title` and `body`) that a document
+# is not merely present but plausibly published; neither key is under `config`, so nothing here
+# can collide with a probe.
 tests:
   # Every case below selects its document by the key it carries, which is what `check-config.py`
   # reads it from — a label would match the Deployment and the Service too. This case is what
@@ -49,6 +54,12 @@ tests:
       path: data["config.toml"]
     set:
       existingSecret: portfolio-contract-probe
+      legal.documents.imprint.body.en: '# Imprint
+'
+      legal.documents.imprint.title.en: Imprint
+      legal.documents.privacy.body.en: '# Privacy Policy
+'
+      legal.documents.privacy.title.en: 'Privacy Policy'
     asserts:
       - isKind:
           of: ConfigMap
@@ -77,6 +88,12 @@ tests:
       path: data["config.toml"]
     set:
       existingSecret: portfolio-contract-probe
+      legal.documents.imprint.body.en: '# Imprint
+'
+      legal.documents.imprint.title.en: Imprint
+      legal.documents.privacy.body.en: '# Privacy Policy
+'
+      legal.documents.privacy.title.en: 'Privacy Policy'
       config.csp.cloudflare.script_nonce: false
       assets.distDir: contract-probe-assets-dist-dir
     asserts:
@@ -89,6 +106,12 @@ tests:
       path: data["config.toml"]
     set:
       existingSecret: portfolio-contract-probe
+      legal.documents.imprint.body.en: '# Imprint
+'
+      legal.documents.imprint.title.en: Imprint
+      legal.documents.privacy.body.en: '# Privacy Policy
+'
+      legal.documents.privacy.title.en: 'Privacy Policy'
       csp.cloudflare.scriptNonce: false
     asserts:
       - matchRegex:
@@ -100,6 +123,12 @@ tests:
       path: data["config.toml"]
     set:
       existingSecret: portfolio-contract-probe
+      legal.documents.imprint.body.en: '# Imprint
+'
+      legal.documents.imprint.title.en: Imprint
+      legal.documents.privacy.body.en: '# Privacy Policy
+'
+      legal.documents.privacy.title.en: 'Privacy Policy'
       config.csp.cloudflare.script_nonce: false
       csp.cloudflare.turnstile: true
     asserts:
@@ -112,6 +141,12 @@ tests:
       path: data["config.toml"]
     set:
       existingSecret: portfolio-contract-probe
+      legal.documents.imprint.body.en: '# Imprint
+'
+      legal.documents.imprint.title.en: Imprint
+      legal.documents.privacy.body.en: '# Privacy Policy
+'
+      legal.documents.privacy.title.en: 'Privacy Policy'
       config.csp.cloudflare.script_nonce: false
       csp.cloudflare.webAnalytics: true
     asserts:
@@ -124,6 +159,12 @@ tests:
       path: data["config.toml"]
     set:
       existingSecret: portfolio-contract-probe
+      legal.documents.imprint.body.en: '# Imprint
+'
+      legal.documents.imprint.title.en: Imprint
+      legal.documents.privacy.body.en: '# Privacy Policy
+'
+      legal.documents.privacy.title.en: 'Privacy Policy'
       config.csp.cloudflare.script_nonce: false
       csp.hashInlineScripts: false
     asserts:
@@ -136,6 +177,12 @@ tests:
       path: data["config.toml"]
     set:
       existingSecret: portfolio-contract-probe
+      legal.documents.imprint.body.en: '# Imprint
+'
+      legal.documents.imprint.title.en: Imprint
+      legal.documents.privacy.body.en: '# Privacy Policy
+'
+      legal.documents.privacy.title.en: 'Privacy Policy'
       config.csp.cloudflare.script_nonce: false
       isr.cacheDir: contract-probe-isr-cache-dir
     asserts:
@@ -148,6 +195,12 @@ tests:
       path: data["config.toml"]
     set:
       existingSecret: portfolio-contract-probe
+      legal.documents.imprint.body.en: '# Imprint
+'
+      legal.documents.imprint.title.en: Imprint
+      legal.documents.privacy.body.en: '# Privacy Policy
+'
+      legal.documents.privacy.title.en: 'Privacy Policy'
       config.csp.cloudflare.script_nonce: false
       isr.ttlSecs: 4242
     asserts:
@@ -155,11 +208,35 @@ tests:
           path: data["config.toml"]
           pattern: '(?m)^\[isr\]$\n(?:[^\[\n][^\n]*\n|\n)*^ttl_secs = 4242$'
 
+  - it: delivers legal.default_locale into config.toml from legal.defaultLocale
+    documentSelector:
+      path: data["config.toml"]
+    set:
+      existingSecret: portfolio-contract-probe
+      legal.documents.imprint.body.en: '# Imprint
+'
+      legal.documents.imprint.title.en: Imprint
+      legal.documents.privacy.body.en: '# Privacy Policy
+'
+      legal.documents.privacy.title.en: 'Privacy Policy'
+      config.csp.cloudflare.script_nonce: false
+      legal.defaultLocale: contract-probe-legal-default-locale
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '(?m)^\[legal\]$\n(?:[^\[\n][^\n]*\n|\n)*^default_locale = "contract-probe-legal-default-locale"$'
+
   - it: delivers sentry.attach_stacktraces into config.toml from sentry.attachStacktraces
     documentSelector:
       path: data["config.toml"]
     set:
       existingSecret: portfolio-contract-probe
+      legal.documents.imprint.body.en: '# Imprint
+'
+      legal.documents.imprint.title.en: Imprint
+      legal.documents.privacy.body.en: '# Privacy Policy
+'
+      legal.documents.privacy.title.en: 'Privacy Policy'
       config.csp.cloudflare.script_nonce: false
       sentry.enabled: true
       sentry.attachStacktraces: false
@@ -173,6 +250,12 @@ tests:
       path: data["config.toml"]
     set:
       existingSecret: portfolio-contract-probe
+      legal.documents.imprint.body.en: '# Imprint
+'
+      legal.documents.imprint.title.en: Imprint
+      legal.documents.privacy.body.en: '# Privacy Policy
+'
+      legal.documents.privacy.title.en: 'Privacy Policy'
       config.csp.cloudflare.script_nonce: false
       sentry.enabled: true
       sentry.breadcrumbLevel: off
@@ -186,6 +269,12 @@ tests:
       path: data["config.toml"]
     set:
       existingSecret: portfolio-contract-probe
+      legal.documents.imprint.body.en: '# Imprint
+'
+      legal.documents.imprint.title.en: Imprint
+      legal.documents.privacy.body.en: '# Privacy Policy
+'
+      legal.documents.privacy.title.en: 'Privacy Policy'
       config.csp.cloudflare.script_nonce: false
       sentry.enabled: true
       sentry.captureLevel: off
@@ -199,6 +288,12 @@ tests:
       path: data["config.toml"]
     set:
       existingSecret: portfolio-contract-probe
+      legal.documents.imprint.body.en: '# Imprint
+'
+      legal.documents.imprint.title.en: Imprint
+      legal.documents.privacy.body.en: '# Privacy Policy
+'
+      legal.documents.privacy.title.en: 'Privacy Policy'
       config.csp.cloudflare.script_nonce: false
       sentry.enabled: true
       sentry.debug: true
@@ -212,6 +307,12 @@ tests:
       path: data["config.toml"]
     set:
       existingSecret: portfolio-contract-probe
+      legal.documents.imprint.body.en: '# Imprint
+'
+      legal.documents.imprint.title.en: Imprint
+      legal.documents.privacy.body.en: '# Privacy Policy
+'
+      legal.documents.privacy.title.en: 'Privacy Policy'
       config.csp.cloudflare.script_nonce: false
       sentry.enabled: true
     asserts:
@@ -224,6 +325,12 @@ tests:
       path: data["config.toml"]
     set:
       existingSecret: portfolio-contract-probe
+      legal.documents.imprint.body.en: '# Imprint
+'
+      legal.documents.imprint.title.en: Imprint
+      legal.documents.privacy.body.en: '# Privacy Policy
+'
+      legal.documents.privacy.title.en: 'Privacy Policy'
       config.csp.cloudflare.script_nonce: false
       sentry.enabled: true
       sentry.environment: contract-probe-sentry-environment
@@ -237,6 +344,12 @@ tests:
       path: data["config.toml"]
     set:
       existingSecret: portfolio-contract-probe
+      legal.documents.imprint.body.en: '# Imprint
+'
+      legal.documents.imprint.title.en: Imprint
+      legal.documents.privacy.body.en: '# Privacy Policy
+'
+      legal.documents.privacy.title.en: 'Privacy Policy'
       config.csp.cloudflare.script_nonce: false
       sentry.enabled: true
       sentry.httpTransactions: false
@@ -250,6 +363,12 @@ tests:
       path: data["config.toml"]
     set:
       existingSecret: portfolio-contract-probe
+      legal.documents.imprint.body.en: '# Imprint
+'
+      legal.documents.imprint.title.en: Imprint
+      legal.documents.privacy.body.en: '# Privacy Policy
+'
+      legal.documents.privacy.title.en: 'Privacy Policy'
       config.csp.cloudflare.script_nonce: false
       sentry.enabled: true
       sentry.maxBreadcrumbs: 4242
@@ -263,6 +382,12 @@ tests:
       path: data["config.toml"]
     set:
       existingSecret: portfolio-contract-probe
+      legal.documents.imprint.body.en: '# Imprint
+'
+      legal.documents.imprint.title.en: Imprint
+      legal.documents.privacy.body.en: '# Privacy Policy
+'
+      legal.documents.privacy.title.en: 'Privacy Policy'
       config.csp.cloudflare.script_nonce: false
       sentry.enabled: true
       sentry.release: contract-probe-sentry-release
@@ -276,6 +401,12 @@ tests:
       path: data["config.toml"]
     set:
       existingSecret: portfolio-contract-probe
+      legal.documents.imprint.body.en: '# Imprint
+'
+      legal.documents.imprint.title.en: Imprint
+      legal.documents.privacy.body.en: '# Privacy Policy
+'
+      legal.documents.privacy.title.en: 'Privacy Policy'
       config.csp.cloudflare.script_nonce: false
       sentry.enabled: true
       sentry.sendDefaultPii: true
@@ -289,6 +420,12 @@ tests:
       path: data["config.toml"]
     set:
       existingSecret: portfolio-contract-probe
+      legal.documents.imprint.body.en: '# Imprint
+'
+      legal.documents.imprint.title.en: Imprint
+      legal.documents.privacy.body.en: '# Privacy Policy
+'
+      legal.documents.privacy.title.en: 'Privacy Policy'
       config.csp.cloudflare.script_nonce: false
       sentry.enabled: true
       sentry.serverName: contract-probe-sentry-server-name
@@ -302,6 +439,12 @@ tests:
       path: data["config.toml"]
     set:
       existingSecret: portfolio-contract-probe
+      legal.documents.imprint.body.en: '# Imprint
+'
+      legal.documents.imprint.title.en: Imprint
+      legal.documents.privacy.body.en: '# Privacy Policy
+'
+      legal.documents.privacy.title.en: 'Privacy Policy'
       config.csp.cloudflare.script_nonce: false
       sentry.enabled: true
       sentry.spanAttributes: true
@@ -313,6 +456,9 @@ tests:
   # Contract keys carrying no case, and why. An unexplained absence is indistinguishable from an
   # oversight, so every one of them is named here rather than simply left out.
   #
+  # legal.documents: `structured`: the keys beneath it are the operator's own names, so the
+  #                  contract describes the container and not its contents and no probe
+  #                  addresses a leaf
   # sentry.dsn: `secret: true`: the probe would be committed to this repository, and a
   #             credential-shaped value in a test file is a credential
   # sentry.sample_rate: `unknown`: the producer publishes no constraint for this key, so no

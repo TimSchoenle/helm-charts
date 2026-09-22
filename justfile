@@ -89,7 +89,7 @@ helm_version := "3.22.0"
 # contributor gets a working gate without `sudo` and without building from source. `resolve_contract`
 # checks that cache after `TERRACE_CONTRACT_BIN` and PATH.
 # renovate: datasource=github-tags depName=TimSchoenle/terrace-config extractVersion=^terrace-contract-v(?<version>.*)$
-terrace_contract_version := "0.2.2"
+terrace_contract_version := "0.4.1"
 
 # Where `just install-contract` caches the binary it downloads, keyed by version underneath so a
 # bump fetches a fresh copy on next use rather than silently reusing a stale one. Relative and

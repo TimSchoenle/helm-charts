@@ -3734,94 +3734,6 @@ branding:
   # operators expect.
   botUserAgent: ""
 
-# @schema
-# additionalProperties: true
-# @schema
-# -- Operator-published legal documents, served unauthenticated by the API at `/v1/legal` and
-# `/v1/legal/{slug}`; the frontend's footer builds its Legal column from that index. Upstream
-# ships none of these on purpose — every deployment is a different operator under different law,
-# and an imprint is a statutory requirement in some jurisdictions and meaningless in others. With
-# no documents the index is empty and the footer publishes no Legal column at all, rather than
-# links that 404.
-legal:
-  # @schema
-  # # @config projection api:legal.dir optional
-  # type: [string, 'null']
-  # @schema
-  # -- Directory relative `sources` paths resolve against, and where the chart mounts any
-  # document supplied through `content`. An absolute `sources` path ignores it.
-  dir: /etc/tankovault/legal
-
-  # @config-shape-narrow legal.documents additionalProperties.properties.content `content` is this chart's own way of publishing a body and reaches no image: the API knows only `sources`, and the chart writes the text into a ConfigMap, mounts it, and derives the `sources` paths from it — so the element the contract describes is closed against a field an operator is invited to set
-
-  # @schema
-  # # @config structured api:legal.documents optional
-  # type: [object, 'null']
-  # additionalProperties:
-  #   type: object
-  #   properties:
-  #     body:
-  #       type: object
-  #       additionalProperties:
-  #         type: string
-  #     order:
-  #       type: integer
-  #       minimum: -2147483648
-  #       maximum: 2147483647
-  #     title:
-  #       type: object
-  #       additionalProperties:
-  #         type: string
-  #     updated:
-  #       type: string
-  #     url:
-  #       type: string
-  #     content:
-  #       type: object
-  #       additionalProperties:
-  #         type: string
-  #   additionalProperties: false
-  # @schema
-  # -- Published documents, keyed by the URL slug they are served under. Each document names its
-  # body exactly once, in one of three ways, and the chart refuses a document that names it
-  # twice or not at all:
-  #
-  # - `content`: a locale-keyed map of the text itself. The chart writes it into a ConfigMap as
-  #   `<slug>.<locale>.md` and mounts it into the API pod. Edits are picked up without a restart —
-  #   the service re-reads behind an mtime check — so this is the option to reach for by default.
-  # - `sources`: a locale-keyed map of file paths you have arranged to mount yourself, through
-  #   `extraVolumes`/`extraVolumeMounts`. Use this when the texts belong to a Secret, a PVC or
-  #   another chart.
-  # - `url`: an absolute `http(s)` link to a document hosted elsewhere. Mounts nothing.
-  #
-  # `title` is a locale-keyed display name, and `updated` a free-form date shown alongside it.
-  # Both are optional and independent of how the body is supplied.
-  #
-  # <details><summary>Example</summary>
-  #
-  # ```yaml
-  # legal:
-  #   documents:
-  #     terms:
-  #       updated: "2026-08-04"
-  #       title:
-  #         en: Terms of Service
-  #         de: Nutzungsbedingungen
-  #       content:
-  #         en: |
-  #           # Terms of Service
-  #           ...
-  #         de: |
-  #           # Nutzungsbedingungen
-  #           ...
-  #     imprint:
-  #       title:
-  #         de: Impressum
-  #       url: https://example.org/impressum
-  # ```
-  #
-  # </details>
-  documents: {}
 
 # @schema
 # additionalProperties: true
@@ -4963,6 +4875,49 @@ statementTimeouts:
   # -- Seconds one statement may run on every non-admin route: `/v1/me`, the public catalogue
   # and sign-in. `0` removes the ceiling (`statement_timeouts.interactive_secs`).
   interactiveSecs: 30
+
+# @schema
+# additionalProperties: true
+# @schema
+# -- The `legal` settings.
+legal:
+  # @schema
+  # # @config projection legal.default_locale optional
+  # type: [string, 'null']
+  # @schema
+  # -- Locale served when neither the request nor its `Accept-Language` header matches a
+  # published one, for example `en`. Without it, the first published locale in alphabetical
+  # order is served (`legal.default_locale`).
+  defaultLocale: null
+
+  # @schema
+  # # @config structured legal.documents optional
+  # type: [object, 'null']
+  # additionalProperties:
+  #   type: object
+  #   properties:
+  #     body:
+  #       type: object
+  #       additionalProperties:
+  #         type: string
+  #     order:
+  #       type: integer
+  #       minimum: -2147483648
+  #       maximum: 2147483647
+  #     title:
+  #       type: object
+  #       additionalProperties:
+  #         type: string
+  #     updated:
+  #       type: string
+  #     url:
+  #       type: string
+  #   additionalProperties: false
+  # @schema
+  # -- The published documents, keyed by the slug their URL uses. A slug is lowercase letters,
+  # digits, `_` and `-`, at most 64 characters, and starts with a letter or a digit
+  # (`legal.documents`).
+  documents: null
 
 # @schema
 # additionalProperties: true

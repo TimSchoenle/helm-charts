@@ -93,7 +93,7 @@
               "type": "string"
             },
             "tag": {
-              "default": "v10.1.3@sha256:0520e1d653c7a713b83a31ccf7075d41aa6d548ac96085318e6a31bb0ad7f1e0",
+              "default": "v11.0.1@sha256:f2ce8d8965eb72715184d9f17793eefce52b940a352414807152fcd94bc174e0",
               "description": "Image tag, pinned by digest.",
               "required": [],
               "title": "tag",
@@ -3045,13 +3045,13 @@
     },
     "legal": {
       "additionalProperties": true,
-      "description": "Operator-published legal documents, served unauthenticated by the API at `/v1/legal` and\n`/v1/legal/{slug}`; the frontend's footer builds its Legal column from that index. Upstream\nships none of these on purpose — every deployment is a different operator under different law,\nand an imprint is a statutory requirement in some jurisdictions and meaningless in others. With\nno documents the index is empty and the footer publishes no Legal column at all, rather than\nlinks that 404.",
+      "description": "The `legal` settings.",
       "properties": {
-        "dir": {
-          "default": "/etc/tankovault/legal",
-          "description": "Directory relative `sources` paths resolve against, and where the chart mounts any\ndocument supplied through `content`. An absolute `sources` path ignores it.",
+        "defaultLocale": {
+          "default": "null",
+          "description": "Locale served when neither the request nor its `Accept-Language` header matches a\npublished one, for example `en`. Without it, the first published locale in alphabetical\norder is served (`legal.default_locale`).",
           "required": [],
-          "title": "dir",
+          "title": "defaultLocale",
           "type": [
             "string",
             "null"
@@ -3061,17 +3061,16 @@
           "additionalProperties": {
             "additionalProperties": false,
             "properties": {
-              "content": {
+              "body": {
                 "additionalProperties": {
                   "type": "string"
                 },
                 "type": "object"
               },
-              "sources": {
-                "additionalProperties": {
-                  "type": "string"
-                },
-                "type": "object"
+              "order": {
+                "maximum": 2147483647,
+                "minimum": -2147483648,
+                "type": "integer"
               },
               "title": {
                 "additionalProperties": {
@@ -3088,7 +3087,8 @@
             },
             "type": "object"
           },
-          "description": "Published documents, keyed by the URL slug they are served under. Each document names its\nbody exactly once, in one of three ways, and the chart refuses a document that names it\ntwice or not at all:\n\n- `content`: a locale-keyed map of the text itself. The chart writes it into a ConfigMap as\n  `\u003cslug\u003e.\u003clocale\u003e.md` and mounts it into the API pod. Edits are picked up without a restart —\n  the service re-reads behind an mtime check — so this is the option to reach for by default.\n- `sources`: a locale-keyed map of file paths you have arranged to mount yourself, through\n  `extraVolumes`/`extraVolumeMounts`. Use this when the texts belong to a Secret, a PVC or\n  another chart.\n- `url`: an absolute `http(s)` link to a document hosted elsewhere. Mounts nothing.\n\n`title` is a locale-keyed display name, and `updated` a free-form date shown alongside it.\nBoth are optional and independent of how the body is supplied.\n\n\u003cdetails\u003e\u003csummary\u003eExample\u003c/summary\u003e\n\n```yaml\nlegal:\n  documents:\n    terms:\n      updated: \"2026-08-04\"\n      title:\n        en: Terms of Service\n        de: Nutzungsbedingungen\n      content:\n        en: |\n          # Terms of Service\n          ...\n        de: |\n          # Nutzungsbedingungen\n          ...\n    imprint:\n      title:\n        de: Impressum\n      url: https://example.org/impressum\n```\n\n\u003c/details\u003e",
+          "default": "null",
+          "description": "The published documents, keyed by the slug their URL uses. A slug is lowercase letters,\ndigits, `_` and `-`, at most 64 characters, and starts with a letter or a digit\n(`legal.documents`).",
           "required": [],
           "title": "documents",
           "type": [
@@ -5373,7 +5373,7 @@
                   "type": "string"
                 },
                 "tag": {
-                  "default": "v10.1.3@sha256:ad502ae32b36b977e89d7b5f8e1e4e0f10e419c1cb1a8cec335d747185872e46",
+                  "default": "v11.0.1@sha256:f3ef3dd4f4470319755c364fa5451fd47008fef6069d9d6c82d0a91589823a09",
                   "description": "Image tag, pinned by digest.",
                   "required": [],
                   "title": "tag",
@@ -5598,7 +5598,7 @@
                   "type": "string"
                 },
                 "tag": {
-                  "default": "v10.1.3@sha256:9e1075fcdff44fb45c6078d285672961a5b06cd077d6d54df25adc73c125334f",
+                  "default": "v11.0.1@sha256:a078767b821a16dc71f8be322b8c3cc66d35707f04bc94d6157406137c0dbf93",
                   "description": "Image tag, pinned by digest.",
                   "required": [],
                   "title": "tag",
@@ -5772,7 +5772,7 @@
                   "type": "string"
                 },
                 "tag": {
-                  "default": "v10.1.3@sha256:1778b922e30cf1e300d183ce68ab2e77809fba30d86e92ce8a62c9c21fc9a732",
+                  "default": "v11.0.1@sha256:b2a9f22edd96a7afa5d62e432525bb48a39afdb9b6beda553d2ebab83ab4431c",
                   "description": "Image tag, pinned by digest.",
                   "required": [],
                   "title": "tag",
@@ -5997,7 +5997,7 @@
                   "type": "string"
                 },
                 "tag": {
-                  "default": "v10.1.3@sha256:4cecde726abc74a77e6a6355625771e2aa1f297876ed75543ffce4ee5decb341",
+                  "default": "v11.0.1@sha256:49119a5ea0c532ef4655b41d67d77ccf5316f06a66b4dfa8e59c7f10bf23c6d3",
                   "description": "Image tag, pinned by digest.",
                   "required": [],
                   "title": "tag",
@@ -6171,7 +6171,7 @@
                   "type": "string"
                 },
                 "tag": {
-                  "default": "v10.1.3@sha256:b298e2c1111fa57eca343779f42f2617714c2bf8045eb8266d31249022e95de1",
+                  "default": "v11.0.1@sha256:d7027f960fb6451f3f1fd33304b149b20d338d38d8abc13cbf02797c4d0a395f",
                   "description": "Image tag, pinned by digest.",
                   "required": [],
                   "title": "tag",
@@ -6403,7 +6403,7 @@
                   "type": "string"
                 },
                 "tag": {
-                  "default": "v10.1.3@sha256:e0b8888658f9e28de012ce6975865a57e049d6b36f0f9ee287a95c4110e53e69",
+                  "default": "v11.0.1@sha256:fda7f7f3a71335f292cb656714f1ab92626230d496f5638db18dc308c89a38d6",
                   "description": "Image tag, pinned by digest.",
                   "required": [],
                   "title": "tag",
@@ -6584,7 +6584,7 @@
                   "type": "string"
                 },
                 "tag": {
-                  "default": "v10.1.3@sha256:bdc2888813dd2538850ff7c35a3ae1067c53d014cfaddb642892b675444df9be",
+                  "default": "v11.0.1@sha256:f6e79954546976ad40d877355731537626bd4fe3227a964b1a54c87b1b822e29",
                   "description": "Image tag, pinned by digest.",
                   "required": [],
                   "title": "tag",
@@ -6809,7 +6809,7 @@
                   "type": "string"
                 },
                 "tag": {
-                  "default": "v10.1.3@sha256:184b28047e0e8d300b46983af471833ba30a56a832d2fab75ce8f55cfa9c87ef",
+                  "default": "v11.0.1@sha256:11e0ae2b72415625d5577e044a6e9147d2017bd2fedec5d731c2b454301037f9",
                   "description": "Image tag, pinned by digest.",
                   "required": [],
                   "title": "tag",

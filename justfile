@@ -67,7 +67,7 @@ helm_schema_version := "0.18.1"
 # same way `target_branch` further down is kept in step with `ct.yaml`, because the two are read by
 # a shell script and a GitHub Action respectively and nothing generates one from the other.
 # renovate: datasource=docker depName=alpine/helm
-helm_version := "3.22.0"
+helm_version := "4.3.0"
 
 # The shared contract toolchain, which is what the gates in `just/contracts.just` now are.
 #

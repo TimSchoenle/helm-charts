@@ -1,5 +1,5 @@
-# Operator-published legal documents, one of each of the three ways a document can name its body,
-# plus the unscoped rule variant that `ci/metrics.yaml` does not cover.
+# Operator-published legal documents, one served from an inline body and one linked, plus the
+# unscoped rule variant that `ci/metrics.yaml` does not cover.
 #
 # A render fixture, not an install fixture — it runs on external datastores whose endpoints do not
 # resolve. Hence the name: `ct install` takes every `ci/*-values.yaml`, while the render and
@@ -37,14 +37,16 @@ metrics:
     scope: none
 
 legal:
+  defaultLocale: en
   documents:
-    # Written by the chart into a ConfigMap and mounted into the api pod.
+    # Written by the chart into a ConfigMap and projected into the api pod's secrets directory.
     terms:
+      order: 1
       updated: "2026-08-04"
       title:
         en: Terms of Service
         de: Nutzungsbedingungen
-      content:
+      body:
         en: |
           # Terms of Service
 
@@ -53,13 +55,7 @@ legal:
           # Nutzungsbedingungen
 
           Platzhaltertext für ein Render-Fixture. Nicht für den Produktivbetrieb geeignet.
-    # A path the operator mounts themselves; the chart passes it through and creates nothing.
-    privacy:
-      title:
-        en: Privacy Policy
-      sources:
-        en: /mnt/legal/privacy.en.md
-    # Hosted elsewhere: a link, with nothing to mount.
+    # Hosted elsewhere: a link, with nothing to project.
     imprint:
       title:
         de: Impressum

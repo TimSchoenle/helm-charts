@@ -3045,7 +3045,7 @@
     },
     "legal": {
       "additionalProperties": true,
-      "description": "The `legal` settings.",
+      "description": "Operator-published legal documents, served unauthenticated by the API at `/v1/legal` and\n`/v1/legal/{slug}`; the frontend's footer builds its Legal column from that index. Upstream\nships none of these on purpose — every deployment is a different operator under different law,\nand an imprint is a statutory requirement in some jurisdictions and meaningless in others. With\nno documents the index is empty and the footer publishes no Legal column at all, rather than\nlinks that 404.",
       "properties": {
         "defaultLocale": {
           "default": "null",
@@ -3088,7 +3088,7 @@
             "type": "object"
           },
           "default": "null",
-          "description": "The published documents, keyed by the slug their URL uses. A slug is lowercase letters,\ndigits, `_` and `-`, at most 64 characters, and starts with a letter or a digit\n(`legal.documents`).",
+          "description": "The published documents, keyed by the slug their URL uses. A slug is lowercase letters,\ndigits, `_` and `-`, at most 64 characters, and starts with a letter or a digit\n(`legal.documents`).\n\nEach document carries exactly one of `body` and `url`, and the chart refuses a document that\nsets both or neither:\n\n- `body`: the Markdown text per locale. The chart writes it into a ConfigMap and projects each\n  text into the API pod's secrets directory rather than into `config.toml`, so an edit is\n  picked up without a restart and does not move `checksum/config`. A new document or locale\n  is a new file, which the service only watches from its next start.\n- `url`: an absolute `http(s)` link to a document hosted elsewhere.\n\n`title` is a display name per locale, `updated` a free-form line shown verbatim, and `order`\nthe position in the index, lowest first.\n\n\u003cdetails\u003e\u003csummary\u003eExample\u003c/summary\u003e\n\n```yaml\nlegal:\n  defaultLocale: en\n  documents:\n    terms:\n      order: 1\n      updated: \"2026-08-04\"\n      title:\n        en: Terms of Service\n        de: Nutzungsbedingungen\n      body:\n        en: |\n          # Terms of Service\n          ...\n        de: |\n          # Nutzungsbedingungen\n          ...\n    imprint:\n      title:\n        de: Impressum\n      url: https://example.org/impressum\n```\n\n\u003c/details\u003e",
           "required": [],
           "title": "documents",
           "type": [

@@ -4879,7 +4879,12 @@ statementTimeouts:
 # @schema
 # additionalProperties: true
 # @schema
-# -- The `legal` settings.
+# -- Operator-published legal documents, served unauthenticated by the API at `/v1/legal` and
+# `/v1/legal/{slug}`; the frontend's footer builds its Legal column from that index. Upstream
+# ships none of these on purpose — every deployment is a different operator under different law,
+# and an imprint is a statutory requirement in some jurisdictions and meaningless in others. With
+# no documents the index is empty and the footer publishes no Legal column at all, rather than
+# links that 404.
 legal:
   # @schema
   # # @config projection legal.default_locale optional
@@ -4917,6 +4922,45 @@ legal:
   # -- The published documents, keyed by the slug their URL uses. A slug is lowercase letters,
   # digits, `_` and `-`, at most 64 characters, and starts with a letter or a digit
   # (`legal.documents`).
+  #
+  # Each document carries exactly one of `body` and `url`, and the chart refuses a document that
+  # sets both or neither:
+  #
+  # - `body`: the Markdown text per locale. The chart writes it into a ConfigMap and projects each
+  #   text into the API pod's secrets directory rather than into `config.toml`, so an edit is
+  #   picked up without a restart and does not move `checksum/config`. A new document or locale
+  #   is a new file, which the service only watches from its next start.
+  # - `url`: an absolute `http(s)` link to a document hosted elsewhere.
+  #
+  # `title` is a display name per locale, `updated` a free-form line shown verbatim, and `order`
+  # the position in the index, lowest first.
+  #
+  # <details><summary>Example</summary>
+  #
+  # ```yaml
+  # legal:
+  #   defaultLocale: en
+  #   documents:
+  #     terms:
+  #       order: 1
+  #       updated: "2026-08-04"
+  #       title:
+  #         en: Terms of Service
+  #         de: Nutzungsbedingungen
+  #       body:
+  #         en: |
+  #           # Terms of Service
+  #           ...
+  #         de: |
+  #           # Nutzungsbedingungen
+  #           ...
+  #     imprint:
+  #       title:
+  #         de: Impressum
+  #       url: https://example.org/impressum
+  # ```
+  #
+  # </details>
   documents: null
 
 # @schema

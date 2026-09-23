@@ -136,14 +136,16 @@ check-contracts:
 # The rules are `terrace-contract`'s now, not this repository's. They read the same rendered tree,
 # report the same findings and carry the same reasoning — and they are shared with every other
 # consumer of the contract format instead of being one repository's private 2,000 lines.
+#
+# Chart names after `out` render and check only those charts: see `contract-scope`.
 [doc("Validate every chart's rendered configuration against its images' contracts")]
 [group('contracts')]
-check-config out='rendered':
+check-config out='rendered' *only:
     #!/usr/bin/env bash
     set -euo pipefail
     {{ resolve_contract }}
-    just render '{{ out }}'
-    "$contract" check --manifests '{{ out }}' --charts {{ charts }} --format github
+    just render '{{ out }}' '' {{ only }}
+    "$contract" check --manifests '{{ out }}' --charts {{ charts }} --format github {{ only }}
 
 # Report which charts a configuration contract covers, and which it does not.
 #
@@ -224,11 +226,11 @@ check-contract-coverage:
 # the report from the one pull request it exists for.
 [doc("Hold every `# @config` binding marker against the contract key it names")]
 [group('contracts')]
-check-config-bindings:
+check-config-bindings *only:
     #!/usr/bin/env bash
     set -euo pipefail
     {{ resolve_contract }}
-    "$contract" bindings --charts {{ charts }} --format github
+    "$contract" bindings --charts {{ charts }} --format github {{ only }}
 
 # Confirm every `# @config` marker's key is actually rendered by some template.
 #
@@ -539,11 +541,11 @@ config-shapes:
 # render, no cluster.
 [doc("Fail when a derived `@schema` block is not what its contract describes")]
 [group('contracts')]
-check-config-shapes:
+check-config-shapes *only:
     #!/usr/bin/env bash
     set -euo pipefail
     {{ resolve_contract }}
-    "$contract" shapes --charts {{ charts }} --check --format github
+    "$contract" shapes --charts {{ charts }} --check --format github {{ only }}
 
 # Unit tests for the scripts in `.github/scripts` that still read a contract.
 #
@@ -805,11 +807,54 @@ contract-tests chart='':
 # comparison is the script's own and works on a dirty tree and on a fresh clone alike.
 [doc("Report generated contract suites that no longer match the contracts behind them")]
 [group('contracts')]
-check-contract-tests:
+check-contract-tests *only:
     #!/usr/bin/env bash
     set -euo pipefail
     {{ resolve_contract }}
-    "$contract" tests --check --charts {{ charts }}
+    "$contract" tests --check --charts {{ charts }} {{ only }}
+
+# The charts a change touched, so that the contract gates check those and nothing else.
+#
+# Prints the application charts the diff against `base` changed, space-separated on one line. Every
+# gate below that takes chart names reads the line as its selection, and reads an empty line as every
+# chart.
+#
+# The line is empty whenever the change reaches past those charts' own directories. The pinned CLI,
+# a recipe, a workflow, the library chart and anything else outside `charts/<chart>/` can move every
+# chart's verdict at once, so narrowing such a change would pass it while it breaks a chart it never
+# named. Every failure here, from a shallow clone to an unreadable diff, also prints the empty line.
+# The recipe can therefore only widen a gate, and never narrow one by mistake.
+#
+# A chart the change deleted is left out, because nothing is left to check. A directory name that is
+# not a valid chart name widens to every chart rather than reaching a shell unquoted.
+[doc("Print the charts a change touched, or nothing when every chart has to be checked")]
+[group('contracts')]
+contract-scope base=target_branch:
+    #!/usr/bin/env bash
+    set -uo pipefail
+    fork="$(git merge-base '{{ base }}' HEAD 2>/dev/null)" || exit 0
+    changed="$(git diff --name-only "$fork" HEAD)" || exit 0
+    [ -n "$changed" ] || exit 0
+
+    declare -A touched=()
+    while IFS= read -r path; do
+      case "$path" in
+        '{{ charts }}'/*/*) ;;
+        *) exit 0 ;;
+      esac
+      name="${path#'{{ charts }}'/}"
+      name="${name%%/*}"
+      [[ "$name" =~ ^[a-z0-9][a-z0-9-]*$ ]] || exit 0
+      chart='{{ charts }}'/"${name}"/Chart.yaml
+      [ -f "$chart" ] || continue
+      if grep -q '^type:[[:space:]]*library' "$chart"; then
+        exit 0
+      fi
+      touched["$name"]=1
+    done <<< "$changed"
+
+    [ "${#touched[@]}" -gt 0 ] || exit 0
+    printf '%s\n' "${!touched[@]}" | sort | paste -sd ' ' -
 
 # Write the credential reference each contracted chart's README carries, from the contract.
 #
@@ -842,11 +887,11 @@ config-readme:
 # digest bump produces. Reads committed files only — no network, no render, no cluster.
 [doc("Fail when a chart's README credential reference is behind its contract")]
 [group('contracts')]
-check-config-readme:
+check-config-readme *only:
     #!/usr/bin/env bash
     set -euo pipefail
     {{ resolve_contract }}
-    "$contract" readme --charts {{ charts }} --check
+    "$contract" readme --charts {{ charts }} --check {{ only }}
 
 # --------------------------------------------------------------------------------------------
 # Creating a chart

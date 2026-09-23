@@ -1,9 +1,9 @@
 {
   "source": {
     "image": "docker.io/timschoenle/portfolio",
-    "digest": "sha256:eb6390828d4563350877390ea995e58510812f98cc3ce32d1cfaa487029841ae",
-    "sha256": "ff4de44cf2e3b9fee63ff3da4047eebace87453eb7d6514b4030a850d95f5253",
-    "fetched": "2026-09-22T12:01:32Z"
+    "digest": "sha256:bb37af3a62a44f18bcd954e571eb5e365c6101c2e97e82773ab0648c4bb69ba8",
+    "sha256": "46e295962e638d0d3916b652c4ea52ccfce8ded28452d5d3da19a104567164c6",
+    "fetched": "2026-09-23T06:40:43Z"
   },
   "contract": {
     "terrace_contract": 1,
@@ -14,7 +14,7 @@
     },
     "app": {
       "name": "portfolio",
-      "version": "v3.1.0",
+      "version": "v3.1.1",
       "source": "https://github.com/TimSchoenle/Portfolio"
     },
     "schema": {
@@ -94,7 +94,7 @@
           "env": "PORTFOLIO_CSP__CLOUDFLARE__SCRIPT_NONCE",
           "env_file": "PORTFOLIO_CSP__CLOUDFLARE__SCRIPT_NONCE_FILE",
           "secrets_file": "csp__cloudflare__script_nonce",
-          "docs": "Reserve a per-response nonce in `script-src` for the script Cloudflare injects at the edge.\n\nOn by default, because this site is delivered through a Cloudflare Tunnel with the bot\nproducts active — the privacy page lists `_cf_bm`, `cf_clearance` and the `cf_chl_rc_*`\nchallenge cookies, which is the observable half of the same feature. Those products inject\nan inline `<script>` into the HTML *after* it leaves this process, so no hash this server\ncomputes can cover it; `script-src` refuses it and the detection silently never runs.\nCloudflare's documented answer is to parse the `Content-Security-Policy` response header\nand copy the nonce onto what it injects, so nothing has to be stamped into the document.\n\nIt carries one obligation the server discharges (`Cache-Control: no-cache` on every\ndocument, so a nonce is never shared between readers) and one it cannot: **no Cloudflare\nCache Rule may cache the shell**. A \"Cache Everything\" rule overrides the origin's\n`Cache-Control`, satisfying the obligation here and violating it at the edge, and nothing\ninside this process can see that.",
+          "docs": "Reserve a per-response nonce in `script-src` for the script Cloudflare injects at the edge.\n\nOn by default, because this site is delivered through a Cloudflare Tunnel with the bot\nproducts active; the `__cf_bm` and `cf_clearance` cookies they set are the observable\nhalf of the same feature. Those products inject an inline `<script>` into the HTML\n*after* it leaves this process, so no hash this server computes can cover it;\n`script-src` refuses it and the detection silently never runs.\nCloudflare's documented answer is to parse the `Content-Security-Policy` response header\nand copy the nonce onto what it injects, so nothing has to be stamped into the document.\n\nIt carries one obligation the server discharges (`Cache-Control: no-cache` on every\ndocument, so a nonce is never shared between readers) and one it cannot: **no Cloudflare\nCache Rule may cache the shell**. A \"Cache Everything\" rule overrides the origin's\n`Cache-Control`, satisfying the obligation here and violating it at the edge, and nothing\ninside this process can see that.",
           "ty": "bool",
           "values": [],
           "constraint": {
@@ -226,7 +226,7 @@
           "env": "PORTFOLIO_SENTRY__ENABLED",
           "env_file": "PORTFOLIO_SENTRY__ENABLED_FILE",
           "secrets_file": "sentry__enabled",
-          "docs": "Initialise the Sentry client. `false` installs no client, no panic hook, no `tracing`\nlayer and no HTTP middleware, so every other key here is inert and nothing leaves the\nprocess.\n\nIt also decides who owns the log subscriber. Off — the default — the Dioxus toolchain\ninstalls its own, which is the behaviour this server has always had. On, the server\ninstalls one first (still reading `RUST_LOG`, still formatting the same way) because a\nSentry layer has to be a layer *of* the subscriber, and the framework's is not\nextensible after the fact.",
+          "docs": "Initialize the Sentry client. `false` installs no client, no panic hook, no `tracing`\nlayer and no HTTP middleware, so every other key here is inert and nothing leaves the\nprocess.\n\nIt also decides who owns the log subscriber. Off — the default — the Dioxus toolchain\ninstalls its own, which is the behavior this server has always had. On, the server\ninstalls one first (still reading `RUST_LOG`, still formatting the same way) because a\nSentry layer has to be a layer *of* the subscriber, and the framework's is not\nextensible after the fact.",
           "ty": "bool",
           "values": [],
           "constraint": {
@@ -534,7 +534,7 @@
           "env": "PORTFOLIO_SENTRY__SEND_DEFAULT_PII",
           "env_file": "PORTFOLIO_SENTRY__SEND_DEFAULT_PII_FILE",
           "secrets_file": "sentry__send_default_pii",
-          "docs": "Send personally identifying data with every event: the client IP, the full request header\nset (`Cookie` included) and the resolved user.\n\n**Off, and worth leaving off.** A reader's IP address and cookies are exactly what a\ncrash report does not need in order to be actionable, and Sentry is a third party for the\npurposes of the privacy page this site publishes — a page that currently says no\nthird-party service receives visitor data, which is a statement this key is the one way\nto falsify. On, it also widens what the HTTP middleware records, because `sentry-tower`\nreads this same flag to decide whether to redact sensitive request headers.",
+          "docs": "Send personally identifying data with every event: the client IP, the full request header\nset (`Cookie` included) and the resolved user.\n\n**Off, and worth leaving off.** A reader's IP address and cookies are exactly what a\ncrash report does not need in order to be actionable, and every event sent is personal\ndata handed to a third party, which the published privacy notice would then have to\nname. On, it also widens what the HTTP middleware records, because `sentry-tower` reads\nthis same flag to decide whether to redact sensitive request headers.",
           "ty": "bool",
           "values": [],
           "constraint": {
@@ -561,7 +561,7 @@
           "env": "PORTFOLIO_SENTRY__HTTP_TRANSACTIONS",
           "env_file": "PORTFOLIO_SENTRY__HTTP_TRANSACTIONS_FILE",
           "secrets_file": "sentry__http_transactions",
-          "docs": "Record one Sentry transaction per request, named by the *matched route* rather than by\nthe URI — so `/api/repos/{name}` does not become one transaction name per repository.\n\nWhether a started transaction is *kept* is `sentry.traces_sample_rate`'s decision; this is\nthe switch for taking the middleware out entirely.",
+          "docs": "Record one Sentry transaction per request, named by the *matched route* rather than by\nthe URI — so `/api/v1/legal/{slug}` does not become one transaction name per document.\n\nWhether a started transaction is *kept* is `sentry.traces_sample_rate`'s decision; this is\nthe switch for taking the middleware out entirely.",
           "ty": "bool",
           "values": [],
           "constraint": {
@@ -750,7 +750,7 @@
               "properties": {
                 "script_nonce": {
                   "default": true,
-                  "description": "Reserve a per-response nonce in `script-src` for the script Cloudflare injects at the edge.\n\nOn by default, because this site is delivered through a Cloudflare Tunnel with the bot\nproducts active — the privacy page lists `_cf_bm`, `cf_clearance` and the `cf_chl_rc_*`\nchallenge cookies, which is the observable half of the same feature. Those products inject\nan inline `<script>` into the HTML *after* it leaves this process, so no hash this server\ncomputes can cover it; `script-src` refuses it and the detection silently never runs.\nCloudflare's documented answer is to parse the `Content-Security-Policy` response header\nand copy the nonce onto what it injects, so nothing has to be stamped into the document.\n\nIt carries one obligation the server discharges (`Cache-Control: no-cache` on every\ndocument, so a nonce is never shared between readers) and one it cannot: **no Cloudflare\nCache Rule may cache the shell**. A \"Cache Everything\" rule overrides the origin's\n`Cache-Control`, satisfying the obligation here and violating it at the edge, and nothing\ninside this process can see that.",
+                  "description": "Reserve a per-response nonce in `script-src` for the script Cloudflare injects at the edge.\n\nOn by default, because this site is delivered through a Cloudflare Tunnel with the bot\nproducts active; the `__cf_bm` and `cf_clearance` cookies they set are the observable\nhalf of the same feature. Those products inject an inline `<script>` into the HTML\n*after* it leaves this process, so no hash this server computes can cover it;\n`script-src` refuses it and the detection silently never runs.\nCloudflare's documented answer is to parse the `Content-Security-Policy` response header\nand copy the nonce onto what it injects, so nothing has to be stamped into the document.\n\nIt carries one obligation the server discharges (`Cache-Control: no-cache` on every\ndocument, so a nonce is never shared between readers) and one it cannot: **no Cloudflare\nCache Rule may cache the shell**. A \"Cache Everything\" rule overrides the origin's\n`Cache-Control`, satisfying the obligation here and violating it at the edge, and nothing\ninside this process can see that.",
                   "type": "boolean"
                 },
                 "turnstile": {
@@ -888,7 +888,7 @@
             },
             "enabled": {
               "default": false,
-              "description": "Initialise the Sentry client. `false` installs no client, no panic hook, no `tracing`\nlayer and no HTTP middleware, so every other key here is inert and nothing leaves the\nprocess.\n\nIt also decides who owns the log subscriber. Off — the default — the Dioxus toolchain\ninstalls its own, which is the behaviour this server has always had. On, the server\ninstalls one first (still reading `RUST_LOG`, still formatting the same way) because a\nSentry layer has to be a layer *of* the subscriber, and the framework's is not\nextensible after the fact.",
+              "description": "Initialize the Sentry client. `false` installs no client, no panic hook, no `tracing`\nlayer and no HTTP middleware, so every other key here is inert and nothing leaves the\nprocess.\n\nIt also decides who owns the log subscriber. Off — the default — the Dioxus toolchain\ninstalls its own, which is the behavior this server has always had. On, the server\ninstalls one first (still reading `RUST_LOG`, still formatting the same way) because a\nSentry layer has to be a layer *of* the subscriber, and the framework's is not\nextensible after the fact.",
               "type": "boolean"
             },
             "environment": {
@@ -897,7 +897,7 @@
             },
             "http_transactions": {
               "default": true,
-              "description": "Record one Sentry transaction per request, named by the *matched route* rather than by\nthe URI — so `/api/repos/{name}` does not become one transaction name per repository.\n\nWhether a started transaction is *kept* is `sentry.traces_sample_rate`'s decision; this is\nthe switch for taking the middleware out entirely.",
+              "description": "Record one Sentry transaction per request, named by the *matched route* rather than by\nthe URI — so `/api/v1/legal/{slug}` does not become one transaction name per document.\n\nWhether a started transaction is *kept* is `sentry.traces_sample_rate`'s decision; this is\nthe switch for taking the middleware out entirely.",
               "type": "boolean"
             },
             "max_breadcrumbs": {
@@ -919,7 +919,7 @@
             },
             "send_default_pii": {
               "default": false,
-              "description": "Send personally identifying data with every event: the client IP, the full request header\nset (`Cookie` included) and the resolved user.\n\n**Off, and worth leaving off.** A reader's IP address and cookies are exactly what a\ncrash report does not need in order to be actionable, and Sentry is a third party for the\npurposes of the privacy page this site publishes — a page that currently says no\nthird-party service receives visitor data, which is a statement this key is the one way\nto falsify. On, it also widens what the HTTP middleware records, because `sentry-tower`\nreads this same flag to decide whether to redact sensitive request headers.",
+              "description": "Send personally identifying data with every event: the client IP, the full request header\nset (`Cookie` included) and the resolved user.\n\n**Off, and worth leaving off.** A reader's IP address and cookies are exactly what a\ncrash report does not need in order to be actionable, and every event sent is personal\ndata handed to a third party, which the published privacy notice would then have to\nname. On, it also widens what the HTTP middleware records, because `sentry-tower` reads\nthis same flag to decide whether to redact sensitive request headers.",
               "type": "boolean"
             },
             "server_name": {

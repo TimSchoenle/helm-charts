@@ -363,6 +363,13 @@ adopt-config chart='' *flags:
 # already been brought up to date. Which is the pattern worth naming: a values block invalidates
 # five committed artefacts, and finding them one CI run at a time is what this chain replaces.
 #
+# **What it cannot write is a removal.** A key the contract dropped, or a property it dropped from
+# a key's element, is still read by the chart's templates and still set by its hand-written tests
+# and CI values, and none of the generators above edits those files. `just contract-migrations`
+# runs before them and names each such line, against the branch's merge-base with `origin/main`
+# rather than `HEAD`, because the refresh is usually committed already by then. A remaining
+# reference fails the run, but does not stop it.
+#
 # Then the gates that read only committed files, so a chart that is not finished says so in this
 # terminal instead of in a pull request.
 #
@@ -391,10 +398,21 @@ adopt-config chart='' *flags:
 sync-config chart='' *flags: (contracts chart)
     #!/usr/bin/env bash
     set -euo pipefail
+    status=0
 
     # Against HEAD rather than `origin/main`: the refresh above wrote into the working tree, so
     # the committed file is the before and this is a report of what that fetch just changed.
     just contract-diff '{{ chart }}' HEAD
+
+    # What the contract took away, and where the chart still uses it — the one kind of change
+    # nothing below writes. Against where the branch started rather than HEAD, because on a bump
+    # branch the Documentation job has usually committed the refresh already and HEAD then shows
+    # nothing: that is how `legal.dir` and `legal.documents.*.sources` reached a TankoVault 11
+    # branch with the templates, tests and CI values all still on the old shape. Reported, not
+    # fatal: the values below are still owed, and the gates at the end are still worth reading.
+    base="$(git merge-base HEAD origin/main 2>/dev/null || echo HEAD)"
+    echo
+    just contract-migrations '{{ chart }}' "$base" || status=1
 
     just adopt-config '{{ chart }}' {{ flags }}
 
@@ -424,8 +442,17 @@ sync-config chart='' *flags: (contracts chart)
         # The rendered document gains a section, so every snapshot case that covers the ConfigMap
         # fails until the committed `.snap` is rewritten. Read that diff: `-u` accepts whatever
         # the chart renders today, and `just test-unit` is what asserts it afterwards.
+        #
+        # Not fatal. A failure here is rarely a snapshot: `-u` rewrites those, so what remains is a
+        # hand-written suite refusing a render, and the usual cause is the one
+        # `contract-migrations` reported above. Stopping here would skip the gates below, which is
+        # what left that run with a raw schema error and nothing else to go on.
         echo
-        just update-snapshots '{{ chart }}'
+        if ! just update-snapshots '{{ chart }}'; then
+          status=1
+          echo "error: a suite failed that '-u' cannot rewrite. The templates or hand-written" >&2
+          echo "       tests still use what the contract changed; see the migration report above." >&2
+        fi
 
         # The `credentials` row this adoption wrote is a column of the generated credential table,
         # and `just check-config-readme` is blocking. Rewrites only the text between the two
@@ -438,7 +465,6 @@ sync-config chart='' *flags: (contracts chart)
         # writes above are already on disk — so a failure here is a report and not a half-applied
         # run.
         echo
-        status=0
         just check-config-bindings || status=1
         just check-config-wired || status=1
         just check-values-docs >/dev/null || {
@@ -457,7 +483,6 @@ sync-config chart='' *flags: (contracts chart)
         just update-contract-bindings-snapshot || status=1
         ;;
       *)
-        status=0
         echo
         echo "==> with --write this would also regenerate values.schema.json, the round-trip"
         echo "    suites, the rendered snapshots and the bindings gate snapshot, and re-run the"
@@ -661,6 +686,38 @@ contract-diff chart='' ref='origin/main' *flags='':
     set -euo pipefail
     {{ resolve_contract }}
     "$contract" diff {{ chart }} --since '{{ ref }}' --charts {{ charts }} {{ flags }}
+
+# Name every template, hand-written test and CI values line that still uses something a contract
+# took away since `ref`.
+#
+# `contract-diff` says a key or an element property is gone; this says where the chart still uses
+# it. The two are separate because they answer to different people: the diff is the image's
+# statement, and the references are this repository's leftovers. No generator edits either kind of
+# file — `adopt-config` writes values for keys that arrived, `config-shapes` rewrites `@schema`
+# blocks — so a removal is the one contract change `just sync-config` cannot follow, and without
+# this it surfaced as schema refusals inside `update-snapshots` with nothing naming the cause.
+#
+# `ref` should be where the branch started, not `HEAD`: on a bump branch the Documentation job has
+# usually committed the contract refresh already, so against `HEAD` nothing has changed. The
+# chart's markers are read at `ref` too, because the value a removed key was bound to has often
+# been deleted by then. Exit 0 when nothing references a removal, 2 when something does, 1 when it
+# could not answer.
+#
+#   just contract-migrations tankovault                       against origin/main
+#   just contract-migrations tankovault "$(git merge-base HEAD origin/main)"
+[doc("Name the chart lines that still use something a contract removed")]
+[group('contracts')]
+contract-migrations chart='' ref='origin/main':
+    #!/usr/bin/env bash
+    set -euo pipefail
+    {{ resolve_contract }}
+    {{ resolve_python }}
+    # Through a file rather than a pipe, so a failure of the first command is its own exit status
+    # and not a JSON error from the second.
+    report="$(mktemp)"
+    trap 'rm -f "$report"' EXIT
+    "$contract" diff {{ chart }} --since '{{ ref }}' --charts {{ charts }} --json >"$report"
+    "$python" {{ scripts }}/contract-migrations.py "$report" --since '{{ ref }}' --charts {{ charts }}
 
 # --------------------------------------------------------------------------------------------
 # The credential surface

@@ -1194,20 +1194,23 @@ different operator under different law and an imprint is a statutory requirement
 jurisdictions and meaningless in others. With no documents configured the index is empty and the
 footer publishes no Legal column at all, rather than links that 404.
 
-Each document under `legal.documents.<slug>` names its body exactly once:
+Each document under `legal.documents.<slug>` is either served or linked, never both:
 
-| Key | Who owns the file | Use it when |
+| Key | What it is | Delivered as |
 |---|---|---|
-| `content` | This chart, via a ConfigMap mounted into the API pod | The default. Locale-keyed text written inline in your values. |
-| `sources` | You, via `extraVolumes`/`extraVolumeMounts` | The texts live in a Secret, a PVC, or another chart. |
-| `url` | Nobody — it is a link | The document is hosted elsewhere. |
+| `body` | The Markdown text per locale, inline in your values | A ConfigMap, projected into the API pod's secrets directory under `legal__documents__<slug>__body__<locale>` |
+| `url` | An absolute `http(s)` link to a document hosted elsewhere | `config.toml`; nothing is mounted |
 
-The chart refuses a document that sets more than one of these, or none, naming the slug — the
-service would otherwise refuse to boot on the same condition at container start.
+The chart refuses a document that sets both or neither, naming the slug — the service would
+otherwise refuse to boot on the same condition at container start.
 
-Documents supplied through `content` are read on demand behind an mtime check, so correcting a
-policy is a values change and the kubelet's ConfigMap refresh, never a restart. That ConfigMap is
-deliberately excluded from the pod's `checksum/config` annotation for exactly that reason.
+The texts stay out of `config.toml`, and so out of the pod's `checksum/config` annotation: the
+service reloads its secrets directory when the kubelet refreshes it, so correcting a policy is a
+values change and a kubelet sync, never a restart. Adding a document or a locale adds a file,
+which the service only watches from its next start.
+
+Chart 6.0.0 follows TankoVault 11, which replaced `legal.dir` and the per-document `sources`
+paths with `body`; see [UPGRADING.md](https://github.com/TimSchoenle/helm-charts/blob/main/charts/tankovault/UPGRADING.md#600).
 
 ## Upgrading
 

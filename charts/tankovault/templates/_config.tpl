@@ -471,66 +471,70 @@ peers:
 {{- end -}}
 
 {{/*
-The `[legal]` block, or empty when the operator has published nothing.
+The `[legal]` block, or empty when the operator has set nothing under `legal`.
 
 Only `api` gets it: `api` is the one service that reads it, serving the index unauthenticated at
 `GET /v1/legal` and each document at `GET /v1/legal/{slug}` — the frontend's footer is built from
 that index, so it needs the API, not the files. Emitting the block on the other seven would give
-them a configuration key they never read and a volume they never open.
+them a configuration key they never read and a file they never open.
 
-`sources` is a path, `content` is the text itself, and both arrive here as `sources` because that
-is the only shape the service understands. The difference is who owns the file: `content` is
-written into a ConfigMap by this chart under `<slug>.<locale>.md`, `sources` names a path the
-operator has mounted some other way. Both resolve against `legal.dir` unless absolute, and both
-are read on demand behind an mtime check — so correcting a policy is `kubectl edit configmap`
-plus the kubelet's refresh interval, never a restart. `content` therefore deliberately does not
-feed the pod's `checksum/config` annotation.
-
-A document carrying `url` instead is a link to something hosted elsewhere and mounts nothing.
+Every document field reaches the document as written except `body`, which is the one field left
+out here. A body is the text itself, and in `config.toml` it would feed the pod's
+`checksum/config` annotation, so correcting a policy would roll the API tier. It travels as a file
+in the secrets directory instead — see `tankovault.legal.items` — which the loader merges back
+into the same document by key path. A document carrying `url` is a link to something hosted
+elsewhere and has no body to move.
 */}}
 {{- define "tankovault.legal.config" -}}
 {{- $ctx := . -}}
+{{- $legal := dict -}}
+{{- with $ctx.Values.legal.defaultLocale -}}
+{{- $_ := set $legal "default_locale" . -}}
+{{- end -}}
 {{- $documents := dict -}}
-{{- range $slug, $doc := $ctx.Values.legal.documents -}}
-{{- $doc = $doc | default dict -}}
-{{- $entry := dict -}}
-{{- with $doc.title }}{{- $_ := set $entry "title" . }}{{- end -}}
-{{- with $doc.updated }}{{- $_ := set $entry "updated" . }}{{- end -}}
-{{- if $doc.url -}}
-{{- $_ := set $entry "url" $doc.url -}}
-{{- else -}}
-{{- $sources := dict -}}
-{{- range $locale, $_body := ($doc.content | default dict) -}}
-{{- $_ := set $sources $locale (printf "%s.%s.md" $slug $locale) -}}
-{{- end -}}
-{{- /* An explicit `sources` path wins: it names a file the operator mounted deliberately. */ -}}
-{{- range $locale, $path := ($doc.sources | default dict) -}}
-{{- $_ := set $sources $locale $path -}}
-{{- end -}}
-{{- $_ := set $entry "sources" $sources -}}
-{{- end -}}
-{{- $_ := set $documents $slug $entry -}}
+{{- range $slug, $doc := ($ctx.Values.legal.documents | default dict) -}}
+{{- $_ := set $documents $slug (omit ($doc | default dict) "body") -}}
 {{- end -}}
 {{- if $documents -}}
-dir: {{ $ctx.Values.legal.dir | quote }}
-documents:
-  {{- toYaml $documents | nindent 2 }}
+{{- $_ := set $legal "documents" $documents -}}
+{{- end -}}
+{{- if $legal -}}
+{{- toYaml $legal -}}
 {{- end -}}
 {{- end -}}
 
 {{/*
-The inline document bodies, as ConfigMap `data`. Empty when every published document is a `url`
-or points at a path the operator mounts themselves, in which case no ConfigMap is created and no
-volume is added.
+The inline document bodies, as ConfigMap `data` keyed `<slug>.<locale>.md`. Empty when no
+published document carries a `body`, in which case no ConfigMap is created and nothing is
+projected.
 */}}
 {{- define "tankovault.legal.files" -}}
-{{- range $slug, $doc := .Values.legal.documents -}}
-{{- $doc = $doc | default dict -}}
-{{- if not $doc.url -}}
-{{- range $locale, $body := ($doc.content | default dict) }}
+{{- range $slug, $doc := (.Values.legal.documents | default dict) -}}
+{{- range $locale, $body := (($doc | default dict).body | default dict) }}
 {{ printf "%s.%s.md" $slug $locale }}: |
   {{- $body | nindent 2 }}
 {{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+The projection items that place each body in the secrets directory, as a YAML list of
+`key`/`path` pairs over the ConfigMap `tankovault.legal.files` writes.
+
+The path is the configuration path `legal.documents.<slug>.body.<locale>` spelt the way the loader
+reads a file name — `__` for each level — so the file supplies exactly the key the operator wrote
+under `body`. That is the loader's secrets-directory layer, which the chart already mounts on the
+API for its credentials; a ConfigMap source in the same projection lands beside them. The texts
+are not secret, but this is the one layer that reads a value out of a file without an environment
+variable naming it, and the kubelet refreshes a projected ConfigMap in place, so an edited policy
+is picked up without a restart. A new locale or a new document is a new file, which the loader
+only watches from the next start.
+*/}}
+{{- define "tankovault.legal.items" -}}
+{{- range $slug, $doc := (.Values.legal.documents | default dict) -}}
+{{- range $locale, $_body := (($doc | default dict).body | default dict) }}
+- key: {{ printf "%s.%s.md" $slug $locale }}
+  path: {{ printf "legal__documents__%s__body__%s" $slug $locale }}
 {{- end -}}
 {{- end -}}
 {{- end -}}
@@ -697,11 +701,6 @@ Args: ctx (root).
   {{- end }}
 {{- end }}
 {{- end }}
-{{- if and (eq $service "api") (include "tankovault.legal.files" $ctx | trim) }}
-- name: legal
-  configMap:
-    name: {{ include "common.fullname.suffixed" (dict "ctx" $ctx "suffix" "legal") }}
-{{- end }}
 {{- end -}}
 
 {{- define "tankovault.volumeMounts" -}}
@@ -724,10 +723,5 @@ Args: ctx (root).
   mountPath: {{ $ctx.Values.internal.tls.caDir | quote }}
   readOnly: true
 {{- end }}
-{{- end }}
-{{- if and (eq $service "api") (include "tankovault.legal.files" $ctx | trim) }}
-- name: legal
-  mountPath: {{ $ctx.Values.legal.dir | quote }}
-  readOnly: true
 {{- end }}
 {{- end -}}

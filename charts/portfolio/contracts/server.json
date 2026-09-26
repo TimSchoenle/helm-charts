@@ -1,9 +1,9 @@
 {
   "source": {
     "image": "docker.io/timschoenle/portfolio",
-    "digest": "sha256:bb37af3a62a44f18bcd954e571eb5e365c6101c2e97e82773ab0648c4bb69ba8",
-    "sha256": "46e295962e638d0d3916b652c4ea52ccfce8ded28452d5d3da19a104567164c6",
-    "fetched": "2026-09-23T06:40:43Z"
+    "digest": "sha256:3f8bc7efc15a2f15da489552b9f4a8fd6e0f87a0d733e076aea1bc0d30c9f7f9",
+    "sha256": "4671c84aa8f207ce87c9eff5482edc2f1244e3791f469f6aeda862ef3f3d034a",
+    "fetched": "2026-09-26T13:19:39Z"
   },
   "contract": {
     "terrace_contract": 1,
@@ -14,7 +14,7 @@
     },
     "app": {
       "name": "portfolio",
-      "version": "v3.1.1",
+      "version": "v3.1.2",
       "source": "https://github.com/TimSchoenle/Portfolio"
     },
     "schema": {
@@ -165,6 +165,88 @@
           "secrets_file_aliases": [],
           "default": "false",
           "default_value": false,
+          "note": null,
+          "required": false,
+          "secret": false,
+          "reserved": false
+        },
+        {
+          "path": "hsts.max_age_secs",
+          "env": "PORTFOLIO_HSTS__MAX_AGE_SECS",
+          "env_file": "PORTFOLIO_HSTS__MAX_AGE_SECS_FILE",
+          "secrets_file": "hsts__max_age_secs",
+          "docs": "How long, in seconds, a browser keeps to HTTPS after seeing the header. Zero clears it.\n\nZero is the documented way to *withdraw* HSTS: browsers drop the host from their list on\nthe next response. It is refused together with `preload`, which that would contradict.",
+          "ty": "u64",
+          "values": [],
+          "constraint": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "text_constraint": {
+            "pattern": "^\\s*\\+?[0-9]+\\s*$",
+            "type": "string"
+          },
+          "text_form": "integer",
+          "aliases": [],
+          "env_aliases": [],
+          "env_file_aliases": [],
+          "secrets_file_aliases": [],
+          "default": "31536000",
+          "default_value": 31536000,
+          "note": null,
+          "required": false,
+          "secret": false,
+          "reserved": false
+        },
+        {
+          "path": "hsts.include_subdomains",
+          "env": "PORTFOLIO_HSTS__INCLUDE_SUBDOMAINS",
+          "env_file": "PORTFOLIO_HSTS__INCLUDE_SUBDOMAINS_FILE",
+          "secrets_file": "hsts__include_subdomains",
+          "docs": "Apply the policy to every subdomain as well (`includeSubDomains`).",
+          "ty": "bool",
+          "values": [],
+          "constraint": {
+            "type": "boolean"
+          },
+          "text_constraint": {
+            "pattern": "^\\s*(true|false)\\s*$",
+            "type": "string"
+          },
+          "text_form": "boolean",
+          "aliases": [],
+          "env_aliases": [],
+          "env_file_aliases": [],
+          "secrets_file_aliases": [],
+          "default": "true",
+          "default_value": true,
+          "note": null,
+          "required": false,
+          "secret": false,
+          "reserved": false
+        },
+        {
+          "path": "hsts.preload",
+          "env": "PORTFOLIO_HSTS__PRELOAD",
+          "env_file": "PORTFOLIO_HSTS__PRELOAD_FILE",
+          "secrets_file": "hsts__preload",
+          "docs": "Ask to be included in the browsers' built-in HSTS preload list (`preload`).\n\nThe list's own requirements are enforced at boot: `include_subdomains` on and a\n`max_age_secs` of at least one year.",
+          "ty": "bool",
+          "values": [],
+          "constraint": {
+            "type": "boolean"
+          },
+          "text_constraint": {
+            "pattern": "^\\s*(true|false)\\s*$",
+            "type": "string"
+          },
+          "text_form": "boolean",
+          "aliases": [],
+          "env_aliases": [],
+          "env_file_aliases": [],
+          "secrets_file_aliases": [],
+          "default": "true",
+          "default_value": true,
           "note": null,
           "required": false,
           "secret": false,
@@ -769,6 +851,28 @@
             "hash_inline_scripts": {
               "default": true,
               "description": "Hash every inline `<script>` in the document being served instead of admitting all inline\nscript with `'unsafe-inline'`.\n\nOn — the default — the server hashes the response body it is about to send, so the only\ninline scripts that run are the ones it rendered itself. That is the whole point of the\nexercise: `'unsafe-inline'` admits an injected `<script>` just as readily as the Dioxus\nhydration bootstrap.\n\nOff is the escape hatch, and it exists because the failure mode is silent: an inline\nscript the scanner does not see is refused by the browser, and the evidence is a blank\npage and a console message nobody is watching. Turning it off restores `'unsafe-inline'`\nthrough an environment variable and a restart rather than a redeploy. Known cases: a\ndevelopment server that injects its own live-reload script downstream of this process,\nand any future renderer change that emits script this server never sees.\n\nThe two settings are mutually exclusive in the browser, not merely different: a policy\ncarrying any hash or nonce makes `'unsafe-inline'` inert, which is why there is one switch\nhere rather than two independent ones.",
+              "type": "boolean"
+            }
+          },
+          "type": "object"
+        },
+        "hsts": {
+          "additionalProperties": false,
+          "properties": {
+            "include_subdomains": {
+              "default": true,
+              "description": "Apply the policy to every subdomain as well (`includeSubDomains`).",
+              "type": "boolean"
+            },
+            "max_age_secs": {
+              "default": 31536000,
+              "description": "How long, in seconds, a browser keeps to HTTPS after seeing the header. Zero clears it.\n\nZero is the documented way to *withdraw* HSTS: browsers drop the host from their list on\nthe next response. It is refused together with `preload`, which that would contradict.",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "preload": {
+              "default": true,
+              "description": "Ask to be included in the browsers' built-in HSTS preload list (`preload`).\n\nThe list's own requirements are enforced at boot: `include_subdomains` on and a\n`max_age_secs` of at least one year.",
               "type": "boolean"
             }
           },

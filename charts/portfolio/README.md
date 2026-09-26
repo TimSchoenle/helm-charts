@@ -1,8 +1,8 @@
 # portfolio
 
-![Version: 6.0.1](https://img.shields.io/badge/Version-6.0.1-informational?style=flat-square) ![AppVersion: v3.1.1](https://img.shields.io/badge/AppVersion-v3.1.1-informational?style=flat-square)
+![Version: 6.0.2](https://img.shields.io/badge/Version-6.0.2-informational?style=flat-square) ![AppVersion: v3.1.1](https://img.shields.io/badge/AppVersion-v3.1.1-informational?style=flat-square)
 
-Personal portfolio built with Rust (Yew frontend, Axum server).
+This chart deploys Portfolio, a Dioxus fullstack site that an Axum server renders and a WASM client hydrates in the browser.
 
 A single self-contained Rust binary serving pre-built assets. There is no database, no cache
 and no runtime credential — the GitHub data on the site is fetched at build time, so no token

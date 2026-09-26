@@ -60,7 +60,7 @@ api_versions := configs / "render-api-versions.txt"
 # renovate: datasource=github-tags depName=helm-unittest/helm-unittest extractVersion=^v(?<version>.*)$
 helm_unittest_version := "1.1.2"
 # renovate: datasource=github-tags depName=dadav/helm-schema
-helm_schema_version := "0.18.1"
+helm_schema_version := "0.23.5"
 
 # Helm itself, for `resolve_helm`'s container fallback below. Mirrors the `helm-version` input
 # `.github/actions/setup-toolchain/action.yaml` pins for the runner — kept in step by hand, the

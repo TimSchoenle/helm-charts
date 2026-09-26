@@ -1,6 +1,6 @@
 # tankovault
 
-![Version: 6.0.1](https://img.shields.io/badge/Version-6.0.1-informational?style=flat-square) ![AppVersion: 11.0.1](https://img.shields.io/badge/AppVersion-11.0.1-informational?style=flat-square)
+![Version: 6.0.2](https://img.shields.io/badge/Version-6.0.2-informational?style=flat-square) ![AppVersion: 11.0.1](https://img.shields.io/badge/AppVersion-11.0.1-informational?style=flat-square)
 
 This chart deploys the full TankoVault manga aggregator stack — frontend, api, control-plane, worker, notifier, sync, challenge-solver and render — hardened to the restricted Pod Security Standard, with file-backed configuration that reloads in place instead of restarting pods, optional bundled PostgreSQL, Valkey, NATS JetStream and TRAWL, and optional Prometheus metrics, alerting rules and Grafana dashboards.
 
@@ -2056,12 +2056,12 @@ lookup; the chart fails the render if FQDN destinations are named with the DNS r
 | trawl.shmSize | string | `"1Gi"` | Size of the `/dev/shm` in-memory volume. Firefox needs far more shared memory than the 64Mi Kubernetes provides by default, and fails in confusing ways without it. |
 | trawl.tolerations | list | `[]` | Tolerations for TRAWL's pods. |
 | trawl.topologySpreadConstraints | list | `[]` | Topology spread constraints for TRAWL's pods. |
-| valkey | object | `{"affinity":{},"enabled":false,"image":{"repository":"valkey/valkey","tag":"9.1.2-alpine@sha256:a0dbf4c1d5708782907c10e2c72deff317518518b5288a58416981d9db95d30b"},"nodeSelector":{},"podAntiAffinity":"","priorityClassName":"","resources":{"limits":{"memory":"512Mi"},"requests":{"cpu":"100m","memory":"256Mi"}},"tolerations":[],"topologySpreadConstraints":[]}` | Bundled Valkey, backing the API rate limiter and the control-plane's leader election. Embedded rather than taken as a subchart: the official Valkey chart defines its own `common.image`, and Helm's template namespace is global across dependencies, so it and the `common` library overwrite each other. TankoVault degrades gracefully without Valkey — the rate limiter falls back to per-replica in-memory counters and the scheduler to sole-leader. |
+| valkey | object | `{"affinity":{},"enabled":false,"image":{"repository":"valkey/valkey","tag":"9.1.2-alpine@sha256:48332870af354a799964c0012ae1194a0bf2bf894eb508f945810596dc2d8d11"},"nodeSelector":{},"podAntiAffinity":"","priorityClassName":"","resources":{"limits":{"memory":"512Mi"},"requests":{"cpu":"100m","memory":"256Mi"}},"tolerations":[],"topologySpreadConstraints":[]}` | Bundled Valkey, backing the API rate limiter and the control-plane's leader election. Embedded rather than taken as a subchart: the official Valkey chart defines its own `common.image`, and Helm's template namespace is global across dependencies, so it and the `common` library overwrite each other. TankoVault degrades gracefully without Valkey — the rate limiter falls back to per-replica in-memory counters and the scheduler to sole-leader. |
 | valkey.affinity | object | `{}` | Explicit affinity rules for Valkey. Wins over `podAntiAffinity` when set. |
 | valkey.enabled | bool | `false` | Deploy the bundled Valkey. |
-| valkey.image | object | `{"repository":"valkey/valkey","tag":"9.1.2-alpine@sha256:a0dbf4c1d5708782907c10e2c72deff317518518b5288a58416981d9db95d30b"}` | Repository and tag for the bundled Valkey. |
+| valkey.image | object | `{"repository":"valkey/valkey","tag":"9.1.2-alpine@sha256:48332870af354a799964c0012ae1194a0bf2bf894eb508f945810596dc2d8d11"}` | Repository and tag for the bundled Valkey. |
 | valkey.image.repository | string | `"valkey/valkey"` | Image repository. |
-| valkey.image.tag | string | `"9.1.2-alpine@sha256:a0dbf4c1d5708782907c10e2c72deff317518518b5288a58416981d9db95d30b"` | Image tag, pinned by digest. |
+| valkey.image.tag | string | `"9.1.2-alpine@sha256:48332870af354a799964c0012ae1194a0bf2bf894eb508f945810596dc2d8d11"` | Image tag, pinned by digest. |
 | valkey.nodeSelector | object | `{}` | Node selector for Valkey's pod. |
 | valkey.podAntiAffinity | string | `""` | Pod anti-affinity across nodes for Valkey. `soft` prefers spreading replicas, `hard` requires it. Meaningless at the default `replicaCount: 1`. |
 | valkey.priorityClassName | string | `""` | Priority class for Valkey's pod. |

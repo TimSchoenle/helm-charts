@@ -1,8 +1,8 @@
 # mp-stats-legacy-viewer
 
-![Version: 3.5.5](https://img.shields.io/badge/Version-3.5.5-informational?style=flat-square) ![AppVersion: v0.21.2](https://img.shields.io/badge/AppVersion-v0.21.2-informational?style=flat-square)
+![Version: 3.5.6](https://img.shields.io/badge/Version-3.5.6-informational?style=flat-square) ![AppVersion: v0.21.2](https://img.shields.io/badge/AppVersion-v0.21.2-informational?style=flat-square)
 
-MP Stats Legacy Viewer
+This chart deploys mp-stats-legacy-viewer, which serves historical Minecraft server statistics as sharded binary chunks that a Dioxus client queries in the browser.
 
 A single stateless HTTP deployment: no database, no credentials and nothing to persist. It
 installs and serves on its ClusterIP with no configuration at all, so the only values most

@@ -551,6 +551,10 @@ policy pointing at the wrong Gateway looks correct and blocks everything.
 | gateway.tls.enabled | bool | `false` | Add an HTTPS listener. |
 | gateway.tls.mode | string | `"Terminate"` | TLS mode. |
 | gateway.tls.options | object | `{}` | Implementation-specific TLS options. |
+| hsts | object | `{"includeSubdomains":true,"maxAgeSecs":31536000,"preload":true}` | The `hsts` settings. |
+| hsts.includeSubdomains | bool | `true` | Apply the policy to every subdomain as well (`includeSubDomains`) (`hsts.include_subdomains`). |
+| hsts.maxAgeSecs | int | `31536000` | How long, in seconds, a browser keeps to HTTPS after seeing the header. Zero clears it (`hsts.max_age_secs`). |
+| hsts.preload | bool | `true` | Ask to be included in the browsers' built-in HSTS preload list (`preload`) (`hsts.preload`). |
 | image | object | `{"pullPolicy":"","registry":"","repository":"timschoenle/portfolio","tag":"v3.1.2@sha256:3f8bc7efc15a2f15da489552b9f4a8fd6e0f87a0d733e076aea1bc0d30c9f7f9"}` | Container image the pod runs, composed as `registry/repository:tag`. |
 | image.pullPolicy | string | `""` | Kubernetes image pull policy. Empty resolves automatically from the tag/digest. |
 | image.registry | string | `""` | Registry host. Empty means Docker Hub. |

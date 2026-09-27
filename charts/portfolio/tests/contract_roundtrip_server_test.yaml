@@ -9,7 +9,7 @@
 # Chart:       portfolio
 # Declaration: charts/portfolio/config-contract.yaml (document `server`)
 # Contract:    charts/portfolio/contracts/server.json
-# Coverage:    20 of 24 contract keys carry a probe, 20 through the chart's own value
+# Coverage:    23 of 27 contract keys carry a probe, 23 through the chart's own value
 #
 # Regenerate with `just contract-tests`. `just check-contract-tests` fails a pull request whose
 # committed copy has drifted from the contract it was generated against.
@@ -171,6 +171,60 @@ tests:
       - matchRegex:
           path: data["config.toml"]
           pattern: '(?m)^\[csp\]$\n(?:[^\[\n][^\n]*\n|\n)*^hash_inline_scripts = false$'
+
+  - it: delivers hsts.include_subdomains into config.toml from hsts.includeSubdomains
+    documentSelector:
+      path: data["config.toml"]
+    set:
+      existingSecret: portfolio-contract-probe
+      legal.documents.imprint.body.en: '# Imprint
+'
+      legal.documents.imprint.title.en: Imprint
+      legal.documents.privacy.body.en: '# Privacy Policy
+'
+      legal.documents.privacy.title.en: 'Privacy Policy'
+      config.csp.cloudflare.script_nonce: false
+      hsts.includeSubdomains: false
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '(?m)^\[hsts\]$\n(?:[^\[\n][^\n]*\n|\n)*^include_subdomains = false$'
+
+  - it: delivers hsts.max_age_secs into config.toml from hsts.maxAgeSecs
+    documentSelector:
+      path: data["config.toml"]
+    set:
+      existingSecret: portfolio-contract-probe
+      legal.documents.imprint.body.en: '# Imprint
+'
+      legal.documents.imprint.title.en: Imprint
+      legal.documents.privacy.body.en: '# Privacy Policy
+'
+      legal.documents.privacy.title.en: 'Privacy Policy'
+      config.csp.cloudflare.script_nonce: false
+      hsts.maxAgeSecs: 4242
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '(?m)^\[hsts\]$\n(?:[^\[\n][^\n]*\n|\n)*^max_age_secs = 4242$'
+
+  - it: delivers hsts.preload into config.toml from hsts.preload
+    documentSelector:
+      path: data["config.toml"]
+    set:
+      existingSecret: portfolio-contract-probe
+      legal.documents.imprint.body.en: '# Imprint
+'
+      legal.documents.imprint.title.en: Imprint
+      legal.documents.privacy.body.en: '# Privacy Policy
+'
+      legal.documents.privacy.title.en: 'Privacy Policy'
+      config.csp.cloudflare.script_nonce: false
+      hsts.preload: false
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '(?m)^\[hsts\]$\n(?:[^\[\n][^\n]*\n|\n)*^preload = false$'
 
   - it: delivers isr.cache_dir into config.toml from isr.cacheDir
     documentSelector:

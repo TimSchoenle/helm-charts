@@ -9,7 +9,7 @@
 # Chart:       tankovault
 # Declaration: charts/tankovault/config-contract.yaml (document `notifier`)
 # Contract:    charts/tankovault/contracts/notifier.json
-# Coverage:    48 of 62 contract keys carry a probe, 18 through the chart's own value
+# Coverage:    49 of 63 contract keys carry a probe, 19 through the chart's own value
 #
 # Regenerate with `just contract-tests`. `just check-contract-tests` fails a pull request whose
 # committed copy has drifted from the contract it was generated against.
@@ -688,6 +688,31 @@ tests:
       - matchRegex:
           path: data["config.toml"]
           pattern: '(?m)^\[metrics\]$\n(?:[^\[\n][^\n]*\n|\n)*^route = "contract-probe-metrics-route"$'
+
+  - it: delivers nats.events_max_age_secs into config.toml from nats.eventsMaxAgeSecs
+    documentSelector:
+      path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="notifier")].data["config.toml"]'
+    set:
+      anilist.clientId: probe-anilist-client-id
+      anilist.clientSecret: probe-anilist-client-secret
+      anilist.redirectUri: 'https://render-prerequisite.invalid/account/anilist-callback'
+      auth.jwtSecret: probe-jwt-secret-0123456789abcdef0123
+      branding.wordmark.lead: Render
+      email.host: smtp.render-prerequisite.invalid
+      existingSecret: tankovault-contract-probe
+      internal.identity: token
+      internal.tokens.api: probe-internal-token-api-0123456789ab
+      internal.tokens.worker: probe-internal-token-worker-01234567
+      nats.enabled: true
+      postgresql.auth.password: probe-postgresql-password
+      postgresql.enabled: true
+      services.render.enabled: true
+      trawl.enabled: true
+      nats.eventsMaxAgeSecs: 4242
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '(?m)^\[nats\]$\n(?:[^\[\n][^\n]*\n|\n)*^events_max_age_secs = 4242$'
 
   - it: delivers security.cors.allow_credentials into config.toml
     documentSelector:

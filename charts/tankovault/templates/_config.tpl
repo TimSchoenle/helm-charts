@@ -119,9 +119,18 @@ telemetry:
 metrics:
   enabled: {{ $ctx.Values.metrics.enabled }}
   listen: {{ printf "0.0.0.0:%v" $ctx.Values.metrics.port | quote }}
-{{- if and $spec.needsNats $nats (not $ctx.Values.externalNats.perServiceSecret) }}
+{{- if $spec.needsNats }}
+{{- $natsUrl := and $nats (not $ctx.Values.externalNats.perServiceSecret) }}
+{{- $eventsMaxAge := $ctx.Values.nats.eventsMaxAgeSecs }}
+{{- if or $natsUrl (not (kindIs "invalid" $eventsMaxAge)) }}
 nats:
+  {{- if $natsUrl }}
   url: {{ $nats | quote }}
+  {{- end }}
+  {{- if not (kindIs "invalid" $eventsMaxAge) }}
+  events_max_age_secs: {{ $eventsMaxAge }}
+  {{- end }}
+{{- end }}
 {{- end }}
 {{- with include "tankovault.internalConfig" (dict "ctx" $ctx "service" $service) }}
 internal:

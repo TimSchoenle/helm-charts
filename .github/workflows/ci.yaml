@@ -55,11 +55,11 @@ jobs:
           fetch-depth: 0
 
       - name: Setup toolchain
-        uses: ./.github/actions/setup-toolchain
+        uses: $/.github/actions/setup-toolchain
 
       # Every configuration gate this job runs delegates to it.
       - name: Install terrace-contract
-        uses: ./.github/actions/install-terrace-contract
+        uses: $/.github/actions/install-terrace-contract
 
       # Renovate's image updates rewrite `values.yaml` and nothing else, but `ct lint` demands a new
       # chart version for them and the release workflow publishes only a chart whose version moved.
@@ -293,7 +293,7 @@ jobs:
           persist-credentials: false
 
       - name: Setup toolchain
-        uses: ./.github/actions/setup-toolchain
+        uses: $/.github/actions/setup-toolchain
         with:
           helm-version: ${{ matrix.helm }}
 
@@ -324,7 +324,7 @@ jobs:
           persist-credentials: false
 
       - name: Setup toolchain
-        uses: ./.github/actions/setup-toolchain
+        uses: $/.github/actions/setup-toolchain
 
       - name: Build Helm dependencies
         run: just deps
@@ -375,7 +375,7 @@ jobs:
           persist-credentials: false
 
       - name: Setup toolchain
-        uses: ./.github/actions/setup-toolchain
+        uses: $/.github/actions/setup-toolchain
 
       - name: Build Helm dependencies
         run: just deps
@@ -419,7 +419,7 @@ jobs:
           persist-credentials: false
 
       - name: Setup toolchain
-        uses: ./.github/actions/setup-toolchain
+        uses: $/.github/actions/setup-toolchain
 
       # A pinned single binary installed by release URL, exactly as terrace-contract and
       # kubeconform are, and not `pip install ruff`: this repository has already decided that a pip install inside a
@@ -466,7 +466,7 @@ jobs:
           persist-credentials: false
 
       - name: Setup toolchain
-        uses: ./.github/actions/setup-toolchain
+        uses: $/.github/actions/setup-toolchain
 
       - name: Build Helm dependencies
         run: just deps
@@ -520,7 +520,7 @@ jobs:
           persist-credentials: false
 
       - name: Setup toolchain
-        uses: ./.github/actions/setup-toolchain
+        uses: $/.github/actions/setup-toolchain
 
       - name: Build Helm dependencies
         run: just deps
@@ -561,7 +561,7 @@ jobs:
           persist-credentials: false
 
       - name: Setup toolchain
-        uses: ./.github/actions/setup-toolchain
+        uses: $/.github/actions/setup-toolchain
 
       - name: Build Helm dependencies
         run: just deps
@@ -602,7 +602,7 @@ jobs:
           persist-credentials: false
 
       - name: Setup toolchain
-        uses: ./.github/actions/setup-toolchain
+        uses: $/.github/actions/setup-toolchain
 
       - name: Check every value carries a description
         run: just check-values-docs
@@ -624,7 +624,7 @@ jobs:
           persist-credentials: false
 
       - name: Setup toolchain
-        uses: ./.github/actions/setup-toolchain
+        uses: $/.github/actions/setup-toolchain
 
       - name: Build Helm dependencies
         run: just deps
@@ -662,6 +662,11 @@ jobs:
   # makes that safe: `just check-config` refuses to validate at all unless the vendored contract
   # provably belongs to the digest the chart pins, so the run that sees a bumped digest and a
   # stale contract fails loudly rather than passing on a check it did not do.
+  #
+  # Narrowed to the charts the pull request touched. Before this, one chart that broke a gate
+  # failed every open pull request, including the ones that never touched it. `contract-scope`
+  # widens back to every chart whenever the change reaches outside one chart's own directory,
+  # so a CLI bump, a recipe change or a library change is still checked against the whole tree.
   config-contracts:
     name: Configuration Contracts
     runs-on: ubuntu-latest
@@ -673,16 +678,35 @@ jobs:
         with:
           egress-policy: audit
 
+      # Full history, because `contract-scope` diffs against the merge base with the target
+      # branch. A shallow clone would not break the job: the scope would widen to every chart.
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Setup toolchain
-        uses: ./.github/actions/setup-toolchain
+        uses: $/.github/actions/setup-toolchain
 
       - name: Build Helm dependencies
         run: just deps
+
+      # One line of chart names, or an empty line for every chart. The steps below read it from
+      # the environment and split it into an array, so no chart name is expanded by the shell.
+      - name: Select the charts this change touched
+        id: scope
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          if [[ -n "${BASE_SHA}" ]]; then
+            charts="$(just contract-scope "${BASE_SHA}")"
+          else
+            charts="$(just contract-scope)"
+          fi
+          echo "charts=${charts}" >> "$GITHUB_OUTPUT"
+          echo "==> contract gates checking: ${charts:-every chart}"
 
       # A pinned single binary, verified before it is unpacked, exactly as kubeconform is above.
       # It replaces both the ~2,000 lines of Python that held these gates and the `jv` binary that
@@ -692,13 +716,19 @@ jobs:
       # contract gate, and the same twenty lines in three places is how two of them end up pinning
       # different releases.
       - name: Install terrace-contract
-        uses: ./.github/actions/install-terrace-contract
+        uses: $/.github/actions/install-terrace-contract
 
       # PyYAML ships with the runner image's system `python3`, which is what the recipes resolve
       # to. `actions/setup-python` is deliberately not used, for the same reason as in the docs job.
       - name: Validate rendered configuration against image contracts
-        run: just check-config
+        env:
+          CHARTS: ${{ steps.scope.outputs.charts }}
+        run: |
+          read -ra charts <<< "${CHARTS}"
+          just check-config rendered "${charts[@]}"
 
+      # Estate-wide on purpose, and never narrowed: it asks whether any chart pins a
+      # first-party image without a contract, which is a question about the whole tree.
       - name: Report configuration contract coverage
         run: just check-contract-coverage
 
@@ -706,7 +736,11 @@ jobs:
       # a contract key no `# @config` marker in its values.yaml reaches. Reads two committed
       # files per chart, so it needs neither the render above nor the toolchain install.
       - name: Check configuration binding markers
-        run: just check-config-bindings
+        env:
+          CHARTS: ${{ steps.scope.outputs.charts }}
+        run: |
+          read -ra charts <<< "${CHARTS}"
+          just check-config-bindings "${charts[@]}"
 
       # The derived schemas, both halves. Every value carrying a `# @config` marker has its
       # `@schema` block written from that key's constraint — the element schema included, where a
@@ -717,14 +751,22 @@ jobs:
       # — which is precisely what an automated bump does — or when the contract catches up. The
       # two declared departures from a generated block fail here for the mirror-image reason.
       - name: Check derived config shapes
-        run: just check-config-shapes
+        env:
+          CHARTS: ${{ steps.scope.outputs.charts }}
+        run: |
+          read -ra charts <<< "${CHARTS}"
+          just check-config-shapes "${charts[@]}"
 
       # The credential reference in every contracted chart's README. The generated half the
       # Documentation job repairs, so this is a safety net for it; the two hand-written columns
       # beside it are not repairable, and an entry naming a credential the image dropped or a
       # chart value somebody renamed is exactly what a digest bump produces.
       - name: Check README credential references
-        run: just check-config-readme
+        env:
+          CHARTS: ${{ steps.scope.outputs.charts }}
+        run: |
+          read -ra charts <<< "${CHARTS}"
+          just check-config-readme "${charts[@]}"
 
       # The generated round-trip suites, against the contracts they were generated from.
       #
@@ -741,7 +783,11 @@ jobs:
       #
       # Reads two committed files per chart: no render, no cluster, no toolchain install.
       - name: Check generated contract suites
-        run: just check-contract-tests
+        env:
+          CHARTS: ${{ steps.scope.outputs.charts }}
+        run: |
+          read -ra charts <<< "${CHARTS}"
+          just check-contract-tests "${charts[@]}"
 
       - name: Contract script unit tests
         run: just test-contract-scripts
@@ -790,11 +836,11 @@ jobs:
           persist-credentials: false
 
       - name: Setup toolchain
-        uses: ./.github/actions/setup-toolchain
+        uses: $/.github/actions/setup-toolchain
 
       # Every configuration gate this job runs delegates to it.
       - name: Install terrace-contract
-        uses: ./.github/actions/install-terrace-contract
+        uses: $/.github/actions/install-terrace-contract
 
       # Written to the step summary rather than printed, because that is where a reviewer of a
       # bump looks first and it is the one surface that survives the log being collapsed. Also
@@ -851,7 +897,7 @@ jobs:
           persist-credentials: false
 
       - name: Setup toolchain
-        uses: ./.github/actions/setup-toolchain
+        uses: $/.github/actions/setup-toolchain
 
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
@@ -882,10 +928,12 @@ jobs:
 
       - name: Pull kind node image
         if: steps.cache-kind-node-image.outputs.cache-hit != 'true'
+        env:
+          KUBERNETES_VERSION: ${{ matrix.kubernetes }}
         run: |
           set -euo pipefail
-          docker pull "kindest/node:${{ matrix.kubernetes }}"
-          docker save --output /tmp/kind-node-image.tar "kindest/node:${{ matrix.kubernetes }}"
+          docker pull "kindest/node:${KUBERNETES_VERSION}"
+          docker save --output /tmp/kind-node-image.tar "kindest/node:${KUBERNETES_VERSION}"
 
       # Three nodes, because `--upgrade` rolls every workload at once and a single node cannot
       # schedule the rolling-update surge alongside the datastore StatefulSets it is also
@@ -914,7 +962,7 @@ jobs:
       - name: Install Prometheus Operator CRDs
         env:
           # renovate: datasource=github-releases depName=prometheus-operator/prometheus-operator
-          PROMETHEUS_OPERATOR_VERSION: v0.94.0
+          PROMETHEUS_OPERATOR_VERSION: v0.94.1
         run: |
           set -euo pipefail
           base="https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/${PROMETHEUS_OPERATOR_VERSION}/example/prometheus-operator-crd"
@@ -929,7 +977,9 @@ jobs:
       # the recipe explains how new charts are partitioned out of it. `origin/main` is named in
       # both the recipe and ct.yaml — keep the two in step.
       - name: Run chart-testing (install & upgrade)
-        run: just test-install '${{ matrix.chart }}'
+        env:
+          CHART: ${{ matrix.chart }}
+        run: just test-install "${CHART}"
 
   renovate-validate:
     name: Validate Renovate Config
@@ -948,7 +998,7 @@ jobs:
           persist-credentials: false
 
       - name: Validate Renovate configuration
-        uses: suzuki-shunsuke/github-action-renovate-config-validator@ee9f69e1f683ed0d08225086482b34fc9abe9300 # v2.1.0
+        uses: suzuki-shunsuke/github-action-renovate-config-validator@b850926b611b1f3d3fe3729776339c217834bf2c # v2.2.0
 
   # The single job branch protection requires, instead of every job above individually.
   #
@@ -991,10 +1041,13 @@ jobs:
       # there is nothing for them to do (no chart changed; not a pull_request event), and that is
       # not a failure. Only "failure" and "cancelled" fail this job.
       - name: Check that every required job passed
+        env:
+          NEEDS: ${{ toJson(needs) }}
+          ANY_FAILED: ${{ contains(needs.*.result, 'failure') }}
+          ANY_CANCELLED: ${{ contains(needs.*.result, 'cancelled') }}
         run: |
-          echo '${{ toJson(needs) }}' | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
-          if [[ "${{ contains(needs.*.result, 'failure') }}" == "true" ]] || \
-             [[ "${{ contains(needs.*.result, 'cancelled') }}" == "true" ]]; then
+          jq -r 'to_entries[] | "\(.key): \(.value.result)"' <<< "${NEEDS}"
+          if [[ "${ANY_FAILED}" == "true" ]] || [[ "${ANY_CANCELLED}" == "true" ]]; then
             echo "One or more required jobs did not succeed."
             exit 1
           fi

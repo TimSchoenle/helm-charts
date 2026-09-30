@@ -27,6 +27,10 @@ documents:
     prerequisites:
       values:
         existingSecret: portfolio-contract-probe
+        legal.documents.imprint.title.en: Imprint
+        legal.documents.imprint.body.en: "# Imprint\n"
+        legal.documents.privacy.title.en: Privacy Policy
+        legal.documents.privacy.body.en: "# Privacy Policy\n"
 
       reason: >-
         Twelve of this document's keys are `sentry.*`, and every one of them carries a
@@ -38,6 +42,13 @@ documents:
         for a `secret: true` key. It changes nothing the cases assert against — the DSN travels
         as a file in the secrets directory and is never written into `config.toml` — and the
         Secret it names does not have to exist for a template render.
+
+        `legal.documents` is required by `values.schema.json` to carry an `imprint` and a
+        `privacy` entry — the image refuses to start without both, and the schema now states
+        that rather than leaving it to a runtime crash. Every case renders the chart, so every
+        case needs both, with real enough content (`title` and `body`) that a document is not
+        merely present but plausibly published; neither key is under `config`, so nothing here
+        can collide with a probe.
 
     reason: >-
       `portfolio.validateValues` fails the render when `csp.hash_inline_scripts` is false while

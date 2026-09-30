@@ -13,7 +13,9 @@ look in.
 Verification mirrors the CI action exactly, in the same order, because the reasoning does not
 change with where the bytes end up: the signature over `SHA256SUMS` proves the release came from
 `terrace-config`'s own release workflow, and the checksum proves the archive is the file that
-signature was made over. `cosign` is what verifies that signature, and it is itself downloaded
+signature was made over. The signature is a single Sigstore bundle, `SHA256SUMS.sigstore.json` —
+cosign 3 writes that format by default and `release-cli.yml` signs into it rather than a detached
+`.sig`/`.pem` pair. `cosign` is what verifies that signature, and it is itself downloaded
 unverified here, for the same reason the CI action's is: verifying the verifier needs a second
 root of trust this repository does not have, so what is pinned is *which* release of cosign, not a
 proof it arrived unmodified. `--cosign-version` is `justfile`'s `cosign_version`, resolved on PATH
@@ -50,9 +52,9 @@ TERRACE_CONFIG_REPO = "TimSchoenle/terrace-config"
 TERRACE_CONFIG_RELEASES = f"https://github.com/{TERRACE_CONFIG_REPO}/releases/download"
 COSIGN_RELEASES = "https://github.com/sigstore/cosign/releases/download"
 
-# The workflow identity `SHA256SUMS.sig` must be signed by. Paired with `OIDC_ISSUER` below, this
-# is what `.github/actions/install-terrace-contract/action.yaml` verifies against; kept identical
-# so a release this script accepts is exactly one CI would accept too.
+# The workflow identity `SHA256SUMS.sigstore.json` must be signed by. Paired with `OIDC_ISSUER`
+# below, this is what `.github/actions/install-terrace-contract/action.yaml` verifies against;
+# kept identical so a release this script accepts is exactly one CI would accept too.
 CERT_IDENTITY = r"^https://github\.com/TimSchoenle/terrace-config/\.github/workflows/release-cli\.yml@"
 OIDC_ISSUER = "https://token.actions.githubusercontent.com"
 
@@ -156,10 +158,8 @@ def _verify_signature(cosign: Path, work: Path) -> None:
             str(cosign),
             "verify-blob",
             str(work / "SHA256SUMS"),
-            "--signature",
-            str(work / "SHA256SUMS.sig"),
-            "--certificate",
-            str(work / "SHA256SUMS.pem"),
+            "--bundle",
+            str(work / "SHA256SUMS.sigstore.json"),
             "--certificate-identity-regexp",
             CERT_IDENTITY,
             "--certificate-oidc-issuer",
@@ -228,7 +228,7 @@ def install(version: str, cosign_version: str, cache_dir: Path, force: bool) -> 
 
     with tempfile.TemporaryDirectory() as tmp:
         work = Path(tmp)
-        for name in (asset, "SHA256SUMS", "SHA256SUMS.sig", "SHA256SUMS.pem"):
+        for name in (asset, "SHA256SUMS", "SHA256SUMS.sigstore.json"):
             try:
                 (work / name).write_bytes(_download(f"{base}/{name}"))
             except InstallError as exc:

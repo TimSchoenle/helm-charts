@@ -1,8 +1,8 @@
 # portfolio
 
-![Version: 5.4.4](https://img.shields.io/badge/Version-5.4.4-informational?style=flat-square) ![AppVersion: v2.12.1](https://img.shields.io/badge/AppVersion-v2.12.1-informational?style=flat-square)
+![Version: 6.0.3](https://img.shields.io/badge/Version-6.0.3-informational?style=flat-square) ![AppVersion: v3.1.2](https://img.shields.io/badge/AppVersion-v3.1.2-informational?style=flat-square)
 
-Personal portfolio built with Rust (Yew frontend, Axum server).
+This chart deploys Portfolio, a Dioxus fullstack site that an Axum server renders and a WASM client hydrates in the browser.
 
 A single self-contained Rust binary serving pre-built assets. There is no database, no cache
 and no runtime credential — the GitHub data on the site is fetched at build time, so no token
@@ -551,11 +551,15 @@ policy pointing at the wrong Gateway looks correct and blocks everything.
 | gateway.tls.enabled | bool | `false` | Add an HTTPS listener. |
 | gateway.tls.mode | string | `"Terminate"` | TLS mode. |
 | gateway.tls.options | object | `{}` | Implementation-specific TLS options. |
-| image | object | `{"pullPolicy":"","registry":"","repository":"timschoenle/portfolio","tag":"v2.12.1@sha256:951dc4e43229fece52abc3e4e14f910896fb57a35b266fba4b107a7e632efa6f"}` | Container image the pod runs, composed as `registry/repository:tag`. |
+| hsts | object | `{"includeSubdomains":true,"maxAgeSecs":31536000,"preload":true}` | The `hsts` settings. |
+| hsts.includeSubdomains | bool | `true` | Apply the policy to every subdomain as well (`includeSubDomains`) (`hsts.include_subdomains`). |
+| hsts.maxAgeSecs | int | `31536000` | How long, in seconds, a browser keeps to HTTPS after seeing the header. Zero clears it (`hsts.max_age_secs`). |
+| hsts.preload | bool | `true` | Ask to be included in the browsers' built-in HSTS preload list (`preload`) (`hsts.preload`). |
+| image | object | `{"pullPolicy":"","registry":"","repository":"timschoenle/portfolio","tag":"v3.1.2@sha256:3f8bc7efc15a2f15da489552b9f4a8fd6e0f87a0d733e076aea1bc0d30c9f7f9"}` | Container image the pod runs, composed as `registry/repository:tag`. |
 | image.pullPolicy | string | `""` | Kubernetes image pull policy. Empty resolves automatically from the tag/digest. |
 | image.registry | string | `""` | Registry host. Empty means Docker Hub. |
 | image.repository | string | `"timschoenle/portfolio"` | Container image repository where the Portfolio application image is stored. |
-| image.tag | string | `"v2.12.1@sha256:951dc4e43229fece52abc3e4e14f910896fb57a35b266fba4b107a7e632efa6f"` | Container image tag to deploy, pinned by digest (`vX.Y.Z@sha256:...`). The digest pins the pull, while the tag stays on as the readable version marker. Defaults to the chart's `appVersion` when empty. |
+| image.tag | string | `"v3.1.2@sha256:3f8bc7efc15a2f15da489552b9f4a8fd6e0f87a0d733e076aea1bc0d30c9f7f9"` | Container image tag to deploy, pinned by digest (`vX.Y.Z@sha256:...`). The digest pins the pull, while the tag stays on as the readable version marker. Defaults to the chart's `appVersion` when empty. |
 | imagePullSecrets | list | `[]` | Optional image pull secrets for private registries. |
 | ingress | object | `{"annotations":{},"enabled":false,"hosts":[],"ingressClassName":"nginx","tls":[]}` | The Ingress in front of the Service. Off by default; `gateway` is the Gateway API alternative and the two are independent switches. |
 | ingress.annotations | object | `{}` | Custom annotations for the Ingress resource. Example: ```yaml annotations:   cert-manager.io/cluster-issuer: "letsencrypt-prod"   nginx.ingress.kubernetes.io/ssl-redirect: "true" ``` |
@@ -567,6 +571,9 @@ policy pointing at the wrong Gateway looks correct and blocks everything.
 | isr.cacheDir | string | `"/tmp/isr"` | Writable directory rendered HTML is cached into (`isr.cache_dir`). Empty disables ISR and renders every request fresh. Keep it under `/tmp`, which the chart already provides as a writable emptyDir under the read-only root filesystem, and outside the bundled `public/` tree so those content-hashed assets stay immutable. The server creates the directory itself and falls back to rendering fresh if it turns out not to be writable. |
 | isr.ttlSecs | int | `0` | Revalidation interval in seconds (`isr.ttl_secs`). `0` means a permanent cache, which is right for this site: every page renders from compile-time data, so the only thing that changes the output is a redeploy — and that starts from an empty cache. Set a positive value only when a *persistent* cache volume is shared across deploys. |
 | kubeVersionOverride | string | `""` | Kubernetes version to target when branching on API availability. Lets `helm template` render for a specific cluster version without a live connection. |
+| legal | object | `{"defaultLocale":null,"documents":{}}` | The `legal` settings. |
+| legal.defaultLocale | string | `nil` | Locale served when neither the request nor its `Accept-Language` header matches a published one, for example `en`. Without it, the first published locale in alphabetical order is served (`legal.default_locale`). |
+| legal.documents | object | `{}` | The published documents, keyed by the slug their URL uses. A slug is lowercase letters, digits, `_` and `-`, at most 64 characters, and starts with a letter or a digit (`legal.documents`). |
 | livenessProbe | object | `{"enabled":true,"failureThreshold":3,"httpGet":{"path":"/api/health","port":"http"},"initialDelaySeconds":1,"periodSeconds":10,"timeoutSeconds":5}` | Liveness probe. Restarts the container when it stops responding. |
 | livenessProbe.enabled | bool | `true` | Enable the liveness probe. |
 | livenessProbe.failureThreshold | int | `3` | Consecutive failures before the container is restarted. |

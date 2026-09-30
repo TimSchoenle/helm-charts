@@ -333,6 +333,20 @@ image's contract declares no `telemetry` key of any kind.
         path: {{ $item.path }}
       {{- end }}
 {{- end }}
+{{- if and $service (eq $service "api") }}
+{{- with include "tankovault.legal.items" $ctx | trim }}
+{{- /*
+  The operator's legal texts, as files named by their configuration path. Not credentials, but
+  the secrets directory is the loader layer that reads a key out of a file name, which is what
+  keeps the texts out of `config.toml` and so out of `checksum/config`. Not `optional`: the
+  ConfigMap is rendered from the same values in the same release.
+*/}}
+- configMap:
+    name: {{ include "common.fullname.suffixed" (dict "ctx" $ctx "suffix" "legal") }}
+    items:
+      {{- . | nindent 6 }}
+{{- end }}
+{{- end }}
 {{- if $dbExternal }}
 - secret:
     name: {{ $ctx.Values.externalDatabase.existingSecret }}

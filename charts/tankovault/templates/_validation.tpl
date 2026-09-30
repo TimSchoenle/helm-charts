@@ -207,21 +207,30 @@ whole point of it, so there is nothing here to check beyond its presence.
 {{- end -}}
 
 {{- /*
-Legal documents. The service refuses to boot on a document that names its body twice or not at
-all, so these are caught here where the message can name the slug and the keys rather than at
-container start. The API is the only reader; publishing documents without it is a no-op that
+Legal documents. The service refuses to boot on a document that carries both a `body` and a `url`,
+or neither, so these are caught here where the message can name the slug rather than at container
+start. The slug and locale checks are this chart's own: a body travels as a file named
+`legal__documents__<slug>__body__<locale>`, in which `__` is the nesting separator and `.` is
+refused outright, so a slug or locale carrying either would supply a different key than the one
+written, or none. The API is the only reader; publishing documents without it is a no-op that
 would otherwise look like a working configuration.
 */ -}}
-{{- range $slug, $doc := $ctx.Values.legal.documents -}}
+{{- range $slug, $doc := ($ctx.Values.legal.documents | default dict) -}}
 {{- $doc = $doc | default dict -}}
-{{- $ways := list -}}
-{{- if $doc.content -}}{{- $ways = append $ways "content" -}}{{- end -}}
-{{- if $doc.sources -}}{{- $ways = append $ways "sources" -}}{{- end -}}
-{{- if $doc.url -}}{{- $ways = append $ways "url" -}}{{- end -}}
-{{- if gt (len $ways) 1 -}}
-{{- $errors = append $errors (printf "legal.documents.%s sets %s, but a document carries its body exactly once. `content` and `sources` are two ways to point at a file and `url` means the document lives elsewhere entirely; the service refuses to boot on a document that sets more than one." $slug (join " and " $ways)) -}}
-{{- else if eq (len $ways) 0 -}}
-{{- $errors = append $errors (printf "legal.documents.%s publishes no body. Set `content` (the text itself, mounted by this chart), `sources` (paths you mount yourself), or `url` (a document hosted elsewhere)." $slug) -}}
+{{- if and $doc.body $doc.url -}}
+{{- $errors = append $errors (printf "legal.documents.%s sets both body and url, but a document is either served or linked. The service refuses to boot on a document that sets both." $slug) -}}
+{{- else if not (or $doc.body $doc.url) -}}
+{{- $errors = append $errors (printf "legal.documents.%s publishes no body. Set `body` (the text per locale) or `url` (a document hosted elsewhere)." $slug) -}}
+{{- end -}}
+{{- if not (regexMatch "^[a-z0-9][a-z0-9_-]{0,63}$" $slug) -}}
+{{- $errors = append $errors (printf "legal.documents.%s: a slug is lowercase letters, digits, `_` and `-`, at most 64 characters, starting with a letter or a digit." $slug) -}}
+{{- else if and $doc.body (contains "__" $slug) -}}
+{{- $errors = append $errors (printf "legal.documents.%s: a slug with a body cannot contain `__`. The body is delivered as a file named by its configuration path, where `__` separates levels." $slug) -}}
+{{- end -}}
+{{- range $locale, $_body := ($doc.body | default dict) -}}
+{{- if not (regexMatch "^[A-Za-z0-9]+([-_][A-Za-z0-9]+)*$" $locale) -}}
+{{- $errors = append $errors (printf "legal.documents.%s.body.%s: a locale is a language tag such as `en` or `de-AT`." $slug $locale) -}}
+{{- end -}}
 {{- end -}}
 {{- if and $doc.url (not (regexMatch "^https?://" $doc.url)) -}}
 {{- $errors = append $errors (printf "legal.documents.%s.url is %q. Only absolute http(s) URLs are accepted." $slug $doc.url) -}}

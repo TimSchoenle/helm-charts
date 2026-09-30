@@ -52,9 +52,12 @@ render-chart chart target namespace='default' values='' kube='':
 # Each output is named `<chart>--<values>.yaml`, so a tool reporting a file identifies the offending
 # pair. Every pair is attempted before the recipe exits, so one chart that fails to render does not
 # hide the state of the rest.
+#
+# Chart names after `out` and `kube` render only those charts, for a gate narrowed to what a change
+# touched: see `contract-scope`. No names renders every chart.
 [doc("Render every application chart against every one of its ci/ values files")]
 [group('render')]
-render out='rendered' kube='':
+render out='rendered' kube='' *only:
     #!/usr/bin/env bash
     set -euo pipefail
     mkdir -p '{{ out }}'
@@ -62,6 +65,10 @@ render out='rendered' kube='':
     failed=0
     for dir in {{ charts }}/*/; do
       name="$(basename "$dir")"
+
+      if [ -n '{{ only }}' ] && [[ ' {{ only }} ' != *" ${name} "* ]]; then
+        continue
+      fi
 
       # A library chart renders nothing on its own. Read from Chart.yaml rather than matched
       # against a hard-coded name, so a second library chart needs no change here.

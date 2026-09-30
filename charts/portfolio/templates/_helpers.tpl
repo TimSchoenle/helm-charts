@@ -47,6 +47,22 @@ sentry:
   span_attributes: {{ .Values.sentry.spanAttributes }}
   debug: {{ .Values.sentry.debug }}
 {{- end }}
+legal:
+  {{- with .Values.legal.defaultLocale }}
+  default_locale: {{ . | quote }}
+  {{- end }}
+  documents:
+    {{- toYaml .Values.legal.documents | nindent 4 }}
+hsts:
+  {{- if not (kindIs "invalid" .Values.hsts.includeSubdomains) }}
+  include_subdomains: {{ .Values.hsts.includeSubdomains }}
+  {{- end }}
+  {{- if not (kindIs "invalid" .Values.hsts.maxAgeSecs) }}
+  max_age_secs: {{ .Values.hsts.maxAgeSecs }}
+  {{- end }}
+  {{- if not (kindIs "invalid" .Values.hsts.preload) }}
+  preload: {{ .Values.hsts.preload }}
+  {{- end }}
 {{- end -}}
 
 {{/*

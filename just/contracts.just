@@ -136,14 +136,16 @@ check-contracts:
 # The rules are `terrace-contract`'s now, not this repository's. They read the same rendered tree,
 # report the same findings and carry the same reasoning — and they are shared with every other
 # consumer of the contract format instead of being one repository's private 2,000 lines.
+#
+# Chart names after `out` render and check only those charts: see `contract-scope`.
 [doc("Validate every chart's rendered configuration against its images' contracts")]
 [group('contracts')]
-check-config out='rendered':
+check-config out='rendered' *only:
     #!/usr/bin/env bash
     set -euo pipefail
     {{ resolve_contract }}
-    just render '{{ out }}'
-    "$contract" check --manifests '{{ out }}' --charts {{ charts }} --format github
+    just render '{{ out }}' '' {{ only }}
+    "$contract" check --manifests '{{ out }}' --charts {{ charts }} --format github {{ only }}
 
 # Report which charts a configuration contract covers, and which it does not.
 #
@@ -224,11 +226,11 @@ check-contract-coverage:
 # the report from the one pull request it exists for.
 [doc("Hold every `# @config` binding marker against the contract key it names")]
 [group('contracts')]
-check-config-bindings:
+check-config-bindings *only:
     #!/usr/bin/env bash
     set -euo pipefail
     {{ resolve_contract }}
-    "$contract" bindings --charts {{ charts }} --format github
+    "$contract" bindings --charts {{ charts }} --format github {{ only }}
 
 # Confirm every `# @config` marker's key is actually rendered by some template.
 #
@@ -332,6 +334,12 @@ adopt-config chart='' *flags:
 # commit it back, which is why the repair looked automatic — but it lands on the push after the
 # red one, and the run everybody was looking at was already scrapped.
 #
+# Run through `resolve_helm`, not the bare binary: this is the one command in the repository that
+# is not content to fail when Helm and its plugins are absent, since a contributor reaching for
+# `sync-config` is usually here *because* an image release just moved and has no reason to have
+# `just plugins` installed yet. `resolve_helm` uses a local `helm` when it already carries both
+# plugins and falls back to running one in a container otherwise — see its definition in `justfile`.
+#
 # `just contract-tests`, because a new marker changes what the generated round trip should say and
 # `just check-contract-tests` is red until it is regenerated. What it produces is the point:
 # measured on `discord-alertmanager`, the suite gained fifteen cases, and with the projection now
@@ -340,7 +348,7 @@ adopt-config chart='' *flags:
 #
 # `just update-snapshots`, over the same chart, because a snapshot suite asserts the whole
 # rendered object: the ConfigMap gains a `[telemetry]` section and three cases fail while nothing
-# is actually wrong.
+# is actually wrong. It resolves the same way, via `HELM_BIN` — see that recipe in `just/test.just`.
 #
 # `just config-readme`, because the `credentials` row this command now writes is a column of the
 # generated credential table and `just check-config-readme` is blocking.
@@ -354,6 +362,13 @@ adopt-config chart='' *flags:
 # The five above were each the sole thing left red on a run where every other generated file had
 # already been brought up to date. Which is the pattern worth naming: a values block invalidates
 # five committed artefacts, and finding them one CI run at a time is what this chain replaces.
+#
+# **What it cannot write is a removal.** A key the contract dropped, or a property it dropped from
+# a key's element, is still read by the chart's templates and still set by its hand-written tests
+# and CI values, and none of the generators above edits those files. `just contract-migrations`
+# runs before them and names each such line, against the branch's merge-base with `origin/main`
+# rather than `HEAD`, because the refresh is usually committed already by then. A remaining
+# reference fails the run, but does not stop it.
 #
 # Then the gates that read only committed files, so a chart that is not finished says so in this
 # terminal instead of in a pull request.
@@ -383,10 +398,21 @@ adopt-config chart='' *flags:
 sync-config chart='' *flags: (contracts chart)
     #!/usr/bin/env bash
     set -euo pipefail
+    status=0
 
     # Against HEAD rather than `origin/main`: the refresh above wrote into the working tree, so
     # the committed file is the before and this is a report of what that fetch just changed.
     just contract-diff '{{ chart }}' HEAD
+
+    # What the contract took away, and where the chart still uses it — the one kind of change
+    # nothing below writes. Against where the branch started rather than HEAD, because on a bump
+    # branch the Documentation job has usually committed the refresh already and HEAD then shows
+    # nothing: that is how `legal.dir` and `legal.documents.*.sources` reached a TankoVault 11
+    # branch with the templates, tests and CI values all still on the old shape. Reported, not
+    # fatal: the values below are still owed, and the gates at the end are still worth reading.
+    base="$(git merge-base HEAD origin/main 2>/dev/null || echo HEAD)"
+    echo
+    just contract-migrations '{{ chart }}' "$base" || status=1
 
     just adopt-config '{{ chart }}' {{ flags }}
 
@@ -400,9 +426,10 @@ sync-config chart='' *flags: (contracts chart)
         # was added for was all of them. The Documentation job does regenerate it, but on the push
         # after the red one; this closes that gap before the push.
         echo
+        {{ resolve_helm }}
         root='{{ charts }}'
         if [ -n '{{ chart }}' ]; then root='{{ charts }}/{{ chart }}'; fi
-        if helm schema --add-schema-reference --chart-search-root "$root"; then
+        if "$HELM_BIN" schema --add-schema-reference --chart-search-root "$root"; then
           echo "==> regenerated values.schema.json under $root"
         else
           echo "warning: values.schema.json was NOT regenerated, and every render will fail" >&2
@@ -415,8 +442,17 @@ sync-config chart='' *flags: (contracts chart)
         # The rendered document gains a section, so every snapshot case that covers the ConfigMap
         # fails until the committed `.snap` is rewritten. Read that diff: `-u` accepts whatever
         # the chart renders today, and `just test-unit` is what asserts it afterwards.
+        #
+        # Not fatal. A failure here is rarely a snapshot: `-u` rewrites those, so what remains is a
+        # hand-written suite refusing a render, and the usual cause is the one
+        # `contract-migrations` reported above. Stopping here would skip the gates below, which is
+        # what left that run with a raw schema error and nothing else to go on.
         echo
-        just update-snapshots '{{ chart }}'
+        if ! just update-snapshots '{{ chart }}'; then
+          status=1
+          echo "error: a suite failed that '-u' cannot rewrite. The templates or hand-written" >&2
+          echo "       tests still use what the contract changed; see the migration report above." >&2
+        fi
 
         # The `credentials` row this adoption wrote is a column of the generated credential table,
         # and `just check-config-readme` is blocking. Rewrites only the text between the two
@@ -429,7 +465,6 @@ sync-config chart='' *flags: (contracts chart)
         # writes above are already on disk — so a failure here is a report and not a half-applied
         # run.
         echo
-        status=0
         just check-config-bindings || status=1
         just check-config-wired || status=1
         just check-values-docs >/dev/null || {
@@ -448,7 +483,6 @@ sync-config chart='' *flags: (contracts chart)
         just update-contract-bindings-snapshot || status=1
         ;;
       *)
-        status=0
         echo
         echo "==> with --write this would also regenerate values.schema.json, the round-trip"
         echo "    suites, the rendered snapshots and the bindings gate snapshot, and re-run the"
@@ -532,11 +566,11 @@ config-shapes:
 # render, no cluster.
 [doc("Fail when a derived `@schema` block is not what its contract describes")]
 [group('contracts')]
-check-config-shapes:
+check-config-shapes *only:
     #!/usr/bin/env bash
     set -euo pipefail
     {{ resolve_contract }}
-    "$contract" shapes --charts {{ charts }} --check --format github
+    "$contract" shapes --charts {{ charts }} --check --format github {{ only }}
 
 # Unit tests for the scripts in `.github/scripts` that still read a contract.
 #
@@ -652,6 +686,38 @@ contract-diff chart='' ref='origin/main' *flags='':
     set -euo pipefail
     {{ resolve_contract }}
     "$contract" diff {{ chart }} --since '{{ ref }}' --charts {{ charts }} {{ flags }}
+
+# Name every template, hand-written test and CI values line that still uses something a contract
+# took away since `ref`.
+#
+# `contract-diff` says a key or an element property is gone; this says where the chart still uses
+# it. The two are separate because they answer to different people: the diff is the image's
+# statement, and the references are this repository's leftovers. No generator edits either kind of
+# file — `adopt-config` writes values for keys that arrived, `config-shapes` rewrites `@schema`
+# blocks — so a removal is the one contract change `just sync-config` cannot follow, and without
+# this it surfaced as schema refusals inside `update-snapshots` with nothing naming the cause.
+#
+# `ref` should be where the branch started, not `HEAD`: on a bump branch the Documentation job has
+# usually committed the contract refresh already, so against `HEAD` nothing has changed. The
+# chart's markers are read at `ref` too, because the value a removed key was bound to has often
+# been deleted by then. Exit 0 when nothing references a removal, 2 when something does, 1 when it
+# could not answer.
+#
+#   just contract-migrations tankovault                       against origin/main
+#   just contract-migrations tankovault "$(git merge-base HEAD origin/main)"
+[doc("Name the chart lines that still use something a contract removed")]
+[group('contracts')]
+contract-migrations chart='' ref='origin/main':
+    #!/usr/bin/env bash
+    set -euo pipefail
+    {{ resolve_contract }}
+    {{ resolve_python }}
+    # Through a file rather than a pipe, so a failure of the first command is its own exit status
+    # and not a JSON error from the second.
+    report="$(mktemp)"
+    trap 'rm -f "$report"' EXIT
+    "$contract" diff {{ chart }} --since '{{ ref }}' --charts {{ charts }} --json >"$report"
+    "$python" {{ scripts }}/contract-migrations.py "$report" --since '{{ ref }}' --charts {{ charts }}
 
 # --------------------------------------------------------------------------------------------
 # The credential surface
@@ -798,11 +864,54 @@ contract-tests chart='':
 # comparison is the script's own and works on a dirty tree and on a fresh clone alike.
 [doc("Report generated contract suites that no longer match the contracts behind them")]
 [group('contracts')]
-check-contract-tests:
+check-contract-tests *only:
     #!/usr/bin/env bash
     set -euo pipefail
     {{ resolve_contract }}
-    "$contract" tests --check --charts {{ charts }}
+    "$contract" tests --check --charts {{ charts }} {{ only }}
+
+# The charts a change touched, so that the contract gates check those and nothing else.
+#
+# Prints the application charts the diff against `base` changed, space-separated on one line. Every
+# gate below that takes chart names reads the line as its selection, and reads an empty line as every
+# chart.
+#
+# The line is empty whenever the change reaches past those charts' own directories. The pinned CLI,
+# a recipe, a workflow, the library chart and anything else outside `charts/<chart>/` can move every
+# chart's verdict at once, so narrowing such a change would pass it while it breaks a chart it never
+# named. Every failure here, from a shallow clone to an unreadable diff, also prints the empty line.
+# The recipe can therefore only widen a gate, and never narrow one by mistake.
+#
+# A chart the change deleted is left out, because nothing is left to check. A directory name that is
+# not a valid chart name widens to every chart rather than reaching a shell unquoted.
+[doc("Print the charts a change touched, or nothing when every chart has to be checked")]
+[group('contracts')]
+contract-scope base=target_branch:
+    #!/usr/bin/env bash
+    set -uo pipefail
+    fork="$(git merge-base '{{ base }}' HEAD 2>/dev/null)" || exit 0
+    changed="$(git diff --name-only "$fork" HEAD)" || exit 0
+    [ -n "$changed" ] || exit 0
+
+    declare -A touched=()
+    while IFS= read -r path; do
+      case "$path" in
+        '{{ charts }}'/*/*) ;;
+        *) exit 0 ;;
+      esac
+      name="${path#'{{ charts }}'/}"
+      name="${name%%/*}"
+      [[ "$name" =~ ^[a-z0-9][a-z0-9-]*$ ]] || exit 0
+      chart='{{ charts }}'/"${name}"/Chart.yaml
+      [ -f "$chart" ] || continue
+      if grep -q '^type:[[:space:]]*library' "$chart"; then
+        exit 0
+      fi
+      touched["$name"]=1
+    done <<< "$changed"
+
+    [ "${#touched[@]}" -gt 0 ] || exit 0
+    printf '%s\n' "${!touched[@]}" | sort | paste -sd ' ' -
 
 # Write the credential reference each contracted chart's README carries, from the contract.
 #
@@ -835,11 +944,11 @@ config-readme:
 # digest bump produces. Reads committed files only — no network, no render, no cluster.
 [doc("Fail when a chart's README credential reference is behind its contract")]
 [group('contracts')]
-check-config-readme:
+check-config-readme *only:
     #!/usr/bin/env bash
     set -euo pipefail
     {{ resolve_contract }}
-    "$contract" readme --charts {{ charts }} --check
+    "$contract" readme --charts {{ charts }} --check {{ only }}
 
 # --------------------------------------------------------------------------------------------
 # Creating a chart

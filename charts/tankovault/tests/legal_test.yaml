@@ -1,6 +1,6 @@
-# Operator-published legal documents. Three ways to name a document's body, one of which the
-# chart materialises as a mounted file, and a validator that rejects the combinations the service
-# would refuse to boot on.
+# Operator-published legal documents. A document is served from an inline `body` or linked through
+# `url`; the chart delivers each body as a file in the api's secrets directory, and a validator
+# rejects the combinations the service would refuse to boot on.
 suite: test legal documents
 templates:
   - configmap-legal.yaml
@@ -20,8 +20,8 @@ tests:
 
   - it: writes inline bodies as <slug>.<locale>.md
     set:
-      legal.documents.terms.content.en: "# Terms\n"
-      legal.documents.terms.content.de: "# Nutzungsbedingungen\n"
+      legal.documents.terms.body.en: "# Terms\n"
+      legal.documents.terms.body.de: "# Nutzungsbedingungen\n"
     template: configmap-legal.yaml
     asserts:
       - equal:
@@ -31,11 +31,13 @@ tests:
           path: data["terms.de.md"]
           value: "# Nutzungsbedingungen\n"
 
-  - it: points the config at the files it just wrote
+  - it: writes every other document field into the api config
     set:
-      legal.documents.terms.content.en: "# Terms\n"
+      legal.defaultLocale: en
+      legal.documents.terms.body.en: "# Terms\n"
       legal.documents.terms.title.en: Terms of Service
       legal.documents.terms.updated: "2026-08-04"
+      legal.documents.terms.order: 3
     template: configmap.yaml
     documentSelector:
       path: metadata.name
@@ -43,32 +45,32 @@ tests:
     asserts:
       - matchRegex:
           path: data["config.toml"]
-          pattern: 'dir = "/etc/tankovault/legal"'
+          pattern: '(?m)^\[legal\]$\n(?:[^\[\n][^\n]*\n|\n)*^default_locale = "en"$'
       - matchRegex:
           path: data["config.toml"]
-          pattern: '\[legal\.documents\.terms\.sources\]\nen = "terms\.en\.md"'
+          pattern: 'order = 3'
       - matchRegex:
           path: data["config.toml"]
           pattern: 'updated = "2026-08-04"'
-
-  - it: passes an operator-mounted path through untouched
-    # `sources` names a file the operator arranged themselves, so the chart creates no ConfigMap
-    # and adds no volume — it only has to agree with them about the path.
-    set:
-      legal.documents.privacy.sources.en: /mnt/legal/privacy.en.md
-    asserts:
-      - hasDocuments:
-          count: 0
-        template: configmap-legal.yaml
       - matchRegex:
           path: data["config.toml"]
-          pattern: 'en = "/mnt/legal/privacy\.en\.md"'
-        template: configmap.yaml
-        documentSelector:
-          path: metadata.name
-          value: RELEASE-NAME-tankovault-api-config
+          pattern: 'en = "Terms of Service"'
 
-  - it: emits a linked document as a url with no sources
+  - it: writes the default locale on its own
+    # `default_locale` is independent of the documents; an operator may set it before publishing
+    # anything, and it must not wait for a document to appear beside it.
+    set:
+      legal.defaultLocale: de
+    template: configmap.yaml
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-api-config
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '(?m)^\[legal\]$\n(?:[^\[\n][^\n]*\n|\n)*^default_locale = "de"$'
+
+  - it: emits a linked document as a url with nothing to project
     set:
       legal.documents.imprint.url: https://example.org/impressum
     asserts:
@@ -83,38 +85,50 @@ tests:
           path: metadata.name
           value: RELEASE-NAME-tankovault-api-config
 
-  - it: mounts the documents into the api and nowhere else
+  - it: projects each body into the api secrets directory under its configuration path
+    # The loader reads a file in the secrets directory as the key its name spells, so
+    # `legal__documents__terms__body__en` supplies exactly `legal.documents.terms.body.en`.
+    set:
+      legal.documents.terms.body.en: "# Terms\n"
+      legal.documents.terms.body.de-AT: "# Nutzungsbedingungen\n"
+    template: deployment.yaml
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-api
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes[?(@.name == "secrets")].projected.sources
+          content:
+            configMap:
+              name: RELEASE-NAME-tankovault-legal
+              items:
+                - key: terms.de-AT.md
+                  path: legal__documents__terms__body__de-AT
+                - key: terms.en.md
+                  path: legal__documents__terms__body__en
+
+  - it: projects the bodies into the api and nowhere else
     # `api` is the only service that reads them: it serves the index and each document, and the
     # frontend's footer is built from that index rather than from the files.
     set:
-      legal.documents.terms.content.en: "# Terms\n"
+      legal.documents.terms.body.en: "# Terms\n"
     template: deployment.yaml
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-worker
     asserts:
-      - contains:
-          path: spec.template.spec.containers[0].volumeMounts
-          content:
-            name: legal
-            mountPath: /etc/tankovault/legal
-            readOnly: true
-        documentSelector:
-          path: metadata.name
-          value: RELEASE-NAME-tankovault-api
       - notContains:
-          path: spec.template.spec.volumes
+          path: spec.template.spec.volumes[?(@.name == "secrets")].projected.sources
           content:
-            name: legal
             configMap:
               name: RELEASE-NAME-tankovault-legal
-        documentSelector:
-          path: metadata.name
-          value: RELEASE-NAME-tankovault-frontend
+          any: true
 
   - it: keeps the document text out of the checksummed config
     # `checksum/config` is a digest of this file, so a body that appeared here would turn every
-    # policy correction into a rolling restart of the API tier. The service re-reads the mounted
-    # files behind an mtime check instead, which is the whole reason they are a separate object.
+    # policy correction into a rolling restart of the API tier.
     set:
-      legal.documents.terms.content.en: "SENTINEL-BODY-TEXT"
+      legal.documents.terms.body.en: "SENTINEL-BODY-TEXT"
     template: configmap.yaml
     documentSelector:
       path: metadata.name
@@ -123,18 +137,28 @@ tests:
       - notMatchRegex:
           path: data["config.toml"]
           pattern: 'SENTINEL-BODY-TEXT'
-      - matchRegex:
+      - notMatchRegex:
           path: data["config.toml"]
-          pattern: 'en = "terms\.en\.md"'
+          pattern: 'body'
 
-  - it: refuses a document that names its body twice
+  - it: refuses the removed content key by path
+    # TankoVault 11 replaced the chart's `content` with the service's own `body`. The schema, not
+    # a template, is what names the old key, so an upgrade that kept it fails the render outright.
     set:
-      legal.documents.terms.url: https://example.org/terms
       legal.documents.terms.content.en: "# Terms\n"
     template: serviceaccount.yaml
     asserts:
       - failedTemplate:
-          errorPattern: "legal.documents.terms sets content and url"
+          errorPattern: "additional properties 'content' not allowed"
+
+  - it: refuses a document that is both served and linked
+    set:
+      legal.documents.terms.url: https://example.org/terms
+      legal.documents.terms.body.en: "# Terms\n"
+    template: serviceaccount.yaml
+    asserts:
+      - failedTemplate:
+          errorPattern: "legal.documents.terms sets both body and url"
 
   - it: refuses a document with no body at all
     set:
@@ -143,6 +167,30 @@ tests:
     asserts:
       - failedTemplate:
           errorPattern: "legal.documents.terms publishes no body"
+
+  - it: refuses a slug that would not name a file
+    set:
+      legal.documents.Terms.url: https://example.org/terms
+    template: serviceaccount.yaml
+    asserts:
+      - failedTemplate:
+          errorPattern: "a slug is lowercase letters"
+
+  - it: refuses a body slug containing the nesting separator
+    set:
+      legal.documents.terms__v2.body.en: "# Terms\n"
+    template: serviceaccount.yaml
+    asserts:
+      - failedTemplate:
+          errorPattern: "cannot contain `__`"
+
+  - it: refuses a locale that is not a language tag
+    set:
+      legal.documents.terms.body.en__gb: "# Terms\n"
+    template: serviceaccount.yaml
+    asserts:
+      - failedTemplate:
+          errorPattern: "a locale is a language tag"
 
   - it: refuses a url that is not http(s)
     set:

@@ -7,6 +7,7 @@ Some of them require a manual step that nothing will remind you about:
 
 | Version | Applies to | Step |
 |---|---|---|
+| [6.0.0](#600) | releases that publish legal documents | move `content` to `body`; move `sources` texts into `body`; drop `legal.dir` |
 | [5.3.0](#530) | releases on `argoSyncWave` that wave the migration's own dependencies | move them below `argoSyncWaveBase - 1`, not just below the base |
 | [5.1.0](#510) | releases that installed the provider presets | pause or delete the `sirenscans` provider row by hand |
 | [5.1.0](#510) | releases that override `networkPolicy.internetCidrs` | add `::/0`, or accept that some providers stay unreachable |
@@ -21,6 +22,27 @@ Some of them require a manual step that nothing will remind you about:
 
 The values contract is enforced by `values.schema.json`, so a key a new major removed or
 renamed fails the render with the offending path named, rather than being silently ignored.
+
+## 6.0.0
+
+**Legal documents follow TankoVault 11's `body` field.**
+
+TankoVault 11 removed `legal.dir` and the per-document `sources` paths: a document's text is now
+a configuration value, `legal.documents.<slug>.body.<locale>`, and the service no longer opens a
+file by path. The chart follows it, and the values schema refuses the old keys by path.
+
+| Before | Now |
+|---|---|
+| `legal.documents.<slug>.content.<locale>` | `legal.documents.<slug>.body.<locale>` — same text, renamed |
+| `legal.documents.<slug>.sources.<locale>` | Put the text itself under `body`. The service reads no paths any more |
+| `legal.dir` | Remove it. There is no directory to point at |
+
+`body` reaches the API as a file in its secrets directory, not through `config.toml`, so an edit
+still reloads in place without moving `checksum/config`. The separate `legal` volume and its
+mount at `legal.dir` are gone.
+
+Two additions ride along: `legal.defaultLocale`, the locale served when a request matches none,
+and `order` on each document, its position in the index.
 
 ## 5.9.0
 

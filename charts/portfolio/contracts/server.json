@@ -1,20 +1,20 @@
 {
   "source": {
     "image": "docker.io/timschoenle/portfolio",
-    "digest": "sha256:951dc4e43229fece52abc3e4e14f910896fb57a35b266fba4b107a7e632efa6f",
-    "sha256": "130f73b77e587623a979c7750fdb639c00be7521d0f02ccd31aad6d66877a9d2",
-    "fetched": "2026-09-14T03:16:20Z"
+    "digest": "sha256:3f8bc7efc15a2f15da489552b9f4a8fd6e0f87a0d733e076aea1bc0d30c9f7f9",
+    "sha256": "4671c84aa8f207ce87c9eff5482edc2f1244e3791f469f6aeda862ef3f3d034a",
+    "fetched": "2026-09-26T13:19:39Z"
   },
   "contract": {
     "terrace_contract": 1,
     "producer": {
       "name": "terrace-config",
-      "version": "0.12.0",
+      "version": "0.13.0",
       "loader": "figment"
     },
     "app": {
       "name": "portfolio",
-      "version": "v2.12.1",
+      "version": "v3.1.2",
       "source": "https://github.com/TimSchoenle/Portfolio"
     },
     "schema": {
@@ -94,7 +94,7 @@
           "env": "PORTFOLIO_CSP__CLOUDFLARE__SCRIPT_NONCE",
           "env_file": "PORTFOLIO_CSP__CLOUDFLARE__SCRIPT_NONCE_FILE",
           "secrets_file": "csp__cloudflare__script_nonce",
-          "docs": "Reserve a per-response nonce in `script-src` for the script Cloudflare injects at the edge.\n\nOn by default, because this site is delivered through a Cloudflare Tunnel with the bot\nproducts active — the privacy page lists `_cf_bm`, `cf_clearance` and the `cf_chl_rc_*`\nchallenge cookies, which is the observable half of the same feature. Those products inject\nan inline `<script>` into the HTML *after* it leaves this process, so no hash this server\ncomputes can cover it; `script-src` refuses it and the detection silently never runs.\nCloudflare's documented answer is to parse the `Content-Security-Policy` response header\nand copy the nonce onto what it injects, so nothing has to be stamped into the document.\n\nIt carries one obligation the server discharges (`Cache-Control: no-cache` on every\ndocument, so a nonce is never shared between readers) and one it cannot: **no Cloudflare\nCache Rule may cache the shell**. A \"Cache Everything\" rule overrides the origin's\n`Cache-Control`, satisfying the obligation here and violating it at the edge, and nothing\ninside this process can see that.",
+          "docs": "Reserve a per-response nonce in `script-src` for the script Cloudflare injects at the edge.\n\nOn by default, because this site is delivered through a Cloudflare Tunnel with the bot\nproducts active; the `__cf_bm` and `cf_clearance` cookies they set are the observable\nhalf of the same feature. Those products inject an inline `<script>` into the HTML\n*after* it leaves this process, so no hash this server computes can cover it;\n`script-src` refuses it and the detection silently never runs.\nCloudflare's documented answer is to parse the `Content-Security-Policy` response header\nand copy the nonce onto what it injects, so nothing has to be stamped into the document.\n\nIt carries one obligation the server discharges (`Cache-Control: no-cache` on every\ndocument, so a nonce is never shared between readers) and one it cannot: **no Cloudflare\nCache Rule may cache the shell**. A \"Cache Everything\" rule overrides the origin's\n`Cache-Control`, satisfying the obligation here and violating it at the edge, and nothing\ninside this process can see that.",
           "ty": "bool",
           "values": [],
           "constraint": {
@@ -171,6 +171,88 @@
           "reserved": false
         },
         {
+          "path": "hsts.max_age_secs",
+          "env": "PORTFOLIO_HSTS__MAX_AGE_SECS",
+          "env_file": "PORTFOLIO_HSTS__MAX_AGE_SECS_FILE",
+          "secrets_file": "hsts__max_age_secs",
+          "docs": "How long, in seconds, a browser keeps to HTTPS after seeing the header. Zero clears it.\n\nZero is the documented way to *withdraw* HSTS: browsers drop the host from their list on\nthe next response. It is refused together with `preload`, which that would contradict.",
+          "ty": "u64",
+          "values": [],
+          "constraint": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "text_constraint": {
+            "pattern": "^\\s*\\+?[0-9]+\\s*$",
+            "type": "string"
+          },
+          "text_form": "integer",
+          "aliases": [],
+          "env_aliases": [],
+          "env_file_aliases": [],
+          "secrets_file_aliases": [],
+          "default": "31536000",
+          "default_value": 31536000,
+          "note": null,
+          "required": false,
+          "secret": false,
+          "reserved": false
+        },
+        {
+          "path": "hsts.include_subdomains",
+          "env": "PORTFOLIO_HSTS__INCLUDE_SUBDOMAINS",
+          "env_file": "PORTFOLIO_HSTS__INCLUDE_SUBDOMAINS_FILE",
+          "secrets_file": "hsts__include_subdomains",
+          "docs": "Apply the policy to every subdomain as well (`includeSubDomains`).",
+          "ty": "bool",
+          "values": [],
+          "constraint": {
+            "type": "boolean"
+          },
+          "text_constraint": {
+            "pattern": "^\\s*(true|false)\\s*$",
+            "type": "string"
+          },
+          "text_form": "boolean",
+          "aliases": [],
+          "env_aliases": [],
+          "env_file_aliases": [],
+          "secrets_file_aliases": [],
+          "default": "true",
+          "default_value": true,
+          "note": null,
+          "required": false,
+          "secret": false,
+          "reserved": false
+        },
+        {
+          "path": "hsts.preload",
+          "env": "PORTFOLIO_HSTS__PRELOAD",
+          "env_file": "PORTFOLIO_HSTS__PRELOAD_FILE",
+          "secrets_file": "hsts__preload",
+          "docs": "Ask to be included in the browsers' built-in HSTS preload list (`preload`).\n\nThe list's own requirements are enforced at boot: `include_subdomains` on and a\n`max_age_secs` of at least one year.",
+          "ty": "bool",
+          "values": [],
+          "constraint": {
+            "type": "boolean"
+          },
+          "text_constraint": {
+            "pattern": "^\\s*(true|false)\\s*$",
+            "type": "string"
+          },
+          "text_form": "boolean",
+          "aliases": [],
+          "env_aliases": [],
+          "env_file_aliases": [],
+          "secrets_file_aliases": [],
+          "default": "true",
+          "default_value": true,
+          "note": null,
+          "required": false,
+          "secret": false,
+          "reserved": false
+        },
+        {
           "path": "isr.cache_dir",
           "env": "PORTFOLIO_ISR__CACHE_DIR",
           "env_file": "PORTFOLIO_ISR__CACHE_DIR_FILE",
@@ -226,7 +308,7 @@
           "env": "PORTFOLIO_SENTRY__ENABLED",
           "env_file": "PORTFOLIO_SENTRY__ENABLED_FILE",
           "secrets_file": "sentry__enabled",
-          "docs": "Initialise the Sentry client. `false` installs no client, no panic hook, no `tracing`\nlayer and no HTTP middleware, so every other key here is inert and nothing leaves the\nprocess.\n\nIt also decides who owns the log subscriber. Off — the default — the Dioxus toolchain\ninstalls its own, which is the behaviour this server has always had. On, the server\ninstalls one first (still reading `RUST_LOG`, still formatting the same way) because a\nSentry layer has to be a layer *of* the subscriber, and the framework's is not\nextensible after the fact.",
+          "docs": "Initialize the Sentry client. `false` installs no client, no panic hook, no `tracing`\nlayer and no HTTP middleware, so every other key here is inert and nothing leaves the\nprocess.\n\nIt also decides who owns the log subscriber. Off — the default — the Dioxus toolchain\ninstalls its own, which is the behavior this server has always had. On, the server\ninstalls one first (still reading `RUST_LOG`, still formatting the same way) because a\nSentry layer has to be a layer *of* the subscriber, and the framework's is not\nextensible after the fact.",
           "ty": "bool",
           "values": [],
           "constraint": {
@@ -534,7 +616,7 @@
           "env": "PORTFOLIO_SENTRY__SEND_DEFAULT_PII",
           "env_file": "PORTFOLIO_SENTRY__SEND_DEFAULT_PII_FILE",
           "secrets_file": "sentry__send_default_pii",
-          "docs": "Send personally identifying data with every event: the client IP, the full request header\nset (`Cookie` included) and the resolved user.\n\n**Off, and worth leaving off.** A reader's IP address and cookies are exactly what a\ncrash report does not need in order to be actionable, and Sentry is a third party for the\npurposes of the privacy page this site publishes — a page that currently says no\nthird-party service receives visitor data, which is a statement this key is the one way\nto falsify. On, it also widens what the HTTP middleware records, because `sentry-tower`\nreads this same flag to decide whether to redact sensitive request headers.",
+          "docs": "Send personally identifying data with every event: the client IP, the full request header\nset (`Cookie` included) and the resolved user.\n\n**Off, and worth leaving off.** A reader's IP address and cookies are exactly what a\ncrash report does not need in order to be actionable, and every event sent is personal\ndata handed to a third party, which the published privacy notice would then have to\nname. On, it also widens what the HTTP middleware records, because `sentry-tower` reads\nthis same flag to decide whether to redact sensitive request headers.",
           "ty": "bool",
           "values": [],
           "constraint": {
@@ -561,7 +643,7 @@
           "env": "PORTFOLIO_SENTRY__HTTP_TRANSACTIONS",
           "env_file": "PORTFOLIO_SENTRY__HTTP_TRANSACTIONS_FILE",
           "secrets_file": "sentry__http_transactions",
-          "docs": "Record one Sentry transaction per request, named by the *matched route* rather than by\nthe URI — so `/api/repos/{name}` does not become one transaction name per repository.\n\nWhether a started transaction is *kept* is `sentry.traces_sample_rate`'s decision; this is\nthe switch for taking the middleware out entirely.",
+          "docs": "Record one Sentry transaction per request, named by the *matched route* rather than by\nthe URI — so `/api/v1/legal/{slug}` does not become one transaction name per document.\n\nWhether a started transaction is *kept* is `sentry.traces_sample_rate`'s decision; this is\nthe switch for taking the middleware out entirely.",
           "ty": "bool",
           "values": [],
           "constraint": {
@@ -636,6 +718,94 @@
           "required": false,
           "secret": false,
           "reserved": false
+        },
+        {
+          "path": "legal.default_locale",
+          "env": "PORTFOLIO_LEGAL__DEFAULT_LOCALE",
+          "env_file": "PORTFOLIO_LEGAL__DEFAULT_LOCALE_FILE",
+          "secrets_file": "legal__default_locale",
+          "docs": "Locale served when neither the request nor its `Accept-Language` header matches a\npublished one, for example `en`. Without it, the first published locale in alphabetical\norder is served.",
+          "ty": "String",
+          "values": [],
+          "constraint": {
+            "type": "string"
+          },
+          "text_form": "text",
+          "aliases": [],
+          "env_aliases": [],
+          "env_file_aliases": [],
+          "secrets_file_aliases": [],
+          "default": null,
+          "default_value": null,
+          "note": null,
+          "required": false,
+          "secret": false,
+          "reserved": false
+        },
+        {
+          "path": "legal.documents",
+          "env": "PORTFOLIO_LEGAL__DOCUMENTS",
+          "env_file": "PORTFOLIO_LEGAL__DOCUMENTS_FILE",
+          "secrets_file": "legal__documents",
+          "docs": "The published documents, keyed by the slug their URL uses. A slug is lowercase letters,\ndigits, `_` and `-`, at most 64 characters, and starts with a letter or a digit.",
+          "ty": "BTreeMap<String, LegalDocument>",
+          "values": [],
+          "constraint": {
+            "additionalProperties": {
+              "additionalProperties": false,
+              "properties": {
+                "body": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "description": "Markdown text per locale, keyed by locale (`en`, `de-AT`). Usually supplied through a\n`…__BODY__<LOCALE>_FILE` variable naming a mounted file. Each text is at most 1 MiB.\nExclusive with `url`.",
+                  "type": "object"
+                },
+                "order": {
+                  "description": "Position in the index, lowest first. Documents with the same value are ordered by slug.",
+                  "maximum": 2147483647,
+                  "minimum": -2147483648,
+                  "type": "integer"
+                },
+                "title": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "description": "Display title per locale, keyed like `body`.",
+                  "type": "object"
+                },
+                "updated": {
+                  "description": "The \"last updated\" line, displayed verbatim.",
+                  "type": "string"
+                },
+                "url": {
+                  "description": "Absolute `http` or `https` URL of a document hosted elsewhere, without credentials.\nExclusive with `body`.",
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "required": [
+              "imprint",
+              "privacy"
+            ],
+            "type": "object"
+          },
+          "text_constraint": {
+            "pattern": "^\\s*[\\[\\{][\\s\\S]*[\\]\\}]\\s*$",
+            "type": "string"
+          },
+          "text_form": "structured",
+          "aliases": [],
+          "env_aliases": [],
+          "env_file_aliases": [],
+          "secrets_file_aliases": [],
+          "default": null,
+          "default_value": null,
+          "note": null,
+          "required": true,
+          "secret": false,
+          "reserved": false
         }
       ]
     },
@@ -662,7 +832,7 @@
               "properties": {
                 "script_nonce": {
                   "default": true,
-                  "description": "Reserve a per-response nonce in `script-src` for the script Cloudflare injects at the edge.\n\nOn by default, because this site is delivered through a Cloudflare Tunnel with the bot\nproducts active — the privacy page lists `_cf_bm`, `cf_clearance` and the `cf_chl_rc_*`\nchallenge cookies, which is the observable half of the same feature. Those products inject\nan inline `<script>` into the HTML *after* it leaves this process, so no hash this server\ncomputes can cover it; `script-src` refuses it and the detection silently never runs.\nCloudflare's documented answer is to parse the `Content-Security-Policy` response header\nand copy the nonce onto what it injects, so nothing has to be stamped into the document.\n\nIt carries one obligation the server discharges (`Cache-Control: no-cache` on every\ndocument, so a nonce is never shared between readers) and one it cannot: **no Cloudflare\nCache Rule may cache the shell**. A \"Cache Everything\" rule overrides the origin's\n`Cache-Control`, satisfying the obligation here and violating it at the edge, and nothing\ninside this process can see that.",
+                  "description": "Reserve a per-response nonce in `script-src` for the script Cloudflare injects at the edge.\n\nOn by default, because this site is delivered through a Cloudflare Tunnel with the bot\nproducts active; the `__cf_bm` and `cf_clearance` cookies they set are the observable\nhalf of the same feature. Those products inject an inline `<script>` into the HTML\n*after* it leaves this process, so no hash this server computes can cover it;\n`script-src` refuses it and the detection silently never runs.\nCloudflare's documented answer is to parse the `Content-Security-Policy` response header\nand copy the nonce onto what it injects, so nothing has to be stamped into the document.\n\nIt carries one obligation the server discharges (`Cache-Control: no-cache` on every\ndocument, so a nonce is never shared between readers) and one it cannot: **no Cloudflare\nCache Rule may cache the shell**. A \"Cache Everything\" rule overrides the origin's\n`Cache-Control`, satisfying the obligation here and violating it at the edge, and nothing\ninside this process can see that.",
                   "type": "boolean"
                 },
                 "turnstile": {
@@ -686,6 +856,28 @@
           },
           "type": "object"
         },
+        "hsts": {
+          "additionalProperties": false,
+          "properties": {
+            "include_subdomains": {
+              "default": true,
+              "description": "Apply the policy to every subdomain as well (`includeSubDomains`).",
+              "type": "boolean"
+            },
+            "max_age_secs": {
+              "default": 31536000,
+              "description": "How long, in seconds, a browser keeps to HTTPS after seeing the header. Zero clears it.\n\nZero is the documented way to *withdraw* HSTS: browsers drop the host from their list on\nthe next response. It is refused together with `preload`, which that would contradict.",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "preload": {
+              "default": true,
+              "description": "Ask to be included in the browsers' built-in HSTS preload list (`preload`).\n\nThe list's own requirements are enforced at boot: `include_subdomains` on and a\n`max_age_secs` of at least one year.",
+              "type": "boolean"
+            }
+          },
+          "type": "object"
+        },
         "isr": {
           "additionalProperties": false,
           "properties": {
@@ -698,6 +890,58 @@
               "description": "Revalidation interval in seconds. Zero means a permanent cache.\n\nEvery page renders from compile-time data, so the only thing that changes the output is a\nnew build, which starts from an empty cache anyway. A positive value opts into a finite,\ntime-based TTL, which is useful only when a *persistent* cache volume is shared across\ndeploys.\n\nDefault: permanent.",
               "minimum": 0,
               "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "legal": {
+          "additionalProperties": false,
+          "properties": {
+            "default_locale": {
+              "description": "Locale served when neither the request nor its `Accept-Language` header matches a\npublished one, for example `en`. Without it, the first published locale in alphabetical\norder is served.",
+              "type": "string"
+            },
+            "documents": {
+              "additionalProperties": {
+                "additionalProperties": false,
+                "properties": {
+                  "body": {
+                    "additionalProperties": {
+                      "type": "string"
+                    },
+                    "description": "Markdown text per locale, keyed by locale (`en`, `de-AT`). Usually supplied through a\n`…__BODY__<LOCALE>_FILE` variable naming a mounted file. Each text is at most 1 MiB.\nExclusive with `url`.",
+                    "type": "object"
+                  },
+                  "order": {
+                    "description": "Position in the index, lowest first. Documents with the same value are ordered by slug.",
+                    "maximum": 2147483647,
+                    "minimum": -2147483648,
+                    "type": "integer"
+                  },
+                  "title": {
+                    "additionalProperties": {
+                      "type": "string"
+                    },
+                    "description": "Display title per locale, keyed like `body`.",
+                    "type": "object"
+                  },
+                  "updated": {
+                    "description": "The \"last updated\" line, displayed verbatim.",
+                    "type": "string"
+                  },
+                  "url": {
+                    "description": "Absolute `http` or `https` URL of a document hosted elsewhere, without credentials.\nExclusive with `body`.",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "description": "The published documents, keyed by the slug their URL uses. A slug is lowercase letters,\ndigits, `_` and `-`, at most 64 characters, and starts with a letter or a digit.",
+              "required": [
+                "imprint",
+                "privacy"
+              ],
+              "type": "object"
             }
           },
           "type": "object"
@@ -748,7 +992,7 @@
             },
             "enabled": {
               "default": false,
-              "description": "Initialise the Sentry client. `false` installs no client, no panic hook, no `tracing`\nlayer and no HTTP middleware, so every other key here is inert and nothing leaves the\nprocess.\n\nIt also decides who owns the log subscriber. Off — the default — the Dioxus toolchain\ninstalls its own, which is the behaviour this server has always had. On, the server\ninstalls one first (still reading `RUST_LOG`, still formatting the same way) because a\nSentry layer has to be a layer *of* the subscriber, and the framework's is not\nextensible after the fact.",
+              "description": "Initialize the Sentry client. `false` installs no client, no panic hook, no `tracing`\nlayer and no HTTP middleware, so every other key here is inert and nothing leaves the\nprocess.\n\nIt also decides who owns the log subscriber. Off — the default — the Dioxus toolchain\ninstalls its own, which is the behavior this server has always had. On, the server\ninstalls one first (still reading `RUST_LOG`, still formatting the same way) because a\nSentry layer has to be a layer *of* the subscriber, and the framework's is not\nextensible after the fact.",
               "type": "boolean"
             },
             "environment": {
@@ -757,7 +1001,7 @@
             },
             "http_transactions": {
               "default": true,
-              "description": "Record one Sentry transaction per request, named by the *matched route* rather than by\nthe URI — so `/api/repos/{name}` does not become one transaction name per repository.\n\nWhether a started transaction is *kept* is `sentry.traces_sample_rate`'s decision; this is\nthe switch for taking the middleware out entirely.",
+              "description": "Record one Sentry transaction per request, named by the *matched route* rather than by\nthe URI — so `/api/v1/legal/{slug}` does not become one transaction name per document.\n\nWhether a started transaction is *kept* is `sentry.traces_sample_rate`'s decision; this is\nthe switch for taking the middleware out entirely.",
               "type": "boolean"
             },
             "max_breadcrumbs": {
@@ -779,7 +1023,7 @@
             },
             "send_default_pii": {
               "default": false,
-              "description": "Send personally identifying data with every event: the client IP, the full request header\nset (`Cookie` included) and the resolved user.\n\n**Off, and worth leaving off.** A reader's IP address and cookies are exactly what a\ncrash report does not need in order to be actionable, and Sentry is a third party for the\npurposes of the privacy page this site publishes — a page that currently says no\nthird-party service receives visitor data, which is a statement this key is the one way\nto falsify. On, it also widens what the HTTP middleware records, because `sentry-tower`\nreads this same flag to decide whether to redact sensitive request headers.",
+              "description": "Send personally identifying data with every event: the client IP, the full request header\nset (`Cookie` included) and the resolved user.\n\n**Off, and worth leaving off.** A reader's IP address and cookies are exactly what a\ncrash report does not need in order to be actionable, and every event sent is personal\ndata handed to a third party, which the published privacy notice would then have to\nname. On, it also widens what the HTTP middleware records, because `sentry-tower` reads\nthis same flag to decide whether to redact sensitive request headers.",
               "type": "boolean"
             },
             "server_name": {

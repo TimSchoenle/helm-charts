@@ -1728,6 +1728,45 @@
       "title": "global",
       "type": "object"
     },
+    "hsts": {
+      "additionalProperties": true,
+      "description": "The `hsts` settings.",
+      "properties": {
+        "includeSubdomains": {
+          "default": true,
+          "description": "Apply the policy to every subdomain as well (`includeSubDomains`)\n(`hsts.include_subdomains`).",
+          "required": [],
+          "title": "includeSubdomains",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "maxAgeSecs": {
+          "default": 31536000,
+          "description": "How long, in seconds, a browser keeps to HTTPS after seeing the header. Zero clears it\n(`hsts.max_age_secs`).",
+          "minimum": 0,
+          "required": [],
+          "title": "maxAgeSecs",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "preload": {
+          "default": true,
+          "description": "Ask to be included in the browsers' built-in HSTS preload list (`preload`)\n(`hsts.preload`).",
+          "required": [],
+          "title": "preload",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "required": [],
+      "title": "hsts"
+    },
     "image": {
       "additionalProperties": true,
       "description": "Container image the pod runs, composed as `registry/repository:tag`.",
@@ -1759,7 +1798,7 @@
           "type": "string"
         },
         "tag": {
-          "default": "v2.12.1@sha256:951dc4e43229fece52abc3e4e14f910896fb57a35b266fba4b107a7e632efa6f",
+          "default": "v3.1.2@sha256:3f8bc7efc15a2f15da489552b9f4a8fd6e0f87a0d733e076aea1bc0d30c9f7f9",
           "description": "Container image tag to deploy, pinned by digest (`vX.Y.Z\nthe pull, while the tag stays on as the readable version marker. Defaults to the chart's\n`appVersion` when empty.",
           "required": [],
           "title": "tag",
@@ -1854,6 +1893,62 @@
       "required": [],
       "title": "kubeVersionOverride",
       "type": "string"
+    },
+    "legal": {
+      "additionalProperties": true,
+      "description": "The `legal` settings.",
+      "properties": {
+        "defaultLocale": {
+          "default": "null",
+          "description": "Locale served when neither the request nor its `Accept-Language` header matches a\npublished one, for example `en`. Without it, the first published locale in alphabetical\norder is served (`legal.default_locale`).",
+          "required": [],
+          "title": "defaultLocale",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "documents": {
+          "additionalProperties": {
+            "additionalProperties": false,
+            "properties": {
+              "body": {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "order": {
+                "maximum": 2147483647,
+                "minimum": -2147483648,
+                "type": "integer"
+              },
+              "title": {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "updated": {
+                "type": "string"
+              },
+              "url": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "description": "The published documents, keyed by the slug their URL uses. A slug is lowercase letters,\ndigits, `_` and `-`, at most 64 characters, and starts with a letter or a digit\n(`legal.documents`).",
+          "required": [
+            "imprint",
+            "privacy"
+          ],
+          "title": "documents",
+          "type": "object"
+        }
+      },
+      "required": [],
+      "title": "legal"
     },
     "livenessProbe": {
       "additionalProperties": true,

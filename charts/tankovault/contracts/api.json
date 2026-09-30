@@ -1,20 +1,20 @@
 {
   "source": {
     "image": "docker.io/timschoenle/tankovault-api",
-    "digest": "sha256:ad502ae32b36b977e89d7b5f8e1e4e0f10e419c1cb1a8cec335d747185872e46",
-    "sha256": "709280f0f4053b16ed1c6e1955bf58986a1a17964f26efe89b683970680bd58a",
-    "fetched": "2026-09-20T05:51:54Z"
+    "digest": "sha256:692b3ad8eed3f5eca0708547c494104d230ac2dfa9fc63ad3dae700a6a011854",
+    "sha256": "ced20c368d078528f76f0d968a1b08edda1f9465a2da8241c6bc90519e85ddfa",
+    "fetched": "2026-09-30T08:16:17Z"
   },
   "contract": {
     "terrace_contract": 1,
     "producer": {
       "name": "terrace-config",
-      "version": "0.12.0",
+      "version": "0.13.0",
       "loader": "figment"
     },
     "app": {
       "name": "tankovault-api",
-      "version": "v10.1.3",
+      "version": "v11.0.3",
       "source": "https://github.com/TimSchoenle/TankoVault"
     },
     "schema": {
@@ -1169,6 +1169,34 @@
           "note": null,
           "required": true,
           "secret": true,
+          "reserved": false
+        },
+        {
+          "path": "nats.events_max_age_secs",
+          "env": "TANKOVAULT_NATS__EVENTS_MAX_AGE_SECS",
+          "env_file": "TANKOVAULT_NATS__EVENTS_MAX_AGE_SECS_FILE",
+          "secrets_file": "nats__events_max_age_secs",
+          "docs": "Longest the events stream keeps an event no consumer has acked, in seconds.",
+          "ty": "u64",
+          "values": [],
+          "constraint": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "text_constraint": {
+            "pattern": "^\\s*\\+?[0-9]+\\s*$",
+            "type": "string"
+          },
+          "text_form": "integer",
+          "aliases": [],
+          "env_aliases": [],
+          "env_file_aliases": [],
+          "secrets_file_aliases": [],
+          "default": null,
+          "default_value": null,
+          "note": null,
+          "required": false,
+          "secret": false,
           "reserved": false
         },
         {
@@ -2493,12 +2521,12 @@
           "reserved": false
         },
         {
-          "path": "legal.dir",
-          "env": "TANKOVAULT_LEGAL__DIR",
-          "env_file": "TANKOVAULT_LEGAL__DIR_FILE",
-          "secrets_file": "legal__dir",
-          "docs": "Root that relative [`LegalDocument::sources`] paths resolve against.\n\nAbsent means paths are taken as given, which is what makes a single absolute path in an\nenvironment variable work without also setting a root.",
-          "ty": "PathBuf",
+          "path": "legal.default_locale",
+          "env": "TANKOVAULT_LEGAL__DEFAULT_LOCALE",
+          "env_file": "TANKOVAULT_LEGAL__DEFAULT_LOCALE_FILE",
+          "secrets_file": "legal__default_locale",
+          "docs": "Locale served when neither the request nor its `Accept-Language` header matches a\npublished one, for example `en`. Without it, the first published locale in alphabetical\norder is served.",
+          "ty": "String",
           "values": [],
           "constraint": {
             "type": "string"
@@ -2520,33 +2548,39 @@
           "env": "TANKOVAULT_LEGAL__DOCUMENTS",
           "env_file": "TANKOVAULT_LEGAL__DOCUMENTS_FILE",
           "secrets_file": "legal__documents",
-          "docs": "The published documents, keyed by the slug their URL uses (`terms`, `privacy`,\n`imprint`, …).\n\nA map rather than a struct of known documents on purpose — see the module docs.",
+          "docs": "The published documents, keyed by the slug their URL uses. A slug is lowercase letters,\ndigits, `_` and `-`, at most 64 characters, and starts with a letter or a digit.",
           "ty": "BTreeMap<String, LegalDocument>",
           "values": [],
           "constraint": {
             "additionalProperties": {
               "additionalProperties": false,
               "properties": {
-                "sources": {
+                "body": {
                   "additionalProperties": {
                     "type": "string"
                   },
-                  "description": "Markdown file per locale, keyed by the language code the frontend uses (`en`, `de`).\n\nA plain `String` key rather than a shipped-locale enum: an operator publishing French\nterms should not need this build to know about French.",
+                  "description": "Markdown text per locale, keyed by locale (`en`, `de-AT`). Usually supplied through a\n`…__BODY__<LOCALE>_FILE` variable naming a mounted file. Each text is at most 1 MiB.\nExclusive with `url`.",
                   "type": "object"
+                },
+                "order": {
+                  "description": "Position in the index, lowest first. Documents with the same value are ordered by slug.",
+                  "maximum": 2147483647,
+                  "minimum": -2147483648,
+                  "type": "integer"
                 },
                 "title": {
                   "additionalProperties": {
                     "type": "string"
                   },
-                  "description": "Per-locale display title. A locale with no entry falls back to the frontend's own\ncatalogue for the slugs it knows, and to the slug itself for the ones it does not.",
+                  "description": "Display title per locale, keyed like `body`.",
                   "type": "object"
                 },
                 "updated": {
-                  "description": "The \"last updated\" line, as the operator wants it shown (`2026-08-04`).\n\nFree text rather than a date, because it is displayed verbatim and a file mtime is the\nwrong answer — touching a file is not amending a policy.",
+                  "description": "The \"last updated\" line, displayed verbatim.",
                   "type": "string"
                 },
                 "url": {
-                  "description": "Somewhere else entirely — a corporate imprint already hosted by the operator.\n\nMutually exclusive with [`Self::sources`]; see [`LegalConfig::validate`].",
+                  "description": "Absolute `http` or `https` URL of a document hosted elsewhere, without credentials.\nExclusive with `body`.",
                   "type": "string"
                 }
               },
@@ -3307,40 +3341,46 @@
         "legal": {
           "additionalProperties": false,
           "properties": {
-            "dir": {
-              "description": "Root that relative [`LegalDocument::sources`] paths resolve against.\n\nAbsent means paths are taken as given, which is what makes a single absolute path in an\nenvironment variable work without also setting a root.",
+            "default_locale": {
+              "description": "Locale served when neither the request nor its `Accept-Language` header matches a\npublished one, for example `en`. Without it, the first published locale in alphabetical\norder is served.",
               "type": "string"
             },
             "documents": {
               "additionalProperties": {
                 "additionalProperties": false,
                 "properties": {
-                  "sources": {
+                  "body": {
                     "additionalProperties": {
                       "type": "string"
                     },
-                    "description": "Markdown file per locale, keyed by the language code the frontend uses (`en`, `de`).\n\nA plain `String` key rather than a shipped-locale enum: an operator publishing French\nterms should not need this build to know about French.",
+                    "description": "Markdown text per locale, keyed by locale (`en`, `de-AT`). Usually supplied through a\n`…__BODY__<LOCALE>_FILE` variable naming a mounted file. Each text is at most 1 MiB.\nExclusive with `url`.",
                     "type": "object"
+                  },
+                  "order": {
+                    "description": "Position in the index, lowest first. Documents with the same value are ordered by slug.",
+                    "maximum": 2147483647,
+                    "minimum": -2147483648,
+                    "type": "integer"
                   },
                   "title": {
                     "additionalProperties": {
                       "type": "string"
                     },
-                    "description": "Per-locale display title. A locale with no entry falls back to the frontend's own\ncatalogue for the slugs it knows, and to the slug itself for the ones it does not.",
+                    "description": "Display title per locale, keyed like `body`.",
                     "type": "object"
                   },
                   "updated": {
-                    "description": "The \"last updated\" line, as the operator wants it shown (`2026-08-04`).\n\nFree text rather than a date, because it is displayed verbatim and a file mtime is the\nwrong answer — touching a file is not amending a policy.",
+                    "description": "The \"last updated\" line, displayed verbatim.",
                     "type": "string"
                   },
                   "url": {
-                    "description": "Somewhere else entirely — a corporate imprint already hosted by the operator.\n\nMutually exclusive with [`Self::sources`]; see [`LegalConfig::validate`].",
+                    "description": "Absolute `http` or `https` URL of a document hosted elsewhere, without credentials.\nExclusive with `body`.",
                     "type": "string"
                   }
                 },
                 "type": "object"
               },
-              "description": "The published documents, keyed by the slug their URL uses (`terms`, `privacy`,\n`imprint`, …).\n\nA map rather than a struct of known documents on purpose — see the module docs.",
+              "description": "The published documents, keyed by the slug their URL uses. A slug is lowercase letters,\ndigits, `_` and `-`, at most 64 characters, and starts with a letter or a digit.",
               "type": "object"
             }
           },
@@ -3390,6 +3430,11 @@
         "nats": {
           "additionalProperties": false,
           "properties": {
+            "events_max_age_secs": {
+              "description": "Longest the events stream keeps an event no consumer has acked, in seconds.",
+              "minimum": 1,
+              "type": "integer"
+            },
             "url": {
               "description": "e.g. `nats://nats:4222`. [`SecretString`]: `nats://user:pass@host` is supported.",
               "type": "string",

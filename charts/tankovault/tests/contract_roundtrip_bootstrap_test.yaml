@@ -50,25 +50,24 @@ release:
 # outside a release that does not exist; and `.invalid` is reserved by RFC 2606 and can never
 # resolve. No key any of them occupies carries a case in these suites either — every one is
 # `secret: true` in the contract, which the generator refuses to synthesise a probe for. The
-# last three answer guards that gate a whole *table* rather than the render. `[email]` is
-# written only when `email.host` or a base URL is set, so without a host the six `email.*` cases
-# assert against a block that is not there. `[legal]` is written only when at least one document
-# is published, which is what `legal.dir` needs to appear beside. And `branding.wordmark.accent`
-# is refused without `branding.wordmark.lead` — the accent half is only ever drawn beside a lead
-# half. Each of the three is a chart value a case probing *it* then collides with, and the
-# generator answers that by routing those probes back into the raw tree rather than by dropping
-# the prerequisite. `existingSecret` answers one more guard, and a different one. Every
-# `telemetry.sentry.*` key carries a `when telemetry.sentry.enabled` clause, so a case probing
-# one switches Sentry on for the whole release — and the chart then refuses the render unless a
-# DSN is available. Naming a Secret satisfies that without a credential-shaped string in a
-# committed file, and changes nothing any case asserts against: the DSN travels as a file in the
-# secrets directory and never reaches a `config.toml`. The Secret does not have to exist for a
-# template render. It also takes over the generation of every other credential this chart would
-# otherwise write, which is why the tokens and the JWT secret above are still set explicitly:
-# with `existingSecret` the chart fills in nothing, and the values are what the guards read. The
-# probe root still wins over everything these values derive: each service's own `config` block
-# is the last layer `tankovault.configToml` merges, so a probe written there outranks the wiring
-# the chart builds from the values above.
+# last two answer guards that gate a whole *table* rather than the render. `[email]` is written
+# only when `email.host` or a base URL is set, so without a host the six `email.*` cases assert
+# against a block that is not there. And `branding.wordmark.accent` is refused without
+# `branding.wordmark.lead` — the accent half is only ever drawn beside a lead half. Each of the
+# two is a chart value a case probing *it* then collides with, and the generator answers that by
+# routing those probes back into the raw tree rather than by dropping the prerequisite.
+# `existingSecret` answers one more guard, and a different one. Every `telemetry.sentry.*` key
+# carries a `when telemetry.sentry.enabled` clause, so a case probing one switches Sentry on for
+# the whole release — and the chart then refuses the render unless a DSN is available. Naming a
+# Secret satisfies that without a credential-shaped string in a committed file, and changes
+# nothing any case asserts against: the DSN travels as a file in the secrets directory and never
+# reaches a `config.toml`. The Secret does not have to exist for a template render. It also
+# takes over the generation of every other credential this chart would otherwise write, which is
+# why the tokens and the JWT secret above are still set explicitly: with `existingSecret` the
+# chart fills in nothing, and the values are what the guards read. The probe root still wins
+# over everything these values derive: each service's own `config` block is the last layer
+# `tankovault.configToml` merges, so a probe written there outranks the wiring the chart builds
+# from the values above.
 tests:
   # Every case below selects its document by the key it carries and by
   # `app.kubernetes.io/component: bootstrap`, because this chart renders `config.toml` into more
@@ -92,7 +91,6 @@ tests:
       internal.identity: token
       internal.tokens.api: probe-internal-token-api-0123456789ab
       internal.tokens.worker: probe-internal-token-worker-01234567
-      legal.documents: {"render-prerequisite": {"url": "https://render-prerequisite.invalid/legal"}}
       nats.enabled: true
       postgresql.auth.password: probe-postgresql-password
       postgresql.enabled: true
@@ -119,7 +117,6 @@ tests:
       internal.identity: token
       internal.tokens.api: probe-internal-token-api-0123456789ab
       internal.tokens.worker: probe-internal-token-worker-01234567
-      legal.documents: {"render-prerequisite": {"url": "https://render-prerequisite.invalid/legal"}}
       nats.enabled: true
       postgresql.auth.password: probe-postgresql-password
       postgresql.enabled: true
@@ -145,7 +142,6 @@ tests:
       internal.identity: token
       internal.tokens.api: probe-internal-token-api-0123456789ab
       internal.tokens.worker: probe-internal-token-worker-01234567
-      legal.documents: {"render-prerequisite": {"url": "https://render-prerequisite.invalid/legal"}}
       nats.enabled: true
       postgresql.auth.password: probe-postgresql-password
       postgresql.enabled: true
@@ -171,7 +167,6 @@ tests:
       internal.identity: token
       internal.tokens.api: probe-internal-token-api-0123456789ab
       internal.tokens.worker: probe-internal-token-worker-01234567
-      legal.documents: {"render-prerequisite": {"url": "https://render-prerequisite.invalid/legal"}}
       nats.enabled: true
       postgresql.auth.password: probe-postgresql-password
       postgresql.enabled: true
@@ -198,7 +193,6 @@ tests:
       internal.identity: token
       internal.tokens.api: probe-internal-token-api-0123456789ab
       internal.tokens.worker: probe-internal-token-worker-01234567
-      legal.documents: {"render-prerequisite": {"url": "https://render-prerequisite.invalid/legal"}}
       nats.enabled: true
       postgresql.auth.password: probe-postgresql-password
       postgresql.enabled: true

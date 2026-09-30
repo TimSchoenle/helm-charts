@@ -40,6 +40,11 @@ test-unit chart='':
 #
 # Read the diff. A snapshot is a record of what a chart renders, and `-u` accepts whatever it
 # renders today, including a regression. `just test-unit` is what asserts it afterwards.
+#
+# `helm` is `${HELM_BIN:-helm}` rather than the bare binary so that `just sync-config` — the one
+# caller that cannot assume Helm and the `unittest` plugin are installed — can point this at the
+# containerized wrapper `resolve_helm` writes by exporting `HELM_BIN` before calling back in here.
+# Every other caller leaves `HELM_BIN` unset and gets exactly the local `helm` it always did.
 [doc("Rewrite the committed rendered-manifest snapshots from what the charts render now")]
 [group('test')]
 update-snapshots chart='':
@@ -47,14 +52,14 @@ update-snapshots chart='':
     set -euo pipefail
 
     if [ -n '{{ chart }}' ]; then
-      helm unittest -u '{{ charts }}/{{ chart }}'
+      "${HELM_BIN:-helm}" unittest -u '{{ charts }}/{{ chart }}'
       exit 0
     fi
 
     for dir in {{ charts }}/*/; do
       if [ -d "${dir}tests" ]; then
         echo "==> snapshots: ${dir%/}"
-        helm unittest -u "${dir%/}"
+        "${HELM_BIN:-helm}" unittest -u "${dir%/}"
       fi
     done
 

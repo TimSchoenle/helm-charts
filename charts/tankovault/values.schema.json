@@ -93,7 +93,7 @@
               "type": "string"
             },
             "tag": {
-              "default": "v10.1.3@sha256:0520e1d653c7a713b83a31ccf7075d41aa6d548ac96085318e6a31bb0ad7f1e0",
+              "default": "v11.0.3@sha256:97574dd37e4aaf25aa30721229c5a978169f7e024bce76619a046d2254499acc",
               "description": "Image tag, pinned by digest.",
               "required": [],
               "title": "tag",
@@ -3047,11 +3047,11 @@
       "additionalProperties": true,
       "description": "Operator-published legal documents, served unauthenticated by the API at `/v1/legal` and\n`/v1/legal/{slug}`; the frontend's footer builds its Legal column from that index. Upstream\nships none of these on purpose — every deployment is a different operator under different law,\nand an imprint is a statutory requirement in some jurisdictions and meaningless in others. With\nno documents the index is empty and the footer publishes no Legal column at all, rather than\nlinks that 404.",
       "properties": {
-        "dir": {
-          "default": "/etc/tankovault/legal",
-          "description": "Directory relative `sources` paths resolve against, and where the chart mounts any\ndocument supplied through `content`. An absolute `sources` path ignores it.",
+        "defaultLocale": {
+          "default": "null",
+          "description": "Locale served when neither the request nor its `Accept-Language` header matches a\npublished one, for example `en`. Without it, the first published locale in alphabetical\norder is served (`legal.default_locale`).",
           "required": [],
-          "title": "dir",
+          "title": "defaultLocale",
           "type": [
             "string",
             "null"
@@ -3061,17 +3061,16 @@
           "additionalProperties": {
             "additionalProperties": false,
             "properties": {
-              "content": {
+              "body": {
                 "additionalProperties": {
                   "type": "string"
                 },
                 "type": "object"
               },
-              "sources": {
-                "additionalProperties": {
-                  "type": "string"
-                },
-                "type": "object"
+              "order": {
+                "maximum": 2147483647,
+                "minimum": -2147483648,
+                "type": "integer"
               },
               "title": {
                 "additionalProperties": {
@@ -3088,7 +3087,8 @@
             },
             "type": "object"
           },
-          "description": "Published documents, keyed by the URL slug they are served under. Each document names its\nbody exactly once, in one of three ways, and the chart refuses a document that names it\ntwice or not at all:\n\n- `content`: a locale-keyed map of the text itself. The chart writes it into a ConfigMap as\n  `\u003cslug\u003e.\u003clocale\u003e.md` and mounts it into the API pod. Edits are picked up without a restart —\n  the service re-reads behind an mtime check — so this is the option to reach for by default.\n- `sources`: a locale-keyed map of file paths you have arranged to mount yourself, through\n  `extraVolumes`/`extraVolumeMounts`. Use this when the texts belong to a Secret, a PVC or\n  another chart.\n- `url`: an absolute `http(s)` link to a document hosted elsewhere. Mounts nothing.\n\n`title` is a locale-keyed display name, and `updated` a free-form date shown alongside it.\nBoth are optional and independent of how the body is supplied.\n\n\u003cdetails\u003e\u003csummary\u003eExample\u003c/summary\u003e\n\n```yaml\nlegal:\n  documents:\n    terms:\n      updated: \"2026-08-04\"\n      title:\n        en: Terms of Service\n        de: Nutzungsbedingungen\n      content:\n        en: |\n          # Terms of Service\n          ...\n        de: |\n          # Nutzungsbedingungen\n          ...\n    imprint:\n      title:\n        de: Impressum\n      url: https://example.org/impressum\n```\n\n\u003c/details\u003e",
+          "default": "null",
+          "description": "The published documents, keyed by the slug their URL uses. A slug is lowercase letters,\ndigits, `_` and `-`, at most 64 characters, and starts with a letter or a digit\n(`legal.documents`).\n\nEach document carries exactly one of `body` and `url`, and the chart refuses a document that\nsets both or neither:\n\n- `body`: the Markdown text per locale. The chart writes it into a ConfigMap and projects each\n  text into the API pod's secrets directory rather than into `config.toml`, so an edit is\n  picked up without a restart and does not move `checksum/config`. A new document or locale\n  is a new file, which the service only watches from its next start.\n- `url`: an absolute `http(s)` link to a document hosted elsewhere.\n\n`title` is a display name per locale, `updated` a free-form line shown verbatim, and `order`\nthe position in the index, lowest first.\n\n\u003cdetails\u003e\u003csummary\u003eExample\u003c/summary\u003e\n\n```yaml\nlegal:\n  defaultLocale: en\n  documents:\n    terms:\n      order: 1\n      updated: \"2026-08-04\"\n      title:\n        en: Terms of Service\n        de: Nutzungsbedingungen\n      body:\n        en: |\n          # Terms of Service\n          ...\n        de: |\n          # Nutzungsbedingungen\n          ...\n    imprint:\n      title:\n        de: Impressum\n      url: https://example.org/impressum\n```\n\n\u003c/details\u003e",
           "required": [],
           "title": "documents",
           "type": [
@@ -3241,7 +3241,7 @@
                   "type": "string"
                 },
                 "tag": {
-                  "default": "0.20.1@sha256:4fbf6dacb84780a45a1c3af9b1080c69451a288d20902deae671b80717bb8f61",
+                  "default": "0.20.2@sha256:c623b608e148e31e1c1c878673a197f1828e58ce90de4f01d22f1baa84c8fee9",
                   "description": "Image tag, pinned by digest.",
                   "required": [],
                   "title": "tag",
@@ -4738,6 +4738,17 @@
           "title": "enabled",
           "type": "boolean"
         },
+        "eventsMaxAgeSecs": {
+          "default": "null",
+          "description": "Longest the events stream keeps an event no consumer has acked, in seconds\n(`nats.events_max_age_secs`).",
+          "minimum": 1,
+          "required": [],
+          "title": "eventsMaxAgeSecs",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
         "image": {
           "additionalProperties": true,
           "description": "Repository and tag for the bundled NATS.",
@@ -5373,7 +5384,7 @@
                   "type": "string"
                 },
                 "tag": {
-                  "default": "v10.1.3@sha256:ad502ae32b36b977e89d7b5f8e1e4e0f10e419c1cb1a8cec335d747185872e46",
+                  "default": "v11.0.3@sha256:692b3ad8eed3f5eca0708547c494104d230ac2dfa9fc63ad3dae700a6a011854",
                   "description": "Image tag, pinned by digest.",
                   "required": [],
                   "title": "tag",
@@ -5598,7 +5609,7 @@
                   "type": "string"
                 },
                 "tag": {
-                  "default": "v10.1.3@sha256:9e1075fcdff44fb45c6078d285672961a5b06cd077d6d54df25adc73c125334f",
+                  "default": "v11.0.3@sha256:0264481519ced65ece25eceda6cc5169a4c794b719bc590c3712ca96bdfc3988",
                   "description": "Image tag, pinned by digest.",
                   "required": [],
                   "title": "tag",
@@ -5772,7 +5783,7 @@
                   "type": "string"
                 },
                 "tag": {
-                  "default": "v10.1.3@sha256:1778b922e30cf1e300d183ce68ab2e77809fba30d86e92ce8a62c9c21fc9a732",
+                  "default": "v11.0.3@sha256:5d0d4f7f3d251e5af127eae5ff3204e49ff12a5f2338db6f4aa25463f85a1165",
                   "description": "Image tag, pinned by digest.",
                   "required": [],
                   "title": "tag",
@@ -5997,7 +6008,7 @@
                   "type": "string"
                 },
                 "tag": {
-                  "default": "v10.1.3@sha256:4cecde726abc74a77e6a6355625771e2aa1f297876ed75543ffce4ee5decb341",
+                  "default": "v11.0.3@sha256:1588c424c62dfa58281477d92671b5df838fdaafe9d1139a618454f9b57d5bdd",
                   "description": "Image tag, pinned by digest.",
                   "required": [],
                   "title": "tag",
@@ -6171,7 +6182,7 @@
                   "type": "string"
                 },
                 "tag": {
-                  "default": "v10.1.3@sha256:b298e2c1111fa57eca343779f42f2617714c2bf8045eb8266d31249022e95de1",
+                  "default": "v11.0.3@sha256:6b8efa4dc551290454aae96300bb8476b5b73ce8c0950e9249b2d8248bfd0fc8",
                   "description": "Image tag, pinned by digest.",
                   "required": [],
                   "title": "tag",
@@ -6403,7 +6414,7 @@
                   "type": "string"
                 },
                 "tag": {
-                  "default": "v10.1.3@sha256:e0b8888658f9e28de012ce6975865a57e049d6b36f0f9ee287a95c4110e53e69",
+                  "default": "v11.0.3@sha256:965982e0ec5176e2fd95deb17ae2d22f1767bc8f998f3af3ae9c6270f5e9bda6",
                   "description": "Image tag, pinned by digest.",
                   "required": [],
                   "title": "tag",
@@ -6584,7 +6595,7 @@
                   "type": "string"
                 },
                 "tag": {
-                  "default": "v10.1.3@sha256:bdc2888813dd2538850ff7c35a3ae1067c53d014cfaddb642892b675444df9be",
+                  "default": "v11.0.3@sha256:0f509db994733c5a55c22b70156f2686a454252c94a8f1d340a793430d9538d8",
                   "description": "Image tag, pinned by digest.",
                   "required": [],
                   "title": "tag",
@@ -6809,7 +6820,7 @@
                   "type": "string"
                 },
                 "tag": {
-                  "default": "v10.1.3@sha256:184b28047e0e8d300b46983af471833ba30a56a832d2fab75ce8f55cfa9c87ef",
+                  "default": "v11.0.3@sha256:8f0c6c4dc4b337440a07f3d1e2b45a89e15fbb37f1e537d01ef8ef58346d67bb",
                   "description": "Image tag, pinned by digest.",
                   "required": [],
                   "title": "tag",
@@ -7190,7 +7201,7 @@
               "type": "string"
             },
             "tag": {
-              "default": "1.6.2@sha256:fc39225a890a40b64ac65731dddd66e52f83fc9c20b54b7ed87c6cecdf355b13",
+              "default": "1.7.0@sha256:0f1bc8b88edb21dcc10a386bbcc1b852174fa2078dc6fa209c53170be303ebd0",
               "description": "Image tag, pinned by digest. Never `latest`: it silently changes the bot-management\nbehaviour the adapters are tuned against.",
               "required": [],
               "title": "tag",
@@ -7375,7 +7386,7 @@
               "type": "string"
             },
             "tag": {
-              "default": "9.1.2-alpine@sha256:a0dbf4c1d5708782907c10e2c72deff317518518b5288a58416981d9db95d30b",
+              "default": "9.1.2-alpine@sha256:48332870af354a799964c0012ae1194a0bf2bf894eb508f945810596dc2d8d11",
               "description": "Image tag, pinned by digest.",
               "required": [],
               "title": "tag",

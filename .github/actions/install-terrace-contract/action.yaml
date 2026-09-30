@@ -35,7 +35,7 @@ runs:
         # musl rather than gnu: the release is statically linked, so it has no glibc floor and runs
         # on whatever the runner image happens to be this month.
         work="$(mktemp -d)"
-        for file in "$asset" SHA256SUMS SHA256SUMS.sig SHA256SUMS.pem; do
+        for file in "$asset" SHA256SUMS SHA256SUMS.sigstore.json; do
           if ! curl -fsSL --retry 3 -o "${work}/${file}" "${base}/${file}"; then
             # Said plainly, because the bare curl 404 that used to appear here reads like a broken
             # URL and is usually not one: this repository pins a version of a tool that lives in
@@ -52,9 +52,11 @@ runs:
         # what is pinned is the workflow identity that built it rather than a key somebody holds —
         # the same posture this repository already takes towards a signed *contract*. A gate that
         # verifies documents while installing its own verifier unchecked is a hole in that argument.
+        #
+        # One bundle rather than a detached `.sig`/`.pem` pair: cosign 3 writes the new bundle
+        # format by default and `release-cli.yml` signs into `SHA256SUMS.sigstore.json` accordingly.
         cosign verify-blob "${work}/SHA256SUMS" \
-          --signature "${work}/SHA256SUMS.sig" \
-          --certificate "${work}/SHA256SUMS.pem" \
+          --bundle "${work}/SHA256SUMS.sigstore.json" \
           --certificate-identity-regexp '^https://github\.com/TimSchoenle/terrace-config/\.github/workflows/release-cli\.yml@' \
           --certificate-oidc-issuer https://token.actions.githubusercontent.com
         (cd "$work" && grep -- " ${asset}\$" SHA256SUMS | sha256sum -c -)

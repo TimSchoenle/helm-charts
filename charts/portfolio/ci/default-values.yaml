@@ -5,3 +5,31 @@ ingress:
       paths:
         - path: /
           pathType: Prefix
+
+# The image refuses to start without an `imprint` and a `privacy` document —
+# `values.schema.json` states that as a `required` pair under `legal.documents`, so every
+# install fixture needs both or `helm template`/`ct install` fails before a pod is ever
+# scheduled. Both locales, because the image also refuses to start unless every document
+# carries a text in every language the site renders (`en` and `de`) — a boot-time check
+# `values.schema.json` cannot express, only found by actually running the image under
+# `ct install`. Fixture content only; not a template for a real deployment's legal text.
+legal:
+  documents:
+    imprint:
+      title:
+        en: Imprint
+        de: Impressum
+      body:
+        en: |
+          # Imprint
+        de: |
+          # Impressum
+    privacy:
+      title:
+        en: Privacy Policy
+        de: Datenschutzerklärung
+      body:
+        en: |
+          # Privacy Policy
+        de: |
+          # Datenschutzerklärung

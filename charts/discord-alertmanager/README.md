@@ -466,8 +466,9 @@ also why a pod that cannot reach Alertmanager never becomes ready — check the 
 | discord.captureReplyText | bool | `false` | Capture the text of thread replies, which needs the privileged `MESSAGE_CONTENT` intent (`discord.capture_reply_text`). |
 | discord.devGuildId | string | `nil` | Guild to register slash commands into. Registration is global when unset (`discord.dev_guild_id`). |
 | discord.token | string | `""` | Bot token. Supply it through `DAM_DISCORD__TOKEN_FILE` or the secrets directory (`discord.token`). Delivered as the secrets-directory file `discord__token`. |
-| engine | object | `{"deadmanWindowSecs":1800,"dispatchers":4,"escalationIntervalSecs":15,"outboxBatchSize":16,"outboxLeaseSecs":30,"persistEvents":true,"pruneIntervalSecs":3600,"reconcileIntervalSecs":60,"regroupWindowSecs":1800,"retention":{"auditDays":365,"eventsDays":30,"resolvedDays":30},"silenceSyncIntervalSecs":30,"storm":{"forumThreshold":20,"threshold":50,"windowSecs":60}}` | Pipeline cadences, retention horizons and storm thresholds. |
+| engine | object | `{"deadmanWindowSecs":1800,"dedupeIgnoreLabels":[],"dispatchers":4,"escalationIntervalSecs":15,"outboxBatchSize":16,"outboxLeaseSecs":30,"persistEvents":true,"pruneIntervalSecs":3600,"reconcileIntervalSecs":60,"regroupWindowSecs":1800,"retention":{"auditDays":365,"eventsDays":30,"resolvedDays":30},"silenceSyncIntervalSecs":30,"storm":{"forumThreshold":20,"threshold":50,"windowSecs":60}}` | Pipeline cadences, retention horizons and storm thresholds. |
 | engine.deadmanWindowSecs | int | `1800` | Seconds of webhook silence that, combined with an unreachable Alertmanager, trips the deadman (`engine.deadman_window_secs`). |
+| engine.dedupeIgnoreLabels | list | `[]` | Labels that do not decide which card an alert is shown on (`engine.dedupe_ignore_labels`). |
 | engine.dispatchers | int | `4` | Outbox dispatcher workers (`engine.dispatchers`). |
 | engine.escalationIntervalSecs | int | `15` | Seconds between escalation timer sweeps (`engine.escalation_interval_secs`). |
 | engine.outboxBatchSize | int | `16` | Outbox rows one worker claims per pass (`engine.outbox_batch_size`). |

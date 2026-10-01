@@ -1,6 +1,6 @@
 # discord-alertmanager
 
-![Version: 0.4.7](https://img.shields.io/badge/Version-0.4.7-informational?style=flat-square) ![AppVersion: v0.7.0](https://img.shields.io/badge/AppVersion-v0.7.0-informational?style=flat-square)
+![Version: 0.4.8](https://img.shields.io/badge/Version-0.4.8-informational?style=flat-square) ![AppVersion: v0.8.0](https://img.shields.io/badge/AppVersion-v0.8.0-informational?style=flat-square)
 
 This chart deploys discord-alertmanager, a Discord operator surface for Prometheus Alertmanager. It receives the version-4 webhook envelope, renders each alert as a live status card in a Discord channel, and lets an operator acknowledge, ignore, silence or investigate it without leaving the client — with file-backed configuration that reloads in place instead of restarting pods, SQLite or PostgreSQL storage, optional Prometheus metrics and alerting rules, and an optional AlertmanagerConfig that registers the receiver with the Prometheus Operator instead of leaving it to be wired by hand.
 
@@ -466,8 +466,9 @@ also why a pod that cannot reach Alertmanager never becomes ready — check the 
 | discord.captureReplyText | bool | `false` | Capture the text of thread replies, which needs the privileged `MESSAGE_CONTENT` intent (`discord.capture_reply_text`). |
 | discord.devGuildId | string | `nil` | Guild to register slash commands into. Registration is global when unset (`discord.dev_guild_id`). |
 | discord.token | string | `""` | Bot token. Supply it through `DAM_DISCORD__TOKEN_FILE` or the secrets directory (`discord.token`). Delivered as the secrets-directory file `discord__token`. |
-| engine | object | `{"deadmanWindowSecs":1800,"dispatchers":4,"escalationIntervalSecs":15,"outboxBatchSize":16,"outboxLeaseSecs":30,"persistEvents":true,"pruneIntervalSecs":3600,"reconcileIntervalSecs":60,"regroupWindowSecs":1800,"retention":{"auditDays":365,"eventsDays":30,"resolvedDays":30},"silenceSyncIntervalSecs":30,"storm":{"forumThreshold":20,"threshold":50,"windowSecs":60}}` | Pipeline cadences, retention horizons and storm thresholds. |
+| engine | object | `{"deadmanWindowSecs":1800,"dedupeIgnoreLabels":[],"dispatchers":4,"escalationIntervalSecs":15,"outboxBatchSize":16,"outboxLeaseSecs":30,"persistEvents":true,"pruneIntervalSecs":3600,"reconcileIntervalSecs":60,"regroupWindowSecs":1800,"retention":{"auditDays":365,"eventsDays":30,"resolvedDays":30},"silenceSyncIntervalSecs":30,"storm":{"forumThreshold":20,"threshold":50,"windowSecs":60}}` | Pipeline cadences, retention horizons and storm thresholds. |
 | engine.deadmanWindowSecs | int | `1800` | Seconds of webhook silence that, combined with an unreachable Alertmanager, trips the deadman (`engine.deadman_window_secs`). |
+| engine.dedupeIgnoreLabels | list | `[]` | Labels that do not decide which card an alert is shown on (`engine.dedupe_ignore_labels`). |
 | engine.dispatchers | int | `4` | Outbox dispatcher workers (`engine.dispatchers`). |
 | engine.escalationIntervalSecs | int | `15` | Seconds between escalation timer sweeps (`engine.escalation_interval_secs`). |
 | engine.outboxBatchSize | int | `16` | Outbox rows one worker claims per pass (`engine.outbox_batch_size`). |
@@ -518,11 +519,11 @@ also why a pod that cannot reach Alertmanager never becomes ready — check the 
 | gateway.tls.enabled | bool | `false` | Add an HTTPS listener. |
 | gateway.tls.mode | string | `"Terminate"` | TLS mode. |
 | gateway.tls.options | object | `{}` | Implementation-specific TLS options. |
-| image | object | `{"pullPolicy":"","registry":"","repository":"timschoenle/discord-alertmanager","tag":"v0.7.0@sha256:62f1336273569e9a2c760b498629dd2760c366d3f51d78f2c3b8be6d85820f2a"}` | Container image the pod runs, composed as `registry/repository:tag`. |
+| image | object | `{"pullPolicy":"","registry":"","repository":"timschoenle/discord-alertmanager","tag":"v0.8.0@sha256:833219880c0dd5d2759cc2825f8d3cd462b5cf7375227d0c75f07d96071f882a"}` | Container image the pod runs, composed as `registry/repository:tag`. |
 | image.pullPolicy | string | `""` | The image pull policy. Empty resolves automatically from the tag/digest. |
 | image.registry | string | `""` | Registry host. Empty means Docker Hub. |
 | image.repository | string | `"timschoenle/discord-alertmanager"` | The container image repository. |
-| image.tag | string | `"v0.7.0@sha256:62f1336273569e9a2c760b498629dd2760c366d3f51d78f2c3b8be6d85820f2a"` | The container image tag. Defaults to the chart's `appVersion` when empty. |
+| image.tag | string | `"v0.8.0@sha256:833219880c0dd5d2759cc2825f8d3cd462b5cf7375227d0c75f07d96071f882a"` | The container image tag. Defaults to the chart's `appVersion` when empty. |
 | imagePullSecrets | list | `[]` | Optional image pull secrets for private registries |
 | ingest | object | `{"bind":"0.0.0.0:9099","bodyLimitBytes":1048576,"maxConcurrentRequests":64,"requestTimeoutSecs":10,"shutdownDrainSecs":10,"webhookPath":"/webhook","webhookToken":""}` | The listener Alertmanager posts to. `/healthz`, `/readyz` and `/metrics` are served on the same address, so `bind` decides the container port for all four and the chart takes it from here rather than from a value of its own. |
 | ingest.bind | string | `"0.0.0.0:9099"` | Address and port to listen on (`ingest.bind`). |

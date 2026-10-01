@@ -1,6 +1,6 @@
 # portfolio
 
-![Version: 6.0.3](https://img.shields.io/badge/Version-6.0.3-informational?style=flat-square) ![AppVersion: v3.1.2](https://img.shields.io/badge/AppVersion-v3.1.2-informational?style=flat-square)
+![Version: 6.0.4](https://img.shields.io/badge/Version-6.0.4-informational?style=flat-square) ![AppVersion: v3.1.2](https://img.shields.io/badge/AppVersion-v3.1.2-informational?style=flat-square)
 
 This chart deploys Portfolio, a Dioxus fullstack site that an Axum server renders and a WASM client hydrates in the browser.
 

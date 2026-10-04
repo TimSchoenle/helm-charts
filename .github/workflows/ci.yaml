@@ -213,32 +213,21 @@ jobs:
           token: ${{ steps.generate_token.outputs.token }}
           commit_message: "docs: update chart index in README"
 
-      - name: Compose PR comment body
-        id: comment-body
-        if: steps.auto-commit.outputs.changes_detected == 'true' || steps.readme.outputs.changes_detected == 'true'
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
-        env:
-          DOCS_CHANGED: ${{ steps.auto-commit.outputs.changes_detected }}
-          README_CHANGED: ${{ steps.readme.outputs.changes_detected }}
-        with:
-          script: |
-            const updated = [];
-            if (process.env.DOCS_CHANGED === 'true') {
-              updated.push('chart documentation and schemas');
-            }
-            if (process.env.README_CHANGED === 'true') {
-              updated.push('the README chart index');
-            }
-
-            core.setOutput('body', `📚 Automatically updated ${updated.join(' and ')}.`);
-
+      # One sentence naming whichever of the two commits above landed. The lines are mutually
+      # exclusive — one per combination rather than one per commit — because the comment is a
+      # single sentence joined with "and", which independent lines cannot assemble; at most one
+      # survives. When neither commit changed anything none does, and the action skips without
+      # an API call, so the guard here only has to rule out a run with no pull request to post on.
       - name: Comment on PR
-        if: steps.auto-commit.outputs.changes_detected == 'true' || steps.readme.outputs.changes_detected == 'true'
-        uses: TimSchoenle/actions/actions/common/upsert-pr-comment@7e8fd61045447d321c5139eea8f2e2b766333f8b # tag=actions-common-upsert-pr-comment-v1.1.3
+        if: github.event_name == 'pull_request'
+        uses: TimSchoenle/actions/actions/common/upsert-pr-comment@7568f9a485ca91c369095414ce4d9f1a8237df21 # tag=actions-common-upsert-pr-comment-v1.2.0
         with:
           token: ${{ steps.generate_token.outputs.token }}
           identifier: render-generated-files
-          body: ${{ steps.comment-body.outputs.body }}
+          body_lines: |
+            ${{ steps.auto-commit.outputs.changes_detected == 'true' && steps.readme.outputs.changes_detected != 'true' && '📚 Automatically updated chart documentation and schemas.' || '' }}
+            ${{ steps.auto-commit.outputs.changes_detected != 'true' && steps.readme.outputs.changes_detected == 'true' && '📚 Automatically updated the README chart index.' || '' }}
+            ${{ steps.auto-commit.outputs.changes_detected == 'true' && steps.readme.outputs.changes_detected == 'true' && '📚 Automatically updated chart documentation and schemas and the README chart index.' || '' }}
 
       # The other half of the `continue-on-error` above: everything a generator did manage to
       # produce is committed by now, and a generator that failed still fails the job. Last so that

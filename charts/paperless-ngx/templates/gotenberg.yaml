@@ -24,14 +24,16 @@
   an allow list confined to the request's own temporary directory are what keep the render local.
 */}}
 {{- $probe := dict "enabled" true "httpGet" (dict "path" "/health" "port" "gotenberg") }}
-{{- $ctx := include "paperless-ngx.component.context" (dict
+{{- $ctx := dict }}
+{{- include "paperless-ngx.component.context" (dict
+      "into" $ctx
       "ctx" .
       "image" $gotenberg.image
       "runAsUser" 1001 "runAsGroup" 1001
       "resources" $gotenberg.resources
       "livenessProbe" (merge (dict "periodSeconds" 30 "timeoutSeconds" 10 "failureThreshold" 5) (deepCopy $probe))
       "readinessProbe" (merge (dict "periodSeconds" 15 "timeoutSeconds" 5 "failureThreshold" 3) (deepCopy $probe))
-    ) | fromYaml }}
+    ) }}
 {{- /* The image's WORKDIR: where Chromium and fontconfig write, and what HOME points at. */}}
 {{- $homeDir := "/home/gotenberg" }}
 {{- $args := list "gotenberg" }}

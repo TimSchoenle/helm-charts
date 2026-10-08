@@ -27,6 +27,14 @@ templates:
 chart:
   version: 0.0.0
   appVersion: 0.0.0
+# The Kubernetes version is pinned for the same reason. Left unset, it is whatever helm-unittest
+# defaults to: 1.20 up to 1.1.x, below this chart's own `kubeVersion` floor, and something newer
+# from 1.2.0. A plugin bump then moves every version-gated field at once, `backup.timeZone` among
+# them, and the snapshot fails on a change to the test harness rather than to the chart. Keep it at
+# `kube_version` in the justfile.
+capabilities:
+  majorVersion: 1
+  minorVersion: 34
 set:
   paperless.secretKey: snapshot-secret-key
   image.tag: v0.0.0@sha256:0000000000000000000000000000000000000000000000000000000000000000

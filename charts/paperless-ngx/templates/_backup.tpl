@@ -87,15 +87,20 @@ Args: the root context.
 {{- toYaml $values -}}
 {{- end -}}
 
+{{/*
+The backup's scoped context, written into the dict passed as `into`. Only `Values` goes through
+YAML; see `paperless-ngx.component.context` for what serialising the root objects loses.
+
+Args: ctx (root), into (the dict to write the context into).
+*/}}
 {{- define "paperless-ngx.backup.context" -}}
-{{- $root := . -}}
-{{- toYaml (dict
-      "Values" (include "paperless-ngx.backup.values" $root | fromYaml)
-      "Chart" $root.Chart
-      "Release" $root.Release
-      "Capabilities" $root.Capabilities
-      "Template" $root.Template
-      "Files" $root.Files) -}}
+{{- $root := .ctx -}}
+{{- $_ := set .into "Values" (include "paperless-ngx.backup.values" $root | fromYaml) -}}
+{{- $_ = set .into "Chart" $root.Chart -}}
+{{- $_ = set .into "Release" $root.Release -}}
+{{- $_ = set .into "Capabilities" $root.Capabilities -}}
+{{- $_ = set .into "Template" $root.Template -}}
+{{- $_ = set .into "Files" $root.Files -}}
 {{- end -}}
 
 {{/*

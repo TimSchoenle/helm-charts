@@ -1,6 +1,6 @@
 # mp-stats-legacy-viewer
 
-![Version: 3.5.9](https://img.shields.io/badge/Version-3.5.9-informational?style=flat-square) ![AppVersion: v0.21.4](https://img.shields.io/badge/AppVersion-v0.21.4-informational?style=flat-square)
+![Version: 3.5.11](https://img.shields.io/badge/Version-3.5.11-informational?style=flat-square) ![AppVersion: v0.21.4](https://img.shields.io/badge/AppVersion-v0.21.4-informational?style=flat-square)
 
 This chart deploys mp-stats-legacy-viewer, which serves historical Minecraft server statistics as sharded binary chunks that a Dioxus client queries in the browser.
 
@@ -429,7 +429,7 @@ policy pointing at the wrong Gateway looks correct and blocks everything.
 | commonAnnotations | object | `{}` | Annotations added to every object this chart creates. |
 | commonLabels | object | `{}` | Labels added to every object this chart creates. |
 | config | object | `{}` | Extra configuration, expressed as the TOML tree of [the application's configuration reference](https://github.com/TimSchoenle/mp-stats-legacy-viewer/blob/main/docs/CONFIGURATION.md) (`server.bind_addr`, `converter.*`, ...). Merged over everything the chart derives from the values above, so it can both extend and override them. Rendered into the mounted ConfigMap — never into the environment, which the loader refuses to combine with a file. |
-| configExtraToml | string | `""` | Verbatim TOML appended after the rendered configuration. The escape hatch for the shapes the chart's TOML renderer cannot express: an array of arrays, an array mixing tables and scalars, and TOML's own literal types such as a datetime. Arrays of tables render natively. |
+| configExtraToml | string | `""` | Verbatim TOML added to the rendered configuration, after its top-level keys and before its first table, so the top-level keys written here stay top-level. A key or table the rendered configuration already defines is refused at render time. The escape hatch for the shapes the chart's TOML renderer cannot express: an array of arrays, an array mixing tables and scalars, and TOML's own literal types such as a datetime. Arrays of tables render natively. |
 | configMount | object | `{"configDir":"/etc/mp-stats/config","secretsDir":"/etc/mp-stats/secrets"}` | Where the rendered configuration and the credential files land in the container. |
 | configMount.configDir | string | `"/etc/mp-stats/config"` | Directory the rendered `config.toml` is mounted at, passed as `MP_STATS_CONFIG`. Pointing this at the mount **replaces** the `/config.toml` the image ships, so everything the image described — the bind address, `dist_dir`, `data_dir` — is restated by the values above. |
 | configMount.secretsDir | string | `"/etc/mp-stats/secrets"` | Directory credential files are mounted at, passed as `MP_STATS_SECRETS_DIR`. The Sentry DSN is the only credential this chart handles, so the volume and the variable both appear only while `telemetry.sentry.enabled` is set — a release that does not report to Sentry carries neither. |

@@ -11,6 +11,33 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
 {{/*
+Refuse `commonLabels` or `podLabels` that set a selector label.
+
+Both are rendered into the same mapping as `common.selectorLabels`, so a key repeating
+`app.kubernetes.io/name` or `app.kubernetes.io/instance` is a duplicate YAML key, and the last
+occurrence wins. On a pod template that means the pod's labels stop matching the immutable
+`spec.selector` the workload was created with: the API server rejects the Deployment, or, on an
+object whose selector is not checked, a Service quietly selects nothing. The selector labels
+identify the release, so there is no value an operator could set here that would be correct.
+
+Arguments: the root context, as the dot value. Renders nothing.
+*/}}
+{{- define "common.labels.assertNoSelectorKeys" -}}
+{{- $reserved := list "app.kubernetes.io/name" "app.kubernetes.io/instance" -}}
+{{- $messages := list -}}
+{{- range $source := list "commonLabels" "podLabels" -}}
+{{- range $key, $_ := (get $.Values $source) | default dict -}}
+{{- if has $key $reserved -}}
+{{- $messages = append $messages (printf "%s sets %q, which is a selector label this chart derives from the release. Rendered twice, the last value wins and the pods stop matching the workload's immutable selector. Remove the key; use nameOverride or fullnameOverride to change the name." $source $key) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- with $messages -}}
+{{- fail (printf "\n\nLABELS INVALID for chart %q:\n\n  - %s\n" $.Chart.Name (join "\n  - " .)) -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
 Version-carrying labels shared by object metadata and pod templates.
 */}}
 {{- define "common.versionLabels" -}}
@@ -29,6 +56,7 @@ app.kubernetes.io/part-of: {{ . | quote }}
 Full label set for object metadata.
 */}}
 {{- define "common.labels" -}}
+{{- include "common.labels.assertNoSelectorKeys" . -}}
 helm.sh/chart: {{ include "common.chart" . }}
 {{ include "common.selectorLabels" . }}
 {{- include "common.versionLabels" . }}
@@ -45,6 +73,7 @@ Deliberately excludes `helm.sh/chart`: it embeds the chart version, so including
 would rewrite every pod label — and trigger a rollout — on a chart-only version bump.
 */}}
 {{- define "common.podLabels" -}}
+{{- include "common.labels.assertNoSelectorKeys" . -}}
 {{ include "common.selectorLabels" . }}
 {{- include "common.versionLabels" . }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}

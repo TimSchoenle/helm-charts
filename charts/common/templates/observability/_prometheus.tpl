@@ -181,6 +181,25 @@ renders opt in with `--api-versions monitoring.coreos.com/v1`.
 {{- end -}}
 
 {{/*
+Fail, naming the file, when a rule file did not parse as YAML.
+
+`fromYaml` does not fail on malformed input: it returns a map holding a single `Error` key. Read
+like any other document, that map has no `groups`, so the file contributed nothing, and a chart
+whose only rule file broke rendered without its alerts or failed with a message about the glob
+rather than the file. Every reader of the rule files calls this right after parsing.
+
+Arguments:
+  ctx     (required) root context
+  path    (required) the file that was read
+  parsed  (required) what `fromYaml` returned for it
+*/}}
+{{- define "common.prometheus.rules.assertParsed" -}}
+{{- if and (kindIs "map" .parsed) (hasKey .parsed "Error") -}}
+{{- fail (printf "chart %q ships the rule file %s, but it does not parse as YAML: %s" .ctx.Chart.Name .path (toString (get .parsed "Error"))) -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
 What the chart's rule files ship, as a YAML document the callers below parse back:
 
   alerts:  alertName -> the group it belongs to
@@ -198,6 +217,7 @@ with the real list.
 {{- $exprs := dict -}}
 {{- range $path, $_ := $ctx.Files.Glob (.glob | default "rules/*.yml") -}}
 {{- $parsed := $ctx.Files.Get $path | fromYaml -}}
+{{- include "common.prometheus.rules.assertParsed" (dict "ctx" $ctx "path" $path "parsed" $parsed) -}}
 {{- range $group := ($parsed.groups | default list) -}}
 {{- $kinds := list -}}
 {{- range $rule := ($group.rules | default list) -}}
@@ -236,6 +256,27 @@ Read from `rules/tunables.yaml`, which is outside the rule glob on purpose — s
 {{- end -}}
 
 {{/*
+A number as it is written in a rule file: an integral value as an integer, everything else as Go
+prints it.
+
+Helm parses every number in a values file and in `rules/tunables.yaml` as a float64, and Go's
+`%v` prints a float64 of 1e6 or more in exponent form. `1000000` would therefore reach the anchor
+check as `1e+06`, which no expression spells, and an override of `2000000` on an integer tunable
+would be refused as not being an integer. Integral floats inside the range a float64 holds exactly
+(2^53) are printed with `%d` instead; anything larger is not an integer the file could have meant
+exactly, and keeps Go's spelling.
+
+Arguments: the value, as the dot value.
+*/}}
+{{- define "common.prometheus.rules.numberText" -}}
+{{- if and (kindIs "float64" .) (eq . (floor .)) (le . 9007199254740992.0) (ge . -9007199254740992.0) -}}
+{{- printf "%d" (int64 .) -}}
+{{- else -}}
+{{- printf "%v" . -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
 A threshold override as the literal that will be substituted into PromQL, or empty when the value
 is not a number.
 
@@ -251,7 +292,7 @@ rule expression, so a value like `0 or vector(1)` would otherwise be arbitrary P
 {{- $value := .value -}}
 {{- $literal := "" -}}
 {{- if or (kindIs "int" $value) (kindIs "int64" $value) (kindIs "float64" $value) (kindIs "string" $value) -}}
-{{- $literal = printf "%v" $value -}}
+{{- $literal = include "common.prometheus.rules.numberText" $value -}}
 {{- end -}}
 {{- if regexMatch "^[+-]?([0-9]+([.][0-9]*)?|[.][0-9]+)([eE][+-]?[0-9]+)?$" $literal -}}
 {{- $literal -}}
@@ -369,7 +410,7 @@ anchor has drifted from its expression would otherwise render an untuned rule in
 {{- $expr := toString (get $exprs $alert) -}}
 {{- range $tunable, $decl := $decls -}}
 {{- $anchor := toString ($decl.anchor | default "") -}}
-{{- $literal := printf "%v" $decl.default -}}
+{{- $literal := include "common.prometheus.rules.numberText" $decl.default -}}
 {{- if not $anchor -}}
 {{- $messages = append $messages (printf "the tunable `%s.%s` declares no `anchor`, so there is nothing to substitute into." $alert $tunable) -}}
 {{- else if ne (sub (len (splitList $anchor $expr)) 1) 1 -}}
@@ -403,10 +444,10 @@ An override must name a tunable its alert actually declares, and stay inside its
 {{- $messages = append $messages (printf "`thresholds.%s.%s` is %s, but that tunable is declared as an integer." $alert $tunable $literal) -}}
 {{- else -}}
 {{- if and (hasKey $decl "minimum") (lt (float64 $literal) (float64 $decl.minimum)) -}}
-{{- $messages = append $messages (printf "`thresholds.%s.%s` is %s, below the declared minimum of %v." $alert $tunable $literal $decl.minimum) -}}
+{{- $messages = append $messages (printf "`thresholds.%s.%s` is %s, below the declared minimum of %s." $alert $tunable $literal (include "common.prometheus.rules.numberText" $decl.minimum)) -}}
 {{- end -}}
 {{- if and (hasKey $decl "maximum") (gt (float64 $literal) (float64 $decl.maximum)) -}}
-{{- $messages = append $messages (printf "`thresholds.%s.%s` is %s, above the declared maximum of %v." $alert $tunable $literal $decl.maximum) -}}
+{{- $messages = append $messages (printf "`thresholds.%s.%s` is %s, above the declared maximum of %s." $alert $tunable $literal (include "common.prometheus.rules.numberText" $decl.maximum)) -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}
@@ -473,6 +514,7 @@ in `common.prometheus.rules.errors` relies on.
 {{- $groups := list -}}
 {{- range $path, $_ := $ctx.Files.Glob (.glob | default "rules/*.yml") -}}
 {{- $parsed := $ctx.Files.Get $path | fromYaml -}}
+{{- include "common.prometheus.rules.assertParsed" (dict "ctx" $ctx "path" $path "parsed" $parsed) -}}
 {{- $groups = concat $groups ($parsed.groups | default list) -}}
 {{- end -}}
 {{- $kept := list -}}
@@ -498,7 +540,7 @@ in `common.prometheus.rules.errors` relies on.
 {{- if not $literal -}}
 {{- fail (printf "chart %q was given %v as the threshold `%s.%s`, which is not a number. It would be substituted into a rule expression verbatim." $ctx.Chart.Name $value $alert $tunable) -}}
 {{- end -}}
-{{- $tuned := replace (printf "%v" $decl.default) $literal $anchor -}}
+{{- $tuned := replace (include "common.prometheus.rules.numberText" $decl.default) $literal $anchor -}}
 {{- $_ := set $rule "expr" (replace $anchor $tuned (toString $rule.expr)) -}}
 {{- end -}}
 {{- end -}}
@@ -573,6 +615,7 @@ as a set of quietly unscoped rules.
 {{- $count := 0 -}}
 {{- range $path, $_ := $ctx.Files.Glob (.glob | default "rules/*.yml") -}}
 {{- $parsed := $ctx.Files.Get $path | fromYaml -}}
+{{- include "common.prometheus.rules.assertParsed" (dict "ctx" $ctx "path" $path "parsed" $parsed) -}}
 {{- range $group := ($parsed.groups | default list) -}}
 {{- range $rule := ($group.rules | default list) -}}
 {{- if and (hasKey $rule "expr") (contains $placeholder (toString $rule.expr)) -}}
@@ -586,10 +629,26 @@ as a set of quietly unscoped rules.
 
 {{/*
 The PrometheusRule itself: one object per release, holding every group that survived the presets.
+
+Validates its own arguments before rendering, with exactly the checks of
+`common.prometheus.rules.validate`. The presets are applied leniently by
+`common.prometheus.rules.groups` — an unknown alert in `disabledAlerts` simply matches nothing —
+so a chart that rendered this without also calling a validator would install the typo as an
+alert believed to be off. A chart that does aggregate the errors into its own report still
+reports them there first; this is the floor nobody can forget to call. It runs with `enabled`
+forced on, since being asked to render the object is what enabling it means.
 */}}
 {{- define "common.prometheus.rules.prometheusRule" -}}
 {{- $ctx := .ctx -}}
 {{- $values := .values -}}
+{{- include "common.prometheus.rules.validate" (dict
+      "ctx" $ctx
+      "values" (merge (dict "enabled" true) ($values | default dict))
+      "glob" .glob
+      "tunables" .tunables
+      "scopePlaceholder" .scopePlaceholder
+      "scopeMatcher" .scopeMatcher
+      "feature" .feature) -}}
 {{- $groups := include "common.prometheus.rules.groups" (dict
       "ctx" $ctx
       "values" $values

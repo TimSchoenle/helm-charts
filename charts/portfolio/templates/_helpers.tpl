@@ -69,7 +69,7 @@ hsts:
 The configuration that actually reaches the server: the derived tree with the operator's own
 `config` tree merged over it, so `config` can both extend and override the values above.
 
-Not included: `configExtraToml`, which is appended verbatim and never parsed.
+Not included: `configExtraToml`, which is emitted verbatim and never parsed.
 */}}
 {{- define "portfolio.effectiveConfig" -}}
 {{- $derived := include "portfolio.derivedConfig" . | fromYaml -}}
@@ -98,7 +98,7 @@ The reverse pair is legitimate and deliberately not rejected: hashing on with th
 simply a deployment with no Cloudflare bot product in front of it.
 
 Checked against the *effective* tree, so the pair is caught whether it arrives through the
-first-class values or through `config`. `configExtraToml` is appended verbatim and never parsed,
+first-class values or through `config`. `configExtraToml` is emitted verbatim and never parsed,
 so a chart that has one steps out of the way rather than rejecting what it cannot see.
 */}}
 {{- define "portfolio.validateValues" -}}

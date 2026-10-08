@@ -600,8 +600,8 @@ class PinnedImage:
 def resolve_image(values: dict[str, Any], path: str, app_version: str | None) -> PinnedImage:
     """Build the image reference `common.image` renders for one values path.
 
-    Mirrors `charts/common/templates/_images.tpl`: an empty `registry` means Docker Hub, `tag`
-    falls back to the chart's `appVersion`, and the tag may pin a digest inline
+    Mirrors `charts/common/templates/workload/_images.tpl`: an empty `registry` means Docker Hub,
+    `tag` falls back to the chart's `appVersion`, and the tag may pin a digest inline
     (`v1.2.3@sha256:...`) — which is what actually pins the pull and what a contract is tied to.
     """
     image = dig(values, path)

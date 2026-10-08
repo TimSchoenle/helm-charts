@@ -7,9 +7,12 @@ as Go templates is caught here.
 {{- $args := dict
       "ctx" .
       "values" .Values.prometheusRule
+      "glob" .Values.fixtureRuleGlob
       "scopePlaceholder" $scope.placeholder
       "scopeMatcher" $scope.matcher }}
+{{- if not .Values.fixtureSkipRuleValidation }}
 {{- include "common.prometheus.rules.validate" $args }}
+{{- end }}
 {{- if .Values.prometheusRule.enabled }}
 {{- include "common.prometheus.rules.prometheusRule" $args }}
 {{- end }}

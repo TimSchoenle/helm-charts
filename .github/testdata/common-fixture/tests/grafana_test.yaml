@@ -137,6 +137,26 @@ tests:
           path: metadata.annotations["grafana_folder"]
           value: Shared
 
+  # `commonAnnotations` is the release-wide default; the folder is specific to this object and
+  # wins a clash, or a release-wide annotation would silently re-file every dashboard.
+  - it: keeps the folder annotation over a clashing commonAnnotations entry
+    template: grafana.yaml
+    documentSelector:
+      path: kind
+      value: ConfigMap
+    set:
+      grafanaDashboard.enabled: true
+      grafanaDashboard.folder: Shared
+      commonAnnotations:
+        grafana_folder: Elsewhere
+        example.com/release: fixture
+    asserts:
+      - equal:
+          path: metadata.annotations
+          value:
+            grafana_folder: Shared
+            example.com/release: fixture
+
   - it: files the operator's custom resource under the same shared folder
     template: grafana.yaml
     capabilities:

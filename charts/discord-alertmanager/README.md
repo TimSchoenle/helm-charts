@@ -1,6 +1,6 @@
 # discord-alertmanager
 
-![Version: 0.4.8](https://img.shields.io/badge/Version-0.4.8-informational?style=flat-square) ![AppVersion: v0.8.0](https://img.shields.io/badge/AppVersion-v0.8.0-informational?style=flat-square)
+![Version: 0.4.10](https://img.shields.io/badge/Version-0.4.10-informational?style=flat-square) ![AppVersion: v0.8.0](https://img.shields.io/badge/AppVersion-v0.8.0-informational?style=flat-square)
 
 This chart deploys discord-alertmanager, a Discord operator surface for Prometheus Alertmanager. It receives the version-4 webhook envelope, renders each alert as a live status card in a Discord channel, and lets an operator acknowledge, ignore, silence or investigate it without leaving the client — with file-backed configuration that reloads in place instead of restarting pods, SQLite or PostgreSQL storage, optional Prometheus metrics and alerting rules, and an optional AlertmanagerConfig that registers the receiver with the Prometheus Operator instead of leaving it to be wired by hand.
 
@@ -453,7 +453,7 @@ also why a pod that cannot reach Alertmanager never becomes ready — check the 
 | commonAnnotations | object | `{}` | Annotations added to every object this chart creates. |
 | commonLabels | object | `{}` | Labels added to every object this chart creates. |
 | config | object | `{}` | — never into the environment, which the loader refuses to combine with a file. |
-| configExtraToml | string | `""` | Verbatim TOML appended after the rendered configuration. The escape hatch for the shapes the chart's TOML renderer cannot express: an array of arrays, an array mixing tables and scalars, and TOML's own literal types such as a datetime. Arrays of tables render natively, so `routes` and `links.buttons` do not need this. |
+| configExtraToml | string | `""` | Verbatim TOML added to the rendered configuration, after its top-level keys and before its first table, so the top-level keys written here stay top-level. A key or table the rendered configuration already defines is refused at render time. The escape hatch for the shapes the chart's TOML renderer cannot express: an array of arrays, an array mixing tables and scalars, and TOML's own literal types such as a datetime. Arrays of tables render natively, so `routes` and `links.buttons` do not need this. |
 | configMount | object | `{"configDir":"/etc/discord-alertmanager/config","secretsDir":"/etc/discord-alertmanager/secrets"}` | Where the rendered configuration and the credential files are mounted. Neither is ever mounted with `subPath`: a subPath mount is resolved once at container start and never receives kubelet updates, which would turn every configuration change back into "restart the pod to pick it up". |
 | configMount.configDir | string | `"/etc/discord-alertmanager/config"` | Directory the rendered `config.toml` is mounted at, passed as `DAM_CONFIG`. |
 | configMount.secretsDir | string | `"/etc/discord-alertmanager/secrets"` | Directory the credential files are mounted at, passed as `DAM_SECRETS_DIR`. |

@@ -158,7 +158,7 @@ metadata:
   labels:
     {{- include "common.labels" $ctx | nindent 4 }}
     {{ $values.label | default "grafana_dashboard" }}: {{ $values.labelValue | default "1" | quote }}
-  {{- with (include "common.tplvalues.merge" (dict "values" (list $annotations $ctx.Values.commonAnnotations) "context" $ctx)) }}
+  {{- with (include "common.tplvalues.merge" (dict "values" (list $ctx.Values.commonAnnotations $annotations) "context" $ctx)) }}
   annotations:
     {{- . | nindent 4 }}
   {{- end }}

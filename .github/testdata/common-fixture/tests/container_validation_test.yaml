@@ -1,0 +1,22 @@
+# Render refusals of the container partials, kept apart from the rendering suites: a suite that
+# mixes `failedTemplate` cases with rendering ones can hand the rendering ones an empty document.
+suite: common container refusals
+# `fileconfig.yaml` rather than `deployment.yaml`: it renders `common.container` and `common.volumes`
+# without the config checksum, which would need `configmap.yaml` listed as well.
+templates:
+  - fileconfig.yaml
+tests:
+  # `common.volumes` sees a volume named `tmp` and provisions none of its own, while
+  # `common.volumeMounts` sees nothing at /tmp and mounts the volume named `tmp` there. The caller's
+  # volume would end up mounted at both paths.
+  - it: refuses a volume named tmp mounted somewhere other than /tmp
+    set:
+      extraVolumes:
+        - name: tmp
+          emptyDir: {}
+      extraVolumeMounts:
+        - name: tmp
+          mountPath: /scratch
+    asserts:
+      - failedTemplate:
+          errorPattern: "the volume `tmp` is mounted at /scratch, but nothing is mounted at /tmp"

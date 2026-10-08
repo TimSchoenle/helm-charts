@@ -16,6 +16,17 @@ groups:
           # reads, not a selector.
           description: 'value {{ $value }}, scoped by fixture_scope=~".*"'
 
+      # A tunable whose default is a million. Helm reads every number as a float64, and Go prints
+      # one that large as `1e+06` unless told otherwise, which no expression spells; the tests pin
+      # that the default is found in its anchor and that an integer override stays an integer.
+      - alert: FixtureQueueBacklog
+        expr: 'job:queue_depth:max{fixture_scope=~".*"} > 1000000'
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: '{{ $labels.job }} has {{ $value }} messages waiting'
+
   # A second alerting group, so `disabledGroups` can be exercised without emptying the object.
   - name: fixture-saturation
     rules:

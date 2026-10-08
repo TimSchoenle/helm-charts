@@ -1,6 +1,6 @@
 # netcup-offer-bot
 
-![Version: 6.2.7](https://img.shields.io/badge/Version-6.2.7-informational?style=flat-square) ![AppVersion: v3.3.3](https://img.shields.io/badge/AppVersion-v3.3.3-informational?style=flat-square)
+![Version: 6.2.9](https://img.shields.io/badge/Version-6.2.9-informational?style=flat-square) ![AppVersion: v3.3.3](https://img.shields.io/badge/AppVersion-v3.3.3-informational?style=flat-square)
 
 This chart deploys the Netcup Offer Bot, which monitors https://www.netcup-sonderangebote.de/ RSS feed and sends notifications to Discord webhooks when new offers are available.
 
@@ -313,7 +313,7 @@ policy pointing at the wrong Gateway looks correct and blocks everything.
 | commonAnnotations | object | `{}` | Annotations added to every object this chart creates. |
 | commonLabels | object | `{}` | Labels added to every object this chart creates. |
 | config | object | `{}` | Extra configuration, expressed as the TOML tree of [the bot's README](https://github.com/TimSchoenle/netcup-offer-bot#configuration) (`feed.check_interval_secs`, `metrics.port`, ...). Merged over everything the chart derives from the values above, so it can both extend and override them. Rendered into the mounted ConfigMap — never into the environment, which the loader refuses to combine with a file. |
-| configExtraToml | string | `""` | Verbatim TOML appended after the rendered configuration. The escape hatch for the shapes the chart's TOML renderer cannot express: an array of arrays, an array mixing tables and scalars, and TOML's own literal types such as a datetime. Arrays of tables render natively. |
+| configExtraToml | string | `""` | Verbatim TOML added to the rendered configuration, after its top-level keys and before its first table, so the top-level keys written here stay top-level. A key or table the rendered configuration already defines is refused at render time. The escape hatch for the shapes the chart's TOML renderer cannot express: an array of arrays, an array mixing tables and scalars, and TOML's own literal types such as a datetime. Arrays of tables render natively. |
 | configMount | object | `{"configDir":"/etc/netcup-offer-bot/config","secretsDir":"/etc/netcup-offer-bot/secrets"}` | Where the rendered configuration and the credential file land in the container. |
 | configMount.configDir | string | `"/etc/netcup-offer-bot/config"` | Directory the rendered `config.toml` is mounted at, passed as `NETCUP_OFFER_BOT_CONFIG`. |
 | configMount.secretsDir | string | `"/etc/netcup-offer-bot/secrets"` | Directory the credential file is mounted at, passed as `NETCUP_OFFER_BOT_SECRETS_DIR`. |

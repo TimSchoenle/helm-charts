@@ -1,0 +1,24 @@
+# Render refusals of the label partials, kept apart from the rendering suites: a suite that mixes
+# `failedTemplate` cases with rendering ones can hand the rendering ones an empty document.
+#
+# A selector label set again through `commonLabels` or `podLabels` is a duplicate YAML key whose
+# last value wins, so the pods stop matching the workload's immutable selector.
+suite: common label refusals
+templates:
+  - serviceaccount.yaml
+tests:
+  - it: refuses commonLabels that set the name selector label
+    set:
+      commonLabels:
+        app.kubernetes.io/name: other
+    asserts:
+      - failedTemplate:
+          errorPattern: "commonLabels sets \"app.kubernetes.io/name\", which is a selector label"
+
+  - it: refuses podLabels that set the instance selector label
+    set:
+      podLabels:
+        app.kubernetes.io/instance: other
+    asserts:
+      - failedTemplate:
+          errorPattern: "podLabels sets \"app.kubernetes.io/instance\", which is a selector label"

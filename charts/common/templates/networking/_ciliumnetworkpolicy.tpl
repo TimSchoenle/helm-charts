@@ -124,6 +124,7 @@ Ingress CiliumNetworkPolicy.
 */}}
 {{- define "common.ciliumNetworkPolicy.ingress" -}}
 {{- $ingress := .Values.networkPolicy.ingress | default dict -}}
+{{- include "common.networkPolicy.validatePeers" . -}}
 {{- $cilium := .Values.networkPolicy.cilium | default dict -}}
 {{- $ciliumIngress := $cilium.ingress | default dict -}}
 apiVersion: {{ include "common.capabilities.cilium.apiVersion" . }}
@@ -254,9 +255,12 @@ spec:
       equivalent of `ipBlock`, `except` and all — kept rather than silently upgraded to
       `toEntities: [world]`, because the two are not the same rule: `world` is everything outside
       the cluster, while the CIDR carve-outs also exclude the cloud metadata endpoint. An
-      operator who wants the simpler form asks for it under `cilium.egress.toEntities`.
+      operator who wants the simpler form asks for it under `cilium.egress.toEntities`. An empty
+      `except` takes the same private and link-local default as the portable rule; carving out
+      nothing here would let `engine: cilium` reach the metadata endpoint the portable policy
+      blocks.
     */}}
-    {{- $cidrSet := list (dict "cidr" ($egress.cidr | default "0.0.0.0/0") "except" ($egress.except | default list)) }}
+    {{- $cidrSet := list (dict "cidr" ($egress.cidr | default "0.0.0.0/0") "except" (include "common.networkPolicy.internetExcept" . | fromYamlArray)) }}
     {{- if (($egress.http | default dict).enabled) }}
     - toCIDRSet:
         {{- toYaml $cidrSet | nindent 8 }}

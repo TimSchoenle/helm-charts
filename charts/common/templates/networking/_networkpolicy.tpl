@@ -90,6 +90,42 @@ Arguments:
 {{- end -}}
 
 {{/*
+Fail when an enabled ingress peer is missing what identifies it.
+
+Both engines render these peers from the same values, and an unset field does not fail on its
+own. An empty `controller.selector` renders as `matchLabels: null` in the portable policy, which
+selects every pod in the controller's namespace, and as a stray `null` inside a mapping in the
+Cilium one, which is not YAML at all. An empty `controller.namespace`, or a monitoring peer with
+neither `namespace` nor `namespaceSelector`, renders `kubernetes.io/metadata.name: null`, a
+selector no namespace can satisfy, so the traffic the peer exists to admit is dropped. None of
+that is what an operator who turned the peer on meant, so each is refused by name.
+
+Arguments: the root context, as the dot value. Renders nothing.
+*/}}
+{{- define "common.networkPolicy.validatePeers" -}}
+{{- $ingress := .Values.networkPolicy.ingress | default dict -}}
+{{- $messages := list -}}
+{{- if $ingress.enabled -}}
+{{- $monitoring := $ingress.monitoring | default dict -}}
+{{- if and $monitoring.enabled (not $monitoring.namespaceSelector) (not $monitoring.namespace) -}}
+{{- $messages = append $messages "networkPolicy.ingress.monitoring.enabled is set but neither networkPolicy.ingress.monitoring.namespace nor .namespaceSelector names where the scraper runs. The rule would select no namespace and every scrape would be dropped. Name the monitoring namespace, or turn the peer off." -}}
+{{- end -}}
+{{- $controller := $ingress.controller | default dict -}}
+{{- if $controller.enabled -}}
+{{- if not $controller.namespace -}}
+{{- $messages = append $messages "networkPolicy.ingress.controller.enabled is set but networkPolicy.ingress.controller.namespace is empty. The rule would select no namespace and every request through the Ingress controller would be dropped. Name the controller's namespace, or turn the peer off." -}}
+{{- end -}}
+{{- if not $controller.selector -}}
+{{- $messages = append $messages "networkPolicy.ingress.controller.enabled is set but networkPolicy.ingress.controller.selector is empty. The portable policy would admit every pod in the controller's namespace, and the Cilium one would not render as valid YAML. Name the labels of the controller's pods, or turn the peer off." -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- with $messages -}}
+{{- fail (printf "\n\nNETWORK POLICY CONFIGURATION INVALID for chart %q:\n\n  - %s\n" $.Chart.Name (join "\n  - " .)) -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
 Default destination for the DNS egress rule: kube-dns / CoreDNS in kube-system.
 Both selectors are overridable for clusters that label things differently.
 */}}
@@ -104,18 +140,29 @@ Both selectors are overridable for clusters that label things differently.
 {{- end -}}
 
 {{/*
-Default destination for internet egress: everything except private and link-local space.
+The ranges carved out of internet egress, as a YAML list: `networkPolicy.egress.except`, or
+private and link-local space when it is empty.
 
 169.254.0.0/16 is excluded because 169.254.169.254 is the cloud instance metadata endpoint —
 reachable from any pod that is allowed "the internet" and the usual first stop for
 credential theft after a container compromise.
+
+Shared by both engines, so `engine: cilium` carves out exactly what the portable policy does.
+*/}}
+{{- define "common.networkPolicy.internetExcept" -}}
+{{- $egress := .Values.networkPolicy.egress | default dict -}}
+{{- toYaml ($egress.except | default (list "10.0.0.0/8" "172.16.0.0/12" "192.168.0.0/16" "169.254.0.0/16")) -}}
+{{- end -}}
+
+{{/*
+Default destination for internet egress: everything except the ranges above.
 */}}
 {{- define "common.networkPolicy.internetPeers" -}}
 {{- $egress := .Values.networkPolicy.egress | default dict -}}
 - ipBlock:
     cidr: {{ $egress.cidr | default "0.0.0.0/0" | quote }}
     except:
-      {{- toYaml ($egress.except | default (list "10.0.0.0/8" "172.16.0.0/12" "192.168.0.0/16" "169.254.0.0/16")) | nindent 6 }}
+      {{- include "common.networkPolicy.internetExcept" . | nindent 6 }}
 {{- end -}}
 
 {{/*
@@ -126,6 +173,7 @@ the pod and declares `policyTypes: [Ingress]` with an empty rule list is a defau
 */}}
 {{- define "common.networkPolicy.ingress" -}}
 {{- $ingress := .Values.networkPolicy.ingress | default dict -}}
+{{- include "common.networkPolicy.validatePeers" . -}}
 apiVersion: {{ include "common.capabilities.networkPolicy.apiVersion" . }}
 kind: NetworkPolicy
 metadata:

@@ -269,7 +269,7 @@ telemetry:
 The configuration that actually reaches the image: the derived tree with the operator's own
 `config` tree merged over it, so `config` can both extend and override the values above.
 
-Not included: `configExtraToml`, which is appended verbatim and never parsed.
+Not included: `configExtraToml`, which is emitted verbatim and never parsed.
 */}}
 {{- define "discord-alertmanager.effectiveConfig" -}}
 {{- $derived := include "discord-alertmanager.derivedConfig" . | fromYaml -}}

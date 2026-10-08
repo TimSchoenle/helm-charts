@@ -222,6 +222,32 @@ tests:
           path: spec.egress[1].toPorts[0].ports[0].port
           value: "443"
 
+  # The portable policy falls back to private and link-local space when `except` is empty. An
+  # empty carve-out here would let the Cilium engine reach the cloud metadata endpoint at
+  # 169.254.169.254 while the portable engine blocks it, on identical values.
+  - it: carves out the same default ranges as the portable policy
+    set:
+      networkPolicy.enabled: true
+      networkPolicy.engine: both
+      networkPolicy.egress.except: []
+    asserts:
+      - documentIndex: 1
+        equal:
+          path: spec.egress[1].to[0].ipBlock.except
+          value:
+            - 10.0.0.0/8
+            - 172.16.0.0/12
+            - 192.168.0.0/16
+            - 169.254.0.0/16
+      - documentIndex: 3
+        equal:
+          path: spec.egress[1].toCIDRSet[0].except
+          value:
+            - 10.0.0.0/8
+            - 172.16.0.0/12
+            - 192.168.0.0/16
+            - 169.254.0.0/16
+
   - it: names destinations rather than addresses
     documentIndex: 1
     set:

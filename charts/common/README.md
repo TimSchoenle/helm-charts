@@ -1,6 +1,6 @@
 # common
 
-![Version: 2.4.1](https://img.shields.io/badge/Version-2.4.1-informational?style=flat-square) ![Type: library](https://img.shields.io/badge/Type-library-informational?style=flat-square)
+![Version: 2.5.1](https://img.shields.io/badge/Version-2.5.1-informational?style=flat-square) ![Type: library](https://img.shields.io/badge/Type-library-informational?style=flat-square)
 
 Shared template partials for the TimSchoenle Helm charts
 
@@ -50,6 +50,31 @@ spec:
         {{- . | nindent 8 }}
       {{- end }}
 ```
+
+## Layout
+
+The partials are grouped by concern under `templates/`. Helm loads every file there regardless of
+depth and resolves `include` by the defined name, so the directory a partial lives in is for
+readers only and never appears at a call site.
+
+| Directory | Contents |
+|---|---|
+| `core/` | Names, labels, templated values, capability checks, required-value validation |
+| `workload/` | Pod spec, container, images, probes, resources, security contexts, checksums, the ServiceAccount name |
+| `config/` | File-backed configuration, the TOML renderer, and the existing ConfigMap and Secret names |
+| `networking/` | NetworkPolicy, CiliumNetworkPolicy and Gateway API objects |
+| `observability/` | Prometheus rules and Grafana dashboards |
+
+Partials take their input in one of two ways:
+
+- **The root context.** Partials that read only the chart's own values and metadata take `.`
+  (or `$` inside a `range` or `with`): `{{ include "common.labels" . }}`,
+  `{{ include "common.podSpec.common" . }}`, `{{ include "common.networkPolicy" . }}`.
+- **A `dict` with `ctx`.** Partials that also take arguments receive the root context as `ctx`
+  beside them: `{{ include "common.container" (dict "ctx" $ "ports" $ports) }}`,
+  `{{ include "common.gateway.httpRoute" (dict "ctx" $ "values" .Values.gateway) }}`.
+
+Which of the two a partial takes is stated in its header comment, with its arguments.
 
 ## Partials
 
@@ -199,7 +224,7 @@ and act as the reference shape for consuming charts.
 | commonLabels | object | `{}` | Labels added to every object the chart creates. Values may contain Go templates. |
 | component | string | `""` | Value for the `app.kubernetes.io/component` label. |
 | config | object | `{}` | Application configuration, expressed as the TOML tree the service documents. Rendered by `common.toml` into the ConfigMap the pod mounts, never passed as environment variables: the loader every application shares refuses a key supplied by both the environment and a file, and a value that lives in a file is one the kubelet can rotate under a running process. |
-| configExtraToml | string | `""` | Verbatim TOML appended after the rendered `config` tree. The escape hatch for the shapes `common.toml` cannot express: an array of arrays, an array mixing tables and scalars, and TOML's own literal types such as a datetime. Arrays of tables render natively. |
+| configExtraToml | string | `""` | Verbatim TOML added to the rendered `config` tree, after its top-level keys and before its first table, so the top-level keys written here stay top-level. A key or table the rendered `config` tree already defines is refused at render time. The escape hatch for the shapes `common.toml` cannot express: an array of arrays, an array mixing tables and scalars, and TOML's own literal types such as a datetime. Arrays of tables render natively. |
 | configMount | object | `{"configDir":"","secretsDir":""}` | Where the rendered configuration and the credential files land in the container. Consumed by `common.fileConfig.*`, which also passes both directories to the application as `<PREFIX>_CONFIG` and `<PREFIX>_SECRETS_DIR`. |
 | configMount.configDir | string | `""` | Directory the rendered `config.toml` is mounted at. |
 | configMount.secretsDir | string | `""` | Directory the credential files are mounted at, one file per configuration key. |

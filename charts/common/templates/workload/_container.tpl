@@ -70,6 +70,14 @@ Prepends the writable /tmp mount whenever the container runs with a read-only ro
 filesystem and the caller has not already mounted something there, then appends
 caller-provided mounts and `.Values.extraVolumeMounts`.
 
+The prepended mount names the volume `tmp`, and `common.volumes` provisions that volume only
+when no caller volume already has the name. The two partials are called separately and neither
+sees the other's list, so the name is what ties them together, and a caller volume named `tmp`
+would be the one mounted at /tmp. That is sound when the caller means it as the /tmp backing,
+which is why a caller volume of that name is not refused outright. A caller mount of `tmp`
+somewhere else shows it is not meant that way: mounting it at /tmp as well would share one
+volume between two paths without anybody asking for it. That combination is refused.
+
 Arguments:
   ctx           (required) root context
   volumeMounts  list of chart-specific mounts (optional)
@@ -78,10 +86,17 @@ Arguments:
 {{- $ctx := .ctx -}}
 {{- $mounts := concat (.volumeMounts | default list) ($ctx.Values.extraVolumeMounts | default list) -}}
 {{- $paths := list -}}
+{{- $elsewhere := list -}}
 {{- range $mounts -}}
 {{- $paths = append $paths .mountPath -}}
+{{- if and (eq (toString .name) "tmp") (ne (toString .mountPath) "/tmp") -}}
+{{- $elsewhere = append $elsewhere (toString .mountPath) -}}
+{{- end -}}
 {{- end -}}
 {{- if and (include "common.readOnlyRootFilesystem" $ctx) (not (has "/tmp" $paths)) -}}
+{{- with $elsewhere -}}
+{{- fail (printf "\n\nVOLUME CONFIGURATION INVALID for chart %q:\n\n  - the volume `tmp` is mounted at %s, but nothing is mounted at /tmp. The read-only root filesystem needs a writable /tmp, which this chart provides as a volume named `tmp`; with a volume of that name already supplied, it would mount that one at /tmp as well. Rename the volume, or mount a volume at /tmp yourself.\n" $ctx.Chart.Name (join ", " .)) -}}
+{{- end -}}
 {{- $mounts = prepend $mounts (dict "name" "tmp" "mountPath" "/tmp") -}}
 {{- end -}}
 {{- with $mounts -}}

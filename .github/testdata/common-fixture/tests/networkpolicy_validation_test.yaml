@@ -1,0 +1,33 @@
+# Render refusals of the NetworkPolicy partials, kept apart from the rendering suites: a suite that
+# mixes `failedTemplate` cases with rendering ones can hand the rendering ones an empty document.
+#
+# Each case is a peer turned on without what identifies it. Unrefused, the portable policy renders
+# a selector that admits every pod or matches no namespace, and the Cilium one is not valid YAML.
+suite: common NetworkPolicy refusals
+templates:
+  - networkpolicy.yaml
+tests:
+  - it: refuses a controller peer with no selector
+    set:
+      networkPolicy.enabled: true
+      networkPolicy.ingress.controller.selector: null
+    asserts:
+      - failedTemplate:
+          errorPattern: "networkPolicy.ingress.controller.selector is empty"
+
+  - it: refuses a controller peer with no namespace under the cilium engine
+    set:
+      networkPolicy.enabled: true
+      networkPolicy.engine: cilium
+      networkPolicy.ingress.controller.namespace: ""
+    asserts:
+      - failedTemplate:
+          errorPattern: "networkPolicy.ingress.controller.namespace is empty"
+
+  - it: refuses a monitoring peer that names no namespace
+    set:
+      networkPolicy.enabled: true
+      networkPolicy.ingress.monitoring.namespace: ""
+    asserts:
+      - failedTemplate:
+          errorPattern: "neither networkPolicy.ingress.monitoring.namespace nor .namespaceSelector"

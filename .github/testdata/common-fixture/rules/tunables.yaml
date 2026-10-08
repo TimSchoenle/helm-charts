@@ -2,7 +2,7 @@
 #
 # Outside the `rules/*.yml` glob on purpose: promtool reads those files strictly and would reject
 # an unknown top-level key, and the PrometheusRule CRD would prune one. See the header of
-# `charts/common/templates/_prometheus.tpl` for the whole contract.
+# `charts/common/templates/observability/_prometheus.tpl` for the whole contract.
 #
 # `anchor` is the smallest substring of the alert's expression that contains the default and
 # occurs in it exactly once. Both properties are enforced at render time, so an anchor that drifts
@@ -27,3 +27,12 @@ tunables:
       default: 0.05
       minimum: 0
       anchor: 'job:http_requests:rate5m{fixture_scope=~".*"} > 0.05'
+
+  FixtureQueueBacklog:
+    depth:
+      # -- Messages waiting at or above which the queue counts as backed up.
+      description: Queue depth that counts as a backlog.
+      type: integer
+      default: 1000000
+      minimum: 1
+      anchor: 'job:queue_depth:max{fixture_scope=~".*"} > 1000000'

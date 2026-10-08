@@ -60,7 +60,7 @@ telemetry:
 The configuration that actually reaches the server: the derived tree with the operator's own
 `config` tree merged over it, so `config` can both extend and override the values above.
 
-Not included: `configExtraToml`, which is appended verbatim and never parsed.
+Not included: `configExtraToml`, which is emitted verbatim and never parsed.
 */}}
 {{- define "mp-stats-legacy-viewer.effectiveConfig" -}}
 {{- $derived := include "mp-stats-legacy-viewer.derivedConfig" . | fromYaml -}}

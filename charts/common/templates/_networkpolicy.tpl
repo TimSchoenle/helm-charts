@@ -104,18 +104,29 @@ Both selectors are overridable for clusters that label things differently.
 {{- end -}}
 
 {{/*
-Default destination for internet egress: everything except private and link-local space.
+The ranges carved out of internet egress, as a YAML list: `networkPolicy.egress.except`, or
+private and link-local space when it is empty.
 
 169.254.0.0/16 is excluded because 169.254.169.254 is the cloud instance metadata endpoint —
 reachable from any pod that is allowed "the internet" and the usual first stop for
 credential theft after a container compromise.
+
+Shared by both engines, so `engine: cilium` carves out exactly what the portable policy does.
+*/}}
+{{- define "common.networkPolicy.internetExcept" -}}
+{{- $egress := .Values.networkPolicy.egress | default dict -}}
+{{- toYaml ($egress.except | default (list "10.0.0.0/8" "172.16.0.0/12" "192.168.0.0/16" "169.254.0.0/16")) -}}
+{{- end -}}
+
+{{/*
+Default destination for internet egress: everything except the ranges above.
 */}}
 {{- define "common.networkPolicy.internetPeers" -}}
 {{- $egress := .Values.networkPolicy.egress | default dict -}}
 - ipBlock:
     cidr: {{ $egress.cidr | default "0.0.0.0/0" | quote }}
     except:
-      {{- toYaml ($egress.except | default (list "10.0.0.0/8" "172.16.0.0/12" "192.168.0.0/16" "169.254.0.0/16")) | nindent 6 }}
+      {{- include "common.networkPolicy.internetExcept" . | nindent 6 }}
 {{- end -}}
 
 {{/*

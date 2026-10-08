@@ -12,14 +12,16 @@
   merely listening — Tika has no dedicated health route.
 */}}
 {{- $probe := dict "enabled" true "httpGet" (dict "path" "/version" "port" "tika") }}
-{{- $ctx := include "paperless-ngx.component.context" (dict
+{{- $ctx := dict }}
+{{- include "paperless-ngx.component.context" (dict
+      "into" $ctx
       "ctx" .
       "image" $tika.image
       "runAsUser" 35002 "runAsGroup" 35002
       "resources" $tika.resources
       "livenessProbe" (merge (dict "periodSeconds" 30 "timeoutSeconds" 10 "failureThreshold" 5) (deepCopy $probe))
       "readinessProbe" (merge (dict "initialDelaySeconds" 10 "periodSeconds" 15 "timeoutSeconds" 5 "failureThreshold" 5) (deepCopy $probe))
-    ) | fromYaml }}
+    ) }}
 {{- include "paperless-ngx.component.service" (dict "ctx" . "component" "tika" "port" 9998) }}
 ---
 apiVersion: apps/v1

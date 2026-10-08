@@ -41,14 +41,16 @@
 {{- $args = list (printf "exec valkey-server --requirepass \"$REDIS_PASSWORD\" %s" $persistenceShell) }}
 {{- end }}
 {{- $probe := dict "enabled" true "exec" (dict "command" $probeCommand) }}
-{{- $ctx := include "paperless-ngx.component.context" (dict
+{{- $ctx := dict }}
+{{- include "paperless-ngx.component.context" (dict
+      "into" $ctx
       "ctx" .
       "image" $valkey.image
       "runAsUser" 1000 "runAsGroup" 1000
       "resources" $valkey.resources
       "livenessProbe" (merge (dict "periodSeconds" 30 "timeoutSeconds" 5 "failureThreshold" 5) (deepCopy $probe))
       "readinessProbe" (merge (dict "periodSeconds" 10 "timeoutSeconds" 3 "failureThreshold" 3) (deepCopy $probe))
-    ) | fromYaml }}
+    ) }}
 {{- $env := list }}
 {{- if $hasPassword }}
 {{- $env = append $env (dict "name" "REDIS_PASSWORD" "valueFrom" (dict "secretKeyRef" (dict

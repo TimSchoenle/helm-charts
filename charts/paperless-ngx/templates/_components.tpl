@@ -87,20 +87,26 @@ Arguments:
 {{- end -}}
 
 {{/*
-The scoped context itself, ready to hand to the library partials.
+The scoped context itself, ready to hand to the library partials. It is written into the dict the
+caller passes as `into` rather than returned, because `include` can only return text.
 
-Arguments: as `paperless-ngx.component.values`.
+Only `Values` goes through YAML. `Chart`, `Release`, `Capabilities`, `Template` and `Files` are
+the root context's own objects, and serialising them is not neutral: Helm 3 renders `.Chart` with
+its JSON field names, so `.Chart.AppVersion` came back empty and every bundled component's pod
+template lost its `app.kubernetes.io/version` label under Helm 3 while Helm 4 kept it.
+`.Capabilities` and `.Files` would lose their methods the same way.
+
+Arguments: as `paperless-ngx.component.values`, plus
+  into  (required) the dict to write the context into
 */}}
 {{- define "paperless-ngx.component.context" -}}
 {{- $ctx := .ctx -}}
-{{- $values := include "paperless-ngx.component.values" . | fromYaml -}}
-{{- toYaml (dict
-      "Values" $values
-      "Chart" $ctx.Chart
-      "Release" $ctx.Release
-      "Capabilities" $ctx.Capabilities
-      "Template" $ctx.Template
-      "Files" $ctx.Files) -}}
+{{- $_ := set .into "Values" (include "paperless-ngx.component.values" . | fromYaml) -}}
+{{- $_ = set .into "Chart" $ctx.Chart -}}
+{{- $_ = set .into "Release" $ctx.Release -}}
+{{- $_ = set .into "Capabilities" $ctx.Capabilities -}}
+{{- $_ = set .into "Template" $ctx.Template -}}
+{{- $_ = set .into "Files" $ctx.Files -}}
 {{- end -}}
 
 {{/*

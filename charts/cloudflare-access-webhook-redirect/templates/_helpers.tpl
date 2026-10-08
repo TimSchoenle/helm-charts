@@ -58,7 +58,7 @@ webhook:
 The configuration that actually reaches the service: the derived tree with the operator's own
 `config` tree merged over it, so `config` can both extend and override the values above.
 
-Not included: `configExtraToml`, which is appended verbatim and never parsed.
+Not included: `configExtraToml`, which is emitted verbatim and never parsed.
 */}}
 {{- define "cloudflare-access-webhook-redirect.effectiveConfig" -}}
 {{- $derived := include "cloudflare-access-webhook-redirect.derivedConfig" . | fromYaml -}}
@@ -78,7 +78,7 @@ Refuse a render that could only produce a proxy which forwards nothing.
 
 Checked against the *effective* tree rather than against `.Values.webhook`, so supplying either
 key through `config` is as valid as supplying it through the first-class value. `configExtraToml`
-is appended verbatim and never parsed, so a chart that has one steps out of the way rather than
+is emitted verbatim and never parsed, so a chart that has one steps out of the way rather than
 rejecting a configuration it cannot see.
 */}}
 {{- define "cloudflare-access-webhook-redirect.validateValues" -}}

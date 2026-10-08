@@ -1,0 +1,94 @@
+suite: common.configToml escape hatch
+# Where `configExtraToml` lands in the rendered document. A TOML key belongs to the most recent
+# `[table]` header above it, so the placement decides which table the escape hatch's keys end up in.
+templates:
+  - configmap.yaml
+tests:
+  # Appended after the tree, `extra_key` would land in `[telemetry]`, the last table the tree
+  # renders. Between the tree's top-level keys and its first table it stays top-level, and every
+  # table after it re-anchors with its own header.
+  - it: keeps the escape hatch's top-level keys top-level
+    set:
+      config:
+        name: fixture
+      configExtraToml: |
+        extra_key = 1
+        when = 1979-05-27T07:32:00Z
+
+        [extra_table]
+        matrix = [[1, 2], [3]]
+    asserts:
+      - equal:
+          path: data["config.toml"]
+          value: |
+            name = "fixture"
+
+            extra_key = 1
+            when = 1979-05-27T07:32:00Z
+
+            [extra_table]
+            matrix = [[1, 2], [3]]
+
+            [server]
+            host = "0.0.0.0"
+            port = 8080
+
+            [telemetry]
+            log_level = "info"
+
+  # A table the tree does not render is new, even under a parent the tree does render: TOML lets
+  # `[server.tls]` extend `[server]` wherever either appears.
+  - it: accepts a sub-table of a rendered table
+    set:
+      configExtraToml: |
+        [server.tls]
+        cert = "/etc/tls/tls.crt"
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\A\[server\.tls\]\ncert = "/etc/tls/tls\.crt"\n\n\[server\]\nhost = "0\.0\.0\.0"'
+
+  # Each `[[routes]]` header appends an element, wherever it appears, so extending an array of
+  # tables the tree renders is sound TOML and is let through.
+  - it: accepts another element of an array of tables the tree renders
+    set:
+      config:
+        routes:
+          - name: a
+      configExtraToml: |
+        [[routes]]
+        name = "b"
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\A\[\[routes\]\]\nname = "b"\n\n\[server\][\s\S]*\n\[\[routes\]\]\nname = "a"'
+
+  # Lines inside a multi-line string are text, not keys, so a value that happens to read like the
+  # tree's own keys is not a collision.
+  - it: ignores key-shaped lines inside a multi-line string
+    set:
+      configExtraToml: |
+        banner = """
+        server = "not a key"
+        [telemetry]
+        """
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\Abanner = """\nserver = "not a key"\n\[telemetry\]\n"""\n\n\[server\]'
+
+  # Nothing to place: the document is the tree alone, byte for byte what it was before the escape
+  # hatch was read at all.
+  - it: renders the tree alone when the escape hatch is blank
+    set:
+      configExtraToml: "  \n"
+    asserts:
+      - equal:
+          path: data["config.toml"]
+          value: |
+            [server]
+            host = "0.0.0.0"
+            port = 8080
+
+            [telemetry]
+            log_level = "info"

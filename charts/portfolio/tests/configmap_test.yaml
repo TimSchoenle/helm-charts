@@ -111,14 +111,15 @@ tests:
       - failedTemplate:
           errorPattern: "csp.hashInlineScripts is false while csp.cloudflare.scriptNonce is true"
 
-  # `configExtraToml` is appended verbatim and never parsed, so the chart cannot see the whole
-  # configuration and steps out of the way rather than rejecting what it cannot check.
+  # `configExtraToml` is emitted verbatim and only read for keys it would define twice, so the
+  # chart cannot see the whole configuration and steps out of the way rather than rejecting what it
+  # cannot check.
   - it: steps aside when configExtraToml is in play
     set:
       csp.hashInlineScripts: false
       configExtraToml: |
-        [csp.cloudflare]
-        script_nonce = false
+        [csp.cloudflare.site]
+        note = "set outside the chart"
     asserts:
       - matchRegex:
           path: data["config.toml"]

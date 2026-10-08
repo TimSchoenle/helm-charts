@@ -234,8 +234,32 @@ Usage: {{ include "common.tomlMerged" (dict "maps" (list $derived $user)) }}
 {{- end -}}
 
 {{/*
-The complete TOML document a chart mounts: its merged configuration tree followed by the
-verbatim escape hatch.
+The complete TOML document a chart mounts: its merged configuration tree with the verbatim
+escape hatch, `.Values.configExtraToml`, placed between the tree's top-level keys and its first
+table.
+
+Where the escape hatch goes is the whole correctness question. A TOML key belongs to the most
+recent `[table]` header above it, so text appended after the rendered tree would hand every
+top-level key it starts with to whichever table the tree happened to render last. Placed after
+the tree's top-level keys, its own top-level keys stay top-level, and the tree's tables that
+follow each open with a header naming their full path, so nothing the escape hatch leaves open
+captures them.
+
+What placement cannot fix is a key or table defined twice, which TOML refuses and which would
+otherwise surface only as the service failing to parse its configuration at boot. So the escape
+hatch is read before it is emitted, and refused when it defines something the tree already
+renders:
+
+  - a top-level key (dotted or not) whose first segment the tree already has;
+  - a `[table]` header naming a path the tree already renders, or one running through a value
+    the tree renders as something other than a table;
+  - a `[[table]]` header naming a path the tree already renders as anything but an array of
+    tables. Extending one the tree renders is sound TOML: each such header appends an element.
+
+The reading is line based: it skips comments and the bodies of multi-line strings, and stops
+treating lines as top-level keys at the first header. An array spanning several lines whose
+element line looks like a header (`[3]`) ends the top-level scan early, which can only miss a
+duplicate, never refuse a sound document.
 
 Arguments:
   ctx      (required) root context, for `.Values.configExtraToml`
@@ -245,9 +269,106 @@ Arguments:
 Usage: {{ include "common.configToml" (dict "ctx" $ "maps" (list $derived $.Values.config)) }}
 */}}
 {{- define "common.configToml" -}}
-{{- include "common.tomlMerged" (dict "maps" .maps "intKeys" (.intKeys | default list)) | trim }}
-{{- with .ctx.Values.configExtraToml }}
+{{- $intKeys := .intKeys | default list -}}
+{{- $extra := (.ctx.Values.configExtraToml | default "") | toString | trim -}}
+{{- if not $extra -}}
+{{- include "common.tomlMerged" (dict "maps" .maps "intKeys" $intKeys) | trim -}}
+{{- else -}}
+{{- $merged := dict -}}
+{{- range $m := .maps -}}
+{{- $merged = mergeOverwrite $merged (deepCopy ($m | default dict)) -}}
+{{- end -}}
+{{- with (include "common.toml.extraErrors" (dict "extra" $extra "tree" $merged)) -}}
+{{- fail (printf "\n\nCONFIGURATION INVALID for chart %q:\n\n  - %s\n" $.ctx.Chart.Name (join "\n  - " (splitList "\n" .))) -}}
+{{- end -}}
+{{- $keys := dict -}}
+{{- $tables := dict -}}
+{{- range $k, $v := $merged -}}
+{{- if or (kindIs "map" $v) (eq (include "common.toml.arrayKind" (dict "value" $v "prefix" "" "key" $k)) "tables") -}}
+{{- $_ := set $tables $k $v -}}
+{{- else -}}
+{{- $_ := set $keys $k $v -}}
+{{- end -}}
+{{- end -}}
+{{- $parts := list -}}
+{{- with (include "common.toml" (dict "value" $keys "intKeys" $intKeys) | trim) -}}
+{{- $parts = append $parts . -}}
+{{- end -}}
+{{- $parts = append $parts $extra -}}
+{{- with (include "common.toml" (dict "value" $tables "intKeys" $intKeys) | trim) -}}
+{{- $parts = append $parts . -}}
+{{- end -}}
+{{- join "\n\n" $parts -}}
+{{- end -}}
+{{- end -}}
 
-{{ . | trim }}
-{{- end }}
+{{/*
+Everything in `configExtraToml` that defines a key or table the rendered tree already has, as
+newline-separated messages; empty when there is no collision. See `common.configToml` for what
+is checked and why.
+
+Arguments:
+  extra  (required) the escape hatch's text
+  tree   (required) the merged configuration map it is emitted alongside
+*/}}
+{{- define "common.toml.extraErrors" -}}
+{{- $tree := .tree -}}
+{{- $keyPattern := `[A-Za-z0-9_-]+|"[^"\\]*"|'[^']*'` -}}
+{{- $headerPattern := printf `^\[\[?\s*((%s)(\s*\.\s*(%s))*)\s*\]\]?\s*(#.*)?$` $keyPattern $keyPattern -}}
+{{- $messages := list -}}
+{{- $inString := false -}}
+{{- $seenHeader := false -}}
+{{- range $raw := splitList "\n" .extra -}}
+{{- $line := trim $raw -}}
+{{- $delimiters := len (regexFindAll `"""|'''` $line -1) -}}
+{{- if $inString -}}
+{{- if eq (mod $delimiters 2) 1 -}}
+{{- $inString = false -}}
+{{- end -}}
+{{- else if and $line (not (hasPrefix "#" $line)) -}}
+{{- if regexMatch $headerPattern $line -}}
+{{- $seenHeader = true -}}
+{{- $array := hasPrefix "[[" $line -}}
+{{- $segments := list -}}
+{{- range $segment := regexFindAll $keyPattern (regexReplaceAll $headerPattern $line "${1}") -1 -}}
+{{- $segments = append $segments (trimAll `"'` $segment) -}}
+{{- end -}}
+{{- $node := $tree -}}
+{{- $found := 0 -}}
+{{- $blocked := false -}}
+{{- $missing := false -}}
+{{- range $segment := $segments -}}
+{{- if not (or $blocked $missing) -}}
+{{- if not (kindIs "map" $node) -}}
+{{- $blocked = true -}}
+{{- else if hasKey $node $segment -}}
+{{- $node = get $node $segment -}}
+{{- $found = add1 $found -}}
+{{- else -}}
+{{- $missing = true -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- $path := join "." $segments -}}
+{{- if and $blocked (not (kindIs "slice" $node)) -}}
+{{- $messages = append $messages (printf "configExtraToml opens the table `%s`, but the rendered configuration already sets `%s` to a value that is not a table. TOML refuses a key defined twice, so the service would fail to parse its configuration at boot. Set it in one place only." $line (join "." (slice $segments 0 $found))) -}}
+{{- else if and $array (not $blocked) (not $missing) (eq (include "common.toml.arrayKind" (dict "value" $node "prefix" "" "key" $path)) "tables") -}}
+{{- /* Another element of an array of tables the tree renders: each `[[path]]` header appends one. */ -}}
+{{- else if and (not $blocked) (not $missing) -}}
+{{- $messages = append $messages (printf "configExtraToml opens `%s`, but the rendered configuration already has `%s`, from `config` or from a setting the chart derives. TOML refuses a table defined twice, so the service would fail to parse its configuration at boot. Move the keys into `config.%s` instead." $line $path $path) -}}
+{{- end -}}
+{{- else if not $seenHeader -}}
+{{- with (regexFind (printf `^(%s)\s*[.=]` $keyPattern) $line) -}}
+{{- $key := trimAll `"'` (regexReplaceAll (printf `^(%s)\s*[.=]$` $keyPattern) . "${1}") -}}
+{{- if hasKey $tree $key -}}
+{{- $messages = append $messages (printf "configExtraToml sets the top-level key `%s`, which the rendered configuration already has, from `config` or from a setting the chart derives. TOML refuses a key defined twice, so the service would fail to parse its configuration at boot. Set it in `config` instead." $key) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- if eq (mod $delimiters 2) 1 -}}
+{{- $inString = true -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- join "\n" $messages -}}
 {{- end -}}

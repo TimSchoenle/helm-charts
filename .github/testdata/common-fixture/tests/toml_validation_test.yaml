@@ -1,0 +1,68 @@
+# Render refusals of `common.configToml`, kept apart from the rendering suites: a suite that mixes
+# `failedTemplate` cases with rendering ones can hand the rendering ones an empty document.
+#
+# Each case is TOML the service would refuse to parse at boot, because it defines a key or a
+# table twice. Refusing it here moves that failure from the pod's log to `helm upgrade`.
+suite: common.configToml refusals
+templates:
+  - configmap.yaml
+tests:
+  - it: refuses a top-level key the tree already sets
+    set:
+      config:
+        name: fixture
+      configExtraToml: |
+        name = "again"
+    asserts:
+      - failedTemplate:
+          errorPattern: "configExtraToml sets the top-level key `name`, which the rendered configuration already has"
+
+  # `server.port = 1` defines the table `server` through a dotted key, and the tree's `[server]`
+  # header then defines it a second time.
+  - it: refuses a dotted top-level key into a rendered table
+    set:
+      configExtraToml: |
+        server.port = 1
+    asserts:
+      - failedTemplate:
+          errorPattern: "configExtraToml sets the top-level key `server`"
+
+  - it: refuses a table the tree already renders
+    set:
+      configExtraToml: |
+        [telemetry]
+        format = "json"
+    asserts:
+      - failedTemplate:
+          errorPattern: "configExtraToml opens `\\[telemetry\\]`, but the rendered configuration already has `telemetry`"
+
+  - it: refuses a quoted table header naming a rendered table
+    set:
+      configExtraToml: |
+        ["server"]
+        x = 1
+    asserts:
+      - failedTemplate:
+          errorPattern: "already has `server`"
+
+  - it: refuses a table under a rendered value that is not a table
+    set:
+      configExtraToml: |
+        [server.port.extra]
+        x = 1
+    asserts:
+      - failedTemplate:
+          errorPattern: "already sets `server.port` to a value that is not a table"
+
+  # An empty slice renders as the inline `routes = []`, and `[[routes]]` after it defines the key
+  # a second time.
+  - it: refuses an array of tables over an inline array the tree renders
+    set:
+      config:
+        routes: []
+      configExtraToml: |
+        [[routes]]
+        name = "b"
+    asserts:
+      - failedTemplate:
+          errorPattern: "configExtraToml opens `\\[\\[routes\\]\\]`, but the rendered configuration already has `routes`"

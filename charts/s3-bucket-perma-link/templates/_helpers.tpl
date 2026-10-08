@@ -56,7 +56,7 @@ bucket:
 The configuration that actually reaches the service: the derived tree with the operator's own
 `config` tree merged over it, so `config` can both extend and override the values above.
 
-Not included: `configExtraToml`, which is appended verbatim and never parsed.
+Not included: `configExtraToml`, which is emitted verbatim and never parsed.
 */}}
 {{- define "s3-bucket-perma-link.effectiveConfig" -}}
 {{- $derived := include "s3-bucket-perma-link.derivedConfig" . | fromYaml -}}
@@ -77,7 +77,7 @@ resolve an entry to a bucket or an object the operator never named.
 
 Checked against the *effective* tree rather than against `.Values.bucket`, so supplying entries
 through `config` is as valid as supplying them through the first-class value. `configExtraToml`
-is appended verbatim and never parsed, so a chart that has one steps out of the way rather than
+is emitted verbatim and never parsed, so a chart that has one steps out of the way rather than
 rejecting a configuration it cannot see.
 */}}
 {{- define "s3-bucket-perma-link.validateValues" -}}

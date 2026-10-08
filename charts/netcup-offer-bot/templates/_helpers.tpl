@@ -66,7 +66,7 @@ metrics:
 The configuration that actually reaches the bot: the derived tree with the operator's own
 `config` tree merged over it, so `config` can both extend and override the values above.
 
-Not included: `configExtraToml`, which is appended verbatim and never parsed.
+Not included: `configExtraToml`, which is emitted verbatim and never parsed.
 */}}
 {{- define "netcup-offer-bot.effectiveConfig" -}}
 {{- $derived := include "netcup-offer-bot.derivedConfig" . | fromYaml -}}

@@ -124,6 +124,7 @@ Ingress CiliumNetworkPolicy.
 */}}
 {{- define "common.ciliumNetworkPolicy.ingress" -}}
 {{- $ingress := .Values.networkPolicy.ingress | default dict -}}
+{{- include "common.networkPolicy.validatePeers" . -}}
 {{- $cilium := .Values.networkPolicy.cilium | default dict -}}
 {{- $ciliumIngress := $cilium.ingress | default dict -}}
 apiVersion: {{ include "common.capabilities.cilium.apiVersion" . }}

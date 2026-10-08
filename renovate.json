@@ -26,6 +26,13 @@
       "minimumReleaseAgeBehaviour": "timestamp-optional"
     },
     {
+      "description": "The two Docker pins in justfile, alpine/helm (helm_version) and prom/prometheus (prom_image), are bare version strings: helm_version is also concatenated into an image reference, and the version-pin matchers have no digest group to write one into. The shared preset's digest pinning therefore failed on every run and parked 'pin alpine/helm docker tag' in the dashboard's Errored list. Version updates still flow.",
+      "matchManagers": ["custom.regex"],
+      "matchFileNames": ["justfile"],
+      "matchDatasources": ["docker"],
+      "pinDigests": false
+    },
+    {
       "description": "First-party images are not tracked here: each application's release pipeline opens the `chore/helm/auto-update/*` pull request, which also refreshes the configuration contracts and the chart's documented surface. A second updater would race it for the same pin.",
       "matchManagers": ["custom.regex"],
       "matchPackageNames": ["/^(ghcr\\.io\\/)?(timschoenle|timmi6790)\\//"],

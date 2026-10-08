@@ -236,6 +236,27 @@ Read from `rules/tunables.yaml`, which is outside the rule glob on purpose — s
 {{- end -}}
 
 {{/*
+A number as it is written in a rule file: an integral value as an integer, everything else as Go
+prints it.
+
+Helm parses every number in a values file and in `rules/tunables.yaml` as a float64, and Go's
+`%v` prints a float64 of 1e6 or more in exponent form. `1000000` would therefore reach the anchor
+check as `1e+06`, which no expression spells, and an override of `2000000` on an integer tunable
+would be refused as not being an integer. Integral floats inside the range a float64 holds exactly
+(2^53) are printed with `%d` instead; anything larger is not an integer the file could have meant
+exactly, and keeps Go's spelling.
+
+Arguments: the value, as the dot value.
+*/}}
+{{- define "common.prometheus.rules.numberText" -}}
+{{- if and (kindIs "float64" .) (eq . (floor .)) (le . 9007199254740992.0) (ge . -9007199254740992.0) -}}
+{{- printf "%d" (int64 .) -}}
+{{- else -}}
+{{- printf "%v" . -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
 A threshold override as the literal that will be substituted into PromQL, or empty when the value
 is not a number.
 
@@ -251,7 +272,7 @@ rule expression, so a value like `0 or vector(1)` would otherwise be arbitrary P
 {{- $value := .value -}}
 {{- $literal := "" -}}
 {{- if or (kindIs "int" $value) (kindIs "int64" $value) (kindIs "float64" $value) (kindIs "string" $value) -}}
-{{- $literal = printf "%v" $value -}}
+{{- $literal = include "common.prometheus.rules.numberText" $value -}}
 {{- end -}}
 {{- if regexMatch "^[+-]?([0-9]+([.][0-9]*)?|[.][0-9]+)([eE][+-]?[0-9]+)?$" $literal -}}
 {{- $literal -}}
@@ -369,7 +390,7 @@ anchor has drifted from its expression would otherwise render an untuned rule in
 {{- $expr := toString (get $exprs $alert) -}}
 {{- range $tunable, $decl := $decls -}}
 {{- $anchor := toString ($decl.anchor | default "") -}}
-{{- $literal := printf "%v" $decl.default -}}
+{{- $literal := include "common.prometheus.rules.numberText" $decl.default -}}
 {{- if not $anchor -}}
 {{- $messages = append $messages (printf "the tunable `%s.%s` declares no `anchor`, so there is nothing to substitute into." $alert $tunable) -}}
 {{- else if ne (sub (len (splitList $anchor $expr)) 1) 1 -}}
@@ -403,10 +424,10 @@ An override must name a tunable its alert actually declares, and stay inside its
 {{- $messages = append $messages (printf "`thresholds.%s.%s` is %s, but that tunable is declared as an integer." $alert $tunable $literal) -}}
 {{- else -}}
 {{- if and (hasKey $decl "minimum") (lt (float64 $literal) (float64 $decl.minimum)) -}}
-{{- $messages = append $messages (printf "`thresholds.%s.%s` is %s, below the declared minimum of %v." $alert $tunable $literal $decl.minimum) -}}
+{{- $messages = append $messages (printf "`thresholds.%s.%s` is %s, below the declared minimum of %s." $alert $tunable $literal (include "common.prometheus.rules.numberText" $decl.minimum)) -}}
 {{- end -}}
 {{- if and (hasKey $decl "maximum") (gt (float64 $literal) (float64 $decl.maximum)) -}}
-{{- $messages = append $messages (printf "`thresholds.%s.%s` is %s, above the declared maximum of %v." $alert $tunable $literal $decl.maximum) -}}
+{{- $messages = append $messages (printf "`thresholds.%s.%s` is %s, above the declared maximum of %s." $alert $tunable $literal (include "common.prometheus.rules.numberText" $decl.maximum)) -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}
@@ -498,7 +519,7 @@ in `common.prometheus.rules.errors` relies on.
 {{- if not $literal -}}
 {{- fail (printf "chart %q was given %v as the threshold `%s.%s`, which is not a number. It would be substituted into a rule expression verbatim." $ctx.Chart.Name $value $alert $tunable) -}}
 {{- end -}}
-{{- $tuned := replace (printf "%v" $decl.default) $literal $anchor -}}
+{{- $tuned := replace (include "common.prometheus.rules.numberText" $decl.default) $literal $anchor -}}
 {{- $_ := set $rule "expr" (replace $anchor $tuned (toString $rule.expr)) -}}
 {{- end -}}
 {{- end -}}

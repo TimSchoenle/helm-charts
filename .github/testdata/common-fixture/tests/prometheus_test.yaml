@@ -5,7 +5,7 @@
 #
 # Group order follows the file glob, so the indices below are:
 #
-#   0  fixture-availability  (alerting)   FixtureDown
+#   0  fixture-availability  (alerting)   FixtureDown, FixtureQueueBacklog
 #   1  fixture-saturation    (alerting)   FixtureErrorRatio, FixtureLatencyCritical
 #   2  fixture-recording     (recording)  job:http_requests:rate5m
 #
@@ -493,6 +493,34 @@ tests:
       - equal:
           path: spec.groups[1].rules[0].expr
           value: 'job:http_errors:ratio_rate5m{fixture_scope=~".*"} > 0.25 and job:http_requests:rate5m{fixture_scope=~".*"} > 0.05'
+
+  # Every number in a values file or in `rules/tunables.yaml` reaches the chart as a float64, and
+  # Go prints one of a million or more as `1e+06`. The default would then not be found in its
+  # anchor, failing every render, and an integer override would be refused as not an integer.
+  - it: keeps a tunable of a million or more in integer form
+    capabilities:
+      apiVersions:
+        - monitoring.coreos.com/v1
+    set:
+      prometheusRule.enabled: true
+      prometheusRule.thresholds:
+        FixtureQueueBacklog:
+          depth: 2000000
+    asserts:
+      - equal:
+          path: spec.groups[0].rules[1].expr
+          value: 'job:queue_depth:max{fixture_scope=~".*"} > 2000000'
+
+  - it: leaves a default of a million or more alone when it is not overridden
+    capabilities:
+      apiVersions:
+        - monitoring.coreos.com/v1
+    set:
+      prometheusRule.enabled: true
+    asserts:
+      - equal:
+          path: spec.groups[0].rules[1].expr
+          value: 'job:queue_depth:max{fixture_scope=~".*"} > 1000000'
 
   - it: refuses a threshold that is not a number
     # The value is pasted into PromQL. Anything else is either an expression that will not parse

@@ -181,6 +181,25 @@ renders opt in with `--api-versions monitoring.coreos.com/v1`.
 {{- end -}}
 
 {{/*
+Fail, naming the file, when a rule file did not parse as YAML.
+
+`fromYaml` does not fail on malformed input: it returns a map holding a single `Error` key. Read
+like any other document, that map has no `groups`, so the file contributed nothing, and a chart
+whose only rule file broke rendered without its alerts or failed with a message about the glob
+rather than the file. Every reader of the rule files calls this right after parsing.
+
+Arguments:
+  ctx     (required) root context
+  path    (required) the file that was read
+  parsed  (required) what `fromYaml` returned for it
+*/}}
+{{- define "common.prometheus.rules.assertParsed" -}}
+{{- if and (kindIs "map" .parsed) (hasKey .parsed "Error") -}}
+{{- fail (printf "chart %q ships the rule file %s, but it does not parse as YAML: %s" .ctx.Chart.Name .path (toString (get .parsed "Error"))) -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
 What the chart's rule files ship, as a YAML document the callers below parse back:
 
   alerts:  alertName -> the group it belongs to
@@ -198,6 +217,7 @@ with the real list.
 {{- $exprs := dict -}}
 {{- range $path, $_ := $ctx.Files.Glob (.glob | default "rules/*.yml") -}}
 {{- $parsed := $ctx.Files.Get $path | fromYaml -}}
+{{- include "common.prometheus.rules.assertParsed" (dict "ctx" $ctx "path" $path "parsed" $parsed) -}}
 {{- range $group := ($parsed.groups | default list) -}}
 {{- $kinds := list -}}
 {{- range $rule := ($group.rules | default list) -}}
@@ -494,6 +514,7 @@ in `common.prometheus.rules.errors` relies on.
 {{- $groups := list -}}
 {{- range $path, $_ := $ctx.Files.Glob (.glob | default "rules/*.yml") -}}
 {{- $parsed := $ctx.Files.Get $path | fromYaml -}}
+{{- include "common.prometheus.rules.assertParsed" (dict "ctx" $ctx "path" $path "parsed" $parsed) -}}
 {{- $groups = concat $groups ($parsed.groups | default list) -}}
 {{- end -}}
 {{- $kept := list -}}
@@ -594,6 +615,7 @@ as a set of quietly unscoped rules.
 {{- $count := 0 -}}
 {{- range $path, $_ := $ctx.Files.Glob (.glob | default "rules/*.yml") -}}
 {{- $parsed := $ctx.Files.Get $path | fromYaml -}}
+{{- include "common.prometheus.rules.assertParsed" (dict "ctx" $ctx "path" $path "parsed" $parsed) -}}
 {{- range $group := ($parsed.groups | default list) -}}
 {{- range $rule := ($group.rules | default list) -}}
 {{- if and (hasKey $rule "expr") (contains $placeholder (toString $rule.expr)) -}}

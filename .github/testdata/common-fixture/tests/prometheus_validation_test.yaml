@@ -46,3 +46,16 @@ tests:
     asserts:
       - failedTemplate:
           errorPattern: 'above the declared maximum of 1'
+
+  # `fromYaml` returns a map holding an `Error` key instead of failing, which reads as a file with
+  # no groups: the alerts it held would silently not ship.
+  - it: names a rule file that does not parse
+    capabilities:
+      apiVersions:
+        - monitoring.coreos.com/v1
+    set:
+      fixtureRuleGlob: rules-broken/*.yml
+      prometheusRule.enabled: true
+    asserts:
+      - failedTemplate:
+          errorPattern: 'ships the rule file rules-broken/broken.yml, but it does not parse as YAML'

@@ -88,6 +88,49 @@ render out='rendered' kube='' *only:
 
     exit "$failed"
 
+# Render every chart with two Helm installations and compare the objects they produce.
+#
+# `left` and `right` are directories holding a `helm` binary. Each render runs with its directory
+# first on PATH, so every recipe `render` calls uses that Helm. The comparison is object by object
+# with Secret values masked; `compare-renders.py` says why a text diff cannot answer this.
+[doc("Render every chart under two Helm binaries and fail if they produce different objects")]
+[group('render')]
+compare-helm-renders left right:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    {{ resolve_python }}
+
+    work="$(mktemp -d)"
+    trap 'rm -rf "$work"' EXIT
+
+    # On Git Bash a `/c/...` argument reaches `just` as `C:/...`, whose colon would split PATH, so
+    # it is converted back where `cygpath` exists.
+    render_with() {
+      (
+        dir="$(cygpath -u "$1" 2>/dev/null || printf '%s' "$1")"
+        export PATH="${dir}:${PATH}"
+        hash -r
+        version="$(helm version --short)"
+        printf 'helm %s' "${version%%+*}" > "${2}.label"
+        echo "==> rendering every chart with helm ${version%%+*}"
+        just render "$2" >/dev/null
+      )
+    }
+    render_with '{{ left }}' "${work}/left"
+    render_with '{{ right }}' "${work}/right"
+
+    "$python" {{ scripts }}/compare-renders.py "${work}/left" "${work}/right" \
+      --left-label "$(cat "${work}/left.label")" --right-label "$(cat "${work}/right.label")"
+
+# Unit tests for the render comparison.
+[doc("Unit tests for the Helm render comparison script")]
+[group('render')]
+test-compare-renders:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    {{ resolve_python }}
+    "$python" -m unittest discover -s {{ scripts }}/tests -p 'test_compare_renders.py' -v
+
 # Render every chart and validate the output against the Kubernetes schemas for one version.
 #
 # kubeconform validates every file before it exits, so one broken chart does not hide the rest.

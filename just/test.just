@@ -5,24 +5,87 @@
 test: test-unit test-library test-rules
 
 # `helm unittest` over one chart, or over every chart that has a tests/ directory.
+#
+# Every suite file runs as its own `helm unittest -f` process, `jobs` of them at a time (default:
+# one per CPU). helm-unittest renders on one core and the suites used to run one after another,
+# which took 12 minutes in CI, half of it tankovault's 25 suites. A process per suite costs little:
+# tankovault's suites add up to 450 seconds run one by one against 420 for the chart in a single
+# run, and four at a time finished the chart in 2 minutes against 7.
 [group('test')]
-test-unit chart='':
+test-unit chart='' jobs='':
     #!/usr/bin/env bash
     set -euo pipefail
 
     if [ -n '{{ chart }}' ]; then
-      helm unittest '{{ charts }}/{{ chart }}'
+      just _unittest-suites '{{ jobs }}' '{{ charts }}/{{ chart }}'
       exit 0
     fi
 
+    dirs=()
     for dir in {{ charts }}/*/; do
       if [ -d "${dir}tests" ]; then
-        echo "==> unit tests: ${dir%/}"
-        helm unittest "${dir%/}"
+        dirs+=("${dir%/}")
       else
         echo "==> no tests for ${dir%/}, skipping"
       fi
     done
+    just _unittest-suites '{{ jobs }}' "${dirs[@]}"
+
+# Run every `tests/*_test.yaml` suite of the given charts in parallel, `jobs` at a time.
+#
+# Each suite's output is held until it finishes and then printed in a fixed order, chart by chart
+# and suite by suite, so a log reads the same however the work was scheduled. Every suite runs
+# even after one fails, and the failures are listed again at the end. Chart paths are split on
+# whitespace, which no chart directory here contains.
+[private]
+_unittest-suites jobs +dirs:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    jobs='{{ jobs }}'
+    if [ -z "$jobs" ]; then
+      jobs="$(nproc 2>/dev/null || getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)"
+    fi
+
+    logs="$(mktemp -d)"
+    trap 'rm -rf "$logs"' EXIT
+
+    tasks=()
+    for dir in {{ dirs }}; do
+      for suite in "$dir"/tests/*_test.yaml; do
+        [ -e "$suite" ] || continue
+        tasks+=("${dir}|tests/$(basename "$suite")")
+      done
+    done
+    if [ "${#tasks[@]}" -eq 0 ]; then
+      echo "==> no test suites under {{ dirs }}"
+      exit 0
+    fi
+
+    echo "==> ${#tasks[@]} suites, ${jobs} at a time"
+    printf '%s\0' "${tasks[@]}" | xargs -0 -n1 -P "$jobs" bash -c '
+      dir="${2%%|*}"
+      suite="${2#*|}"
+      log="$1/$(printf "%s" "$2" | tr "/|" "__").log"
+      helm unittest -f "$suite" "$dir" >"$log" 2>&1 || touch "${log}.failed"
+    ' _ "$logs"
+
+    failed=()
+    for task in "${tasks[@]}"; do
+      log="$logs/$(printf '%s' "$task" | tr '/|' '__').log"
+      echo "==> unit tests: ${task%%|*} ${task#*|}"
+      cat "$log"
+      if [ -e "${log}.failed" ]; then
+        failed+=("${task%%|*}/${task#*|}")
+      fi
+    done
+
+    if [ "${#failed[@]}" -gt 0 ]; then
+      echo "==> ${#failed[@]} of ${#tasks[@]} suites failed:" >&2
+      printf '      %s\n' "${failed[@]}" >&2
+      exit 1
+    fi
+    echo "==> all ${#tasks[@]} suites passed"
 
 # Rewrite the committed rendered-manifest snapshots from what the charts render now.
 #
@@ -67,8 +130,8 @@ update-snapshots chart='':
 # fixture instantiates every partial it ships.
 [doc("helm unittest the fixture that instantiates every partial the common library ships")]
 [group('test')]
-test-library:
-    helm unittest {{ fixture }}
+test-library jobs='':
+    just _unittest-suites '{{ jobs }}' '{{ fixture }}'
 
 # Evaluate every chart's Prometheus rules against synthetic series with promtool.
 #

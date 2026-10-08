@@ -58,7 +58,7 @@ api_versions := configs / "render-api-versions.txt"
 # `just plugins` installs these and the CI composite action calls that recipe, so a plugin bump is
 # a single edit here rather than one per workflow.
 # renovate: datasource=github-tags depName=helm-unittest/helm-unittest extractVersion=^v(?<version>.*)$
-helm_unittest_version := "1.1.2"
+helm_unittest_version := "1.2.1"
 # renovate: datasource=github-tags depName=dadav/helm-schema
 helm_schema_version := "0.18.1"
 
@@ -352,7 +352,7 @@ default:
 # the other three.
 [doc("Every gate CI runs that does not need a Kubernetes cluster")]
 [group('meta')]
-check: deps test validate-manifests check-common-version check-immutable check-config check-contract-coverage check-config-bindings check-config-wired check-config-shapes check-config-readme check-contract-tests check-values-docs check-preset-schema test-contract-scripts lint-python lint lint-policy
+check: deps test validate-manifests check-common-version check-immutable check-config check-contract-coverage check-config-bindings check-config-wired check-config-shapes check-config-readme check-contract-tests check-values-docs check-preset-schema test-contract-scripts test-compare-renders lint-python lint lint-policy
 
 # Install the pinned Helm plugins. The CI composite action calls this recipe too, so the versions
 # above are the only place they are declared.

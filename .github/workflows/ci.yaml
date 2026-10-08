@@ -16,9 +16,12 @@ concurrency:
 permissions: {}
 
 # Every job carries a `timeout-minutes` of about twice its slowest successful run, measured in
-# October 2026: Unit Tests took 14 minutes, Install & Verify 7.5 and End-to-End 4, and everything
-# else finished inside 3. GitHub's default is 360 minutes, so a job that hung waiting on a kind
-# cluster or a registry otherwise held its runner and the required `CI` check for six hours.
+# October 2026: End-to-End took 4 minutes, Unit Tests 5.4 once its suites ran in parallel (14
+# before) and everything else finished inside 3. Install & Verify is the exception: most charts
+# finish inside 10 minutes, but paperless-ngx takes 58 on Kubernetes 1.31, so that job's limit is
+# set from that leg instead; its own comment says why. GitHub's default is 360 minutes, so a job
+# that hung waiting on a kind cluster or a registry otherwise held its runner and the required
+# `CI` check for six hours.
 
 jobs:
   # Every chart's `values.schema.json` and `README.md` are generated from `values.yaml` and
@@ -275,18 +278,17 @@ jobs:
 
           exit "$failed"
 
+  # One job, with no Helm matrix. This used to run once under Helm 3.21.3 and once under 4.2.3,
+  # but helm-unittest does not render with the Helm that runs it: it renders with the SDK compiled
+  # into the plugin, Helm 3.21.3 in the pinned 1.1.2 (its go.mod). The two legs were the same
+  # test twice, 12 to 14 minutes each, and Helm 4 never rendered a chart here. `helm-parity` below
+  # is what compares the two engines now.
   unit-test:
-    name: Unit Tests (Helm ${{ matrix.helm }})
+    name: Unit Tests
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
     permissions:
       contents: read # to checkout code
-    strategy:
-      fail-fast: false
-      matrix:
-        # The release pipeline runs Helm 3; 4.x is tracked here so a toolchain bump becomes a
-        # deliberate, visible change rather than a surprise from `version: latest`.
-        helm: ['v3.21.3', 'v4.2.3']
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
@@ -301,8 +303,6 @@ jobs:
 
       - name: Setup toolchain
         uses: $/.github/actions/setup-toolchain
-        with:
-          helm-version: ${{ matrix.helm }}
 
       - name: Build Helm dependencies
         run: just deps
@@ -312,6 +312,53 @@ jobs:
 
       - name: Run common library tests
         run: just test-library
+
+  # Renders every chart against every ci/ values file under Helm 3 and under Helm 4, and fails when
+  # the two produce different objects. Every other job renders with one Helm, so a template whose
+  # output depends on the engine passed all of them: paperless-ngx's bundled components lost
+  # `app.kubernetes.io/version` under Helm 3 only, because a `toYaml | fromYaml` round-trip of the
+  # root context drops `.Chart.AppVersion` there. The comparison is by object, with Secret values
+  # masked, because Helm 4 adds blank lines and generated secrets differ on every render; the
+  # script explains both.
+  helm-parity:
+    name: Helm 3 / Helm 4 Render Parity
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read # to checkout code
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      # Installed first and copied aside, because the toolchain step below puts its own Helm 3
+      # first on PATH.
+      - name: Install Helm 4
+        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          # renovate: datasource=github-releases depName=helm/helm
+          version: 'v4.3.0'
+
+      - name: Keep Helm 4 aside
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/helm-4"
+          cp "$(command -v helm)" "${RUNNER_TEMP}/helm-4/helm"
+
+      - name: Setup toolchain
+        uses: $/.github/actions/setup-toolchain
+
+      - name: Build Helm dependencies
+        run: just deps
+
+      - name: Compare Helm 3 and Helm 4 renders
+        run: just compare-helm-renders "$(dirname "$(command -v helm)")" "${RUNNER_TEMP}/helm-4"
 
   rule-test:
     name: Rule & Dashboard Tests
@@ -450,6 +497,9 @@ jobs:
 
       - name: Test the version bump scripts
         run: just test-bump-chart-versions
+
+      - name: Test the render comparison
+        run: just test-compare-renders
 
   lint:
     name: Lint Charts
@@ -898,7 +948,10 @@ jobs:
     # and `ci`'s "skipped passes" handling sees the result it expects.
     if: needs.lint.outputs.changed == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # paperless-ngx on Kubernetes 1.31 is the slowest leg at 58 minutes, 37 of them in 18 uninstalls
+    # that each last the chart's full 120-second termination grace period; on 1.34 the same 18 take
+    # 3 minutes in total. The limit is set from that leg with about 15 minutes of headroom.
+    timeout-minutes: 75
     permissions:
       contents: read # to checkout code
     # One job per changed chart per Kubernetes version, rather than one job per Kubernetes
@@ -1045,6 +1098,7 @@ jobs:
     needs:
       - docs
       - unit-test
+      - helm-parity
       - rule-test
       - e2e
       - lint-python

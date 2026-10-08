@@ -1,0 +1,45 @@
+suite: PrometheusRule preset refusals
+# Kept apart from `observability_test.yaml`, and listing only the template the check runs from: a
+# suite that mixes `failedTemplate` cases with rendering ones can hand the rendering ones an empty
+# document.
+#
+# `discord-alertmanager.validateValues` checks only for the Prometheus Operator CRDs, so the
+# presets are validated by `common.prometheus.rules.prometheusRule` itself. These cases pass the
+# values schema, which cannot see across fields, and are refused by the library alone.
+templates:
+  - prometheusrule.yaml
+
+tests:
+  - it: refuses an override on an alert the same values disable
+    capabilities:
+      apiVersions:
+        - monitoring.coreos.com/v1
+    set:
+      discord.token: t
+      alertmanager.endpoints: [http://am.invalid:9093]
+      metrics.prometheusRule.enabled: true
+      metrics.prometheusRule.disabledAlerts: [DiscordAlertmanagerDown]
+      metrics.prometheusRule.forOverrides:
+        DiscordAlertmanagerDown: 10m
+    asserts:
+      - failedTemplate:
+          errorPattern: '`forOverrides` configures "DiscordAlertmanagerDown", but the same values disable that alert'
+
+  # Prometheus refuses a PrometheusRule holding two groups of one name, which takes every rule in
+  # the object down with it.
+  - it: refuses an appended group that shadows a shipped one
+    capabilities:
+      apiVersions:
+        - monitoring.coreos.com/v1
+    set:
+      discord.token: t
+      alertmanager.endpoints: [http://am.invalid:9093]
+      metrics.prometheusRule.enabled: true
+      metrics.prometheusRule.additionalRuleGroups:
+        - name: discord-alertmanager-availability
+          rules:
+            - alert: SiteAlert
+              expr: vector(1)
+    asserts:
+      - failedTemplate:
+          errorPattern: 'is named "discord-alertmanager-availability", which is already the name of a group this chart ships'

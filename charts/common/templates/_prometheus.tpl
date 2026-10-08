@@ -586,10 +586,26 @@ as a set of quietly unscoped rules.
 
 {{/*
 The PrometheusRule itself: one object per release, holding every group that survived the presets.
+
+Validates its own arguments before rendering, with exactly the checks of
+`common.prometheus.rules.validate`. The presets are applied leniently by
+`common.prometheus.rules.groups` — an unknown alert in `disabledAlerts` simply matches nothing —
+so a chart that rendered this without also calling a validator would install the typo as an
+alert believed to be off. A chart that does aggregate the errors into its own report still
+reports them there first; this is the floor nobody can forget to call. It runs with `enabled`
+forced on, since being asked to render the object is what enabling it means.
 */}}
 {{- define "common.prometheus.rules.prometheusRule" -}}
 {{- $ctx := .ctx -}}
 {{- $values := .values -}}
+{{- include "common.prometheus.rules.validate" (dict
+      "ctx" $ctx
+      "values" (merge (dict "enabled" true) ($values | default dict))
+      "glob" .glob
+      "tunables" .tunables
+      "scopePlaceholder" .scopePlaceholder
+      "scopeMatcher" .scopeMatcher
+      "feature" .feature) -}}
 {{- $groups := include "common.prometheus.rules.groups" (dict
       "ctx" $ctx
       "values" $values

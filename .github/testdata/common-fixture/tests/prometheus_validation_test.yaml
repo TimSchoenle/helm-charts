@@ -1,0 +1,48 @@
+# Render refusals of `common.prometheus.rules.*`, kept apart from `prometheus_test.yaml`: a suite
+# that mixes `failedTemplate` cases with rendering ones can hand the rendering ones an empty
+# document.
+suite: common.prometheus.rules refusals
+templates:
+  - prometheusrule.yaml
+tests:
+  # `fixtureSkipRuleValidation` drops the fixture's own call to `common.prometheus.rules.validate`,
+  # the way a consuming chart that never calls it would. The presets are applied leniently, so
+  # without a check inside `prometheusRule` a typo would install as an alert believed to be off.
+  - it: refuses an unknown alert even when the chart calls no validator
+    capabilities:
+      apiVersions:
+        - monitoring.coreos.com/v1
+    set:
+      fixtureSkipRuleValidation: true
+      prometheusRule.enabled: true
+      prometheusRule.disabledAlerts: [FixtureDwon]
+    asserts:
+      - failedTemplate:
+          errorPattern: '`disabledAlerts` names "FixtureDwon", which this chart does not ship'
+
+  - it: refuses an unparseable fuse even when the chart calls no validator
+    capabilities:
+      apiVersions:
+        - monitoring.coreos.com/v1
+    set:
+      fixtureSkipRuleValidation: true
+      prometheusRule.enabled: true
+      prometheusRule.forOverrides:
+        FixtureDown: soon
+    asserts:
+      - failedTemplate:
+          errorPattern: '`forOverrides` sets "FixtureDown" to "soon", which is not a Prometheus duration'
+
+  - it: refuses an out-of-bounds threshold even when the chart calls no validator
+    capabilities:
+      apiVersions:
+        - monitoring.coreos.com/v1
+    set:
+      fixtureSkipRuleValidation: true
+      prometheusRule.enabled: true
+      prometheusRule.thresholds:
+        FixtureErrorRatio:
+          ratio: 2
+    asserts:
+      - failedTemplate:
+          errorPattern: 'above the declared maximum of 1'

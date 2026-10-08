@@ -368,6 +368,124 @@ tests:
             scheme: https
             statusCode: 301
 
+  # The other half of the binding. A main route with no sectionName also attaches to the
+  # plaintext listener, ties with the redirect there, and wins the tie on name, so plaintext
+  # would be served instead of redirected.
+  - it: keeps the main route off the plaintext listener of the Gateway it creates
+    capabilities:
+      apiVersions:
+        - gateway.networking.k8s.io/v1
+    # Documents in order: the Gateway, the main route, the redirect route.
+    documentIndex: 1
+    set:
+      gateway.enabled: true
+      gateway.create: true
+      gateway.gatewayClassName: cilium
+      gateway.hostnames:
+        - app.example.com
+      gateway.tls.enabled: true
+      gateway.tls.certificateRefs:
+        - name: app-tls
+      gateway.httpsRedirect.enabled: true
+    asserts:
+      - isKind:
+          of: HTTPRoute
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-common-fixture
+      - equal:
+          path: spec.parentRefs
+          value:
+            - group: gateway.networking.k8s.io
+              kind: Gateway
+              name: RELEASE-NAME-common-fixture
+              sectionName: https
+
+  - it: binds the main route to every declared listener except the plaintext one
+    capabilities:
+      apiVersions:
+        - gateway.networking.k8s.io/v1
+    set:
+      gateway.enabled: true
+      gateway.create: true
+      gateway.gatewayClassName: cilium
+      gateway.hostnames:
+        - app.example.com
+      gateway.httpsRedirect.enabled: true
+      gateway.httpsRedirect.sectionName: plain
+      gateway.listeners:
+        - name: plain
+          protocol: HTTP
+          port: 80
+        - name: secure
+          protocol: HTTPS
+          port: 443
+        - name: secure-alt
+          protocol: HTTPS
+          port: 8443
+    asserts:
+      # Documents in order: the Gateway, the main route, the redirect route.
+      - documentIndex: 1
+        equal:
+          path: spec.parentRefs
+          value:
+            - group: gateway.networking.k8s.io
+              kind: Gateway
+              name: RELEASE-NAME-common-fixture
+              sectionName: secure
+            - group: gateway.networking.k8s.io
+              kind: Gateway
+              name: RELEASE-NAME-common-fixture
+              sectionName: secure-alt
+      - documentSelector:
+          path: metadata.name
+          value: RELEASE-NAME-common-fixture-https-redirect
+        equal:
+          path: spec.parentRefs
+          value:
+            - group: gateway.networking.k8s.io
+              kind: Gateway
+              name: RELEASE-NAME-common-fixture
+              sectionName: plain
+
+  # Two HTTPS listeners on one Gateway rebind to one plaintext listener; repeating the reference
+  # is rejected by the API server, and the HTTPS listener's port never applied to it.
+  - it: names each Gateway once on the redirect route
+    capabilities:
+      apiVersions:
+        - gateway.networking.k8s.io/v1
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-common-fixture-https-redirect
+    set:
+      gateway.enabled: true
+      gateway.hostnames:
+        - app.example.com
+      gateway.httpsRedirect.enabled: true
+      gateway.parentRefs:
+        - name: shared-gateway
+          namespace: gateway-system
+          sectionName: https
+          port: 443
+        - name: shared-gateway
+          namespace: gateway-system
+          sectionName: https-alt
+        - name: other-gateway
+          sectionName: https
+    asserts:
+      - equal:
+          path: spec.parentRefs
+          value:
+            - group: gateway.networking.k8s.io
+              kind: Gateway
+              name: shared-gateway
+              namespace: gateway-system
+              sectionName: http
+            - group: gateway.networking.k8s.io
+              kind: Gateway
+              name: other-gateway
+              sectionName: http
+
   # A capability guard that skipped the object would render clean in CI and leave a real
   # install succeeding with the application unreachable.
   - it: refuses to render when the Gateway API CRDs are absent

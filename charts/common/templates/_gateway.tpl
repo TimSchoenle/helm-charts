@@ -96,6 +96,66 @@ meant for other applications, which is why the requirement is scoped to that cas
 {{- if and (($values.httpsRedirect | default dict).enabled) $values.create (not (($values.tls | default dict).enabled)) (not $values.listeners) -}}
 {{- $messages = append $messages "gateway.httpsRedirect.enabled is set but nothing in this chart terminates TLS. The redirect route only makes sense when an HTTPS listener exists to redirect to — otherwise it sends every client to a port that refuses the connection. This is only checked for Gateways this chart creates; when you attach to somebody else's Gateway, its listeners are theirs to declare." -}}
 {{- end -}}
+{{- with (include "common.gateway.redirectErrors" (dict "ctx" $ctx "values" $values)) -}}
+{{- $messages = concat $messages (splitList "\n" .) -}}
+{{- end -}}
+{{- end -}}
+{{- join "\n" $messages -}}
+{{- end -}}
+
+{{/*
+What keeps the main route off the plaintext listener while the HTTPS redirect is on, as
+newline-separated messages; empty when it is sound or the redirect is off.
+
+The redirect route binds to the plaintext listener by `sectionName`. A main route whose parent
+reference names no `sectionName` binds to every listener of that Gateway, the plaintext one
+included, and two routes then claim the same hostname and path there. Gateway API settles that tie
+by creation timestamp and then by name, so which one serves plaintext is an accident of install
+order, and `<release>-<chart>` sorts before `<release>-<chart>-https-redirect`: the redirect
+loses and plaintext is served.
+
+For a Gateway this chart creates, `common.gateway.parentRefs` already binds the main route to every
+listener except the plaintext one, because the chart knows the listener names. A parent named in
+`gateway.parentRefs` is somebody else's Gateway, whose listeners this chart cannot see, so the
+reference has to say which listener it means.
+
+Called from `common.gateway.errors` and again from `common.gateway.httpsRedirect`, so a chart that
+renders the redirect without the aggregated validator is refused all the same.
+
+Arguments:
+  ctx     (required) root context
+  values  (required) the `gateway` value tree
+*/}}
+{{- define "common.gateway.redirectErrors" -}}
+{{- $ctx := .ctx -}}
+{{- $values := .values | default dict -}}
+{{- $redirect := $values.httpsRedirect | default dict -}}
+{{- $messages := list -}}
+{{- if $redirect.enabled -}}
+{{- $plain := $redirect.sectionName | default "http" -}}
+{{- range $i, $ref := $values.parentRefs | default list -}}
+{{- $section := tpl (($ref.sectionName | default "") | toString) $ctx -}}
+{{- if not $section -}}
+{{- $messages = append $messages (printf "gateway.parentRefs[%d] (%s) names no `sectionName` while gateway.httpsRedirect.enabled is set. Without one the route attaches to every listener of that Gateway, the plaintext %q listener the redirect binds to included, and Gateway API breaks the tie between the two routes by creation time and then name, so plaintext requests can be served instead of redirected. Set `sectionName` to the Gateway's HTTPS listener." $i ($ref.name | default "unnamed") $plain) -}}
+{{- else if eq $section $plain -}}
+{{- $messages = append $messages (printf "gateway.parentRefs[%d] (%s) binds the route to %q, the plaintext listener gateway.httpsRedirect binds its redirect to. Point `sectionName` at the Gateway's HTTPS listener, or set gateway.httpsRedirect.sectionName to the plaintext one." $i ($ref.name | default "unnamed") $plain) -}}
+{{- end -}}
+{{- end -}}
+{{- if and $values.create (not $values.parentRefs) -}}
+{{- if $values.listeners -}}
+{{- $names := list -}}
+{{- range (include "common.tplvalues.render" (dict "value" $values.listeners "context" $ctx) | fromYamlArray) -}}
+{{- $names = append $names (toString .name) -}}
+{{- end -}}
+{{- if not (has $plain $names) -}}
+{{- $messages = append $messages (printf "gateway.httpsRedirect binds to the listener %q, but gateway.listeners declares no listener of that name (it declares: %s). The redirect route would attach to nothing. Set gateway.httpsRedirect.sectionName to the plaintext listener." $plain (join ", " $names)) -}}
+{{- else if eq (len $names) 1 -}}
+{{- $messages = append $messages (printf "gateway.httpsRedirect is set, but %q is the only listener in gateway.listeners, so the route has no HTTPS listener left to attach to. Declare one." $plain) -}}
+{{- end -}}
+{{- else if ne $plain "http" -}}
+{{- $messages = append $messages (printf "gateway.httpsRedirect.sectionName is %q, but the Gateway this chart creates names its listeners `http` and `https`. The redirect route would attach to nothing. Leave the section name empty, or declare the listeners yourself under gateway.listeners." $plain) -}}
+{{- end -}}
+{{- end -}}
 {{- end -}}
 {{- join "\n" $messages -}}
 {{- end -}}
@@ -136,13 +196,37 @@ fields are omitted rather than emitted empty: `sectionName: ""` is not the same 
 
 When `gateway.create` is set and no parent is named, the route attaches to the Gateway this chart
 renders. That is what makes a self-contained install a two-line configuration.
+
+With `gateway.httpsRedirect` on as well, that attachment names every listener of the created
+Gateway except the plaintext one the redirect binds to: `https` for the derived listeners, and
+each other name in `gateway.listeners` when those are given. An attachment with no `sectionName`
+would include the plaintext listener and tie with the redirect route there; see
+`common.gateway.redirectErrors`.
 */}}
 {{- define "common.gateway.parentRefs" -}}
 {{- $ctx := .ctx -}}
 {{- $values := .values | default dict -}}
 {{- $refs := $values.parentRefs | default list -}}
 {{- if and (not $refs) $values.create -}}
-{{- $refs = list (dict "name" (include "common.fullname" $ctx)) -}}
+{{- $own := include "common.fullname" $ctx -}}
+{{- $redirect := $values.httpsRedirect | default dict -}}
+{{- if $redirect.enabled -}}
+{{- $plain := $redirect.sectionName | default "http" -}}
+{{- $sections := list "https" -}}
+{{- if $values.listeners -}}
+{{- $sections = list -}}
+{{- range (include "common.tplvalues.render" (dict "value" $values.listeners "context" $ctx) | fromYamlArray) -}}
+{{- if ne (toString .name) $plain -}}
+{{- $sections = append $sections (toString .name) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- range $sections -}}
+{{- $refs = append $refs (dict "name" $own "sectionName" .) -}}
+{{- end -}}
+{{- else -}}
+{{- $refs = list (dict "name" $own) -}}
+{{- end -}}
 {{- end -}}
 {{- $out := list -}}
 {{- range $refs -}}
@@ -300,18 +384,32 @@ plaintext listener whose only rule is "go away and come back over TLS".
 Binding to a specific listener is the point. Without `sectionName` the route attaches to every
 listener the Gateway has, including the HTTPS one, and an HTTPS listener that redirects to HTTPS
 is an infinite loop.
+
+One reference per Gateway. The main route can hold several references to one Gateway, one per
+HTTPS listener, and rebinding each of them to the plaintext listener would repeat the same
+reference, which the API server rejects. `port` is dropped for the same reason it would be wrong:
+it was the port of the listener the main route named, never the plaintext one.
+
+The main route must stay off the plaintext listener for the redirect to take effect, which
+`common.gateway.redirectErrors` enforces; it is raised here too so a chart that renders this
+route without the aggregated validator cannot skip it.
 */}}
 {{- define "common.gateway.httpsRedirect" -}}
 {{- $ctx := .ctx -}}
 {{- $values := .values | default dict -}}
+{{- with (include "common.gateway.redirectErrors" (dict "ctx" $ctx "values" $values)) -}}
+{{- fail (printf "\n\nGATEWAY CONFIGURATION INVALID for chart %q:\n\n  - %s\n" $ctx.Chart.Name (join "\n  - " (splitList "\n" .))) -}}
+{{- end -}}
 {{- $redirect := $values.httpsRedirect | default dict -}}
 {{- $parents := include "common.gateway.parentRefs" (dict "ctx" $ctx "values" $values) | fromYamlArray -}}
 {{- $section := $redirect.sectionName | default "http" -}}
 {{- $bound := list -}}
 {{- range $parents -}}
-{{- $ref := deepCopy . -}}
+{{- $ref := omit . "port" -}}
 {{- $_ := set $ref "sectionName" $section -}}
+{{- if not (has $ref $bound) -}}
 {{- $bound = append $bound $ref -}}
+{{- end -}}
 {{- end -}}
 apiVersion: {{ include "common.capabilities.gateway.apiVersion" $ctx }}
 kind: HTTPRoute

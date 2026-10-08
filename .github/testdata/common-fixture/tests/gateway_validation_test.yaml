@@ -1,0 +1,95 @@
+# Render refusals of the gateway partials, kept apart from `gateway_test.yaml`: a suite that mixes
+# `failedTemplate` cases with rendering ones can hand the rendering ones an empty document.
+suite: common gateway refusals
+templates:
+  - httproute.yaml
+tests:
+  # Without a sectionName the main route also binds the plaintext listener of a Gateway the chart
+  # cannot see, and ties with the redirect route there.
+  - it: refuses an external parent with no sectionName while the redirect is on
+    capabilities:
+      apiVersions:
+        - gateway.networking.k8s.io/v1
+    set:
+      gateway.enabled: true
+      gateway.hostnames:
+        - app.example.com
+      gateway.httpsRedirect.enabled: true
+      gateway.parentRefs:
+        - name: shared-gateway
+    asserts:
+      - failedTemplate:
+          errorPattern: "gateway.parentRefs\\[0\\] \\(shared-gateway\\) names no `sectionName` while gateway.httpsRedirect.enabled is set"
+
+  - it: refuses an external parent bound to the plaintext listener while the redirect is on
+    capabilities:
+      apiVersions:
+        - gateway.networking.k8s.io/v1
+    set:
+      gateway.enabled: true
+      gateway.hostnames:
+        - app.example.com
+      gateway.httpsRedirect.enabled: true
+      gateway.parentRefs:
+        - name: shared-gateway
+          sectionName: http
+    asserts:
+      - failedTemplate:
+          errorPattern: "binds the route to \"http\", the plaintext listener"
+
+  - it: refuses a redirect section the created Gateway does not have
+    capabilities:
+      apiVersions:
+        - gateway.networking.k8s.io/v1
+    set:
+      gateway.enabled: true
+      gateway.create: true
+      gateway.gatewayClassName: cilium
+      gateway.hostnames:
+        - app.example.com
+      gateway.tls.enabled: true
+      gateway.tls.certificateRefs:
+        - name: app-tls
+      gateway.httpsRedirect.enabled: true
+      gateway.httpsRedirect.sectionName: plain
+    asserts:
+      - failedTemplate:
+          errorPattern: "names its listeners `http` and `https`"
+
+  - it: refuses declared listeners that lack the redirect's section
+    capabilities:
+      apiVersions:
+        - gateway.networking.k8s.io/v1
+    set:
+      gateway.enabled: true
+      gateway.create: true
+      gateway.gatewayClassName: cilium
+      gateway.hostnames:
+        - app.example.com
+      gateway.httpsRedirect.enabled: true
+      gateway.listeners:
+        - name: secure
+          protocol: HTTPS
+          port: 443
+    asserts:
+      - failedTemplate:
+          errorPattern: "declares no listener of that name \\(it declares: secure\\)"
+
+  - it: refuses declared listeners with no HTTPS listener left for the route
+    capabilities:
+      apiVersions:
+        - gateway.networking.k8s.io/v1
+    set:
+      gateway.enabled: true
+      gateway.create: true
+      gateway.gatewayClassName: cilium
+      gateway.hostnames:
+        - app.example.com
+      gateway.httpsRedirect.enabled: true
+      gateway.listeners:
+        - name: http
+          protocol: HTTP
+          port: 80
+    asserts:
+      - failedTemplate:
+          errorPattern: "is the only listener in gateway.listeners"

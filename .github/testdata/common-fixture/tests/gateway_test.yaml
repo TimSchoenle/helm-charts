@@ -229,6 +229,33 @@ tests:
           path: metadata.annotations["example.com/release"]
           value: RELEASE-NAME
 
+  # `commonAnnotations` is the release-wide default and `gateway.annotations` the setting for these
+  # objects, so on a clash the more specific one wins.
+  - it: lets gateway.annotations beat a clashing commonAnnotations entry
+    capabilities:
+      apiVersions:
+        - gateway.networking.k8s.io/v1
+    set:
+      gateway.enabled: true
+      gateway.create: true
+      gateway.gatewayClassName: cilium
+      gateway.hostnames:
+        - app.example.com
+      gateway.tls.enabled: true
+      gateway.tls.certificateRefs:
+        - name: app-tls
+      gateway.httpsRedirect.enabled: true
+      gateway.annotations:
+        example.com/owner: platform
+      commonAnnotations:
+        example.com/owner: release-wide
+    asserts:
+      - hasDocuments:
+          count: 3
+      - equal:
+          path: metadata.annotations["example.com/owner"]
+          value: platform
+
   # Attaching to a Gateway this chart renders should not mean naming it twice.
   - it: attaches to the Gateway it creates when no parent is named
     capabilities:

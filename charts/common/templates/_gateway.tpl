@@ -357,7 +357,7 @@ metadata:
     {{- with .labels }}
     {{- toYaml . | nindent 4 }}
     {{- end }}
-  {{- with (include "common.tplvalues.merge" (dict "values" (list $values.annotations $ctx.Values.commonAnnotations) "context" $ctx)) }}
+  {{- with (include "common.tplvalues.merge" (dict "values" (list $ctx.Values.commonAnnotations $values.annotations) "context" $ctx)) }}
   annotations:
     {{- . | nindent 4 }}
   {{- end }}
@@ -418,7 +418,7 @@ metadata:
   namespace: {{ include "common.namespace" $ctx }}
   labels:
     {{- include "common.labels" $ctx | nindent 4 }}
-  {{- with (include "common.tplvalues.merge" (dict "values" (list $values.annotations $ctx.Values.commonAnnotations) "context" $ctx)) }}
+  {{- with (include "common.tplvalues.merge" (dict "values" (list $ctx.Values.commonAnnotations $values.annotations) "context" $ctx)) }}
   annotations:
     {{- . | nindent 4 }}
   {{- end }}
@@ -465,7 +465,7 @@ metadata:
   namespace: {{ include "common.namespace" $ctx }}
   labels:
     {{- include "common.labels" $ctx | nindent 4 }}
-  {{- with (include "common.tplvalues.merge" (dict "values" (list $values.annotations $ctx.Values.commonAnnotations) "context" $ctx)) }}
+  {{- with (include "common.tplvalues.merge" (dict "values" (list $ctx.Values.commonAnnotations $values.annotations) "context" $ctx)) }}
   annotations:
     {{- . | nindent 4 }}
   {{- end }}

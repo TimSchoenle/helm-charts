@@ -1,13 +1,7 @@
 {{/*
-Name of the ServiceAccount the pod should run as.
+Where a chart's configuration and credentials come from: the operator's existing ConfigMap or
+Secret when one is named, otherwise the object the chart creates itself.
 */}}
-{{- define "common.serviceAccountName" -}}
-{{- if .Values.serviceAccount.create }}
-{{- default (include "common.fullname" .) .Values.serviceAccount.name }}
-{{- else }}
-{{- default "default" .Values.serviceAccount.name }}
-{{- end }}
-{{- end }}
 
 {{/*
 Name of the Secret to consume: an operator-supplied `existingSecret` if set, otherwise the

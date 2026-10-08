@@ -1,6 +1,6 @@
 # tankovault
 
-![Version: 6.1.6](https://img.shields.io/badge/Version-6.1.6-informational?style=flat-square) ![AppVersion: 11.0.4](https://img.shields.io/badge/AppVersion-11.0.4-informational?style=flat-square)
+![Version: 6.1.7](https://img.shields.io/badge/Version-6.1.7-informational?style=flat-square) ![AppVersion: 11.0.4](https://img.shields.io/badge/AppVersion-11.0.4-informational?style=flat-square)
 
 This chart deploys the full TankoVault manga aggregator stack — frontend, api, control-plane, worker, notifier, sync, challenge-solver and render — hardened to the restricted Pod Security Standard, with file-backed configuration that reloads in place instead of restarting pods, optional bundled PostgreSQL, Valkey, NATS JetStream and TRAWL, and optional Prometheus metrics, alerting rules and Grafana dashboards.
 

@@ -1,6 +1,6 @@
 # common
 
-![Version: 2.5.0](https://img.shields.io/badge/Version-2.5.0-informational?style=flat-square) ![Type: library](https://img.shields.io/badge/Type-library-informational?style=flat-square)
+![Version: 2.5.1](https://img.shields.io/badge/Version-2.5.1-informational?style=flat-square) ![Type: library](https://img.shields.io/badge/Type-library-informational?style=flat-square)
 
 Shared template partials for the TimSchoenle Helm charts
 
@@ -50,6 +50,31 @@ spec:
         {{- . | nindent 8 }}
       {{- end }}
 ```
+
+## Layout
+
+The partials are grouped by concern under `templates/`. Helm loads every file there regardless of
+depth and resolves `include` by the defined name, so the directory a partial lives in is for
+readers only and never appears at a call site.
+
+| Directory | Contents |
+|---|---|
+| `core/` | Names, labels, templated values, capability checks, required-value validation |
+| `workload/` | Pod spec, container, images, probes, resources, security contexts, checksums, the ServiceAccount name |
+| `config/` | File-backed configuration, the TOML renderer, and the existing ConfigMap and Secret names |
+| `networking/` | NetworkPolicy, CiliumNetworkPolicy and Gateway API objects |
+| `observability/` | Prometheus rules and Grafana dashboards |
+
+Partials take their input in one of two ways:
+
+- **The root context.** Partials that read only the chart's own values and metadata take `.`
+  (or `$` inside a `range` or `with`): `{{ include "common.labels" . }}`,
+  `{{ include "common.podSpec.common" . }}`, `{{ include "common.networkPolicy" . }}`.
+- **A `dict` with `ctx`.** Partials that also take arguments receive the root context as `ctx`
+  beside them: `{{ include "common.container" (dict "ctx" $ "ports" $ports) }}`,
+  `{{ include "common.gateway.httpRoute" (dict "ctx" $ "values" .Values.gateway) }}`.
+
+Which of the two a partial takes is stated in its header comment, with its arguments.
 
 ## Partials
 

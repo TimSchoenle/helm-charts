@@ -473,8 +473,8 @@ def normalized_image(registry: str, repository: str) -> str:
 def reference_for(image: dict[str, Any], app_version: str | None) -> tuple[str, str, str | None]:
     """`(normalized repository, normalized tagged reference, inline digest)` for one image block.
 
-    Mirrors `charts/common/templates/_images.tpl` for the tag, so what is fetched is what the
-    chart deploys — but always in the fully qualified form. A chart writes `timschoenle/x` for
+    Mirrors `charts/common/templates/workload/_images.tpl` for the tag, so what is fetched is what
+    the chart deploys — but always in the fully qualified form. A chart writes `timschoenle/x` for
     Docker Hub because that is what Helm and the Docker CLI accept; oras reads a bare first
     segment as a registry hostname and tries to resolve `timschoenle` by DNS. cosign normalizes
     and oras does not, so passing the chart's spelling around would have the two disagree about

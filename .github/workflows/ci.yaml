@@ -95,6 +95,17 @@ jobs:
       - name: Repin Kubernetes version floor
         run: just sync-kube-floor
 
+      # Every chart bundles `charts/common` at an exact version, so a change to the library has to
+      # move that version and every pin on it, and each repinned chart has to move its own. The
+      # three repins above are the usual source of such a change on a Renovate branch (#623 was
+      # one), and a hand edit to the library is the other. Placed before the dependency build so
+      # the archives it packages carry the new version. Idempotent and computed from the merge base,
+      # like the image bump above; Lint Charts runs the same script as the gate.
+      - name: Bump the common library and its pins
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: just bump-common-version "${BASE_REF:-main}"
+
       - name: Build Helm dependencies
         run: just deps
 
@@ -427,7 +438,7 @@ jobs:
       - name: Lint
         run: just lint-python
 
-      - name: Test the chart version bump
+      - name: Test the version bump scripts
         run: just test-bump-chart-versions
 
   lint:
@@ -480,6 +491,15 @@ jobs:
             jq --raw-input --slurp --compact-output 'split("\n") | map(select(length > 0))' <<< "${changed}"
             echo "CHARTS_EOF"
           } >> "$GITHUB_OUTPUT"
+
+      # chart-testing excludes the library, so this is the only check that a change under
+      # `charts/common` moved its version and that every chart pins the result. A failure here on a
+      # same-repository pull request usually clears itself: the Documentation job runs the bump and
+      # pushes it, and the push reruns this job.
+      - name: Check the common library version and pins
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: just check-common-version "${BASE_REF:-main}"
 
       # `just lint` covers both halves: `helm lint` for the library chart, which `ct` cannot lint
       # at all, and `ct lint` for every chart that changed. It is a no-op when nothing changed.

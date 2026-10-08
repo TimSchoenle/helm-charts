@@ -15,6 +15,11 @@ concurrency:
 
 permissions: {}
 
+# Every job carries a `timeout-minutes` of about twice its slowest successful run, measured in
+# October 2026: Unit Tests took 14 minutes, Install & Verify 7.5 and End-to-End 4, and everything
+# else finished inside 3. GitHub's default is 360 minutes, so a job that hung waiting on a kind
+# cluster or a registry otherwise held its runner and the required `CI` check for six hours.
+
 jobs:
   # Every chart's `values.schema.json` and `README.md` are generated from `values.yaml` and
   # `README.md.gotmpl`, and the root `README.md` from `.github/templates/README.md.hbs`.
@@ -28,6 +33,7 @@ jobs:
   docs:
     name: Documentation
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: write # to commit documentation changes
       pull-requests: write # to comment on PRs
@@ -261,6 +267,7 @@ jobs:
   unit-test:
     name: Unit Tests (Helm ${{ matrix.helm }})
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read # to checkout code
     strategy:
@@ -298,6 +305,7 @@ jobs:
   rule-test:
     name: Rule & Dashboard Tests
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read # to checkout code
     steps:
@@ -346,6 +354,7 @@ jobs:
   e2e:
     name: End-to-End (${{ matrix.chart }})
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: read # to checkout code
     strategy:
@@ -394,6 +403,7 @@ jobs:
   lint-python:
     name: Lint Python
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read # to checkout code
     steps:
@@ -433,6 +443,7 @@ jobs:
   lint:
     name: Lint Charts
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read # to checkout code
     # Whether any chart changed, and which ones, is derived from the diff against the target
@@ -489,6 +500,7 @@ jobs:
   validate-manifests:
     name: Validate Manifests (k8s ${{ matrix.kubernetes }})
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read # to checkout code
     strategy:
@@ -536,6 +548,7 @@ jobs:
   immutable-fields:
     name: Immutable Fields
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read # to checkout code
     steps:
@@ -577,6 +590,7 @@ jobs:
   values-docs:
     name: Values Documentation
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read # to checkout code
     steps:
@@ -599,6 +613,7 @@ jobs:
   policy-scan:
     name: Policy Scan
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read # to checkout code
     steps:
@@ -659,6 +674,7 @@ jobs:
   config-contracts:
     name: Configuration Contracts
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read # to checkout code
     steps:
@@ -807,6 +823,7 @@ jobs:
     name: Contract Diff
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read # to checkout code
     steps:
@@ -861,6 +878,7 @@ jobs:
     # and `ci`'s "skipped passes" handling sees the result it expects.
     if: needs.lint.outputs.changed == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read # to checkout code
     # One job per changed chart per Kubernetes version, rather than one job per Kubernetes
@@ -973,6 +991,7 @@ jobs:
   renovate-validate:
     name: Validate Renovate Config
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read # to checkout code
     steps:
@@ -1019,6 +1038,7 @@ jobs:
       - install
       - renovate-validate
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions: {}
     steps:
       - name: Harden Runner

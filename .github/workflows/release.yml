@@ -5,9 +5,13 @@ on:
     branches:
       - main
 
+# Queued, never cancelled. chart-releaser packages, creates one GitHub release per chart and then
+# pushes `index.yaml` to gh-pages as separate steps, so a run cancelled between them by the next
+# merge leaves a release whose chart the Helm repository never lists. The next run does not repair
+# it: it only looks at charts changed since the latest tag, which that orphaned release now is.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions: {}
 

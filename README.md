@@ -21,6 +21,7 @@ Nothing in this comment may contain a mustache that is not a real reference.
 
 Helm charts for self-hosted applications and utilities on Kubernetes, built on one shared library.
 
+[![Latest chart](https://img.shields.io/github/v/release/TimSchoenle/helm-charts?sort=date&display_name=tag&label=latest%20chart)](https://github.com/TimSchoenle/helm-charts/releases)
 [![Publish](https://img.shields.io/github/actions/workflow/status/TimSchoenle/helm-charts/release.yml?branch=main&label=publish)](https://github.com/TimSchoenle/helm-charts/actions/workflows/release.yml)
 [![License](https://img.shields.io/github/license/TimSchoenle/helm-charts)](LICENSE)
 

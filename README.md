@@ -170,7 +170,7 @@ Everything else belongs to the individual chart, whose README lists every value 
 | | Supported |
 | --- | --- |
 | Helm | 3 and 4 |
-| Library chart | `common` 2.5.1 |
+| Library chart | `common` 2.5.2 |
 | Kubernetes | `>=1.28.0-0`, the `kubeVersion` every chart declares. `just sync-kube-floor` sets it to the lowest release in the `validate-manifests` matrix of [.github/workflows/ci.yaml](.github/workflows/ci.yaml). |
 
 ## Documentation

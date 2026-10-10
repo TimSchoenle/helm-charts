@@ -11,17 +11,16 @@ The chart table comes from one command:
 
 which reads every charts/*/Chart.yaml. The rest of the payload — repository, branch, the library
 chart's name and version, and the docs index — is derived from charts/common/Chart.yaml and the
-checkout by TimSchoenle/actions/actions/common/readme-variables, so no name, version or
-description below is typed by hand.
+checkout by TimSchoenle/actions/actions/common/readme-variables, so no chart name, version or
+chart description below is typed by hand.
 
 Nothing in this comment may contain a mustache that is not a real reference.
 -->
 
 # helm-charts
 
-Helm charts for the applications and utilities I run on Kubernetes, built on one shared library.
+Helm charts for self-hosted applications and utilities on Kubernetes, built on one shared library.
 
-[![Latest chart](https://img.shields.io/github/v/release/TimSchoenle/helm-charts?sort=date&display_name=tag&label=latest%20chart)](https://github.com/TimSchoenle/helm-charts/releases)
 [![Publish](https://img.shields.io/github/actions/workflow/status/TimSchoenle/helm-charts/release.yml?branch=main&label=publish)](https://github.com/TimSchoenle/helm-charts/actions/workflows/release.yml)
 [![License](https://img.shields.io/github/license/TimSchoenle/helm-charts)](LICENSE)
 
@@ -102,7 +101,7 @@ PodMonitors, Prometheus rules and Grafana dashboards. All are off by default and
 operator CRDs; when those are missing the render fails instead of installing cleanly and leaving
 you unmonitored.
 
-Six charts vendor the configuration contract their image publishes and check the rendered
+Seven charts vendor the configuration contract their image publishes and check the rendered
 `config.toml`, every container environment variable and every secret file name against it. A key
 the application stopped reading fails the pull request that bumps the digest, rather than starting
 a pod that runs on a compiled default nobody chose.
@@ -141,9 +140,10 @@ helm show values timschoenle/<chart>
 ```
 
 A chart's major version bump means its values contract changed. The migration notes sit in that
-chart's README under `Upgrading`, except for the two whose histories outgrew it:
+chart's README under `Upgrading`, except for the three whose histories outgrew it:
+[charts/paperless-ngx/UPGRADING.md](charts/paperless-ngx/UPGRADING.md),
 [charts/tankovault/UPGRADING.md](charts/tankovault/UPGRADING.md) and
-[charts/paperless-ngx/UPGRADING.md](charts/paperless-ngx/UPGRADING.md).
+[charts/teamspeak/UPGRADING.md](charts/teamspeak/UPGRADING.md).
 
 ## Configuration
 
@@ -170,7 +170,7 @@ Everything else belongs to the individual chart, whose README lists every value 
 | --- | --- |
 | Helm | 3 and 4 |
 | Library chart | `common` 2.5.1 |
-| Kubernetes | No chart declares a `kubeVersion`. The render, validation and install matrices in [.github/workflows/ci.yaml](.github/workflows/ci.yaml) state what is tested. |
+| Kubernetes | `>=1.28.0-0`, the `kubeVersion` every chart declares. `just sync-kube-floor` sets it to the lowest release in the `validate-manifests` matrix of [.github/workflows/ci.yaml](.github/workflows/ci.yaml). |
 
 ## Documentation
 
@@ -218,8 +218,8 @@ repository, which the chart's `Chart.yaml` names under `sources`.
 ## License
 
 This repository — its charts and the shared `common` library — is licensed under the
-[MIT License](LICENSE). Each chart's `Chart.yaml` records the same fact as its
-`artifacthub.io/license` annotation.
+terms in [LICENSE](LICENSE). Each chart's
+`Chart.yaml` records the licence identifier as its `artifacthub.io/license` annotation.
 
 That license covers the packaging, not the application a chart deploys. The application's own
 license lives in its own repository, which the chart's `Chart.yaml` names under `sources`.

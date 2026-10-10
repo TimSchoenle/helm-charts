@@ -9,1300 +9,8 @@
     "automountServiceAccountToken": {
       "default": false,
       "description": "Mount the ServiceAccount API token into the pod.\nSet on the pod itself, which is what actually keeps the token out of the container: the\nServiceAccount-level setting is ignored as soon as a pod names a different account.",
-      "required": [],
       "title": "automountServiceAccountToken",
       "type": "boolean"
-    },
-    "common": {
-      "description": "Shared template partials for the TimSchoenle Helm charts",
-      "properties": {
-        "affinity": {
-          "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.Affinity",
-          "required": []
-        },
-        "automountServiceAccountToken": {
-          "default": false,
-          "description": "Mount the ServiceAccount API token into the pod.\nSet on the pod itself, which is what actually keeps the token out of the container: the\nServiceAccount-level setting is ignored as soon as a pod names a different account.",
-          "required": [],
-          "title": "automountServiceAccountToken",
-          "type": "boolean"
-        },
-        "commonAnnotations": {
-          "additionalProperties": true,
-          "description": "Annotations added to every object the chart creates. Values may contain Go templates.",
-          "required": [],
-          "title": "commonAnnotations",
-          "type": "object"
-        },
-        "commonLabels": {
-          "additionalProperties": true,
-          "description": "Labels added to every object the chart creates. Values may contain Go templates.",
-          "required": [],
-          "title": "commonLabels",
-          "type": "object"
-        },
-        "component": {
-          "default": "",
-          "description": "Value for the `app.kubernetes.io/component` label.",
-          "required": [],
-          "title": "component",
-          "type": "string"
-        },
-        "config": {
-          "additionalProperties": true,
-          "description": "Application configuration, expressed as the TOML tree the service documents. Rendered by\n`common.toml` into the ConfigMap the pod mounts, never passed as environment variables: the\nloader every application shares refuses a key supplied by both the environment and a file,\nand a value that lives in a file is one the kubelet can rotate under a running process.",
-          "required": [],
-          "title": "config",
-          "type": "object"
-        },
-        "configExtraToml": {
-          "default": "",
-          "description": "Verbatim TOML added to the rendered `config` tree, after its top-level keys and before its\nfirst table, so the top-level keys written here stay top-level. A key or table the rendered\n`config` tree already defines is refused at render time. The escape hatch for the shapes\n`common.toml` cannot express: an array of arrays, an array mixing tables and scalars, and TOML's\nown literal types such as a datetime. Arrays of tables render natively.",
-          "required": [],
-          "title": "configExtraToml",
-          "type": "string"
-        },
-        "configMount": {
-          "additionalProperties": true,
-          "description": "Where the rendered configuration and the credential files land in the container. Consumed\nby `common.fileConfig.*`, which also passes both directories to the application as\n`\u003cPREFIX\u003e_CONFIG` and `\u003cPREFIX\u003e_SECRETS_DIR`.",
-          "properties": {
-            "configDir": {
-              "default": "",
-              "description": "Directory the rendered `config.toml` is mounted at.",
-              "required": [],
-              "title": "configDir",
-              "type": "string"
-            },
-            "secretsDir": {
-              "default": "",
-              "description": "Directory the credential files are mounted at, one file per configuration key.",
-              "required": [],
-              "title": "secretsDir",
-              "type": "string"
-            }
-          },
-          "required": [],
-          "title": "configMount"
-        },
-        "dnsConfig": {
-          "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.PodDNSConfig",
-          "required": []
-        },
-        "dnsPolicy": {
-          "default": "",
-          "description": "Pod DNS policy.",
-          "required": [],
-          "title": "dnsPolicy",
-          "type": "string"
-        },
-        "existingConfigMap": {
-          "default": "",
-          "description": "Name of an existing ConfigMap holding `config.toml`, replacing the one this chart renders.",
-          "required": [],
-          "title": "existingConfigMap",
-          "type": "string"
-        },
-        "existingSecret": {
-          "default": "",
-          "description": "Name of an existing Secret holding the credential files, replacing the one this chart\nrenders. Its keys must be the configuration paths the service reads, with `__` for nesting\nand no dots — that is the file name the loader parses.",
-          "required": [],
-          "title": "existingSecret",
-          "type": "string"
-        },
-        "extraEnv": {
-          "description": "Additional environment variables appended to the application container.",
-          "items": {
-            "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.EnvVar",
-            "required": []
-          },
-          "required": [],
-          "title": "extraEnv",
-          "type": "array"
-        },
-        "extraVolumeMounts": {
-          "description": "Additional volume mounts added to the application container.",
-          "items": {
-            "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.VolumeMount",
-            "required": []
-          },
-          "required": [],
-          "title": "extraVolumeMounts",
-          "type": "array"
-        },
-        "extraVolumes": {
-          "description": "Additional volumes added to the pod.",
-          "items": {
-            "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.Volume",
-            "required": []
-          },
-          "required": [],
-          "title": "extraVolumes",
-          "type": "array"
-        },
-        "fullnameOverride": {
-          "default": "",
-          "description": "Override the full generated resource name.",
-          "required": [],
-          "title": "fullnameOverride",
-          "type": "string"
-        },
-        "gateway": {
-          "additionalProperties": true,
-          "description": "Gateway API configuration, consumed by `common.gateway.*`. The successor to `ingress`, and\nan independent switch from it: a cluster migrating between an Ingress controller and a Gateway\nimplementation runs both for a while.\n\nThe division of labour is the API's, not this chart's. A `Gateway` — the listeners, the\naddress, the certificates — belongs to the cluster operator; an application owns only the\n`HTTPRoute` that attaches to it. So the default here is route-only, and `create` is for\ninstalls that have no cluster-wide Gateway to attach to.",
-          "properties": {
-            "addresses": {
-              "description": "Addresses requested for the created Gateway, e.g. a fixed `IPAddress`.",
-              "items": {
-                "$ref": "https://raw.githubusercontent.com/datreeio/CRDs-catalog/ad3b08c5045129d7bb1eeffd8e61719b2c8dd1e2/gateway.networking.k8s.io/gateway_v1.json#/properties/spec/properties/addresses/items",
-                "required": []
-              },
-              "required": [],
-              "title": "addresses",
-              "type": "array"
-            },
-            "allowedRoutes": {
-              "$ref": "https://raw.githubusercontent.com/datreeio/CRDs-catalog/ad3b08c5045129d7bb1eeffd8e61719b2c8dd1e2/gateway.networking.k8s.io/gateway_v1.json#/properties/spec/properties/listeners/items/properties/allowedRoutes",
-              "required": []
-            },
-            "annotations": {
-              "additionalProperties": true,
-              "description": "Annotations for the HTTPRoute and the created Gateway. Values may contain Go templates.",
-              "required": [],
-              "title": "annotations",
-              "type": "object"
-            },
-            "backendRefs": {
-              "description": "Backends for rules that name none. Defaults to this chart's own Service. Weights are\nhonoured, so a traffic split needs no custom rule.",
-              "items": {
-                "$ref": "https://raw.githubusercontent.com/datreeio/CRDs-catalog/ad3b08c5045129d7bb1eeffd8e61719b2c8dd1e2/gateway.networking.k8s.io/httproute_v1.json#/properties/spec/properties/rules/items/properties/backendRefs/items",
-                "required": []
-              },
-              "required": [],
-              "title": "backendRefs",
-              "type": "array"
-            },
-            "create": {
-              "default": false,
-              "description": "Also create the Gateway itself. Leave off when the cluster already runs one — that is the\nnormal case, and one Gateway per application usually means one load balancer per\napplication. When on, a route that names no parent attaches to it automatically.",
-              "required": [],
-              "title": "create",
-              "type": "boolean"
-            },
-            "enabled": {
-              "default": false,
-              "description": "Create the HTTPRoute. Requires the `gateway.networking.k8s.io` CRDs;\n`common.gateway.validate` fails the render loudly rather than silently dropping the route\nwhen they are absent.",
-              "required": [],
-              "title": "enabled",
-              "type": "boolean"
-            },
-            "filters": {
-              "description": "Filters applied to the default rule: `RequestHeaderModifier`, `ResponseHeaderModifier`,\n`RequestRedirect`, `URLRewrite`, `RequestMirror`, `ExtensionRef`. This is where an\nIngress controller's annotations end up, as typed fields. Ignored when `rules` is set.",
-              "items": {
-                "$ref": "https://raw.githubusercontent.com/datreeio/CRDs-catalog/ad3b08c5045129d7bb1eeffd8e61719b2c8dd1e2/gateway.networking.k8s.io/httproute_v1.json#/properties/spec/properties/rules/items/properties/filters/items",
-                "required": []
-              },
-              "required": [],
-              "title": "filters",
-              "type": "array"
-            },
-            "gatewayClassName": {
-              "default": "",
-              "description": "GatewayClass that programs the created Gateway, e.g. `cilium`, `istio`, `envoy-gateway`,\n`nginx`. Required by `create`; a Gateway without one is never reconciled. Ignored otherwise.",
-              "required": [],
-              "title": "gatewayClassName",
-              "type": "string"
-            },
-            "hostnames": {
-              "description": "Hostnames the route serves. Values may contain Go templates.\n\nRequired unless `create` is set. A route with no hostnames matches every name its listener\naccepts: on a Gateway this chart owns that is harmless, and sometimes the point — an install\nreached by address has no DNS name to state. On a shared Gateway it means taking over traffic\nmeant for other applications, so the render refuses it.",
-              "items": {
-                "anyOf": [
-                  {
-                    "$ref": "https://raw.githubusercontent.com/datreeio/CRDs-catalog/ad3b08c5045129d7bb1eeffd8e61719b2c8dd1e2/gateway.networking.k8s.io/httproute_v1.json#/properties/spec/properties/hostnames/items",
-                    "required": []
-                  },
-                  {
-                    "pattern": "\\{\\{",
-                    "required": [],
-                    "type": "string"
-                  }
-                ],
-                "required": []
-              },
-              "required": [],
-              "title": "hostnames",
-              "type": "array"
-            },
-            "httpPort": {
-              "default": 80,
-              "description": "Port for the derived HTTP listener.",
-              "required": [],
-              "title": "httpPort",
-              "type": "integer"
-            },
-            "httpsPort": {
-              "default": 443,
-              "description": "Port for the derived HTTPS listener.",
-              "required": [],
-              "title": "httpsPort",
-              "type": "integer"
-            },
-            "httpsRedirect": {
-              "additionalProperties": true,
-              "description": "A second route that redirects plaintext traffic to HTTPS. Under Ingress this was a\ncontroller-specific annotation; Gateway API expresses it as a typed `RequestRedirect`\nfilter, which means it has to be a real object.",
-              "properties": {
-                "enabled": {
-                  "default": false,
-                  "description": "Create the redirect route.",
-                  "required": [],
-                  "title": "enabled",
-                  "type": "boolean"
-                },
-                "port": {
-                  "default": "null",
-                  "description": "Port to redirect to. Left unset, the scheme implies it.",
-                  "required": [],
-                  "title": "port",
-                  "type": [
-                    "integer",
-                    "null"
-                  ]
-                },
-                "sectionName": {
-                  "default": "",
-                  "description": "Listener to bind the redirect to. Must be the plaintext one: attached to every listener,\nthe redirect would also apply to the HTTPS listener and loop forever. Defaults to `http`,\nthe name of the listener `create` renders.",
-                  "required": [],
-                  "title": "sectionName",
-                  "type": "string"
-                },
-                "statusCode": {
-                  "default": 301,
-                  "description": "Redirect status code. `301` or `302`.",
-                  "required": [],
-                  "title": "statusCode",
-                  "type": "integer"
-                }
-              },
-              "required": [],
-              "title": "httpsRedirect"
-            },
-            "infrastructure": {
-              "$ref": "https://raw.githubusercontent.com/datreeio/CRDs-catalog/ad3b08c5045129d7bb1eeffd8e61719b2c8dd1e2/gateway.networking.k8s.io/gateway_v1.json#/properties/spec/properties/infrastructure",
-              "required": []
-            },
-            "listeners": {
-              "description": "Listeners for the created Gateway, replacing the derived ones entirely. Reach for this\nwhen a listener needs its own hostname or certificate.",
-              "items": {
-                "$ref": "https://raw.githubusercontent.com/datreeio/CRDs-catalog/ad3b08c5045129d7bb1eeffd8e61719b2c8dd1e2/gateway.networking.k8s.io/gateway_v1.json#/properties/spec/properties/listeners/items",
-                "required": []
-              },
-              "required": [],
-              "title": "listeners",
-              "type": "array"
-            },
-            "parentRefs": {
-              "description": "Gateways the route attaches to. Each entry takes `name` and optionally `namespace`,\n`sectionName` (a single listener), `port`, `group` and `kind`; the API's defaults are filled\nin. Values may contain Go templates.\n\nA route that names no parent is accepted by the API server and then does nothing — no\nlistener ever programs it — so this is required unless `create` is set.\nExample:\n```yaml\nparentRefs:\n  - name: shared-gateway\n    namespace: gateway-system\n    sectionName: https\n```",
-              "items": {
-                "anyOf": [
-                  {
-                    "$ref": "https://raw.githubusercontent.com/datreeio/CRDs-catalog/ad3b08c5045129d7bb1eeffd8e61719b2c8dd1e2/gateway.networking.k8s.io/httproute_v1.json#/properties/spec/properties/parentRefs/items",
-                    "required": []
-                  },
-                  {
-                    "additionalProperties": false,
-                    "properties": {
-                      "group": {
-                        "required": [],
-                        "type": "string"
-                      },
-                      "kind": {
-                        "required": [],
-                        "type": "string"
-                      },
-                      "name": {
-                        "required": [],
-                        "type": "string"
-                      },
-                      "namespace": {
-                        "required": [],
-                        "type": "string"
-                      },
-                      "port": {
-                        "required": [],
-                        "type": "integer"
-                      },
-                      "sectionName": {
-                        "required": [],
-                        "type": "string"
-                      }
-                    },
-                    "required": [],
-                    "type": "object"
-                  }
-                ],
-                "required": []
-              },
-              "required": [],
-              "title": "parentRefs",
-              "type": "array"
-            },
-            "path": {
-              "default": "/",
-              "description": "Path prefix for the default rule. Ignored when `rules` is set.",
-              "required": [],
-              "title": "path",
-              "type": "string"
-            },
-            "rules": {
-              "description": "Routing rules, in full `HTTPRouteRule` form (`matches`, `filters`, `backendRefs`,\n`timeouts`). An entry that omits `backendRefs` inherits this chart's Service, so a rule that\nonly narrows the path does not have to restate where the traffic goes.\n\nLeft empty, the route gets one rule matching `path` as a prefix — the Gateway API equivalent\nof a single-path Ingress, and a complete configuration together with `hostnames`.",
-              "items": {
-                "$ref": "https://raw.githubusercontent.com/datreeio/CRDs-catalog/ad3b08c5045129d7bb1eeffd8e61719b2c8dd1e2/gateway.networking.k8s.io/httproute_v1.json#/properties/spec/properties/rules/items",
-                "required": []
-              },
-              "required": [],
-              "title": "rules",
-              "type": "array"
-            },
-            "timeouts": {
-              "$ref": "https://raw.githubusercontent.com/datreeio/CRDs-catalog/ad3b08c5045129d7bb1eeffd8e61719b2c8dd1e2/gateway.networking.k8s.io/httproute_v1.json#/properties/spec/properties/rules/items/properties/timeouts",
-              "required": []
-            },
-            "tls": {
-              "additionalProperties": true,
-              "description": "TLS for the created Gateway's HTTPS listener. Ignored without `create`, and irrelevant\nwhen attaching to somebody else's Gateway — the certificate is theirs.",
-              "properties": {
-                "certificateRefs": {
-                  "description": "Secrets holding the certificate. Required by `Terminate`: unlike an Ingress there is no\nconvention by which one is looked up from the hostname. A ref naming another namespace\nadditionally needs a `ReferenceGrant` there, which this chart deliberately does not create\n— a grant is the target namespace owner's to give.",
-                  "items": {
-                    "$ref": "https://raw.githubusercontent.com/datreeio/CRDs-catalog/ad3b08c5045129d7bb1eeffd8e61719b2c8dd1e2/gateway.networking.k8s.io/gateway_v1.json#/properties/spec/properties/listeners/items/properties/tls/properties/certificateRefs/items",
-                    "required": []
-                  },
-                  "required": [],
-                  "title": "certificateRefs",
-                  "type": "array"
-                },
-                "enabled": {
-                  "default": false,
-                  "description": "Add an HTTPS listener.",
-                  "required": [],
-                  "title": "enabled",
-                  "type": "boolean"
-                },
-                "mode": {
-                  "default": "Terminate",
-                  "description": "TLS mode.",
-                  "enum": [
-                    "Terminate",
-                    "Passthrough"
-                  ],
-                  "required": [],
-                  "title": "mode"
-                },
-                "options": {
-                  "$ref": "https://raw.githubusercontent.com/datreeio/CRDs-catalog/ad3b08c5045129d7bb1eeffd8e61719b2c8dd1e2/gateway.networking.k8s.io/gateway_v1.json#/properties/spec/properties/listeners/items/properties/tls/properties/options",
-                  "required": []
-                }
-              },
-              "required": [],
-              "title": "tls"
-            }
-          },
-          "required": [],
-          "title": "gateway"
-        },
-        "global": {
-          "description": "Global values are values that can be accessed from any chart or subchart by exactly the same name.",
-          "required": [],
-          "title": "global",
-          "type": "object"
-        },
-        "grafanaDashboard": {
-          "additionalProperties": true,
-          "description": "Grafana dashboard delivery, consumed by `common.grafana.dashboard.*`. A consuming chart\nexposes this shape wherever it likes — `metrics.dashboard` is the convention — and passes it in\nas the `values` argument. Grafana has no Kubernetes-native dashboard type, so the partials\nrender both mechanisms: a labelled ConfigMap for the sidecar, and, optionally, one\n`GrafanaDashboard` per file for grafana-operator v5.",
-          "properties": {
-            "enabled": {
-              "default": false,
-              "description": "Create the ConfigMap holding the dashboard JSON. Required by the operator path too, which\nreferences it rather than duplicating the JSON into the custom resources.",
-              "required": [],
-              "title": "enabled",
-              "type": "boolean"
-            },
-            "grafanaOperator": {
-              "additionalProperties": true,
-              "description": "The grafana-operator v5 path, rendered in addition to the ConfigMap above rather than\ninstead of it. Everything here is ignored while `enabled` is false.",
-              "properties": {
-                "allowCrossNamespaceImport": {
-                  "default": true,
-                  "description": "Let the resources bind to Grafana instances outside the release namespace. With `false`\nthe operator only considers Grafana custom resources in the same namespace.",
-                  "required": [],
-                  "title": "allowCrossNamespaceImport",
-                  "type": "boolean"
-                },
-                "enabled": {
-                  "default": false,
-                  "description": "Also create one `GrafanaDashboard` per dashboard file. This is the only delivery path a\nchart can make cross-namespace on its own terms. Requires the `grafana.integreatly.org/v1beta1`\nCRDs; `common.grafana.dashboard.errors` fails the render loudly rather than silently\ndropping the objects when they are absent.",
-                  "required": [],
-                  "title": "enabled",
-                  "type": "boolean"
-                },
-                "folder": {
-                  "default": "",
-                  "description": "Folder to file the dashboards under. Empty leaves them at the Grafana root.",
-                  "required": [],
-                  "title": "folder",
-                  "type": "string"
-                },
-                "instanceSelector": {
-                  "additionalProperties": true,
-                  "description": "Label selector for the Grafana instances to import into. Must select something: unlike a\nKubernetes label selector, an empty `instanceSelector` matches no instance at all.",
-                  "properties": {
-                    "matchLabels": {
-                      "additionalProperties": false,
-                      "description": "Labels every Grafana custom resource to import into has to carry.",
-                      "properties": {
-                        "dashboards": {
-                          "default": "grafana",
-                          "required": [],
-                          "title": "dashboards",
-                          "type": "string"
-                        }
-                      },
-                      "required": [],
-                      "title": "matchLabels",
-                      "type": "object"
-                    }
-                  },
-                  "required": [],
-                  "title": "instanceSelector",
-                  "type": "object"
-                },
-                "resyncPeriod": {
-                  "default": "5m",
-                  "description": "How often the operator re-reconciles the dashboard, undoing edits made in the Grafana UI.\nA Go duration.",
-                  "required": [],
-                  "title": "resyncPeriod",
-                  "type": "string"
-                }
-              },
-              "required": [],
-              "title": "grafanaOperator"
-            },
-            "label": {
-              "default": "grafana_dashboard",
-              "description": "Label a Grafana sidecar watches for dashboard ConfigMaps. Discovery is a property of the\n*Grafana* release: the sidecar only sees this ConfigMap if `sidecar.dashboards.searchNamespace`\ncovers the namespace it lands in, which a chart cannot influence from its own side.",
-              "required": [],
-              "title": "label",
-              "type": "string"
-            },
-            "labelValue": {
-              "default": "1",
-              "description": "Value for that label.",
-              "required": [],
-              "title": "labelValue",
-              "type": "string"
-            }
-          },
-          "required": [],
-          "title": "grafanaDashboard"
-        },
-        "hostAliases": {
-          "description": "Host aliases injected into the pod's /etc/hosts.",
-          "items": {
-            "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.HostAlias",
-            "required": []
-          },
-          "required": [],
-          "title": "hostAliases",
-          "type": "array"
-        },
-        "image": {
-          "additionalProperties": true,
-          "description": "Container image the workload runs, composed by `common.image` as `registry/repository:tag`.",
-          "properties": {
-            "pullPolicy": {
-              "default": "",
-              "description": "Image pull policy. Left empty, resolves to `Always` for the `latest` tag and\n`IfNotPresent` for anything pinned.",
-              "enum": [
-                "",
-                "Always",
-                "IfNotPresent",
-                "Never"
-              ],
-              "required": [],
-              "title": "pullPolicy"
-            },
-            "registry": {
-              "default": "",
-              "description": "Registry host. Left empty, the repository is used as-is (Docker Hub).",
-              "required": [],
-              "title": "registry",
-              "type": "string"
-            },
-            "repository": {
-              "default": "",
-              "description": "Image repository. Required.",
-              "required": [],
-              "title": "repository",
-              "type": "string"
-            },
-            "tag": {
-              "default": "",
-              "description": "Image tag. Defaults to the chart's `appVersion`. May pin a digest inline\n(`v1.2.3\nversion marker.",
-              "required": [],
-              "title": "tag",
-              "type": "string"
-            }
-          },
-          "required": [],
-          "title": "image"
-        },
-        "imagePullSecrets": {
-          "description": "Pull secrets for private registries. Accepts `- name: regcred` or the shorthand `- regcred`.",
-          "items": {
-            "required": []
-          },
-          "required": [],
-          "title": "imagePullSecrets",
-          "type": "array"
-        },
-        "kubeVersionOverride": {
-          "default": "",
-          "description": "Kubernetes version to target when branching on API availability.\nLets `helm template` render for a specific cluster version without a live connection.\nLeave empty to detect from the cluster.",
-          "required": [],
-          "title": "kubeVersionOverride",
-          "type": "string"
-        },
-        "livenessProbe": {
-          "additionalProperties": true,
-          "description": "Liveness probe. See `startupProbe` for the accepted shape.",
-          "properties": {
-            "enabled": {
-              "default": false,
-              "description": "Enable the liveness probe.",
-              "required": [],
-              "title": "enabled",
-              "type": "boolean"
-            }
-          },
-          "required": [],
-          "title": "livenessProbe"
-        },
-        "nameOverride": {
-          "default": "",
-          "description": "Override the chart name used in resource names and labels.",
-          "required": [],
-          "title": "nameOverride",
-          "type": "string"
-        },
-        "namespaceOverride": {
-          "default": "",
-          "description": "Deploy into a namespace other than the release namespace.",
-          "required": [],
-          "title": "namespaceOverride",
-          "type": "string"
-        },
-        "networkPolicy": {
-          "additionalProperties": true,
-          "description": "Network policy configuration.\n\nEvery generated egress rule is scoped by a `to:` selector. An egress rule that lists only\nports is not a restriction — the NetworkPolicy API reads a missing `to` as \"any\ndestination\", so such a policy permits traffic to every in-cluster service and to the\ncloud metadata endpoint.",
-          "properties": {
-            "cilium": {
-              "additionalProperties": true,
-              "description": "Cilium-only additions, used when `engine` is `cilium` or `both`. Everything above is\ntranslated into the CiliumNetworkPolicy automatically; these are the rules the portable API\nhas no way to express.\n\n`extraIngress`, `extraEgress` and the per-section `customRules` above are *not* carried over:\nthose are verbatim `networking.k8s.io/v1` rule objects and are not valid CNP. The fields\nbelow are their counterparts.",
-              "properties": {
-                "description": {
-                  "default": "",
-                  "description": "`spec.description`, which Cilium surfaces in `cilium policy get` and in Hubble flow\nverdicts. The one place to record *why* a rule exists where an operator debugging a drop\nwill actually see it.",
-                  "required": [],
-                  "title": "description",
-                  "type": "string"
-                },
-                "egress": {
-                  "additionalProperties": true,
-                  "description": "Cilium-only egress rules.",
-                  "properties": {
-                    "customRules": {
-                      "description": "Additional egress rules in CiliumNetworkPolicy form, appended verbatim.",
-                      "items": {
-                        "required": []
-                      },
-                      "required": [],
-                      "title": "customRules",
-                      "type": "array"
-                    },
-                    "dnsMatchPatterns": {
-                      "description": "What the DNS proxy may resolve, e.g. `- matchPattern: \"*.example.com\"`. Defaults to\neverything, which only permits the lookup — an answer is still only reachable if some\nrule allows the address.",
-                      "items": {
-                        "required": []
-                      },
-                      "required": [],
-                      "title": "dnsMatchPatterns",
-                      "type": "array"
-                    },
-                    "entityPorts": {
-                      "description": "Restrict the `toEntities` rule to specific ports. Empty means all ports.",
-                      "items": {
-                        "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyPort",
-                        "required": []
-                      },
-                      "required": [],
-                      "title": "entityPorts",
-                      "type": "array"
-                    },
-                    "fqdnPorts": {
-                      "description": "Ports the `toFQDNs` rule allows. Defaults to TCP/443.",
-                      "items": {
-                        "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyPort",
-                        "required": []
-                      },
-                      "required": [],
-                      "title": "fqdnPorts",
-                      "type": "array"
-                    },
-                    "httpRules": {
-                      "description": "L7 HTTP rules layered onto the `toFQDNs` rule, e.g.\n`- method: GET` / `path: \"/v1/.*\"`. Turns \"may reach this host\" into \"may make these\nrequests to this host\". Costs a proxy hop per connection.",
-                      "items": {
-                        "required": []
-                      },
-                      "required": [],
-                      "title": "httpRules",
-                      "type": "array"
-                    },
-                    "toEntities": {
-                      "description": "Named destination sets, e.g. `world` for everything outside the cluster, or\n`kube-apiserver`. Not a synonym for the `egress.cidr`/`except` translation: `world` does\nnot carve out the cloud metadata endpoint the way those defaults do.",
-                      "items": {
-                        "required": [],
-                        "type": "string"
-                      },
-                      "required": [],
-                      "title": "toEntities",
-                      "type": "array"
-                    },
-                    "toFQDNs": {
-                      "description": "Destinations by name rather than by address, e.g. `- matchName: api.example.com` or\n`- matchPattern: \"*.example.com\"`. This is the rule the CIDR-based `egress.https` was\nalways a poor approximation of: \"may reach the internet on 443\" permits every public host\nthat exists, where this permits the ones the application actually talks to.\n\nEnforced against the addresses Cilium's DNS proxy saw returned for the name, so\n`egress.dns.enabled` must stay on — the render fails if it is not.",
-                      "items": {
-                        "required": []
-                      },
-                      "required": [],
-                      "title": "toFQDNs",
-                      "type": "array"
-                    }
-                  },
-                  "required": [],
-                  "title": "egress"
-                },
-                "enableDefaultDeny": {
-                  "default": true,
-                  "description": "State default-deny explicitly rather than relying on it being implied by the presence of\nrules. This is what makes the intentional default-deny case — a policy with an empty rule\nlist — actually deny, instead of being treated as no policy at all. Requires Cilium 1.16+.",
-                  "required": [],
-                  "title": "enableDefaultDeny",
-                  "type": "boolean"
-                },
-                "extraEgress": {
-                  "description": "Extra egress rules in CiliumNetworkPolicy form, appended regardless of `egress.enabled`.",
-                  "items": {
-                    "required": []
-                  },
-                  "required": [],
-                  "title": "extraEgress",
-                  "type": "array"
-                },
-                "extraIngress": {
-                  "description": "Extra ingress rules in CiliumNetworkPolicy form, appended regardless of\n`ingress.enabled`.",
-                  "items": {
-                    "required": []
-                  },
-                  "required": [],
-                  "title": "extraIngress",
-                  "type": "array"
-                },
-                "ingress": {
-                  "additionalProperties": true,
-                  "description": "Cilium-only ingress rules.",
-                  "properties": {
-                    "customRules": {
-                      "description": "Additional ingress rules in CiliumNetworkPolicy form, appended verbatim.",
-                      "items": {
-                        "required": []
-                      },
-                      "required": [],
-                      "title": "customRules",
-                      "type": "array"
-                    },
-                    "fromEntities": {
-                      "description": "Named source sets, e.g. `cluster`, `host`, `remote-node`, `world`, `kube-apiserver`.\nA named entity stays correct when the cluster is renumbered; a CIDR list does not.",
-                      "items": {
-                        "required": [],
-                        "type": "string"
-                      },
-                      "required": [],
-                      "title": "fromEntities",
-                      "type": "array"
-                    }
-                  },
-                  "required": [],
-                  "title": "ingress"
-                }
-              },
-              "required": [],
-              "title": "cilium"
-            },
-            "egress": {
-              "additionalProperties": true,
-              "description": "Egress rules.",
-              "properties": {
-                "cidr": {
-                  "default": "0.0.0.0/0",
-                  "description": "Destination CIDR for the HTTP/HTTPS rules.",
-                  "required": [],
-                  "title": "cidr",
-                  "type": "string"
-                },
-                "customRules": {
-                  "description": "Additional egress rules, appended verbatim. Each must carry its own `to:` selector.",
-                  "items": {
-                    "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyEgressRule",
-                    "required": []
-                  },
-                  "required": [],
-                  "title": "customRules",
-                  "type": "array"
-                },
-                "dns": {
-                  "additionalProperties": true,
-                  "description": "Allow DNS resolution.",
-                  "properties": {
-                    "enabled": {
-                      "default": true,
-                      "description": "Allow egress to the cluster DNS service.",
-                      "required": [],
-                      "title": "enabled",
-                      "type": "boolean"
-                    },
-                    "namespaceSelector": {
-                      "additionalProperties": true,
-                      "description": "Namespace selector for the DNS service.",
-                      "properties": {
-                        "kubernetes.io/metadata.name": {
-                          "default": "kube-system",
-                          "required": [],
-                          "title": "kubernetes.io/metadata.name",
-                          "type": "string"
-                        }
-                      },
-                      "required": [],
-                      "title": "namespaceSelector",
-                      "type": "object"
-                    },
-                    "podSelector": {
-                      "additionalProperties": true,
-                      "description": "Pod selector for the DNS service.",
-                      "properties": {
-                        "k8s-app": {
-                          "default": "kube-dns",
-                          "required": [],
-                          "title": "k8s-app",
-                          "type": "string"
-                        }
-                      },
-                      "required": [],
-                      "title": "podSelector",
-                      "type": "object"
-                    }
-                  },
-                  "required": [],
-                  "title": "dns"
-                },
-                "enabled": {
-                  "default": true,
-                  "description": "Add egress rules. Disabled means default-deny for outbound traffic.",
-                  "required": [],
-                  "title": "enabled",
-                  "type": "boolean"
-                },
-                "except": {
-                  "description": "CIDRs carved out of `cidr`. Defaults exclude RFC1918 private space and link-local\n169.254.0.0/16, which covers the cloud instance metadata endpoint.",
-                  "items": {
-                    "anyOf": [
-                      {
-                        "required": [],
-                        "type": "string"
-                      },
-                      {
-                        "required": [],
-                        "type": "string"
-                      },
-                      {
-                        "required": [],
-                        "type": "string"
-                      },
-                      {
-                        "required": [],
-                        "type": "string"
-                      }
-                    ],
-                    "required": []
-                  },
-                  "required": [],
-                  "title": "except",
-                  "type": "array"
-                },
-                "http": {
-                  "additionalProperties": true,
-                  "description": "Allow outbound HTTP.",
-                  "properties": {
-                    "enabled": {
-                      "default": false,
-                      "description": "Allow egress to TCP/80 on the destinations described by `cidr`/`except`.",
-                      "required": [],
-                      "title": "enabled",
-                      "type": "boolean"
-                    }
-                  },
-                  "required": [],
-                  "title": "http"
-                },
-                "https": {
-                  "additionalProperties": true,
-                  "description": "Allow outbound HTTPS.",
-                  "properties": {
-                    "enabled": {
-                      "default": true,
-                      "description": "Allow egress to TCP/443 on the destinations described by `cidr`/`except`.",
-                      "required": [],
-                      "title": "enabled",
-                      "type": "boolean"
-                    }
-                  },
-                  "required": [],
-                  "title": "https"
-                }
-              },
-              "required": [],
-              "title": "egress"
-            },
-            "enabled": {
-              "default": false,
-              "description": "Create the NetworkPolicies. When enabled with no rules configured, the result is a\ndefault-deny policy, which is intentional.",
-              "required": [],
-              "title": "enabled",
-              "type": "boolean"
-            },
-            "engine": {
-              "default": "kubernetes",
-              "description": "Which policy dialect to render. `kubernetes` emits the portable\n`networking.k8s.io/v1` pair; `cilium` emits `CiliumNetworkPolicy`, which can express FQDN\ndestinations, named entities and L7 rules that the portable API cannot; `both` emits both,\nfor the window in which a cluster is migrating between CNIs.\n\nThe engine picks the dialect, not the rules — every value below is translated either way, so\nswitching is a one-line change. `both` is additive rather than stricter: policies selecting\none pod union their allowances, so it is a migration setting and not a hardening one.",
-              "enum": [
-                "kubernetes",
-                "cilium",
-                "both"
-              ],
-              "required": [],
-              "title": "engine"
-            },
-            "extraEgress": {
-              "description": "Extra egress rules appended regardless of `egress.enabled`.",
-              "items": {
-                "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyEgressRule",
-                "required": []
-              },
-              "required": [],
-              "title": "extraEgress",
-              "type": "array"
-            },
-            "extraIngress": {
-              "description": "Extra ingress rules appended regardless of `ingress.enabled`.",
-              "items": {
-                "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyIngressRule",
-                "required": []
-              },
-              "required": [],
-              "title": "extraIngress",
-              "type": "array"
-            },
-            "ingress": {
-              "additionalProperties": true,
-              "description": "Ingress rules.",
-              "properties": {
-                "controller": {
-                  "additionalProperties": true,
-                  "description": "Allow traffic from the ingress controller.",
-                  "properties": {
-                    "enabled": {
-                      "default": true,
-                      "description": "Allow ingress from the ingress controller.",
-                      "required": [],
-                      "title": "enabled",
-                      "type": "boolean"
-                    },
-                    "namespace": {
-                      "default": "traefik",
-                      "description": "Namespace the ingress controller runs in.",
-                      "required": [],
-                      "title": "namespace",
-                      "type": "string"
-                    },
-                    "ports": {
-                      "description": "Restrict the rule to specific ports. Empty means all ports.",
-                      "items": {
-                        "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyPort",
-                        "required": []
-                      },
-                      "required": [],
-                      "title": "ports",
-                      "type": "array"
-                    },
-                    "selector": {
-                      "additionalProperties": true,
-                      "description": "Pod selector matching the ingress controller.",
-                      "properties": {
-                        "app.kubernetes.io/name": {
-                          "default": "traefik",
-                          "required": [],
-                          "title": "app.kubernetes.io/name",
-                          "type": "string"
-                        }
-                      },
-                      "required": [],
-                      "title": "selector",
-                      "type": "object"
-                    }
-                  },
-                  "required": [],
-                  "title": "controller"
-                },
-                "customRules": {
-                  "description": "Additional ingress rules, appended verbatim.",
-                  "items": {
-                    "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyIngressRule",
-                    "required": []
-                  },
-                  "required": [],
-                  "title": "customRules",
-                  "type": "array"
-                },
-                "enabled": {
-                  "default": true,
-                  "description": "Add ingress rules. Disabled means default-deny for inbound traffic.",
-                  "required": [],
-                  "title": "enabled",
-                  "type": "boolean"
-                },
-                "gateway": {
-                  "additionalProperties": true,
-                  "description": "Allow traffic from the Gateway API data plane. Only rendered when `gateway.enabled` is\nalso set, so it costs nothing on a chart exposed through an Ingress.\n\nNeeds no configuration in the common case: the Gateway that must be admitted is by\ndefinition the one `gateway.parentRefs` names, so both fields below are derived from it.\nRestating the Gateway's identity here would be a second place to edit on a rename, and a\npolicy that names the wrong Gateway looks correct and blocks all inbound traffic.",
-                  "properties": {
-                    "enabled": {
-                      "default": true,
-                      "description": "Allow ingress from the Gateway's data plane.",
-                      "required": [],
-                      "title": "enabled",
-                      "type": "boolean"
-                    },
-                    "namespace": {
-                      "default": "",
-                      "description": "Namespace the data plane runs in. Empty derives it from `gateway.parentRefs`.",
-                      "required": [],
-                      "title": "namespace",
-                      "type": "string"
-                    },
-                    "ports": {
-                      "description": "Restrict the rule to specific ports. Empty means all ports.",
-                      "items": {
-                        "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyPort",
-                        "required": []
-                      },
-                      "required": [],
-                      "title": "ports",
-                      "type": "array"
-                    },
-                    "selector": {
-                      "additionalProperties": true,
-                      "description": "Pod selector matching the data plane. Empty derives\n`gateway.networking.k8s.io/gateway-name: \u003cparentRef\u003e`, the label Cilium, Envoy Gateway,\nIstio and NGINX Gateway Fabric all put on the pods they provision for a Gateway.",
-                      "required": [],
-                      "title": "selector",
-                      "type": "object"
-                    }
-                  },
-                  "required": [],
-                  "title": "gateway"
-                },
-                "monitoring": {
-                  "additionalProperties": true,
-                  "description": "Allow scraping from a monitoring namespace.",
-                  "properties": {
-                    "enabled": {
-                      "default": true,
-                      "description": "Allow ingress from the monitoring namespace.",
-                      "required": [],
-                      "title": "enabled",
-                      "type": "boolean"
-                    },
-                    "namespace": {
-                      "default": "monitoring",
-                      "description": "Monitoring namespace, matched on `kubernetes.io/metadata.name`.",
-                      "required": [],
-                      "title": "namespace",
-                      "type": "string"
-                    },
-                    "namespaceSelector": {
-                      "additionalProperties": true,
-                      "description": "Override the namespace selector entirely.",
-                      "required": [],
-                      "title": "namespaceSelector",
-                      "type": "object"
-                    },
-                    "ports": {
-                      "description": "Restrict the rule to specific ports. Empty means all ports.",
-                      "items": {
-                        "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyPort",
-                        "required": []
-                      },
-                      "required": [],
-                      "title": "ports",
-                      "type": "array"
-                    }
-                  },
-                  "required": [],
-                  "title": "monitoring"
-                }
-              },
-              "required": [],
-              "title": "ingress"
-            }
-          },
-          "required": [],
-          "title": "networkPolicy"
-        },
-        "nodeSelector": {
-          "additionalProperties": {
-            "type": "string"
-          },
-          "description": "Node selector for pod assignment.",
-          "required": [],
-          "title": "nodeSelector",
-          "type": "object"
-        },
-        "partOf": {
-          "default": "",
-          "description": "Value for the `app.kubernetes.io/part-of` label.",
-          "required": [],
-          "title": "partOf",
-          "type": "string"
-        },
-        "podAnnotations": {
-          "additionalProperties": true,
-          "description": "Annotations added to the pod template.",
-          "required": [],
-          "title": "podAnnotations",
-          "type": "object"
-        },
-        "podAntiAffinity": {
-          "default": "",
-          "description": "Shorthand for spreading replicas across nodes. `soft` prefers, `hard` requires.",
-          "enum": [
-            "",
-            "soft",
-            "hard"
-          ],
-          "required": [],
-          "title": "podAntiAffinity"
-        },
-        "podLabels": {
-          "additionalProperties": true,
-          "description": "Labels added to the pod template.",
-          "required": [],
-          "title": "podLabels",
-          "type": "object"
-        },
-        "podSecurityContext": {
-          "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.PodSecurityContext",
-          "required": []
-        },
-        "podSecurityContextPreset": {
-          "default": "restricted",
-          "description": "Baseline for the pod security context. `restricted` applies the Pod Security Standards\nrestricted profile (`runAsNonRoot`, `seccompProfile: RuntimeDefault`,\n`fsGroupChangePolicy: OnRootMismatch`); `none` applies nothing. Identity fields\n(`runAsUser`, `runAsGroup`, `fsGroup`) are always left to the chart, since they must match\nthe UID baked into the image.",
-          "enum": [
-            "restricted",
-            "none"
-          ],
-          "required": [],
-          "title": "podSecurityContextPreset"
-        },
-        "priorityClassName": {
-          "default": "",
-          "description": "PriorityClass for the pod.",
-          "required": [],
-          "title": "priorityClassName",
-          "type": "string"
-        },
-        "prometheusRule": {
-          "additionalProperties": true,
-          "description": "Prometheus recording and alerting rules, consumed by `common.prometheus.rules.*`. Unlike the\ndashboards there is only one carrier — `PrometheusRule` is already the operator's own CRD — and\nno per-object cross-namespace grant: which namespaces a Prometheus loads rules from is decided\nby `ruleNamespaceSelector` and `ruleSelector` on the Prometheus custom resource.",
-          "properties": {
-            "enabled": {
-              "default": false,
-              "description": "Create a PrometheusRule from the chart's rule files. Requires the `monitoring.coreos.com/v1`\nCRDs; `common.prometheus.rules.errors` fails the render loudly rather than silently dropping\nthe object when they are absent.",
-              "required": [],
-              "title": "enabled",
-              "type": "boolean"
-            },
-            "labels": {
-              "additionalProperties": true,
-              "description": "Extra labels, templated. This is the only half of rule discovery a chart controls: a\ncluster whose Prometheus selects `release: kube-prometheus-stack` needs that label here, or\nthe rules are created and never loaded.",
-              "required": [],
-              "title": "labels",
-              "type": "object"
-            },
-            "scope": {
-              "additionalProperties": true,
-              "description": "Confine the rules to a subset of the cluster's series. A `PrometheusRule` is not scoped to\nthe namespace it lives in, so `up{job=\"api\"} == 0` matches somebody else's `api` job in\nanother namespace and two installs of one chart alert on each other. Rather than parse PromQL\nin a Go template, the rule files mark every selector with an always-true placeholder matcher\nand the library swaps it for a real one — see the note in `_prometheus.tpl`. Consuming charts\nnormally derive `matcher` rather than exposing it raw.",
-              "properties": {
-                "matcher": {
-                  "default": "",
-                  "description": "What to swap it for, e.g. `namespace=\"prod\"`. Empty disables the substitution; the\nplaceholder is left in place, which is correct, because it is already a no-op matcher.",
-                  "required": [],
-                  "title": "matcher",
-                  "type": "string"
-                },
-                "placeholder": {
-                  "default": "",
-                  "description": "The literal placeholder written into the rule files, e.g. `myapp_scope=~\".*\"`. Empty\ndisables the substitution and the files install exactly as vendored.",
-                  "required": [],
-                  "title": "placeholder",
-                  "type": "string"
-                }
-              },
-              "required": [],
-              "title": "scope"
-            }
-          },
-          "required": [],
-          "title": "prometheusRule"
-        },
-        "readinessProbe": {
-          "additionalProperties": true,
-          "description": "Readiness probe. See `startupProbe` for the accepted shape.",
-          "properties": {
-            "enabled": {
-              "default": false,
-              "description": "Enable the readiness probe.",
-              "required": [],
-              "title": "enabled",
-              "type": "boolean"
-            }
-          },
-          "required": [],
-          "title": "readinessProbe"
-        },
-        "resources": {
-          "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.ResourceRequirements",
-          "required": []
-        },
-        "revisionHistoryLimit": {
-          "default": 3,
-          "description": "Number of old ReplicaSets to retain for rollback.",
-          "required": [],
-          "title": "revisionHistoryLimit",
-          "type": "integer"
-        },
-        "securityContext": {
-          "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.SecurityContext",
-          "required": []
-        },
-        "securityContextPreset": {
-          "default": "restricted",
-          "description": "Baseline for the container security context. `restricted` drops all capabilities and\nforbids privilege escalation, a writable root filesystem and running as root.",
-          "enum": [
-            "restricted",
-            "none"
-          ],
-          "required": [],
-          "title": "securityContextPreset"
-        },
-        "serviceAccount": {
-          "additionalProperties": true,
-          "description": "ServiceAccount the pods run under. `create: false` with no `name` means the `default` one.",
-          "properties": {
-            "annotations": {
-              "additionalProperties": true,
-              "description": "Annotations for the ServiceAccount.",
-              "required": [],
-              "title": "annotations",
-              "type": "object"
-            },
-            "automountToken": {
-              "default": false,
-              "description": "Mount the API token into pods that default to this ServiceAccount.",
-              "required": [],
-              "title": "automountToken",
-              "type": "boolean"
-            },
-            "create": {
-              "default": true,
-              "description": "Create a dedicated ServiceAccount.",
-              "required": [],
-              "title": "create",
-              "type": "boolean"
-            },
-            "name": {
-              "default": "",
-              "description": "Name of the ServiceAccount. Generated when empty.",
-              "required": [],
-              "title": "name",
-              "type": "string"
-            }
-          },
-          "required": [],
-          "title": "serviceAccount"
-        },
-        "startupProbe": {
-          "additionalProperties": true,
-          "description": "Startup probe. Set `enabled` and exactly one handler (`httpGet`, `tcpSocket`, `exec`\nor `grpc`); unset timing fields fall back to the Kubernetes defaults.",
-          "properties": {
-            "enabled": {
-              "default": false,
-              "description": "Enable the startup probe.",
-              "required": [],
-              "title": "enabled",
-              "type": "boolean"
-            }
-          },
-          "required": [],
-          "title": "startupProbe"
-        },
-        "strategy": {
-          "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.apps.v1.DeploymentStrategy",
-          "required": []
-        },
-        "terminationGracePeriodSeconds": {
-          "default": 30,
-          "description": "Grace period for pod shutdown.",
-          "required": [],
-          "title": "terminationGracePeriodSeconds",
-          "type": "integer"
-        },
-        "tolerations": {
-          "description": "Tolerations for pod assignment.",
-          "items": {
-            "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.Toleration",
-            "required": []
-          },
-          "required": [],
-          "title": "tolerations",
-          "type": "array"
-        },
-        "topologySpreadConstraints": {
-          "description": "Topology spread constraints.",
-          "items": {
-            "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.TopologySpreadConstraint",
-            "required": []
-          },
-          "required": [],
-          "title": "topologySpreadConstraints",
-          "type": "array"
-        }
-      },
-      "required": [],
-      "title": "common",
-      "type": "object"
     },
     "commonAnnotations": {
       "additionalProperties": true,
@@ -1318,6 +26,12 @@
       "title": "commonLabels",
       "type": "object"
     },
+    "component": {
+      "default": "",
+      "description": "Value for the `app.kubernetes.io/component` label.",
+      "title": "component",
+      "type": "string"
+    },
     "config": {
       "additionalProperties": true,
       "description": "Extra configuration, expressed as the TOML tree of\n[the application's configuration reference](https://github.com/TimSchoenle/mp-stats-legacy-viewer/blob/main/docs/CONFIGURATION.md)\n(`server.bind_addr`, `converter.*`, ...). Merged over everything the chart derives from the\nvalues above, so it can both extend and override them. Rendered into the mounted ConfigMap —\nnever into the environment, which the loader refuses to combine with a file.",
@@ -1328,7 +42,6 @@
     "configExtraToml": {
       "default": "",
       "description": "Verbatim TOML added to the rendered configuration, after its top-level keys and before its\nfirst table, so the top-level keys written here stay top-level. A key or table the rendered\nconfiguration already defines is refused at render time. The escape hatch for the shapes the\nchart's TOML renderer cannot express: an array of arrays, an array mixing tables and scalars, and\nTOML's own literal types such as a datetime. Arrays of tables render natively.",
-      "required": [],
       "title": "configExtraToml",
       "type": "string"
     },
@@ -1339,14 +52,12 @@
         "configDir": {
           "default": "/etc/mp-stats/config",
           "description": "Directory the rendered `config.toml` is mounted at, passed as `MP_STATS_CONFIG`. Pointing\nthis at the mount **replaces** the `/config.toml` the image ships, so everything the image\ndescribed — the bind address, `dist_dir`, `data_dir` — is restated by the values above.",
-          "required": [],
           "title": "configDir",
           "type": "string"
         },
         "secretsDir": {
           "default": "/etc/mp-stats/secrets",
           "description": "Directory credential files are mounted at, passed as `MP_STATS_SECRETS_DIR`. The Sentry\nDSN is the only credential this chart handles, so the volume and the variable both appear\nonly while `telemetry.sentry.enabled` is set — a release that does not report to Sentry\ncarries neither.",
-          "required": [],
           "title": "secretsDir",
           "type": "string"
         }
@@ -1354,10 +65,25 @@
       "required": [],
       "title": "configMount"
     },
+    "dnsConfig": {
+      "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.PodDNSConfig",
+      "required": []
+    },
+    "dnsPolicy": {
+      "default": "",
+      "description": "Pod DNS policy.",
+      "title": "dnsPolicy",
+      "type": "string"
+    },
+    "existingConfigMap": {
+      "default": "",
+      "description": "Name of an existing ConfigMap holding `config.toml`, replacing the one this chart renders.",
+      "title": "existingConfigMap",
+      "type": "string"
+    },
     "existingSecret": {
       "default": "",
       "description": "Name of an existing Secret holding the Sentry DSN, which keeps it out of `values.yaml` and\nout of the Helm release object. **Its key is the configuration path, not a free-form name**:\n`telemetry__sentry__dsn`, because the file name is what the loader parses. Set, the chart\nrenders no Secret of its own and `telemetry.sentry.dsn` is ignored. It is read only while\n`telemetry.sentry.enabled` is set — nothing else this server reads is a credential.",
-      "required": [],
       "title": "existingSecret",
       "type": "string"
     },
@@ -1367,7 +93,6 @@
         "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.EnvVar",
         "required": []
       },
-      "required": [],
       "title": "extraEnv",
       "type": "array"
     },
@@ -1377,7 +102,6 @@
         "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.VolumeMount",
         "required": []
       },
-      "required": [],
       "title": "extraVolumeMounts",
       "type": "array"
     },
@@ -1387,14 +111,12 @@
         "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.Volume",
         "required": []
       },
-      "required": [],
       "title": "extraVolumes",
       "type": "array"
     },
     "fullnameOverride": {
       "default": "",
       "description": "Override the full generated resource name.",
-      "required": [],
       "title": "fullnameOverride",
       "type": "string"
     },
@@ -1408,7 +130,6 @@
             "$ref": "https://raw.githubusercontent.com/datreeio/CRDs-catalog/ad3b08c5045129d7bb1eeffd8e61719b2c8dd1e2/gateway.networking.k8s.io/gateway_v1.json#/properties/spec/properties/addresses/items",
             "required": []
           },
-          "required": [],
           "title": "addresses",
           "type": "array"
         },
@@ -1429,21 +150,18 @@
             "$ref": "https://raw.githubusercontent.com/datreeio/CRDs-catalog/ad3b08c5045129d7bb1eeffd8e61719b2c8dd1e2/gateway.networking.k8s.io/httproute_v1.json#/properties/spec/properties/rules/items/properties/backendRefs/items",
             "required": []
           },
-          "required": [],
           "title": "backendRefs",
           "type": "array"
         },
         "create": {
           "default": false,
           "description": "Also create the Gateway itself. Leave off when the cluster already runs one — that is the\nnormal case, and one Gateway per application usually means one load balancer per\napplication. When on, a route that names no parent attaches to it automatically.",
-          "required": [],
           "title": "create",
           "type": "boolean"
         },
         "enabled": {
           "default": false,
           "description": "Create the HTTPRoute. Requires the `gateway.networking.k8s.io` CRDs;\n`common.gateway.validate` fails the render loudly rather than silently dropping the route\nwhen they are absent.",
-          "required": [],
           "title": "enabled",
           "type": "boolean"
         },
@@ -1453,14 +171,12 @@
             "$ref": "https://raw.githubusercontent.com/datreeio/CRDs-catalog/ad3b08c5045129d7bb1eeffd8e61719b2c8dd1e2/gateway.networking.k8s.io/httproute_v1.json#/properties/spec/properties/rules/items/properties/filters/items",
             "required": []
           },
-          "required": [],
           "title": "filters",
           "type": "array"
         },
         "gatewayClassName": {
           "default": "",
           "description": "GatewayClass that programs the created Gateway, e.g. `cilium`, `istio`, `envoy-gateway`,\n`nginx`. Required by `create`; a Gateway without one is never reconciled. Ignored otherwise.",
-          "required": [],
           "title": "gatewayClassName",
           "type": "string"
         },
@@ -1474,27 +190,23 @@
               },
               {
                 "pattern": "\\{\\{",
-                "required": [],
                 "type": "string"
               }
             ],
             "required": []
           },
-          "required": [],
           "title": "hostnames",
           "type": "array"
         },
         "httpPort": {
           "default": 80,
           "description": "Port for the derived HTTP listener.",
-          "required": [],
           "title": "httpPort",
           "type": "integer"
         },
         "httpsPort": {
           "default": 443,
           "description": "Port for the derived HTTPS listener.",
-          "required": [],
           "title": "httpsPort",
           "type": "integer"
         },
@@ -1505,7 +217,6 @@
             "enabled": {
               "default": false,
               "description": "Create the redirect route.",
-              "required": [],
               "title": "enabled",
               "type": "boolean"
             },
@@ -1522,14 +233,12 @@
             "sectionName": {
               "default": "",
               "description": "Listener to bind the redirect to. Must be the plaintext one: attached to every listener,\nthe redirect would also apply to the HTTPS listener and loop forever. Defaults to `http`,\nthe name of the listener `create` renders.",
-              "required": [],
               "title": "sectionName",
               "type": "string"
             },
             "statusCode": {
               "default": 301,
               "description": "Redirect status code. `301` or `302`.",
-              "required": [],
               "title": "statusCode",
               "type": "integer"
             }
@@ -1547,7 +256,6 @@
             "$ref": "https://raw.githubusercontent.com/datreeio/CRDs-catalog/ad3b08c5045129d7bb1eeffd8e61719b2c8dd1e2/gateway.networking.k8s.io/gateway_v1.json#/properties/spec/properties/listeners/items",
             "required": []
           },
-          "required": [],
           "title": "listeners",
           "type": "array"
         },
@@ -1563,27 +271,21 @@
                 "additionalProperties": false,
                 "properties": {
                   "group": {
-                    "required": [],
                     "type": "string"
                   },
                   "kind": {
-                    "required": [],
                     "type": "string"
                   },
                   "name": {
-                    "required": [],
                     "type": "string"
                   },
                   "namespace": {
-                    "required": [],
                     "type": "string"
                   },
                   "port": {
-                    "required": [],
                     "type": "integer"
                   },
                   "sectionName": {
-                    "required": [],
                     "type": "string"
                   }
                 },
@@ -1595,14 +297,12 @@
             ],
             "required": []
           },
-          "required": [],
           "title": "parentRefs",
           "type": "array"
         },
         "path": {
           "default": "/",
           "description": "Path prefix for the default rule. Ignored when `rules` is set.",
-          "required": [],
           "title": "path",
           "type": "string"
         },
@@ -1612,7 +312,6 @@
             "$ref": "https://raw.githubusercontent.com/datreeio/CRDs-catalog/ad3b08c5045129d7bb1eeffd8e61719b2c8dd1e2/gateway.networking.k8s.io/httproute_v1.json#/properties/spec/properties/rules/items",
             "required": []
           },
-          "required": [],
           "title": "rules",
           "type": "array"
         },
@@ -1630,14 +329,12 @@
                 "$ref": "https://raw.githubusercontent.com/datreeio/CRDs-catalog/ad3b08c5045129d7bb1eeffd8e61719b2c8dd1e2/gateway.networking.k8s.io/gateway_v1.json#/properties/spec/properties/listeners/items/properties/tls/properties/certificateRefs/items",
                 "required": []
               },
-              "required": [],
               "title": "certificateRefs",
               "type": "array"
             },
             "enabled": {
               "default": false,
               "description": "Add an HTTPS listener.",
-              "required": [],
               "title": "enabled",
               "type": "boolean"
             },
@@ -1669,6 +366,100 @@
       "title": "global",
       "type": "object"
     },
+    "grafanaDashboard": {
+      "additionalProperties": true,
+      "description": "Grafana dashboard delivery, consumed by `common.grafana.dashboard.*`. A consuming chart\nexposes this shape wherever it likes — `metrics.dashboard` is the convention — and passes it in\nas the `values` argument. Grafana has no Kubernetes-native dashboard type, so the partials\nrender both mechanisms: a labelled ConfigMap for the sidecar, and, optionally, one\n`GrafanaDashboard` per file for grafana-operator v5.",
+      "properties": {
+        "enabled": {
+          "default": false,
+          "description": "Create the ConfigMap holding the dashboard JSON. Required by the operator path too, which\nreferences it rather than duplicating the JSON into the custom resources.",
+          "title": "enabled",
+          "type": "boolean"
+        },
+        "grafanaOperator": {
+          "additionalProperties": true,
+          "description": "The grafana-operator v5 path, rendered in addition to the ConfigMap above rather than\ninstead of it. Everything here is ignored while `enabled` is false.",
+          "properties": {
+            "allowCrossNamespaceImport": {
+              "default": true,
+              "description": "Let the resources bind to Grafana instances outside the release namespace. With `false`\nthe operator only considers Grafana custom resources in the same namespace.",
+              "title": "allowCrossNamespaceImport",
+              "type": "boolean"
+            },
+            "enabled": {
+              "default": false,
+              "description": "Also create one `GrafanaDashboard` per dashboard file. This is the only delivery path a\nchart can make cross-namespace on its own terms. Requires the `grafana.integreatly.org/v1beta1`\nCRDs; `common.grafana.dashboard.errors` fails the render loudly rather than silently\ndropping the objects when they are absent.",
+              "title": "enabled",
+              "type": "boolean"
+            },
+            "folder": {
+              "default": "",
+              "description": "Folder to file the dashboards under. Empty leaves them at the Grafana root.",
+              "title": "folder",
+              "type": "string"
+            },
+            "instanceSelector": {
+              "additionalProperties": true,
+              "description": "Label selector for the Grafana instances to import into. Must select something: unlike a\nKubernetes label selector, an empty `instanceSelector` matches no instance at all.",
+              "properties": {
+                "matchLabels": {
+                  "additionalProperties": false,
+                  "description": "Labels every Grafana custom resource to import into has to carry.",
+                  "properties": {
+                    "dashboards": {
+                      "default": "grafana",
+                      "title": "dashboards",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "dashboards"
+                  ],
+                  "title": "matchLabels",
+                  "type": "object"
+                }
+              },
+              "required": [
+                "matchLabels"
+              ],
+              "title": "instanceSelector",
+              "type": "object"
+            },
+            "resyncPeriod": {
+              "default": "5m",
+              "description": "How often the operator re-reconciles the dashboard, undoing edits made in the Grafana UI.\nA Go duration.",
+              "title": "resyncPeriod",
+              "type": "string"
+            }
+          },
+          "required": [],
+          "title": "grafanaOperator"
+        },
+        "label": {
+          "default": "grafana_dashboard",
+          "description": "Label a Grafana sidecar watches for dashboard ConfigMaps. Discovery is a property of the\n*Grafana* release: the sidecar only sees this ConfigMap if `sidecar.dashboards.searchNamespace`\ncovers the namespace it lands in, which a chart cannot influence from its own side.",
+          "title": "label",
+          "type": "string"
+        },
+        "labelValue": {
+          "default": "1",
+          "description": "Value for that label.",
+          "title": "labelValue",
+          "type": "string"
+        }
+      },
+      "required": [],
+      "title": "grafanaDashboard"
+    },
+    "hostAliases": {
+      "description": "Host aliases injected into the pod's /etc/hosts.",
+      "items": {
+        "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.HostAlias",
+        "required": []
+      },
+      "title": "hostAliases",
+      "type": "array"
+    },
     "image": {
       "additionalProperties": true,
       "description": "Container image the pod runs, composed as `registry/repository:tag`.",
@@ -1688,21 +479,18 @@
         "registry": {
           "default": "",
           "description": "Registry host. Empty means Docker Hub.",
-          "required": [],
           "title": "registry",
           "type": "string"
         },
         "repository": {
           "default": "timschoenle/mp-stats-legacy-viewer",
           "description": "The container image repository.",
-          "required": [],
           "title": "repository",
           "type": "string"
         },
         "tag": {
           "default": "v0.21.4@sha256:daaf98e16a11c6eb3fea61bb8e2feb732451212e6feba72045dc464628bf150e",
           "description": "The container image tag, pinned by digest (`vX.Y.Z\npull, while the tag stays on as the readable version marker. Defaults to the chart's\n`appVersion` when empty.",
-          "required": [],
           "title": "tag",
           "type": "string"
         }
@@ -1715,7 +503,6 @@
       "items": {
         "required": []
       },
-      "required": [],
       "title": "imagePullSecrets",
       "type": "array"
     },
@@ -1733,7 +520,6 @@
         "enabled": {
           "default": false,
           "description": "Enable or disable Kubernetes Ingress resource creation.\nSet to `true` to expose the service externally via Ingress.",
-          "required": [],
           "title": "enabled",
           "type": "boolean"
         },
@@ -1742,14 +528,12 @@
           "items": {
             "required": []
           },
-          "required": [],
           "title": "hosts",
           "type": "array"
         },
         "ingressClassName": {
           "default": "nginx",
           "description": "Ingress class to use (e.g., \"nginx\", \"traefik\").\nShould match your cluster's ingress controller configuration.",
-          "required": [],
           "title": "ingressClassName",
           "type": "string"
         },
@@ -1758,7 +542,6 @@
           "items": {
             "required": []
           },
-          "required": [],
           "title": "tls",
           "type": "array"
         }
@@ -1769,7 +552,6 @@
     "kubeVersionOverride": {
       "default": "",
       "description": "Kubernetes version to target when branching on API availability.\nLets `helm template` render for a specific cluster version without a live connection.",
-      "required": [],
       "title": "kubeVersionOverride",
       "type": "string"
     },
@@ -1780,14 +562,12 @@
         "enabled": {
           "default": true,
           "description": "Enable the liveness probe.",
-          "required": [],
           "title": "enabled",
           "type": "boolean"
         },
         "failureThreshold": {
           "default": 3,
           "description": "Consecutive failures before the probe is considered failed.",
-          "required": [],
           "title": "failureThreshold",
           "type": "integer"
         },
@@ -1798,14 +578,12 @@
             "path": {
               "default": "/health/live",
               "description": "Health check path.",
-              "required": [],
               "title": "path",
               "type": "string"
             },
             "port": {
               "default": "http",
               "description": "Named container port to probe.",
-              "required": [],
               "title": "port",
               "type": "string"
             }
@@ -1816,21 +594,18 @@
         "initialDelaySeconds": {
           "default": 1,
           "description": "Delay before the first probe.",
-          "required": [],
           "title": "initialDelaySeconds",
           "type": "integer"
         },
         "periodSeconds": {
           "default": 10,
           "description": "Probe interval.",
-          "required": [],
           "title": "periodSeconds",
           "type": "integer"
         },
         "timeoutSeconds": {
           "default": 5,
           "description": "Probe timeout.",
-          "required": [],
           "title": "timeoutSeconds",
           "type": "integer"
         }
@@ -1841,14 +616,12 @@
     "nameOverride": {
       "default": "",
       "description": "Override the chart name used in resource names and labels.",
-      "required": [],
       "title": "nameOverride",
       "type": "string"
     },
     "namespaceOverride": {
       "default": "",
       "description": "Deploy into a namespace other than the release namespace.",
-      "required": [],
       "title": "namespaceOverride",
       "type": "string"
     },
@@ -1863,7 +636,6 @@
             "description": {
               "default": "",
               "description": "`spec.description`, which Cilium surfaces in `cilium policy get` and in Hubble flow\nverdicts. The one place to record why a rule exists where an operator debugging a drop\nwill actually see it.",
-              "required": [],
               "title": "description",
               "type": "string"
             },
@@ -1876,7 +648,6 @@
                   "items": {
                     "required": []
                   },
-                  "required": [],
                   "title": "customRules",
                   "type": "array"
                 },
@@ -1885,7 +656,6 @@
                   "items": {
                     "required": []
                   },
-                  "required": [],
                   "title": "dnsMatchPatterns",
                   "type": "array"
                 },
@@ -1895,7 +665,6 @@
                     "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyPort",
                     "required": []
                   },
-                  "required": [],
                   "title": "entityPorts",
                   "type": "array"
                 },
@@ -1905,7 +674,6 @@
                     "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyPort",
                     "required": []
                   },
-                  "required": [],
                   "title": "fqdnPorts",
                   "type": "array"
                 },
@@ -1914,17 +682,14 @@
                   "items": {
                     "required": []
                   },
-                  "required": [],
                   "title": "httpRules",
                   "type": "array"
                 },
                 "toEntities": {
                   "description": "Named destination sets, e.g. `world` for everything outside the cluster, or\n`kube-apiserver`. Not a synonym for the `egress.cidr`/`except` translation: `world` does\nnot carve out the cloud metadata endpoint the way those defaults do.",
                   "items": {
-                    "required": [],
                     "type": "string"
                   },
-                  "required": [],
                   "title": "toEntities",
                   "type": "array"
                 },
@@ -1933,7 +698,6 @@
                   "items": {
                     "required": []
                   },
-                  "required": [],
                   "title": "toFQDNs",
                   "type": "array"
                 }
@@ -1944,7 +708,6 @@
             "enableDefaultDeny": {
               "default": true,
               "description": "State default-deny explicitly rather than relying on it being implied by the presence\nof rules. This is what makes the intentional default-deny case — a policy with an empty\nrule list — actually deny, instead of being treated as no policy at all. Cilium 1.16+.",
-              "required": [],
               "title": "enableDefaultDeny",
               "type": "boolean"
             },
@@ -1953,7 +716,6 @@
               "items": {
                 "required": []
               },
-              "required": [],
               "title": "extraEgress",
               "type": "array"
             },
@@ -1962,7 +724,6 @@
               "items": {
                 "required": []
               },
-              "required": [],
               "title": "extraIngress",
               "type": "array"
             },
@@ -1975,17 +736,14 @@
                   "items": {
                     "required": []
                   },
-                  "required": [],
                   "title": "customRules",
                   "type": "array"
                 },
                 "fromEntities": {
                   "description": "Named source sets, e.g. `cluster`, `host`, `remote-node`, `world`, `kube-apiserver`.\nA named entity stays correct when the cluster is renumbered; a CIDR list does not.",
                   "items": {
-                    "required": [],
                     "type": "string"
                   },
-                  "required": [],
                   "title": "fromEntities",
                   "type": "array"
                 }
@@ -2004,7 +762,6 @@
             "cidr": {
               "default": "0.0.0.0/0",
               "description": "Destination CIDR for the HTTP/HTTPS rules",
-              "required": [],
               "title": "cidr",
               "type": "string"
             },
@@ -2014,7 +771,6 @@
                 "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyEgressRule",
                 "required": []
               },
-              "required": [],
               "title": "customRules",
               "type": "array"
             },
@@ -2025,7 +781,6 @@
                 "enabled": {
                   "default": true,
                   "description": "Allow egress to DNS",
-                  "required": [],
                   "title": "enabled",
                   "type": "boolean"
                 },
@@ -2035,7 +790,6 @@
                   "properties": {
                     "kubernetes.io/metadata.name": {
                       "default": "kube-system",
-                      "required": [],
                       "title": "kubernetes.io/metadata.name",
                       "type": "string"
                     }
@@ -2052,7 +806,6 @@
                   "properties": {
                     "k8s-app": {
                       "default": "kube-dns",
-                      "required": [],
                       "title": "k8s-app",
                       "type": "string"
                     }
@@ -2070,7 +823,6 @@
             "enabled": {
               "default": true,
               "description": "Enable egress rules",
-              "required": [],
               "title": "enabled",
               "type": "boolean"
             },
@@ -2079,25 +831,20 @@
               "items": {
                 "anyOf": [
                   {
-                    "required": [],
                     "type": "string"
                   },
                   {
-                    "required": [],
                     "type": "string"
                   },
                   {
-                    "required": [],
                     "type": "string"
                   },
                   {
-                    "required": [],
                     "type": "string"
                   }
                 ],
                 "required": []
               },
-              "required": [],
               "title": "except",
               "type": "array"
             },
@@ -2108,7 +855,6 @@
                 "enabled": {
                   "default": false,
                   "description": "Allow egress to HTTP (TCP/80)",
-                  "required": [],
                   "title": "enabled",
                   "type": "boolean"
                 }
@@ -2123,7 +869,6 @@
                 "enabled": {
                   "default": true,
                   "description": "Allow egress to HTTPS (TCP/443)",
-                  "required": [],
                   "title": "enabled",
                   "type": "boolean"
                 }
@@ -2138,7 +883,6 @@
         "enabled": {
           "default": false,
           "description": "Enable network policies",
-          "required": [],
           "title": "enabled",
           "type": "boolean"
         },
@@ -2159,7 +903,6 @@
             "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyEgressRule",
             "required": []
           },
-          "required": [],
           "title": "extraEgress",
           "type": "array"
         },
@@ -2169,7 +912,6 @@
             "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyIngressRule",
             "required": []
           },
-          "required": [],
           "title": "extraIngress",
           "type": "array"
         },
@@ -2184,14 +926,12 @@
                 "enabled": {
                   "default": true,
                   "description": "Allow ingress from Ingress Controller",
-                  "required": [],
                   "title": "enabled",
                   "type": "boolean"
                 },
                 "namespace": {
                   "default": "traefik",
                   "description": "Namespace where Ingress Controller is running (default: traefik)",
-                  "required": [],
                   "title": "namespace",
                   "type": "string"
                 },
@@ -2201,7 +941,6 @@
                     "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyPort",
                     "required": []
                   },
-                  "required": [],
                   "title": "ports",
                   "type": "array"
                 },
@@ -2211,7 +950,6 @@
                   "properties": {
                     "app.kubernetes.io/name": {
                       "default": "traefik",
-                      "required": [],
                       "title": "app.kubernetes.io/name",
                       "type": "string"
                     }
@@ -2232,14 +970,12 @@
                 "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyIngressRule",
                 "required": []
               },
-              "required": [],
               "title": "customRules",
               "type": "array"
             },
             "enabled": {
               "default": true,
               "description": "Enable ingress rules",
-              "required": [],
               "title": "enabled",
               "type": "boolean"
             },
@@ -2250,14 +986,12 @@
                 "enabled": {
                   "default": true,
                   "description": "Allow ingress from the Gateway's data plane.",
-                  "required": [],
                   "title": "enabled",
                   "type": "boolean"
                 },
                 "namespace": {
                   "default": "",
                   "description": "Namespace the data plane runs in. Empty derives it from `gateway.parentRefs`.",
-                  "required": [],
                   "title": "namespace",
                   "type": "string"
                 },
@@ -2267,7 +1001,6 @@
                     "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyPort",
                     "required": []
                   },
-                  "required": [],
                   "title": "ports",
                   "type": "array"
                 },
@@ -2289,14 +1022,12 @@
                 "enabled": {
                   "default": true,
                   "description": "Allow ingress from monitoring namespace",
-                  "required": [],
                   "title": "enabled",
                   "type": "boolean"
                 },
                 "namespace": {
                   "default": "monitoring",
                   "description": "Namespace where monitoring tools are running",
-                  "required": [],
                   "title": "namespace",
                   "type": "string"
                 },
@@ -2313,7 +1044,6 @@
                     "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.networking.v1.NetworkPolicyPort",
                     "required": []
                   },
-                  "required": [],
                   "title": "ports",
                   "type": "array"
                 }
@@ -2337,6 +1067,12 @@
       "required": [],
       "title": "nodeSelector",
       "type": "object"
+    },
+    "partOf": {
+      "default": "",
+      "description": "Value for the `app.kubernetes.io/part-of` label.",
+      "title": "partOf",
+      "type": "string"
     },
     "podAnnotations": {
       "additionalProperties": true,
@@ -2380,9 +1116,49 @@
     "priorityClassName": {
       "default": "",
       "description": "Optional Kubernetes PriorityClass name.",
-      "required": [],
       "title": "priorityClassName",
       "type": "string"
+    },
+    "prometheusRule": {
+      "additionalProperties": true,
+      "description": "Prometheus recording and alerting rules, consumed by `common.prometheus.rules.*`. Unlike the\ndashboards there is only one carrier — `PrometheusRule` is already the operator's own CRD — and\nno per-object cross-namespace grant: which namespaces a Prometheus loads rules from is decided\nby `ruleNamespaceSelector` and `ruleSelector` on the Prometheus custom resource.",
+      "properties": {
+        "enabled": {
+          "default": false,
+          "description": "Create a PrometheusRule from the chart's rule files. Requires the `monitoring.coreos.com/v1`\nCRDs; `common.prometheus.rules.errors` fails the render loudly rather than silently dropping\nthe object when they are absent.",
+          "title": "enabled",
+          "type": "boolean"
+        },
+        "labels": {
+          "additionalProperties": true,
+          "description": "Extra labels, templated. This is the only half of rule discovery a chart controls: a\ncluster whose Prometheus selects `release: kube-prometheus-stack` needs that label here, or\nthe rules are created and never loaded.",
+          "required": [],
+          "title": "labels",
+          "type": "object"
+        },
+        "scope": {
+          "additionalProperties": true,
+          "description": "Confine the rules to a subset of the cluster's series. A `PrometheusRule` is not scoped to\nthe namespace it lives in, so `up{job=\"api\"} == 0` matches somebody else's `api` job in\nanother namespace and two installs of one chart alert on each other. Rather than parse PromQL\nin a Go template, the rule files mark every selector with an always-true placeholder matcher\nand the library swaps it for a real one — see the note in `_prometheus.tpl`. Consuming charts\nnormally derive `matcher` rather than exposing it raw.",
+          "properties": {
+            "matcher": {
+              "default": "",
+              "description": "What to swap it for, e.g. `namespace=\"prod\"`. Empty disables the substitution; the\nplaceholder is left in place, which is correct, because it is already a no-op matcher.",
+              "title": "matcher",
+              "type": "string"
+            },
+            "placeholder": {
+              "default": "",
+              "description": "The literal placeholder written into the rule files, e.g. `myapp_scope=~\".*\"`. Empty\ndisables the substitution and the files install exactly as vendored.",
+              "title": "placeholder",
+              "type": "string"
+            }
+          },
+          "required": [],
+          "title": "scope"
+        }
+      },
+      "required": [],
+      "title": "prometheusRule"
     },
     "readinessProbe": {
       "additionalProperties": true,
@@ -2391,14 +1167,12 @@
         "enabled": {
           "default": true,
           "description": "Enable the readiness probe.",
-          "required": [],
           "title": "enabled",
           "type": "boolean"
         },
         "failureThreshold": {
           "default": 3,
           "description": "Consecutive failures before the probe is considered failed.",
-          "required": [],
           "title": "failureThreshold",
           "type": "integer"
         },
@@ -2409,14 +1183,12 @@
             "path": {
               "default": "/health/ready",
               "description": "Health check path.",
-              "required": [],
               "title": "path",
               "type": "string"
             },
             "port": {
               "default": "http",
               "description": "Named container port to probe.",
-              "required": [],
               "title": "port",
               "type": "string"
             }
@@ -2427,28 +1199,24 @@
         "initialDelaySeconds": {
           "default": 1,
           "description": "Delay before the first probe.",
-          "required": [],
           "title": "initialDelaySeconds",
           "type": "integer"
         },
         "periodSeconds": {
           "default": 5,
           "description": "Probe interval.",
-          "required": [],
           "title": "periodSeconds",
           "type": "integer"
         },
         "successThreshold": {
           "default": 1,
           "description": "Consecutive successes before the pod is considered ready.",
-          "required": [],
           "title": "successThreshold",
           "type": "integer"
         },
         "timeoutSeconds": {
           "default": 3,
           "description": "Probe timeout.",
-          "required": [],
           "title": "timeoutSeconds",
           "type": "integer"
         }
@@ -2460,7 +1228,6 @@
       "default": 1,
       "description": "Number of application replicas.",
       "minimum": 0,
-      "required": [],
       "title": "replicaCount",
       "type": "integer"
     },
@@ -2471,7 +1238,6 @@
     "revisionHistoryLimit": {
       "default": 3,
       "description": "Number of old ReplicaSets retained for rollback.",
-      "required": [],
       "title": "revisionHistoryLimit",
       "type": "integer"
     },
@@ -2504,21 +1270,18 @@
                 "scriptNonce": {
                   "default": false,
                   "description": "Reserve a per-response nonce in `script-src` and serve documents `Cache-Control:\nno-cache` (`server.csp.cloudflare.script_nonce`). Needed by the products that inject an\ninline script at the edge — Bot Fight Mode, JavaScript Detections, the challenge\nplatform — which no hash can cover, because they run after the shell was hashed. It\ncarries one obligation the chart cannot enforce: **no Cloudflare Cache Rule may cache\nthe shell**, or a single nonce is shared by every reader of that cache entry.",
-                  "required": [],
                   "title": "scriptNonce",
                   "type": "boolean"
                 },
                 "turnstile": {
                   "default": false,
                   "description": "Admit `https://challenges.cloudflare.com` in `script-src` and `frame-src`\n(`server.csp.cloudflare.turnstile`), for a Turnstile widget rendered in a page this\nserver serves.",
-                  "required": [],
                   "title": "turnstile",
                   "type": "boolean"
                 },
                 "webAnalytics": {
                   "default": false,
                   "description": "Admit the Web Analytics beacon and the endpoint it reports to\n(`server.csp.cloudflare.web_analytics`). For the manually embedded snippet only — the\nautomatic edge injection needs `scriptNonce` instead.",
-                  "required": [],
                   "title": "webAnalytics",
                   "type": "boolean"
                 }
@@ -2529,7 +1292,6 @@
             "enabled": {
               "default": true,
               "description": "Attach the header at all (`server.csp.enabled`). Turn it off only when something in\nfront of this server already sets one.",
-              "required": [],
               "title": "enabled",
               "type": "boolean"
             }
@@ -2540,21 +1302,18 @@
         "dataDir": {
           "default": "/dist/data",
           "description": "The converter's output, served under `/data` (`server.data_dir`). The default is where\nthe image puts it.",
-          "required": [],
           "title": "dataDir",
           "type": "string"
         },
         "distDir": {
           "default": "/dist",
           "description": "Built frontend served as the SPA (`server.dist_dir`). The server refuses to start unless\nit holds an `index.html`, which is both the entry point and the fallback for unknown routes.\nThe default is where the image puts it — change it only for an image that differs.",
-          "required": [],
           "title": "distDir",
           "type": "string"
         },
         "host": {
           "default": "0.0.0.0",
           "description": "Host half of the bind address (`server.bind_addr`). `0.0.0.0` is what makes the Service\nreach the listener.",
-          "required": [],
           "title": "host",
           "type": "string"
         },
@@ -2563,7 +1322,6 @@
           "description": "Port half of the bind address (`server.bind_addr`). Also the container port, the Service\ntarget and what every probe and NetworkPolicy rule is written against.",
           "maximum": 65535,
           "minimum": 1,
-          "required": [],
           "title": "port",
           "type": "integer"
         }
@@ -2578,7 +1336,6 @@
         "port": {
           "default": 80,
           "description": "Port that the Kubernetes Service will expose.\nTypically maps to `application.server.port`.",
-          "required": [],
           "title": "port",
           "type": "integer"
         },
@@ -2611,21 +1368,18 @@
         "automountToken": {
           "default": false,
           "description": "Whether to automount the service account token",
-          "required": [],
           "title": "automountToken",
           "type": "boolean"
         },
         "create": {
           "default": true,
           "description": "Whether to create a dedicated service account",
-          "required": [],
           "title": "create",
           "type": "boolean"
         },
         "name": {
           "default": "",
           "description": "Custom service account name (auto-generated if empty)",
-          "required": [],
           "title": "name",
           "type": "string"
         }
@@ -2640,14 +1394,12 @@
         "enabled": {
           "default": true,
           "description": "Enable the startup probe.",
-          "required": [],
           "title": "enabled",
           "type": "boolean"
         },
         "failureThreshold": {
           "default": 12,
           "description": "Consecutive failures before the probe is considered failed.",
-          "required": [],
           "title": "failureThreshold",
           "type": "integer"
         },
@@ -2658,14 +1410,12 @@
             "path": {
               "default": "/health/startup",
               "description": "Health check path.",
-              "required": [],
               "title": "path",
               "type": "string"
             },
             "port": {
               "default": "http",
               "description": "Named container port to probe.",
-              "required": [],
               "title": "port",
               "type": "string"
             }
@@ -2676,21 +1426,18 @@
         "initialDelaySeconds": {
           "default": 1,
           "description": "Delay before the first probe.",
-          "required": [],
           "title": "initialDelaySeconds",
           "type": "integer"
         },
         "periodSeconds": {
           "default": 5,
           "description": "Probe interval.",
-          "required": [],
           "title": "periodSeconds",
           "type": "integer"
         },
         "timeoutSeconds": {
           "default": 3,
           "description": "Probe timeout.",
-          "required": [],
           "title": "timeoutSeconds",
           "type": "integer"
         }
@@ -2709,14 +1456,12 @@
         "jsonLogs": {
           "default": false,
           "description": "Emit one JSON object per record instead of human-readable lines\n(`telemetry.json_logs`). The image's default suits `docker run` on a terminal; a cluster\nshipping logs to a collector wants this on.",
-          "required": [],
           "title": "jsonLogs",
           "type": "boolean"
         },
         "logFilter": {
           "default": "info",
           "description": "`RUST_LOG`-style filter deciding which records are emitted at all\n(`telemetry.log_filter`), for example `info,mp_stats_server=debug`. `RUST_LOG` set in the\ncontainer outranks this — the one place in this configuration where a bare environment\nvariable wins over the layered loader — so `extraEnv` is the override to reach for while a\npod is misbehaving. It governs what reaches Sentry too: a record this filter drops never\nbecomes an issue or a breadcrumb, whatever `sentry.captureLevel` says.",
-          "required": [],
           "title": "logFilter",
           "type": "string"
         },
@@ -2727,7 +1472,6 @@
             "attachStacktraces": {
               "default": true,
               "description": "Attach a stack trace to events that carry none of their own\n(`telemetry.sentry.attach_stacktraces`).",
-              "required": [],
               "title": "attachStacktraces",
               "type": "boolean"
             },
@@ -2762,14 +1506,12 @@
             "debug": {
               "default": false,
               "description": "Print the SDK's own diagnostics to stderr (`telemetry.sentry.debug`). For proving a DSN\nworks, not for running.",
-              "required": [],
               "title": "debug",
               "type": "boolean"
             },
             "dsn": {
               "default": "",
               "description": "Ingest URL, `https://\u003ckey\u003e@\u003chost\u003e/\u003cproject\u003e`. A credential — the embedded key is a\nbearer token for the project's ingest endpoint — so it is delivered as a file in\n`MP_STATS_SECRETS_DIR` under `telemetry__sentry__dsn` and never written into the\nConfigMap. It is the only credential this chart handles, and switching Sentry on is what\ngives the pod a secrets volume at all. Leave it empty and put that key in the Secret named\nby `existingSecret` to keep it out of `helm get values` entirely.",
-              "required": [],
               "title": "dsn",
               "type": "string"
             },
@@ -2796,7 +1538,6 @@
             "httpTransactions": {
               "default": true,
               "description": "Record one transaction per request, named by the matched route rather than by the URI\n(`telemetry.sentry.http_transactions`). Whether a started transaction is kept is\n`tracesSampleRate`'s decision; this is the switch for a deployment that wants error\nreporting and no performance data at all.",
-              "required": [],
               "title": "httpTransactions",
               "type": "boolean"
             },
@@ -2804,7 +1545,6 @@
               "default": 100,
               "description": "How many breadcrumbs one event carries (`telemetry.sentry.max_breadcrumbs`).",
               "minimum": 0,
-              "required": [],
               "title": "maxBreadcrumbs",
               "type": "integer"
             },
@@ -2823,14 +1563,12 @@
               "description": "Fraction of captured events actually sent (`telemetry.sentry.sample_rate`). A blunt\nvolume cap — it drops whole issues, not repetitions of one — so leave it at `1` unless a\nquota forces otherwise. A value outside the range fails the boot.",
               "maximum": 1,
               "minimum": 0,
-              "required": [],
               "title": "sampleRate",
               "type": "number"
             },
             "sendDefaultPii": {
               "default": false,
               "description": "Send personally identifying data with every event: the client IP, the whole request\nheader set — `Cookie` included — and the resolved user\n(`telemetry.sentry.send_default_pii`). **Off, and worth leaving off** — a reader's IP\naddress is not what makes a crash report actionable, and Sentry is a third party for the\npurposes of whatever data policy this deployment publishes. It is two controls rather than\none, besides: off is also what keeps the HTTP middleware redacting sensitive headers.",
-              "required": [],
               "title": "sendDefaultPii",
               "type": "boolean"
             },
@@ -2848,14 +1586,12 @@
               "default": 2,
               "description": "How long process exit waits for queued events to drain\n(`telemetry.sentry.shutdown_timeout_secs`). Paid on every pod shutdown, so it is time\nadded to every rollout; keep it well inside `terminationGracePeriodSeconds`.",
               "minimum": 0,
-              "required": [],
               "title": "shutdownTimeoutSecs",
               "type": "integer"
             },
             "spanAttributes": {
               "default": false,
               "description": "Copy `tracing` span fields onto the Sentry span as attributes\n(`telemetry.sentry.span_attributes`). Off: the span fields here carry request paths, and a\ntransaction is retained for longer than a log line.",
-              "required": [],
               "title": "spanAttributes",
               "type": "boolean"
             },
@@ -2864,7 +1600,6 @@
               "description": "Fraction of traces this server **starts** that are recorded\n(`telemetry.sentry.traces_sample_rate`). `0` starts none, which is the right figure for a\nstatic file server — a trace per asset request is volume without a question behind it —\nand it is what makes the feature free to switch on for error reporting alone. It does not\ntake the server out of a trace that reaches it already sampled: an inbound `sentry-trace`\nheader is continued whatever this says.",
               "maximum": 1,
               "minimum": 0,
-              "required": [],
               "title": "tracesSampleRate",
               "type": "number"
             }
@@ -2879,7 +1614,6 @@
     "terminationGracePeriodSeconds": {
       "default": 30,
       "description": "Grace period for pod shutdown.",
-      "required": [],
       "title": "terminationGracePeriodSeconds",
       "type": "integer"
     },
@@ -2889,7 +1623,6 @@
         "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.Toleration",
         "required": []
       },
-      "required": [],
       "title": "tolerations",
       "type": "array"
     },
@@ -2899,7 +1632,6 @@
         "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.TopologySpreadConstraint",
         "required": []
       },
-      "required": [],
       "title": "topologySpreadConstraints",
       "type": "array"
     }

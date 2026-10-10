@@ -1,6 +1,6 @@
 # paperless-ngx
 
-![Version: 2.3.17](https://img.shields.io/badge/Version-2.3.17-informational?style=flat-square) ![AppVersion: 3.3.0](https://img.shields.io/badge/AppVersion-3.3.0-informational?style=flat-square)
+![Version: 2.3.18](https://img.shields.io/badge/Version-2.3.18-informational?style=flat-square) ![AppVersion: 3.3.0](https://img.shields.io/badge/AppVersion-3.3.0-informational?style=flat-square)
 
 This chart deploys paperless-ngx — a document management system that scans, indexes and archives your paper documents — hardened to the restricted Pod Security Standard, with per-directory persistence, scheduled document_exporter backups and document_importer restores, optional bundled Valkey, PostgreSQL, Gotenberg and Tika, Ingress and Gateway API publishing, Grafana dashboards and Prometheus alerting rules.
 
@@ -1099,13 +1099,13 @@ earlier `image.tag` after a major upgrade is not supported by the application. E
 | podSecurityContext.runAsGroup | int | `1000` | Primary group ID to run as. |
 | podSecurityContext.runAsUser | int | `1000` | User ID to run as. |
 | podSecurityContextPreset | string | `"restricted"` | Pod security context baseline. `restricted` applies the Pod Security Standards restricted profile (`runAsNonRoot`, `seccompProfile: RuntimeDefault`, `fsGroupChangePolicy: OnRootMismatch`) on top of the identity fields below. |
-| postgresql | object | `{"enabled":false,"image":{"pullPolicy":"","registry":"","repository":"postgres","tag":"18.6@sha256:6737476511d43c91c7cee9aa027b5d30458b7ed0f3af663ff8715c14ce4355b6"},"persistence":{"enabled":true,"existingClaim":"","size":"8Gi","storageClassName":""},"resources":{"limits":{"memory":"512Mi"},"requests":{"cpu":"100m","memory":"256Mi"}}}` | A single-instance PostgreSQL bundled with the release, so `helm install` produces a working stack on a bare cluster. Evaluation tier by design: one replica, no failover, no backups, no connection pooler. A production deployment points `database.host` at a managed instance or an operator-run cluster instead. |
+| postgresql | object | `{"enabled":false,"image":{"pullPolicy":"","registry":"","repository":"postgres","tag":"18.6@sha256:74935e72241653ca55e0414067e6d8763aceb8a810eb51b452253ec3dcfc4336"},"persistence":{"enabled":true,"existingClaim":"","size":"8Gi","storageClassName":""},"resources":{"limits":{"memory":"512Mi"},"requests":{"cpu":"100m","memory":"256Mi"}}}` | A single-instance PostgreSQL bundled with the release, so `helm install` produces a working stack on a bare cluster. Evaluation tier by design: one replica, no failover, no backups, no connection pooler. A production deployment points `database.host` at a managed instance or an operator-run cluster instead. |
 | postgresql.enabled | bool | `false` | Run PostgreSQL as part of this release. Requires `database.engine: postgresql`. |
-| postgresql.image | object | `{"pullPolicy":"","registry":"","repository":"postgres","tag":"18.6@sha256:6737476511d43c91c7cee9aa027b5d30458b7ed0f3af663ff8715c14ce4355b6"}` | Image for the bundled PostgreSQL, composed as `registry/repository:tag`. |
+| postgresql.image | object | `{"pullPolicy":"","registry":"","repository":"postgres","tag":"18.6@sha256:74935e72241653ca55e0414067e6d8763aceb8a810eb51b452253ec3dcfc4336"}` | Image for the bundled PostgreSQL, composed as `registry/repository:tag`. |
 | postgresql.image.pullPolicy | string | `""` | The image pull policy. Empty resolves automatically from the tag/digest. |
 | postgresql.image.registry | string | `""` | Registry host. Empty means Docker Hub. |
 | postgresql.image.repository | string | `"postgres"` | Image repository. The official PostgreSQL image, matching the major version upstream's own compose stack ships. |
-| postgresql.image.tag | string | `"18.6@sha256:6737476511d43c91c7cee9aa027b5d30458b7ed0f3af663ff8715c14ce4355b6"` | Image tag, pinned by digest. Changing the *major* version in place does not work: PostgreSQL refuses to start on a data directory written by a different major, and this chart runs no `pg_upgrade`. |
+| postgresql.image.tag | string | `"18.6@sha256:74935e72241653ca55e0414067e6d8763aceb8a810eb51b452253ec3dcfc4336"` | Image tag, pinned by digest. Changing the *major* version in place does not work: PostgreSQL refuses to start on a data directory written by a different major, and this chart runs no `pg_upgrade`. |
 | postgresql.persistence | object | `{"enabled":true,"existingClaim":"","size":"8Gi","storageClassName":""}` | Storage for the database. This is the one volume in the release whose loss cannot be recovered from the documents themselves. |
 | postgresql.persistence.enabled | bool | `true` | Create a PersistentVolumeClaim. Disabled means an emptyDir, and every restart is an empty paperless with the documents still on the media volume and nothing indexing them. |
 | postgresql.persistence.existingClaim | string | `""` | Use an existing PersistentVolumeClaim instead of the StatefulSet's own. |

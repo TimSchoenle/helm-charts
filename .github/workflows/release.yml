@@ -1,4 +1,4 @@
-﻿name: Release Charts
+name: Release Charts
 
 on:
   push:
@@ -28,12 +28,17 @@ jobs:
         with:
           egress-policy: audit
 
+      # Scoped to what the token does here: chart-releaser creates a release per chart, uploads the
+      # packaged chart to it and pushes `index.yaml` to gh-pages. The bot identity lookup reads a
+      # public user endpoint and needs no permission. Without this the token inherits every
+      # permission the App's installation holds.
       - name: Generate Bot Token
         id: generate_token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           app-id: ${{ secrets.RELEASE_BOT_APP_ID }}
           private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+          permission-contents: write
 
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7

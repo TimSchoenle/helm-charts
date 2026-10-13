@@ -784,6 +784,24 @@ repository offers caps memory below what one of them needs. It keeps its per-dom
 cache in the Redis the services already use; `trawl.redis.enabled=false` turns that off, at the
 cost of re-solving from a cold browser on every request.
 
+It is also the one bundled workload built to run more than one replica, and its defaults are
+chosen so that works on a cluster with no spare capacity. A rollout replaces one pod at a time
+rather than starting a second browser pool beside the first, so `trawl.podAntiAffinity: hard`
+is safe at any `replicaCount` up to the node count. The anti-affinity term matches TRAWL's own
+pods only, and on Kubernetes 1.33 or later only pods of the same revision. On two or more nodes:
+
+```yaml
+trawl:
+  enabled: true
+  replicaCount: 2
+  podAntiAffinity: hard
+  podDisruptionBudget:
+    enabled: true
+  minReadySeconds: 30
+  # A contended node can slow a cold Firefox past the image's 90s launch limit, which is fatal.
+  browserLaunchTimeoutMs: 180000
+```
+
 They are embedded rather than pulled in as subcharts for concrete reasons, recorded in
 `Chart.yaml`: the official Valkey chart defines its own `common.image`, which collides with this
 repository's `common` library because Helm's template namespace is global across dependencies;

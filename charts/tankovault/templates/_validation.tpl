@@ -183,6 +183,42 @@ cannot generate one, so the Secret must already carry `seed_admin_password`.
 {{- $errors = append $errors "services.challengeSolver.enabled requires a solver backend: set `trawl.enabled=true` or point `externalTrawl.url` at one." -}}
 {{- end -}}
 
+{{- /*
+TRAWL's rollout and disruption settings. Each refusal here is a configuration the API server would
+either reject or accept and then never act on: a budget on one replica blocks every node drain,
+a strategy that may neither surge nor go unavailable can replace nothing, and an `extraEnv` entry
+naming a variable the chart sets would silently win by position.
+*/ -}}
+{{- $trawl := $ctx.Values.trawl -}}
+{{- if $trawl.enabled -}}
+{{- $pdb := $trawl.podDisruptionBudget | default dict -}}
+{{- if $pdb.enabled -}}
+{{- if lt (int $trawl.replicaCount) 2 -}}
+{{- $errors = append $errors (printf "trawl.podDisruptionBudget.enabled is set with trawl.replicaCount=%d. A budget on a single replica can never be satisfied by an eviction, so every node drain that reaches the TRAWL pod blocks until someone deletes it by hand. Run at least two replicas, or leave the budget off." (int $trawl.replicaCount)) -}}
+{{- end -}}
+{{- if and (not (kindIs "invalid" $pdb.minAvailable)) (not (kindIs "invalid" $pdb.maxUnavailable)) -}}
+{{- $errors = append $errors "trawl.podDisruptionBudget sets both minAvailable and maxUnavailable, and the API server refuses a budget carrying both. Set the one you do not want to `null`." -}}
+{{- end -}}
+{{- end -}}
+{{- $rolling := dig "rollingUpdate" dict ($trawl.strategy | default dict) -}}
+{{- $zero := list "0" "0%" -}}
+{{- if and (ne (toString (dig "type" "RollingUpdate" ($trawl.strategy | default dict))) "Recreate") (has (toString (dig "maxSurge" "25%" $rolling)) $zero) (has (toString (dig "maxUnavailable" "25%" $rolling)) $zero) -}}
+{{- $errors = append $errors "trawl.strategy.rollingUpdate sets both maxSurge and maxUnavailable to 0, so a rolling update could neither add a pod nor remove one. The API server refuses it; keep `maxUnavailable: 1` (the default), or allow a surge if the nodes have room for a second browser pool." -}}
+{{- end -}}
+{{- $managed := list "HOME" "BROWSER_POOL_SIZE" "REDIS_URL" -}}
+{{- if $trawl.browserLaunchTimeoutMs -}}
+{{- $managed = append $managed "BROWSER_LAUNCH_TIMEOUT_MS" -}}
+{{- end -}}
+{{- if $trawl.browserContentProcesses -}}
+{{- $managed = append $managed "BROWSER_MAX_CONTENT_PROCESSES" -}}
+{{- end -}}
+{{- range $entry := $trawl.extraEnv | default list -}}
+{{- if has $entry.name $managed -}}
+{{- $errors = append $errors (printf "trawl.extraEnv sets %s, which the chart already sets on the TRAWL container. Kubernetes keeps the last of two entries with one name, so this would silently replace the chart's value; use the first-class setting instead (%s are managed)." $entry.name (join ", " $managed)) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
 {{- /* Publishing a privileged service is a security defect, not a preference. */ -}}
 {{- if not $ctx.Values.allowUnsafeExposure -}}
 {{- range $service := list "controlPlane" "sync" "render" "challengeSolver" -}}

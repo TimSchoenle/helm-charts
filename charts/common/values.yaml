@@ -322,8 +322,22 @@ affinity: {}
 # @schema
 # enum: ["", soft, hard]
 # @schema
-# -- Shorthand for spreading replicas across nodes. `soft` prefers, `hard` requires.
+# -- Shorthand for spreading replicas across nodes. `soft` prefers, `hard` requires. On
+# Kubernetes 1.33 and later the term is scoped to the pod's own revision through
+# `matchLabelKeys: [pod-template-hash]`, so a rolling update is never blocked by the replicas it
+# is replacing.
 podAntiAffinity: ""
+
+# @schema
+# type: object
+# additionalProperties:
+#   type: string
+# @schema
+# -- Labels the `podAntiAffinity` shorthand matches on in addition to the selector labels. Set by
+# a chart that runs several workloads under one name, typically to their
+# `app.kubernetes.io/component`, so the shorthand spreads one workload instead of repelling every
+# pod in the release. Each entry must be a label the pod template carries.
+podAntiAffinityLabels: {}
 
 # @schema
 # type: array

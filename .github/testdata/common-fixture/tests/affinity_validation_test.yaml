@@ -1,0 +1,16 @@
+# Refusals only. A failedTemplate assertion empties every other document in its suite, so the
+# rendering cases live in affinity_test.yaml.
+suite: common.affinity refusals
+templates:
+  - deployment.yaml
+  - configmap.yaml
+tests:
+  - it: refuses podAntiAffinityLabels that repeat a selector label
+    template: deployment.yaml
+    set:
+      podAntiAffinity: soft
+      podAntiAffinityLabels:
+        app.kubernetes.io/name: other
+    asserts:
+      - failedTemplate:
+          errorMessage: 'podAntiAffinityLabels may not set the selector label "app.kubernetes.io/name"'

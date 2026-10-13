@@ -50,8 +50,15 @@ no `nameOverride` at all, `common.name` falls back to the chart name, and under 
 `nameOverride` the pod labels and the selector would disagree — which the API server rejects
 outright, breaking every bundled component rather than renaming it.
 
+`component` narrows the `podAntiAffinity` shorthand, which every bundled component inherits from
+the root values, to that component's own pods. Without it the shorthand selects on the release's
+name alone: under `hard`, the server and each of the four components refuse to share a node with
+any of the others, so a release that bundles all four needs five nodes and stays partly Pending on
+fewer.
+
 Arguments:
   ctx              (required) root context
+  component        (required) component name, matching the pod template's component label
   image            (required) the component's image dict
   runAsUser        (required) the UID its image was built for
   runAsGroup       (required) matching GID
@@ -77,8 +84,10 @@ Arguments:
       "priorityClassName" ($ctx.Values.priorityClassName | default "")
       "affinity" ($ctx.Values.affinity | default dict)
       "podAntiAffinity" ($ctx.Values.podAntiAffinity | default "")
+      "podAntiAffinityLabels" (dict "app.kubernetes.io/component" (required "paperless-ngx.component.values needs a component" .component))
       "topologySpreadConstraints" ($ctx.Values.topologySpreadConstraints | default list)
       "commonLabels" ($ctx.Values.commonLabels | default dict)
+      "kubeVersionOverride" ($ctx.Values.kubeVersionOverride | default "")
       "startupProbe" (dict "enabled" false)
       "livenessProbe" (.livenessProbe | default (dict "enabled" false))
       "readinessProbe" (.readinessProbe | default (dict "enabled" false))

@@ -1,0 +1,110 @@
+suite: common.affinity podAntiAffinity shorthand
+templates:
+  - deployment.yaml
+  - configmap.yaml
+tests:
+  - it: hard anti-affinity selects the release and is revision-scoped from Kubernetes 1.33
+    documentSelector:
+      path: kind
+      value: Deployment
+    capabilities:
+      majorVersion: 1
+      minorVersion: 34
+    set:
+      podAntiAffinity: hard
+    asserts:
+      - equal:
+          path: spec.template.spec.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution[0]
+          value:
+            labelSelector:
+              matchLabels:
+                app.kubernetes.io/name: common-fixture
+                app.kubernetes.io/instance: RELEASE-NAME
+            topologyKey: kubernetes.io/hostname
+            matchLabelKeys:
+              - pod-template-hash
+
+  - it: soft anti-affinity is revision-scoped from Kubernetes 1.33
+    documentSelector:
+      path: kind
+      value: Deployment
+    capabilities:
+      majorVersion: 1
+      minorVersion: 33
+    set:
+      podAntiAffinity: soft
+    asserts:
+      - equal:
+          path: spec.template.spec.affinity.podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].podAffinityTerm.matchLabelKeys
+          value:
+            - pod-template-hash
+
+  - it: omits matchLabelKeys below Kubernetes 1.33, where the API server may drop it silently
+    documentSelector:
+      path: kind
+      value: Deployment
+    capabilities:
+      majorVersion: 1
+      minorVersion: 32
+    set:
+      podAntiAffinity: hard
+    asserts:
+      - notExists:
+          path: spec.template.spec.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution[0].matchLabelKeys
+      - equal:
+          path: spec.template.spec.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution[0].topologyKey
+          value: kubernetes.io/hostname
+
+  - it: honours kubeVersionOverride for the matchLabelKeys gate
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      kubeVersionOverride: "1.33.0"
+      podAntiAffinity: soft
+    asserts:
+      - equal:
+          path: spec.template.spec.affinity.podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].podAffinityTerm.matchLabelKeys
+          value:
+            - pod-template-hash
+
+  - it: narrows the selector with podAntiAffinityLabels
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      podAntiAffinity: hard
+      podAntiAffinityLabels:
+        app.kubernetes.io/component: worker
+    asserts:
+      - equal:
+          path: spec.template.spec.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution[0].labelSelector.matchLabels
+          value:
+            app.kubernetes.io/name: common-fixture
+            app.kubernetes.io/instance: RELEASE-NAME
+            app.kubernetes.io/component: worker
+
+  - it: an explicit affinity still replaces the shorthand entirely
+    documentSelector:
+      path: kind
+      value: Deployment
+    capabilities:
+      majorVersion: 1
+      minorVersion: 34
+    set:
+      podAntiAffinity: hard
+      podAntiAffinityLabels:
+        app.kubernetes.io/component: worker
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: disktype
+                    operator: In
+                    values: [ssd]
+    asserts:
+      - notExists:
+          path: spec.template.spec.affinity.podAntiAffinity
+      - exists:
+          path: spec.template.spec.affinity.nodeAffinity

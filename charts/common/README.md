@@ -1,6 +1,6 @@
 # common
 
-![Version: 2.5.1](https://img.shields.io/badge/Version-2.5.1-informational?style=flat-square) ![Type: library](https://img.shields.io/badge/Type-library-informational?style=flat-square)
+![Version: 2.6.0](https://img.shields.io/badge/Version-2.6.0-informational?style=flat-square) ![Type: library](https://img.shields.io/badge/Type-library-informational?style=flat-square)
 
 Shared template partials for the TimSchoenle Helm charts
 
@@ -103,7 +103,7 @@ Which of the two a partial takes is stated in its header comment, with its argum
 | `common.resources` | The chart's `resources` block, emitted verbatim |
 | `common.podSecurityContext` / `common.containerSecurityContext` | Restricted Pod Security Standard baseline, merged with chart values |
 | `common.image` / `common.imagePullPolicy` / `common.imagePullSecrets` | Image reference as `registry/repository:tag@digest` |
-| `common.affinity` | Explicit `affinity`, else the `podAntiAffinity` shorthand |
+| `common.affinity` | Explicit `affinity`, else the `podAntiAffinity` shorthand, narrowed by `podAntiAffinityLabels` and, from Kubernetes 1.33, to the pod's own revision |
 | `common.updateStrategy` | Deployment strategy, falling back to `Recreate` for ReadWriteOnce volumes |
 | `common.podAnnotations` | Pod annotations plus config checksums that force a rollout |
 | `common.configChecksum` | Digest of one template's `data`/`stringData`/`binaryData` |
@@ -342,7 +342,8 @@ and act as the reference shape for consuming charts.
 | nodeSelector | object | `{}` | Node selector for pod assignment. |
 | partOf | string | `""` | Value for the `app.kubernetes.io/part-of` label. |
 | podAnnotations | object | `{}` | Annotations added to the pod template. |
-| podAntiAffinity | string | `""` | Shorthand for spreading replicas across nodes. `soft` prefers, `hard` requires. |
+| podAntiAffinity | string | `""` | Shorthand for spreading replicas across nodes. `soft` prefers, `hard` requires. On Kubernetes 1.33 and later the term is scoped to the pod's own revision through `matchLabelKeys: [pod-template-hash]`, so a rolling update is never blocked by the replicas it is replacing. |
+| podAntiAffinityLabels | object | `{}` | Labels the `podAntiAffinity` shorthand matches on in addition to the selector labels. Set by a chart that runs several workloads under one name, typically to their `app.kubernetes.io/component`, so the shorthand spreads one workload instead of repelling every pod in the release. Each entry must be a label the pod template carries. |
 | podLabels | object | `{}` | Labels added to the pod template. |
 | podSecurityContext | object | `{}` | Pod security context, merged over the preset. |
 | podSecurityContextPreset | string | `"restricted"` | Baseline for the pod security context. `restricted` applies the Pod Security Standards restricted profile (`runAsNonRoot`, `seccompProfile: RuntimeDefault`, `fsGroupChangePolicy: OnRootMismatch`); `none` applies nothing. Identity fields (`runAsUser`, `runAsGroup`, `fsGroup`) are always left to the chart, since they must match the UID baked into the image. |

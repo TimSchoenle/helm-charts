@@ -1,6 +1,6 @@
 # tankovault
 
-![Version: 6.1.8](https://img.shields.io/badge/Version-6.1.8-informational?style=flat-square) ![AppVersion: 11.0.4](https://img.shields.io/badge/AppVersion-11.0.4-informational?style=flat-square)
+![Version: 6.2.0](https://img.shields.io/badge/Version-6.2.0-informational?style=flat-square) ![AppVersion: 11.0.4](https://img.shields.io/badge/AppVersion-11.0.4-informational?style=flat-square)
 
 This chart deploys the full TankoVault manga aggregator stack — frontend, api, control-plane, worker, notifier, sync, challenge-solver and render — hardened to the restricted Pod Security Standard, with file-backed configuration that reloads in place instead of restarting pods, optional bundled PostgreSQL, Valkey, NATS JetStream and TRAWL, and optional Prometheus metrics, alerting rules and Grafana dashboards.
 
@@ -781,6 +781,24 @@ preset — each entry in `trawl.browserPoolSize` is a full Firefox, and the larg
 repository offers caps memory below what one of them needs. It keeps its per-domain solved-session
 cache in the Redis the services already use; `trawl.redis.enabled=false` turns that off, at the
 cost of re-solving from a cold browser on every request.
+
+It is also the one bundled workload built to run more than one replica, and its defaults are
+chosen so that works on a cluster with no spare capacity. A rollout replaces one pod at a time
+rather than starting a second browser pool beside the first, so `trawl.podAntiAffinity: hard`
+is safe at any `replicaCount` up to the node count. The anti-affinity term matches TRAWL's own
+pods only, and on Kubernetes 1.33 or later only pods of the same revision. On two or more nodes:
+
+```yaml
+trawl:
+  enabled: true
+  replicaCount: 2
+  podAntiAffinity: hard
+  podDisruptionBudget:
+    enabled: true
+  minReadySeconds: 30
+  # A contended node can slow a cold Firefox past the image's 90s launch limit, which is fatal.
+  browserLaunchTimeoutMs: 180000
+```
 
 They are embedded rather than pulled in as subcharts for concrete reasons, recorded in
 `Chart.yaml`: the official Valkey chart defines its own `common.image`, which collides with this
@@ -2036,25 +2054,35 @@ lookup; the chart fails the render if FQDN destinations are named with the DNS r
 | telemetry.sentry.shutdownTimeoutSecs | int | `2` | How long process exit waits for queued events to drain. It is spent on every pod shutdown, so it is time added to every rollout; keep it short. |
 | telemetry.sentry.spanAttributes | bool | `false` | Copy `tracing` span fields onto the Sentry span as attributes. Off: span fields here routinely carry ids and user-supplied titles, and a transaction is retained for longer than a log line. |
 | telemetry.sentry.tracesSampleRate | float | `0` | Fraction of traces a service **starts** that are recorded. `0` starts none, which is what makes this feature free to switch on for error reporting alone. It does not take a service out of a trace: a request or a broker message that arrives already sampled is continued whatever this says, so the tier-wide trace survives one service being set differently. `0.05`-`0.2` is an ordinary production figure, and it is worth setting uniformly, because the service that starts a trace is the one whose rate decides whether it exists at all. |
-| trawl | object | `{"affinity":{},"browserPoolSize":1,"enabled":false,"image":{"repository":"ghcr.io/germondai/trawl","tag":"1.8.0@sha256:44091fc0af5f9a0190d4cb23d944f69207684a28382a921800dda5b73b41ba2f"},"nodeSelector":{},"podAntiAffinity":"","priorityClassName":"","redis":{"enabled":true,"url":""},"replicaCount":1,"resources":{"limits":{"memory":"2Gi"},"requests":{"cpu":"500m","memory":"1Gi"}},"runAsUser":1000,"shmSize":"1Gi","tolerations":[],"topologySpreadConstraints":[]}` | Bundled [TRAWL](https://github.com/germondai/trawl), the default backend for the challenge solver. |
+| trawl | object | `{"affinity":{},"browserContentProcesses":null,"browserLaunchTimeoutMs":null,"browserPoolSize":1,"enabled":false,"extraEnv":[],"image":{"repository":"ghcr.io/germondai/trawl","tag":"1.8.0@sha256:44091fc0af5f9a0190d4cb23d944f69207684a28382a921800dda5b73b41ba2f"},"minReadySeconds":null,"nodeSelector":{},"podAntiAffinity":"","podDisruptionBudget":{"enabled":false,"maxUnavailable":null,"minAvailable":1},"priorityClassName":"","redis":{"enabled":true,"url":""},"replicaCount":1,"resources":{"limits":{"memory":"2Gi"},"requests":{"cpu":"500m","memory":"1Gi"}},"runAsUser":1000,"shmSize":"1Gi","strategy":{"rollingUpdate":{"maxSurge":0,"maxUnavailable":1},"type":"RollingUpdate"},"tolerations":[],"topologySpreadConstraints":[]}` | Bundled [TRAWL](https://github.com/germondai/trawl), the default backend for the challenge solver. |
 | trawl.affinity | object | `{}` | Explicit affinity rules for TRAWL. Wins over `podAntiAffinity` when set. |
+| trawl.browserContentProcesses | string | `nil` | Maximum Firefox content processes per browser (`BROWSER_MAX_CONTENT_PROCESSES`). Unset keeps the image default of 2. Each process costs memory, so raise `resources` with it. |
+| trawl.browserLaunchTimeoutMs | string | `nil` | How long one browser launch may take, in milliseconds (`BROWSER_LAUNCH_TIMEOUT_MS`). Unset keeps the image default of 90000. Overrunning it is fatal, not retried: the pool fails to initialise and the process exits, so on a node contended enough to slow a cold Firefox past the limit the pod crash-loops and any rollout waiting on it stalls. Raise it on small or oversubscribed nodes. |
 | trawl.browserPoolSize | int | `1` | Number of warm browser instances to keep. Each is a full Firefox, so raising this raises `resources` with it. The image's own default is 3, which fits none of the sizes below. |
 | trawl.enabled | bool | `false` | Deploy the bundled TRAWL. |
+| trawl.extraEnv | list | `[]` | Extra environment variables for the TRAWL container, appended after the chart's own. A name the chart already sets (`HOME`, `BROWSER_POOL_SIZE`, `REDIS_URL`, and `BROWSER_LAUNCH_TIMEOUT_MS` / `BROWSER_MAX_CONTENT_PROCESSES` when their first-class values are set) is refused, because Kubernetes would silently keep whichever entry comes last. |
 | trawl.image | object | `{"repository":"ghcr.io/germondai/trawl","tag":"1.8.0@sha256:44091fc0af5f9a0190d4cb23d944f69207684a28382a921800dda5b73b41ba2f"}` | Repository and tag for the bundled TRAWL. |
 | trawl.image.repository | string | `"ghcr.io/germondai/trawl"` | Image repository. |
 | trawl.image.tag | string | `"1.8.0@sha256:44091fc0af5f9a0190d4cb23d944f69207684a28382a921800dda5b73b41ba2f"` | Image tag, pinned by digest. Never `latest`: it silently changes the bot-management behaviour the adapters are tuned against. |
+| trawl.minReadySeconds | string | `nil` | Seconds a new pod must stay ready before the rollout counts it as available and moves on. Unset by default. `/health` turns 200 as soon as one browser is live, so a short value such as `30` stops a rollout from advancing past a pod that dies right after its first launch. |
 | trawl.nodeSelector | object | `{}` | Node selector for TRAWL's pods. Useful for pinning TRAWL's browser pool to nodes with more headroom than the rest of the release. |
-| trawl.podAntiAffinity | string | `""` | Pod anti-affinity across nodes for TRAWL. `soft` prefers spreading replicas, `hard` requires it. |
+| trawl.podAntiAffinity | string | `""` | Pod anti-affinity across nodes for TRAWL. `soft` prefers spreading replicas, `hard` requires it. Both match TRAWL's own pods only, never the other bundled datastores, and from Kubernetes 1.33 only pods of the same revision, so an update is never blocked by the replicas it is replacing. Below 1.33, `hard` with `replicaCount` equal to the node count needs the default non-surging `strategy` to roll at all. |
+| trawl.podDisruptionBudget | object | `{"enabled":false,"maxUnavailable":null,"minAvailable":1}` | PodDisruptionBudget for TRAWL's pods, selecting TRAWL alone. Off by default. Enabling it with `replicaCount: 1` is refused: a budget on a single replica blocks every node drain. Set exactly one of `minAvailable` and `maxUnavailable`; the other must be `null`. |
 | trawl.priorityClassName | string | `""` | Priority class for TRAWL's pods. |
 | trawl.redis | object | `{"enabled":true,"url":""}` | TRAWL's own solved-session cache, which defaults to the Redis the services already use. |
 | trawl.redis.enabled | bool | `true` | Give TRAWL a Redis for its per-domain solved-session cache. Without one every request re-solves from a cold browser — slower, not broken. |
 | trawl.redis.url | string | `""` | Connection URL. Defaults to the same Redis the services use (`valkey` or `externalRedis.url`). Sharing one instance is safe: TankoVault namespaces its keys under `tankovault:` and TRAWL uses `session:<domain>`. |
 | trawl.replicaCount | int | `1` | Replica count. TRAWL is stateless — its solved-session cache lives in `redis`, not in the pod — so this scales horizontally without a correctness concern. It does not scale memory for free, though: each replica keeps its own warm browser pool sized by `browserPoolSize`, so raising `replicaCount` multiplies memory cost by `browserPoolSize`, not just by the replica count. |
 | trawl.resources | object | `{"limits":{"memory":"2Gi"},"requests":{"cpu":"500m","memory":"1Gi"}}` | Resource requests and limits. A browser tier needs far more headroom than the rest of the stack: each warm Firefox is hundreds of megabytes before it has solved anything. Scale with `browserPoolSize`. |
-| trawl.resources.limits | object | `{"memory":"2Gi"}` | Ceiling for the pod. Memory only, as everywhere else in this chart. |
+| trawl.resources.limits | object | `{"memory":"2Gi"}` | Ceiling for the pod. Memory only by default, as everywhere else in this chart, but TRAWL alone also accepts `cpu`. A Firefox pool solving a proof-of-work challenge will saturate every core on the node, starving every other pod scheduled there, and a CPU limit on this container is the only control that bounds it without a namespace-wide LimitRange capping unrelated containers too. The throttling it causes slows solves rather than failing them; pair it with a larger `browserLaunchTimeoutMs`, since a throttled cold start is a slow one. |
 | trawl.resources.requests | object | `{"cpu":"500m","memory":"1Gi"}` | What the scheduler reserves for one TRAWL pod at `browserPoolSize: 1`. |
 | trawl.runAsUser | int | `1000` | Numeric UID to run as. The upstream image declares no `USER`, so it would run as root and the restricted Pod Security Standard would refuse the pod. Everything the image ships is world-readable, so any non-root UID works. |
 | trawl.shmSize | string | `"1Gi"` | Size of the `/dev/shm` in-memory volume. Firefox needs far more shared memory than the 64Mi Kubernetes provides by default, and fails in confusing ways without it. |
+| trawl.strategy | object | `{"rollingUpdate":{"maxSurge":0,"maxUnavailable":1},"type":"RollingUpdate"}` | Deployment update strategy, in the shape of a Kubernetes `DeploymentStrategy`. The default replaces one pod at a time and never surges, unlike the Kubernetes 25%/25% default, which at TRAWL's replica counts means one surge pod and nothing unavailable. A surge pod duplicates the most expensive thing in the release — a warm Camoufox pool plus a memory-backed `/dev/shm` — and on a small cluster there is often no node with room for it; under required anti-affinity with one replica per node it can never schedule, and the rollout waits forever. Replacing in place needs no headroom, which is also what makes `podAntiAffinity: hard` safe at any replica count up to the node count. The cost is one replica's capacity during the rollout, and all of it at `replicaCount: 1`. `{type: Recreate}` drops the `rollingUpdate` block by itself. |
+| trawl.strategy.rollingUpdate | object | `{"maxSurge":0,"maxUnavailable":1}` | Ignored under `Recreate`. |
+| trawl.strategy.rollingUpdate.maxSurge | int | `0` | Pods above `replicaCount` during a rollout, as a count or a percentage. |
+| trawl.strategy.rollingUpdate.maxUnavailable | int | `1` | Pods below `replicaCount` during a rollout, as a count or a percentage. |
+| trawl.strategy.type | string | `"RollingUpdate"` | `RollingUpdate` or `Recreate`. |
 | trawl.tolerations | list | `[]` | Tolerations for TRAWL's pods. |
 | trawl.topologySpreadConstraints | list | `[]` | Topology spread constraints for TRAWL's pods. |
 | valkey | object | `{"affinity":{},"enabled":false,"image":{"repository":"valkey/valkey","tag":"9.1.2-alpine@sha256:48332870af354a799964c0012ae1194a0bf2bf894eb508f945810596dc2d8d11"},"nodeSelector":{},"podAntiAffinity":"","priorityClassName":"","resources":{"limits":{"memory":"512Mi"},"requests":{"cpu":"100m","memory":"256Mi"}},"tolerations":[],"topologySpreadConstraints":[]}` | Bundled Valkey, backing the API rate limiter and the control-plane's leader election. Embedded rather than taken as a subchart: the official Valkey chart defines its own `common.image`, and Helm's template namespace is global across dependencies, so it and the `common` library overwrite each other. TankoVault degrades gracefully without Valkey — the rate limiter falls back to per-replica in-memory counters and the scheduler to sole-leader. |

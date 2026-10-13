@@ -1,0 +1,80 @@
+# Refusals only. A failedTemplate assertion empties every other document in its suite, so the
+# rendering cases live in trawl_test.yaml.
+suite: bundled TRAWL refusals
+templates:
+  - serviceaccount.yaml
+values:
+  - ../ci/bundled-datastores-values.yaml
+tests:
+  - it: accepts a PodDisruptionBudget on two replicas
+    set:
+      trawl.replicaCount: 2
+      trawl.podDisruptionBudget.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 1
+
+  - it: refuses a PodDisruptionBudget on a single replica
+    set:
+      trawl.podDisruptionBudget.enabled: true
+    asserts:
+      - failedTemplate:
+          errorPattern: "trawl.podDisruptionBudget.enabled is set with trawl.replicaCount=1"
+
+  - it: refuses a PodDisruptionBudget that sets both minAvailable and maxUnavailable
+    set:
+      trawl.replicaCount: 2
+      trawl.podDisruptionBudget.enabled: true
+      trawl.podDisruptionBudget.maxUnavailable: 1
+    asserts:
+      - failedTemplate:
+          errorPattern: "sets both minAvailable and maxUnavailable"
+
+  - it: refuses an extraEnv entry that collides with a chart-managed variable
+    set:
+      trawl.extraEnv:
+        - name: REDIS_URL
+          value: redis://elsewhere:6379
+    asserts:
+      - failedTemplate:
+          errorPattern: "trawl.extraEnv sets REDIS_URL"
+
+  - it: refuses an extraEnv launch timeout once the first-class value manages it
+    set:
+      trawl.browserLaunchTimeoutMs: 180000
+      trawl.extraEnv:
+        - name: BROWSER_LAUNCH_TIMEOUT_MS
+          value: "1"
+    asserts:
+      - failedTemplate:
+          errorPattern: "trawl.extraEnv sets BROWSER_LAUNCH_TIMEOUT_MS"
+
+  - it: accepts an extraEnv launch timeout while the first-class value is unset
+    set:
+      trawl.extraEnv:
+        - name: BROWSER_LAUNCH_TIMEOUT_MS
+          value: "180000"
+    asserts:
+      - hasDocuments:
+          count: 1
+
+  - it: refuses a rolling strategy that can neither surge nor go unavailable
+    set:
+      trawl.strategy.rollingUpdate.maxUnavailable: 0
+    asserts:
+      - failedTemplate:
+          errorPattern: "sets both maxSurge and maxUnavailable to 0"
+
+  - it: refuses an unknown strategy type
+    set:
+      trawl.strategy.type: Rolling
+    asserts:
+      - failedTemplate:
+          errorPattern: "trawl.strategy.type"
+
+  - it: refuses a launch timeout below 1
+    set:
+      trawl.browserLaunchTimeoutMs: 0
+    asserts:
+      - failedTemplate:
+          errorPattern: "browserLaunchTimeoutMs"

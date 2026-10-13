@@ -1,0 +1,62 @@
+suite: podAntiAffinity is scoped per component
+templates:
+  - deployment.yaml
+  - configmap.yaml
+  - secret.yaml
+  - valkey.yaml
+  - gotenberg.yaml
+  - tika.yaml
+set:
+  paperless.secretKey: ci-secret-key
+  podAntiAffinity: hard
+  tika.enabled: true
+capabilities:
+  majorVersion: 1
+  minorVersion: 34
+tests:
+  # Every workload here shares the release's `app.kubernetes.io/name`. A selector on that alone
+  # makes `hard` keep each pod off every node running any of the others.
+  - it: spreads the server against the server alone
+    template: deployment.yaml
+    asserts:
+      - equal:
+          path: spec.template.spec.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution[0]
+          value:
+            labelSelector:
+              matchLabels:
+                app.kubernetes.io/name: paperless-ngx
+                app.kubernetes.io/instance: RELEASE-NAME
+                app.kubernetes.io/component: server
+            topologyKey: kubernetes.io/hostname
+            matchLabelKeys:
+              - pod-template-hash
+
+  - it: spreads Valkey against Valkey alone
+    template: valkey.yaml
+    documentSelector:
+      path: kind
+      value: StatefulSet
+    asserts:
+      - equal:
+          path: spec.template.spec.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution[0].labelSelector.matchLabels["app.kubernetes.io/component"]
+          value: valkey
+
+  - it: spreads Gotenberg against Gotenberg alone
+    template: gotenberg.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.template.spec.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution[0].labelSelector.matchLabels["app.kubernetes.io/component"]
+          value: gotenberg
+
+  - it: spreads Tika against Tika alone
+    template: tika.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.template.spec.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution[0].labelSelector.matchLabels["app.kubernetes.io/component"]
+          value: tika

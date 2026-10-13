@@ -29,10 +29,31 @@
   browser has wedged. The startup budget is deliberately large — a cold launch waits on a
   public-IP lookup for the geoip fingerprint before Firefox even starts, and the image's own
   browser-launch timeout is 90s on its own.
+
+  The update strategy defaults to `maxSurge: 0, maxUnavailable: 1` rather than the Kubernetes
+  25%/25%, which at TRAWL's replica counts rounds to one surge pod and zero unavailable. A surge
+  pod duplicates the most expensive thing in the release — a warm Camoufox pool and a
+  memory-backed `/dev/shm` — and on a small cluster there is often no node with room for it. Under
+  required anti-affinity at one replica per node it can never schedule at all, and with nothing
+  allowed to go unavailable the old pods are never removed: the rollout waits forever. Replacing
+  one pod at a time needs no headroom, and is what makes `podAntiAffinity: hard` safe at any
+  replica count up to the node count. `Recreate` sheds the default `rollingUpdate` block, because
+  Helm merges an operator's `{type: Recreate}` over it and the API server refuses a Recreate
+  strategy that carries one.
+
+  Its schema is the pinned Kubernetes `DeploymentStrategy` inside an `allOf`, plus an enum on
+  `type`, which upstream types as a free string. The `allOf` is load-bearing: the generated schema
+  is draft-07, which ignores every keyword beside a bare `$ref`, enum included.
 */ -}}
+{{- $strategy := deepCopy ($trawl.strategy | default dict) }}
+{{- if eq (toString $strategy.type) "Recreate" }}
+{{- $_ := unset $strategy "rollingUpdate" }}
+{{- end }}
 {{- $probe := dict "enabled" true "httpGet" (dict "path" "/health" "port" "http") }}
 {{- $values := include "tankovault.datastore.values" (dict
       "ctx" .
+      "component" "trawl"
+      "strategy" $strategy
       "image" $trawl.image
       "resources" $trawl.resources
       "runAsUser" $trawl.runAsUser "runAsGroup" $trawl.runAsUser "fsGroup" $trawl.runAsUser
@@ -72,6 +93,24 @@
 {{- with $redis }}
 {{- $env = append $env (dict "name" "REDIS_URL" "value" .) }}
 {{- end }}
+{{- /*
+  The launch timeout and the content-process cap are emitted only when set, so an unset value
+  keeps tracking the image's own default instead of freezing today's. The timeout is the one that
+  matters for availability: overrunning it is fatal rather than retried — the pool fails to
+  initialise and the process exits — so on a node contended enough to slow a cold Firefox past
+  90s the pod crash-loops, and a rollout that waits for it stalls with it.
+
+  `extraEnv` is appended last. Names the chart manages are refused in `tankovault.validateValues`
+  rather than left to override by position: Kubernetes keeps the last of two duplicate entries,
+  so a collision would silently replace a value this template reasons about.
+*/ -}}
+{{- with $trawl.browserLaunchTimeoutMs }}
+{{- $env = append $env (dict "name" "BROWSER_LAUNCH_TIMEOUT_MS" "value" (. | int64 | toString)) }}
+{{- end }}
+{{- with $trawl.browserContentProcesses }}
+{{- $env = append $env (dict "name" "BROWSER_MAX_CONTENT_PROCESSES" "value" (. | int64 | toString)) }}
+{{- end }}
+{{- $env = concat $env ($trawl.extraEnv | default list) }}
 apiVersion: v1
 kind: Service
 metadata:
@@ -93,9 +132,21 @@ metadata:
 spec:
   replicas: {{ $trawl.replicaCount }}
   revisionHistoryLimit: 3
+  {{- /*
+    `/health` turns 200 the moment one browser is live, so readiness alone would let a rollout
+    advance past a pod that dies seconds after its first launch. `minReadySeconds` holds it back
+    until the pod has stayed ready that long.
+  */}}
+  {{- with $trawl.minReadySeconds }}
+  minReadySeconds: {{ . }}
+  {{- end }}
   selector:
     matchLabels:
       {{- include "tankovault.datastore.selectorLabels" (dict "ctx" . "component" "trawl") | nindent 6 }}
+  {{- with (include "common.updateStrategy" (dict "ctx" $ctx)) }}
+  strategy:
+    {{- . | nindent 4 }}
+  {{- end }}
   template:
     metadata:
       labels:
@@ -113,4 +164,10 @@ spec:
             ) | nindent 8 }}
       volumes:
         {{- include "common.volumes" (dict "ctx" $ctx "volumes" $volumes) | nindent 8 }}
+{{- with $trawl.podDisruptionBudget }}
+{{- if .enabled }}
+---
+{{ include "tankovault.datastore.pdb" (dict "ctx" $ "component" "trawl" "pdb" .) }}
+{{- end }}
+{{- end }}
 {{- end }}

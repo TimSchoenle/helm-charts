@@ -1511,7 +1511,7 @@
         },
         "podAntiAffinity": {
           "default": "",
-          "description": "Shorthand for spreading replicas across nodes. `soft` prefers, `hard` requires.",
+          "description": "Shorthand for spreading replicas across nodes. `soft` prefers, `hard` requires. On\nKubernetes 1.33 and later the term is scoped to the pod's own revision through\n`matchLabelKeys: [pod-template-hash]`, so a rolling update is never blocked by the replicas it\nis replacing.",
           "enum": [
             "",
             "soft",
@@ -1519,6 +1519,15 @@
           ],
           "required": [],
           "title": "podAntiAffinity"
+        },
+        "podAntiAffinityLabels": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Labels the `podAntiAffinity` shorthand matches on in addition to the selector labels. Set by\na chart that runs several workloads under one name, typically to their\n`app.kubernetes.io/component`, so the shorthand spreads one workload instead of repelling every\npod in the release. Each entry must be a label the pod template carries.",
+          "required": [],
+          "title": "podAntiAffinityLabels",
+          "type": "object"
         },
         "podLabels": {
           "additionalProperties": true,
@@ -7174,6 +7183,28 @@
           "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.Affinity",
           "required": []
         },
+        "browserContentProcesses": {
+          "default": "null",
+          "description": "Maximum Firefox content processes per browser (`BROWSER_MAX_CONTENT_PROCESSES`). Unset\nkeeps the image default of 2. Each process costs memory, so raise `resources` with it.",
+          "minimum": 1,
+          "required": [],
+          "title": "browserContentProcesses",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "browserLaunchTimeoutMs": {
+          "default": "null",
+          "description": "How long one browser launch may take, in milliseconds (`BROWSER_LAUNCH_TIMEOUT_MS`). Unset\nkeeps the image default of 90000. Overrunning it is fatal, not retried: the pool fails to\ninitialise and the process exits, so on a node contended enough to slow a cold Firefox past\nthe limit the pod crash-loops and any rollout waiting on it stalls. Raise it on small or\noversubscribed nodes.",
+          "minimum": 1,
+          "required": [],
+          "title": "browserLaunchTimeoutMs",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
         "browserPoolSize": {
           "default": 1,
           "description": "Number of warm browser instances to keep. Each is a full Firefox, so raising this raises\n`resources` with it. The image's own default is 3, which fits none of the sizes below.",
@@ -7188,6 +7219,16 @@
           "required": [],
           "title": "enabled",
           "type": "boolean"
+        },
+        "extraEnv": {
+          "description": "Extra environment variables for the TRAWL container, appended after the chart's own. A\nname the chart already sets (`HOME`, `BROWSER_POOL_SIZE`, `REDIS_URL`, and\n`BROWSER_LAUNCH_TIMEOUT_MS` / `BROWSER_MAX_CONTENT_PROCESSES` when their first-class values are\nset) is refused, because Kubernetes would silently keep whichever entry comes last.",
+          "items": {
+            "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.EnvVar",
+            "required": []
+          },
+          "required": [],
+          "title": "extraEnv",
+          "type": "array"
         },
         "image": {
           "additionalProperties": true,
@@ -7211,6 +7252,17 @@
           "required": [],
           "title": "image"
         },
+        "minReadySeconds": {
+          "default": "null",
+          "description": "Seconds a new pod must stay ready before the rollout counts it as available and moves on.\nUnset by default. `/health` turns 200 as soon as one browser is live, so a short value such as\n`30` stops a rollout from advancing past a pod that dies right after its first launch.",
+          "minimum": 0,
+          "required": [],
+          "title": "minReadySeconds",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
         "nodeSelector": {
           "additionalProperties": {
             "type": "string"
@@ -7222,7 +7274,7 @@
         },
         "podAntiAffinity": {
           "default": "",
-          "description": "Pod anti-affinity across nodes for TRAWL. `soft` prefers spreading replicas, `hard`\nrequires it.",
+          "description": "Pod anti-affinity across nodes for TRAWL. `soft` prefers spreading replicas, `hard`\nrequires it. Both match TRAWL's own pods only, never the other bundled datastores, and from\nKubernetes 1.33 only pods of the same revision, so an update is never blocked by the replicas\nit is replacing. Below 1.33, `hard` with `replicaCount` equal to the node count needs the\ndefault non-surging `strategy` to roll at all.",
           "enum": [
             "",
             "soft",
@@ -7230,6 +7282,57 @@
           ],
           "required": [],
           "title": "podAntiAffinity"
+        },
+        "podDisruptionBudget": {
+          "additionalProperties": false,
+          "description": "PodDisruptionBudget for TRAWL's pods, selecting TRAWL alone. Off by default. Enabling it\nwith `replicaCount: 1` is refused: a budget on a single replica blocks every node drain. Set\nexactly one of `minAvailable` and `maxUnavailable`; the other must be `null`.",
+          "properties": {
+            "enabled": {
+              "required": [],
+              "type": "boolean"
+            },
+            "maxUnavailable": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "required": [],
+                  "type": "integer"
+                },
+                {
+                  "pattern": "^[0-9]+%$",
+                  "required": [],
+                  "type": "string"
+                },
+                {
+                  "required": [],
+                  "type": "null"
+                }
+              ],
+              "required": []
+            },
+            "minAvailable": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "required": [],
+                  "type": "integer"
+                },
+                {
+                  "pattern": "^[0-9]+%$",
+                  "required": [],
+                  "type": "string"
+                },
+                {
+                  "required": [],
+                  "type": "null"
+                }
+              ],
+              "required": []
+            }
+          },
+          "required": [],
+          "title": "podDisruptionBudget",
+          "type": "object"
         },
         "priorityClassName": {
           "default": "",
@@ -7274,12 +7377,24 @@
           "properties": {
             "limits": {
               "additionalProperties": false,
-              "description": "Ceiling for the pod. Memory only, as everywhere else in this chart.",
+              "description": "Ceiling for the pod. Memory only by default, as everywhere else in this chart, but TRAWL\nalone also accepts `cpu`. A Firefox pool solving a proof-of-work challenge will saturate\nevery core on the node, starving every other pod scheduled there, and a CPU limit on this\ncontainer is the only control that bounds it without a namespace-wide LimitRange capping\nunrelated containers too. The throttling it causes slows solves rather than failing them;\npair it with a larger `browserLaunchTimeoutMs`, since a throttled cold start is a slow one.",
               "properties": {
+                "cpu": {
+                  "anyOf": [
+                    {
+                      "minimum": 1,
+                      "required": [],
+                      "type": "integer"
+                    },
+                    {
+                      "required": [],
+                      "type": "string"
+                    }
+                  ],
+                  "required": []
+                },
                 "memory": {
-                  "default": "2Gi",
                   "required": [],
-                  "title": "memory",
                   "type": "string"
                 }
               },
@@ -7315,8 +7430,7 @@
             }
           },
           "required": [
-            "requests",
-            "limits"
+            "requests"
           ],
           "title": "resources",
           "type": "object"
@@ -7334,6 +7448,34 @@
           "required": [],
           "title": "shmSize",
           "type": "string"
+        },
+        "strategy": {
+          "additionalProperties": false,
+          "allOf": [
+            {
+              "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.apps.v1.DeploymentStrategy",
+              "required": []
+            }
+          ],
+          "description": "Deployment update strategy, in the shape of a Kubernetes `DeploymentStrategy`. The default\nreplaces one pod at a time and never surges, unlike the Kubernetes 25%/25% default, which at\nTRAWL's replica counts means one surge pod and nothing unavailable. A surge pod duplicates the\nmost expensive thing in the release — a warm Camoufox pool plus a memory-backed `/dev/shm` —\nand on a small cluster there is often no node with room for it; under required anti-affinity\nwith one replica per node it can never schedule, and the rollout waits forever. Replacing in\nplace needs no headroom, which is also what makes `podAntiAffinity: hard` safe at any replica\ncount up to the node count. The cost is one replica's capacity during the rollout, and all of\nit at `replicaCount: 1`. `{type: Recreate}` drops the `rollingUpdate` block by itself.",
+          "properties": {
+            "rollingUpdate": {
+              "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.apps.v1.RollingUpdateDeployment",
+              "required": []
+            },
+            "type": {
+              "default": "RollingUpdate",
+              "description": "`RollingUpdate` or `Recreate`.",
+              "enum": [
+                "Recreate",
+                "RollingUpdate"
+              ],
+              "required": [],
+              "title": "type"
+            }
+          },
+          "required": [],
+          "title": "strategy"
         },
         "tolerations": {
           "description": "Tolerations for TRAWL's pods.",

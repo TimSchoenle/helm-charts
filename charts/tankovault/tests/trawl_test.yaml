@@ -1,0 +1,249 @@
+suite: bundled TRAWL rollout, placement and environment
+templates:
+  - trawl.yaml
+values:
+  - ../ci/bundled-datastores-values.yaml
+tests:
+  # The Kubernetes default rounds to one surge pod and nothing unavailable at TRAWL's replica
+  # counts, which deadlocks under required anti-affinity at one replica per node.
+  - it: replaces pods in place by default instead of surging
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.strategy
+          value:
+            type: RollingUpdate
+            rollingUpdate:
+              maxSurge: 0
+              maxUnavailable: 1
+      - notExists:
+          path: spec.minReadySeconds
+
+  - it: drops the default rollingUpdate block under Recreate
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      trawl.strategy.type: Recreate
+    asserts:
+      - equal:
+          path: spec.strategy
+          value:
+            type: Recreate
+
+  - it: passes a custom rolling strategy through, percentages included
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      trawl.strategy.rollingUpdate.maxSurge: 25%
+      trawl.strategy.rollingUpdate.maxUnavailable: 0
+    asserts:
+      - equal:
+          path: spec.strategy.rollingUpdate
+          value:
+            maxSurge: 25%
+            maxUnavailable: 0
+
+  - it: renders minReadySeconds when set
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      trawl.minReadySeconds: 30
+    asserts:
+      - equal:
+          path: spec.minReadySeconds
+          value: 30
+
+  - it: scopes hard anti-affinity to its own pods and revision from Kubernetes 1.33
+    documentSelector:
+      path: kind
+      value: Deployment
+    capabilities:
+      majorVersion: 1
+      minorVersion: 34
+    set:
+      trawl.replicaCount: 2
+      trawl.podAntiAffinity: hard
+    asserts:
+      - equal:
+          path: spec.template.spec.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution[0]
+          value:
+            labelSelector:
+              matchLabels:
+                app.kubernetes.io/name: tankovault
+                app.kubernetes.io/instance: RELEASE-NAME
+                app.kubernetes.io/component: trawl
+            topologyKey: kubernetes.io/hostname
+            matchLabelKeys:
+              - pod-template-hash
+      # The selector must name a label the pod template carries, or the term matches nothing.
+      - equal:
+          path: spec.template.metadata.labels["app.kubernetes.io/component"]
+          value: trawl
+
+  - it: scopes soft anti-affinity to its own pods
+    documentSelector:
+      path: kind
+      value: Deployment
+    capabilities:
+      majorVersion: 1
+      minorVersion: 34
+    set:
+      trawl.podAntiAffinity: soft
+    asserts:
+      - equal:
+          path: spec.template.spec.affinity.podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].podAffinityTerm.labelSelector.matchLabels["app.kubernetes.io/component"]
+          value: trawl
+      - equal:
+          path: spec.template.spec.affinity.podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].podAffinityTerm.matchLabelKeys
+          value:
+            - pod-template-hash
+
+  - it: omits matchLabelKeys below Kubernetes 1.33
+    documentSelector:
+      path: kind
+      value: Deployment
+    capabilities:
+      majorVersion: 1
+      minorVersion: 32
+    set:
+      trawl.podAntiAffinity: hard
+    asserts:
+      - notExists:
+          path: spec.template.spec.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution[0].matchLabelKeys
+
+  - it: lets an explicit affinity replace the shorthand entirely
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      trawl.podAntiAffinity: hard
+      trawl.affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: kubernetes.io/arch
+                    operator: In
+                    values: [amd64]
+    asserts:
+      - notExists:
+          path: spec.template.spec.affinity.podAntiAffinity
+      - exists:
+          path: spec.template.spec.affinity.nodeAffinity
+
+  - it: emits no launch-timeout or content-process variables by default
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          any: true
+          content:
+            name: BROWSER_LAUNCH_TIMEOUT_MS
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          any: true
+          content:
+            name: BROWSER_MAX_CONTENT_PROCESSES
+
+  - it: emits the launch timeout and content-process cap when set, then extraEnv last
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      trawl.browserLaunchTimeoutMs: 180000
+      trawl.browserContentProcesses: 4
+      trawl.extraEnv:
+        - name: LOG_LEVEL
+          value: debug
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: BROWSER_LAUNCH_TIMEOUT_MS
+            value: "180000"
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: BROWSER_MAX_CONTENT_PROCESSES
+            value: "4"
+      - equal:
+          path: spec.template.spec.containers[0].env[5]
+          value:
+            name: LOG_LEVEL
+            value: debug
+
+  - it: accepts a CPU limit
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      trawl.resources.limits.cpu: "4"
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].resources.limits
+          value:
+            cpu: "4"
+            memory: 2Gi
+
+  - it: keeps the default limits memory-only
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - notExists:
+          path: spec.template.spec.containers[0].resources.limits.cpu
+
+  - it: renders no PodDisruptionBudget by default
+    asserts:
+      - hasDocuments:
+          count: 2
+
+  - it: renders a PodDisruptionBudget selecting TRAWL alone
+    documentSelector:
+      path: kind
+      value: PodDisruptionBudget
+    capabilities:
+      majorVersion: 1
+      minorVersion: 34
+    set:
+      trawl.replicaCount: 2
+      trawl.podDisruptionBudget.enabled: true
+    asserts:
+      - equal:
+          path: apiVersion
+          value: policy/v1
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-tankovault-trawl
+      - equal:
+          path: spec
+          value:
+            minAvailable: 1
+            selector:
+              matchLabels:
+                app.kubernetes.io/name: tankovault
+                app.kubernetes.io/instance: RELEASE-NAME
+                app.kubernetes.io/component: trawl
+
+  - it: prefers maxUnavailable, an explicit 0 included, when minAvailable is cleared
+    documentSelector:
+      path: kind
+      value: PodDisruptionBudget
+    set:
+      trawl.replicaCount: 3
+      trawl.podDisruptionBudget.enabled: true
+      trawl.podDisruptionBudget.minAvailable: null
+      trawl.podDisruptionBudget.maxUnavailable: 0
+    asserts:
+      - equal:
+          path: spec.maxUnavailable
+          value: 0
+      - notExists:
+          path: spec.minAvailable

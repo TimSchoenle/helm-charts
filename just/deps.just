@@ -37,6 +37,12 @@ deps-extract:
       [ -d "$dir" ] || continue
       for archive in "$dir"*.tgz; do
         [ -f "$archive" ] || continue
+        # Replace the previous extraction rather than unpacking over it. Helm loads the extracted
+        # directory alongside the archive, so a template file a library release moved or deleted
+        # would otherwise survive here and silently redefine the partials it used to hold — every
+        # local render and unit test then exercises dead library code.
+        top="$(tar -tzf "$archive" | awk -F/ 'NR == 1 { print $1 }')"
+        [ -n "$top" ] && rm -rf "${dir}${top}"
         tar -xzf "$archive" -C "$dir"
       done
     done

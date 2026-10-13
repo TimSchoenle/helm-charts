@@ -1111,7 +1111,7 @@
         },
         "podAntiAffinity": {
           "default": "",
-          "description": "Shorthand for spreading replicas across nodes. `soft` prefers, `hard` requires.",
+          "description": "Shorthand for spreading replicas across nodes. `soft` prefers, `hard` requires. On\nKubernetes 1.33 and later the term is scoped to the pod's own revision through\n`matchLabelKeys: [pod-template-hash]`, so a rolling update is never blocked by the replicas it\nis replacing.",
           "enum": [
             "",
             "soft",
@@ -1119,6 +1119,15 @@
           ],
           "required": [],
           "title": "podAntiAffinity"
+        },
+        "podAntiAffinityLabels": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Labels the `podAntiAffinity` shorthand matches on in addition to the selector labels. Set by\na chart that runs several workloads under one name, typically to their\n`app.kubernetes.io/component`, so the shorthand spreads one workload instead of repelling every\npod in the release. Each entry must be a label the pod template carries.",
+          "required": [],
+          "title": "podAntiAffinityLabels",
+          "type": "object"
         },
         "podLabels": {
           "additionalProperties": true,

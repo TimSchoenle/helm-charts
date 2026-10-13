@@ -7,6 +7,8 @@ Some of them require a manual step that nothing will remind you about:
 
 | Version | Applies to | Step |
 |---|---|---|
+| [6.2.0](#620) | releases with `trawl.replicaCount` above 1 that rely on surge capacity during a rollout | set `trawl.strategy` back to a surging one, or accept one replica fewer while it rolls |
+| [6.2.0](#620) | releases that hand-write `trawl.affinity` to spread TRAWL | optionally replace it with `trawl.podAntiAffinity: hard` |
 | [6.0.0](#600) | releases that publish legal documents | move `content` to `body`; move `sources` texts into `body`; drop `legal.dir` |
 | [5.3.0](#530) | releases on `argoSyncWave` that wave the migration's own dependencies | move them below `argoSyncWaveBase - 1`, not just below the base |
 | [5.1.0](#510) | releases that installed the provider presets | pause or delete the `sirenscans` provider row by hand |
@@ -22,6 +24,82 @@ Some of them require a manual step that nothing will remind you about:
 
 The values contract is enforced by `values.schema.json`, so a key a new major removed or
 renamed fails the render with the offending path named, rather than being silently ignored.
+
+## 6.2.0
+
+**TRAWL rolls out and spreads reliably on small clusters.**
+
+The TRAWL Deployment previously set no `strategy`, so Kubernetes applied its 25%/25% default,
+which at two replicas rounds to one surge pod and none unavailable. With required anti-affinity
+and one TRAWL pod per node, the surge pod had no node to go to, nothing was allowed to go
+unavailable, and every chart or image update waited forever. The `hard` shorthand could not be
+used to avoid that either: its selector matched every bundled datastore, so a second TRAWL
+replica stayed Pending on a cluster with fewer nodes than bundled pods.
+
+This is the one deliberate default change: **`trawl.strategy` now defaults to
+`{type: RollingUpdate, rollingUpdate: {maxSurge: 0, maxUnavailable: 1}}`**. A rollout replaces one
+pod at a time instead of starting a second browser pool next to the first. A release on
+`replicaCount: 1` loses its single replica briefly during each rollout, where it previously
+briefly ran two; set `trawl.strategy` explicitly to keep the old behaviour:
+
+```yaml
+trawl:
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+```
+
+Nothing else changes unless you set it:
+
+| Value | What it does |
+|---|---|
+| `trawl.podAntiAffinity` | `soft` and `hard` now match TRAWL's own pods only, and from Kubernetes 1.33 only pods of the same revision (`matchLabelKeys: [pod-template-hash]`) |
+| `trawl.strategy` | The Deployment's update strategy; `{type: Recreate}` drops the default `rollingUpdate` block by itself |
+| `trawl.minReadySeconds` | How long a new pod must stay ready before the rollout moves on. Unset by default |
+| `trawl.podDisruptionBudget` | A budget selecting TRAWL alone. Off by default; refused on a single replica |
+| `trawl.browserLaunchTimeoutMs` | `BROWSER_LAUNCH_TIMEOUT_MS`. A launch that overruns it exits the process, so raise it on contended nodes |
+| `trawl.browserContentProcesses` | `BROWSER_MAX_CONTENT_PROCESSES` |
+| `trawl.extraEnv` | Extra variables, appended last. A name the chart sets is refused |
+| `trawl.resources.limits.cpu` | Now accepted. TRAWL is the one workload in this chart that takes a CPU limit, because a Firefox pool can saturate every core on its node |
+
+The same anti-affinity scoping applies to `valkey.podAntiAffinity`, which shared the defect.
+Rendered output is unchanged for a release that does not set it.
+
+### Replacing a hand-written `trawl.affinity`
+
+If you worked around the old shorthand with an explicit term such as:
+
+```yaml
+trawl:
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: tankovault
+              app.kubernetes.io/instance: <release>
+              app.kubernetes.io/component: trawl
+          matchLabelKeys: [pod-template-hash]
+          topologyKey: kubernetes.io/hostname
+```
+
+it keeps working unchanged: an explicit `affinity` still replaces the shorthand entirely. On
+Kubernetes 1.33 or later it can be replaced by:
+
+```yaml
+trawl:
+  affinity: {}
+  podAntiAffinity: hard
+```
+
+which renders the same term. Below 1.33 the shorthand omits `matchLabelKeys`, because an API
+server without the field drops it silently. There, the default non-surging `strategy` is what
+lets a `hard`-spread TRAWL roll with `replicaCount` equal to the node count. Keep your explicit
+term if you depend on `matchLabelKeys` through the beta feature gate.
+
+Either way, the new default `strategy` removes the need for spare room for a surge pod on any
+node.
 
 ## 6.0.0
 

@@ -1,6 +1,6 @@
 # cloudflare-access-webhook-redirect
 
-![Version: 6.2.10](https://img.shields.io/badge/Version-6.2.10-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: v2.3.3](https://img.shields.io/badge/AppVersion-v2.3.3-informational?style=flat-square)
+![Version: 6.2.11](https://img.shields.io/badge/Version-6.2.11-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: v2.3.5](https://img.shields.io/badge/AppVersion-v2.3.5-informational?style=flat-square)
 
 A Helm chart for deploying the Cloudflare Access Webhook Redirect service. This service acts as an authentication proxy that validates requests using Cloudflare Access Service Auth tokens before forwarding them to target backend services.
 
@@ -538,11 +538,11 @@ policy pointing at the wrong Gateway looks correct and blocks everything.
 | gateway.tls.enabled | bool | `false` | Add an HTTPS listener. |
 | gateway.tls.mode | string | `"Terminate"` | TLS mode. |
 | gateway.tls.options | object | `{}` | Implementation-specific TLS options. |
-| image | object | `{"pullPolicy":"","registry":"","repository":"timmi6790/cloudflare-access-webhook-redirect","tag":"v2.3.3@sha256:1b13b3f194c8ed67b58f6c835ba57c0a58e0d9c7692b2048cbd21fd87db72a3c"}` | Container image the pod runs, composed as `registry/repository:tag`. |
+| image | object | `{"pullPolicy":"","registry":"","repository":"timmi6790/cloudflare-access-webhook-redirect","tag":"v2.3.5@sha256:e4dd826b8ccd8de07dda8a2cd062a82aa69504d5762e6d9fa289c33bab7d96ba"}` | Container image the pod runs, composed as `registry/repository:tag`. |
 | image.pullPolicy | string | `""` | Image pull policy. Empty resolves automatically from the tag/digest. |
 | image.registry | string | `""` | Registry host. Empty means Docker Hub. |
 | image.repository | string | `"timmi6790/cloudflare-access-webhook-redirect"` | Container image repository (e.g. docker.io/user/image) |
-| image.tag | string | `"v2.3.3@sha256:1b13b3f194c8ed67b58f6c835ba57c0a58e0d9c7692b2048cbd21fd87db72a3c"` | The container image tag, pinned by digest (`vX.Y.Z@sha256:...`). The digest pins the pull, while the tag stays on as the readable version marker. Defaults to the chart's `appVersion` when empty. |
+| image.tag | string | `"v2.3.5@sha256:e4dd826b8ccd8de07dda8a2cd062a82aa69504d5762e6d9fa289c33bab7d96ba"` | The container image tag, pinned by digest (`vX.Y.Z@sha256:...`). The digest pins the pull, while the tag stays on as the readable version marker. Defaults to the chart's `appVersion` when empty. |
 | imagePullSecrets | list | `[]` | Optional image pull secrets for private registries |
 | ingress | object | `{"annotations":{},"enabled":false,"hosts":[],"ingressClassName":"nginx","tls":[]}` | The Ingress in front of the Service. An independent switch from `gateway`, so a cluster migrating from an Ingress controller to a Gateway implementation can run both. |
 | ingress.annotations | object | `{}` | Additional ingress annotations Example:   cert-manager.io/cluster-issuer: letsencrypt-prod   nginx.ingress.kubernetes.io/rate-limit: "100" |

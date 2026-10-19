@@ -89,7 +89,7 @@ helm_version := "4.3.1"
 # contributor gets a working gate without `sudo` and without building from source. `resolve_contract`
 # checks that cache after `TERRACE_CONTRACT_BIN` and PATH.
 # renovate: datasource=github-tags depName=TimSchoenle/terrace-config extractVersion=^terrace-contract-v(?<version>.*)$
-terrace_contract_version := "0.7.3"
+terrace_contract_version := "0.8.0"
 
 # Where `just install-contract` caches the binary it downloads, keyed by version underneath so a
 # bump fetches a fresh copy on next use rather than silently reusing a stale one. Relative and
@@ -120,28 +120,6 @@ ruff_version := "0.17.1"
 oras_version := "1.3.4"
 # renovate: datasource=github-tags depName=sigstore/cosign
 cosign_version := "v3.1.3"
-
-# The workflow identity a contract must be signed by before it will be vendored. Anything else is
-# refused: a contract that cannot be proven to belong to the pinned digest is worse than none,
-# because every gate downstream would trust it.
-#
-# Measured against a real signature rather than assumed — the design document's guess was
-# `release.yml@refs/tags/.*`, and what `timschoenle/portfolio` is actually signed by is
-# release-please's workflow running on `main`. The repository name stays a wildcard because the
-# first-party images share one release pipeline; the workflow path and the ref do not, because
-# those are what make this a constraint rather than "signed by anyone with a GitHub account".
-#
-# Both default-branch spellings, because the repositories genuinely differ: `portfolio` and
-# `mp-stats-legacy-viewer` release from `main`, while `netcup-offer-bot`,
-# `s3-bucket-perma-link` and `cloudflare-access-webhook-redirect` release from `master`. Measured
-# against every first-party image this repository pins, not guessed — leaving it at `main` would
-# have failed three of the five with a signature error the day someone declared a contract for
-# them, which reads nothing like the actual cause.
-#
-# Signing on a branch rather than a tag is weaker than the design document assumed: any push to
-# the default branch of a producing repository can mint a signature this accepts. Tightening it
-# is the producer's change to make, not this repository's to work around.
-contract_signer := "https://github.com/TimSchoenle/[^/]+/.github/workflows/release-please.yaml@refs/heads/(main|master)"
 
 # --------------------------------------------------------------------------------------------
 # Defaults for the parameters CI overrides from a matrix

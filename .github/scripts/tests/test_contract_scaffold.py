@@ -65,6 +65,7 @@ TEMPLATES = SCRIPTS.parent / "templates" / "chart"
 # re-implemented here: a second reader of `# --` placement would agree with this scaffold and
 # disagree with the gate, which is the failure the assertion exists to catch.
 values_docs = load("check_values_docs", "check-values-docs.py")
+new_chart = load("new_chart", "new-chart.py")
 
 
 def key(path: str, **overrides: Any) -> dict[str, Any]:
@@ -694,6 +695,46 @@ class Enrolment(unittest.TestCase):
         parsed = yaml.safe_load(sc.render_enrolment("app", "app", plan))
         value = parsed["documents"][0]["prerequisites"]["values"]["a.token"]
         self.assertTrue(value.endswith(".invalid"), value)
+
+
+
+class RepoSettings(unittest.TestCase):
+    """`new-chart` decides from what `terrace-contract config show --json` resolved."""
+
+    SHOWN = (
+        '{"firstParty": {"value": ["org/*", "ghcr.io/org/*"], "source": "terrace.yaml"},'
+        ' "signer": {"value": "https://example/.+", "source": "terrace.yaml"}}'
+    )
+
+    def test_the_list_and_the_signer_are_read(self):
+        settings = new_chart.Settings.parse(self.SHOWN)
+        self.assertEqual(settings.first_party, ("org/*", "ghcr.io/org/*"))
+        self.assertEqual(settings.signer, "https://example/.+")
+
+    def test_an_unset_signer_and_an_unreadable_list_read_as_none(self):
+        settings = new_chart.Settings.parse(
+            '{"firstParty": {"value": null, "source": "default"}, "signer": null}'
+        )
+        self.assertIsNone(settings.first_party)
+        self.assertIsNone(settings.signer)
+
+    def test_anything_but_config_show_output_is_refused(self):
+        for text in ("not json", "[]", '{"firstParty": {"value": "org/*"}}', '{"signer": 1}'):
+            with self.subTest(text=text), self.assertRaises(new_chart.ScaffoldAborted):
+                new_chart.Settings.parse(text)
+
+    def test_a_first_party_image_owes_a_declaration(self):
+        patterns = new_chart.Settings.parse(self.SHOWN).first_party
+        self.assertTrue(new_chart.owes_a_declaration(patterns, "org/app"))
+        self.assertTrue(new_chart.owes_a_declaration(patterns, "ghcr.io/org/app"))
+        self.assertFalse(new_chart.owes_a_declaration(patterns, "library/redis"))
+
+    def test_no_resolved_list_is_refused_rather_than_guessed(self):
+        with self.assertRaises(new_chart.ScaffoldAborted):
+            new_chart.owes_a_declaration(None, "org/app")
+
+    def test_an_empty_list_makes_nothing_first_party(self):
+        self.assertFalse(new_chart.owes_a_declaration((), "org/app"))
 
 
 if __name__ == "__main__":

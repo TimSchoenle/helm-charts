@@ -27,13 +27,6 @@ import yaml
 # to this, so a caller can point the whole toolchain at a fixture directory.
 CHARTS_DIR = Path("charts")
 
-# The image repositories this organisation builds, and so the ones that can be expected to publish
-# a configuration contract. Read by `check-contract-coverage` to decide which charts owe a
-# declaration, and by `new-chart` to decide whether to write an opt-out — the two have to agree,
-# which is why neither spells the path itself.
-FIRST_PARTY = Path(".github/configs/first-party-images.txt")
-
-
 def read_yaml(path: Path) -> dict[str, Any]:
     """One YAML document as a mapping, with an absent or empty file reading as `{}`.
 

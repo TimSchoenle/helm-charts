@@ -83,9 +83,10 @@ is derived from `Chart.yaml`, so the table picks the chart up on its own.
 from __future__ import annotations
 
 import argparse
-import os
+import json
 import shutil
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
@@ -95,12 +96,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import config_contract as cc
 import config_scaffold as sc
 from config_declaration import DeclarationError, load_declaration
-
-# `FIRST_PARTY` is the list `just check-contract-coverage` decides from, and it is imported rather
-# than spelt here for the reason the constant is shared at all: whether a chart owes a declaration
-# is that gate's rule, and a scaffold with its own opinion about it would write charts the gate
-# then rejects.
-from config_paths import CHARTS_DIR, FIRST_PARTY
+from config_paths import CHARTS_DIR
 
 TEMPLATES = Path(".github/templates/chart")
 
@@ -389,22 +385,52 @@ def _pinned(values: Path) -> tuple[str, str]:
     return str(image.get("repository") or ""), str(image.get("tag") or "")
 
 
-def first_party_patterns(path: Path) -> list[str]:
-    """The repositories this organisation builds, from its own list.
+@dataclass(frozen=True)
+class Settings:
+    """What `terrace-contract config show --json` resolved from `terrace.yaml`.
 
-    Two lines, and they used to live in `config_coverage.py` beside the gate that reads the same
-    file. That gate is now `terrace-contract coverage`, and this is the only remaining Python
-    reader of the list — so the function comes here rather than leaving a module behind whose whole
-    contents is one import.
+    Read from the CLI rather than from the file, because the CLI is the one implementation of
+    precedence (flag, environment, file, default) and of the file's schema. `just
+    check-contract-coverage` decides from the same resolution, so whether a chart owes a
+    declaration is answered once; a second reader here would be a second opinion the gate could
+    disagree with.
     """
-    return [
-        line.strip()
-        for line in path.read_text(encoding="utf-8").splitlines()
-        if line.strip() and not line.strip().startswith("#")
-    ]
+
+    # `None` when nothing resolved: no list (the CLI could not read its default file) and no
+    # signer. An empty list is a resolved answer, and means no image is first-party.
+    first_party: tuple[str, ...] | None
+    signer: str | None
+
+    @classmethod
+    def parse(cls, text: str) -> Settings:
+        try:
+            shown = json.loads(text)
+            patterns = (shown.get("firstParty") or {}).get("value")
+            signer = (shown.get("signer") or {}).get("value")
+        except (ValueError, AttributeError) as exc:
+            raise ScaffoldAborted(
+                f"--settings: not the output of `terrace-contract config show --json` ({exc})"
+            ) from exc
+        if patterns is not None and not (
+            isinstance(patterns, list) and all(isinstance(p, str) for p in patterns)
+        ):
+            raise ScaffoldAborted("--settings: firstParty.value is not a list of strings")
+        if signer is not None and not isinstance(signer, str):
+            raise ScaffoldAborted("--settings: signer.value is not a string")
+        return cls(None if patterns is None else tuple(patterns), signer or None)
+
+    @classmethod
+    def read(cls, source: str) -> Settings:
+        """From a file, or from standard input when `source` is `-`."""
+        if source == "-":
+            return cls.parse(sys.stdin.read())
+        try:
+            return cls.parse(Path(source).read_text(encoding="utf-8"))
+        except OSError as exc:
+            raise ScaffoldAborted(f"--settings: {exc}") from exc
 
 
-def owes_a_declaration(first_party: Path, repository: str) -> bool:
+def owes_a_declaration(first_party: tuple[str, ...] | None, repository: str) -> bool:
     """Whether `just check-contract-coverage` will demand a declaration from this chart.
 
     The same question the gate asks, asked with the gate's own list and the gate's own pattern
@@ -417,14 +443,12 @@ def owes_a_declaration(first_party: Path, repository: str) -> bool:
     `paperless-ngx` carry no `config-contract.yaml` at all, and a scaffold that gave every plain
     chart one would have introduced a file this repository deliberately does not have.
     """
-    if not first_party.is_file():
+    if first_party is None:
         raise ScaffoldAborted(
-            f"{first_party}: missing, so whether this chart owes a declaration cannot be decided"
+            "no first-party image list resolved, so whether this chart owes a declaration cannot "
+            "be decided; set `helm.firstParty` in terrace.yaml (`terrace-contract doctor` says why)"
         )
-    return any(
-        cc.matches_ignore(pattern, repository)
-        for pattern in first_party_patterns(first_party)
-    )
+    return any(cc.matches_ignore(pattern, repository) for pattern in first_party)
 
 
 def opt_out(chart_dir: Path, reason: str, repository: str) -> None:
@@ -621,15 +645,14 @@ def main(argv: list[str]) -> int:
         help="why there is no contract; required with --no-contract for a first-party image",
     )
     parser.add_argument(
-        "--first-party",
-        default=str(FIRST_PARTY),
-        type=Path,
-        help="the image list check-contract-coverage decides from",
+        "--settings",
+        required=True,
+        help="`terrace-contract config show --json` output, as a file or `-` for standard input",
     )
     parser.add_argument(
         "--signer",
         default="",
-        help="the workflow identity a contract must be signed by (default: $CONTRACT_SIGNER)",
+        help="the workflow identity a contract must be signed by (default: from --settings)",
     )
     args = parser.parse_args(argv)
 
@@ -648,7 +671,8 @@ def main(argv: list[str]) -> int:
         # nobody got round to declaring. A third-party image owes neither — `teamspeak` carries no
         # `config-contract.yaml` at all — so demanding a reason there would be asking somebody to
         # justify a file this repository does not want.
-        owed = args.no_contract and owes_a_declaration(args.first_party, args.repository)
+        settings = Settings.read(args.settings)
+        owed = args.no_contract and owes_a_declaration(settings.first_party, args.repository)
         if owed and not args.reason:
             raise ScaffoldAborted(
                 f"{args.repository} is a first-party image, so `just check-contract-coverage` "
@@ -676,11 +700,11 @@ def main(argv: list[str]) -> int:
             next_steps(chart_dir, sc.plain(), sys.stdout)
             return 0
 
-        signer = args.signer or os.environ.get("CONTRACT_SIGNER", "")
+        signer = args.signer or settings.signer
         if not signer:
             raise ScaffoldAborted(
-                "no contract signer given; pass --signer or set $CONTRACT_SIGNER, as "
-                "`just contracts` does"
+                "no contract signer resolved; set `helm.signer` in terrace.yaml, or "
+                "$CONTRACT_SIGNER, or pass --signer"
             )
 
         contract = vendor(chart_dir, signer)

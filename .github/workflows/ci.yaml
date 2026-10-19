@@ -71,10 +71,6 @@ jobs:
       - name: Setup toolchain
         uses: $/.github/actions/setup-toolchain
 
-      # Every configuration gate this job runs delegates to it.
-      - name: Install terrace-contract
-        uses: $/.github/actions/install-terrace-contract
-
       # Renovate's image updates rewrite `values.yaml` and nothing else, but `ct lint` demands a new
       # chart version for them and the release workflow publishes only a chart whose version moved.
       # This supplies it, and moves `appVersion` with the main image, before the contract refresh
@@ -123,42 +119,34 @@ jobs:
       - name: Build Helm dependencies
         run: just deps
 
-      # The vendored configuration contracts, refreshed from the images the charts pin. Placed
-      # before the schemas and after the dependency build, and the order is load-bearing in one
-      # direction: `just schema` derives every bound value's `@schema` block from the committed
-      # contract, so a refresh running after it would generate this run's schemas from last run's
-      # contract and only converge on the next push. The commit step below still sweeps both up
-      # together, under a message that already covers them.
+      # The vendored configuration contracts, refreshed from the images the charts pin, and the two
+      # files derived from them: every bound value's `@schema` block and the credential reference in
+      # each contracted chart's README, which sits between two HTML comments in `README.md.gotmpl`.
+      # Placed after the dependency build and before the schemas and helm-docs, and the order is
+      # load-bearing: `just schema` packs the `@schema` blocks into `values.schema.json` and helm-docs
+      # reads the template, so either running first would publish last run's contract and converge
+      # only on the next push. `just schema` derives the `@schema` blocks once more on its own, which
+      # finds nothing left to change. The commit step below sweeps everything up together.
       #
       # This is the one networked step in the repository, and the only one depending on a service
-      # outside GitHub: `just contracts` verifies each image's signature, which queries the
-      # Sigstore transparency log, so a Sigstore outage fails this job. That is a deliberate trade
-      # rather than an oversight — there is no "fetch it unverified" path, because a contract that
-      # cannot be proven to belong to the pinned digest is worse than none: every gate downstream
-      # would trust it. No other job touches a registry, and none depends on this one.
+      # outside GitHub: the refresh verifies each image's signature, which queries the Sigstore
+      # transparency log, so a Sigstore outage fails it. That is a deliberate trade rather than an
+      # oversight — there is no "fetch it unverified" path, because a contract that cannot be proven
+      # to belong to the pinned digest is worse than none: every gate downstream would trust it. No
+      # other job touches a registry, and none depends on this one.
       #
-      # Versions come from `justfile` rather than being repeated here, so a bump stays the single
-      # edit the other pinned tools already are.
-      - name: Install oras and cosign
-        run: |
-          set -euo pipefail
-          oras_version="$(just --evaluate oras_version)"
-          cosign_version="$(just --evaluate cosign_version)"
-          curl -fsSL "https://github.com/oras-project/oras/releases/download/v${oras_version}/oras_${oras_version}_linux_amd64.tar.gz" \
-            | sudo tar -xz -C /usr/local/bin oras
-          curl -fsSL -o /tmp/cosign "https://github.com/sigstore/cosign/releases/download/${cosign_version}/cosign-linux-amd64"
-          sudo install -m 0755 /tmp/cosign /usr/local/bin/cosign
-          oras version
-          cosign version
+      # The action installs the release `cli` in `terrace.yaml` pins, with oras and cosign, and
+      # commits nothing itself: no token is passed, so the commit below carries its result.
+      - name: Sync configuration contracts
+        id: sync
+        continue-on-error: true
+        uses: TimSchoenle/actions/actions/terrace/helm-sync@81e4009704e0963651bbd8275e31244c1d1e220d # tag=actions-terrace-helm-sync-v1.1.0
 
-      - name: Refresh image configuration contracts
-        run: just contracts
-
-      # Every generator from here to the commit runs even when the one before it failed, and the
-      # job is failed at the end instead — see "Report generator failures".
+      # Every generator from the sync above to the commit runs even when the one before it failed,
+      # and the job is failed at the end instead — see "Report generator failures".
       #
       # These steps are a chain of repairs, not gates, and a chain that aborts throws away every
-      # repair already made. The step above is the expensive one: it is the only place in this
+      # repair already made. The sync above is the expensive one: it is the only place in this
       # repository that touches a registry, and the vendored contract it writes cannot be produced
       # by any other job or by `just check`. Losing it to a failure two steps later left the branch
       # with contracts still pinned to the pre-bump digests, and the offline staleness gate then
@@ -173,15 +161,6 @@ jobs:
         id: schemas
         continue-on-error: true
         run: just schema
-
-      # The credential reference every contracted chart's README carries, written from the
-      # contract between two HTML comments. Before helm-docs and after the refresh above, for the
-      # reason the schemas are: it edits `README.md.gotmpl`, which is helm-docs' input, so a run
-      # after it would publish last run's table and converge only on the next push.
-      - name: Generate credential references
-        id: config-readme
-        continue-on-error: true
-        run: just config-readme
 
       - name: Run helm-docs
         id: helm-docs
@@ -265,15 +244,15 @@ jobs:
       - name: Report generator failures
         if: always()
         env:
+          SYNC: ${{ steps.sync.outcome }}
           SCHEMAS: ${{ steps.schemas.outcome }}
-          CONFIG_README: ${{ steps.config-readme.outcome }}
           HELM_DOCS: ${{ steps.helm-docs.outcome }}
         run: |
           set -euo pipefail
 
           failed=0
-          for generator in "just schema:${SCHEMAS}" \
-                           "just config-readme:${CONFIG_README}" \
+          for generator in "terrace/helm-sync:${SYNC}" \
+                           "just schema:${SCHEMAS}" \
                            "helm-docs:${HELM_DOCS}"; do
             if [ "${generator##*:}" = "failure" ]; then
               echo "::error::${generator%:*} failed; see its step above"
@@ -483,8 +462,8 @@ jobs:
       - name: Setup toolchain
         uses: $/.github/actions/setup-toolchain
 
-      # A pinned single binary installed by release URL, exactly as terrace-contract and
-      # kubeconform are, and not `pip install ruff`: this repository has already decided that a pip install inside a
+      # A pinned single binary installed by release URL, exactly as kubeconform is, and not
+      # `pip install ruff`: this repository has already decided that a pip install inside a
       # gate is the difference between one that reproduces on a contributor's shell and one that
       # does not. The version comes from `ruff_version` in justfile so a bump stays the single
       # edit every other pinned tool already is.
@@ -731,14 +710,14 @@ jobs:
   #
   # Offline: the contracts are committed files, and the schema engine is refused any reference it
   # would have to fetch. Mirrors `policy-scan` otherwise — same permissions, same render, one
-  # pinned binary — so it needs no new reviewer intuition.
+  # pinned binary, installed by `terrace/helm-check` — so it needs no new reviewer intuition.
   #
   # Blocking. The Documentation job refreshes the vendored contracts, so a red run here is the
   # chart disagreeing with the image it pins rather than a contract nobody had updated.
   #
   # Deliberately no `needs:`. The Documentation job that refreshes the contracts does not gate
   # anything — the follow-up push re-runs the whole workflow — and the staleness interlock is what
-  # makes that safe: `just check-config` refuses to validate at all unless the vendored contract
+  # makes that safe: the configuration check refuses to validate at all unless the vendored contract
   # provably belongs to the digest the chart pins, so the run that sees a bumped digest and a
   # stale contract fails loudly rather than passing on a check it did not do.
   #
@@ -788,86 +767,38 @@ jobs:
           echo "charts=${charts}" >> "$GITHUB_OUTPUT"
           echo "==> contract gates checking: ${charts:-every chart}"
 
-      # A pinned single binary, verified before it is unpacked, exactly as kubeconform is above.
-      # It replaces both the ~2,000 lines of Python that held these gates and the `jv` binary that
-      # Python delegated JSON Schema to, so this one step is two fewer things to install.
+      # The same render kubeconform and kube-linter read, so the configuration gate below checks the
+      # manifests every other gate sees rather than a third opinion about what the chart produces.
+      - name: Render the selected charts
+        env:
+          CHARTS: ${{ steps.scope.outputs.charts }}
+        run: |
+          read -ra charts <<< "${CHARTS}"
+          just render rendered '' "${charts[@]}"
+
+      # Every contract gate in one run, each reported even when an earlier one failed:
       #
-      # The version and the verification live in the action rather than here: three jobs run a
-      # contract gate, and the same twenty lines in three places is how two of them end up pinning
-      # different releases.
-      - name: Install terrace-contract
-        uses: $/.github/actions/install-terrace-contract
-
-      # PyYAML ships with the runner image's system `python3`, which is what the recipes resolve
-      # to. `actions/setup-python` is deliberately not used, for the same reason as in the docs job.
-      - name: Validate rendered configuration against image contracts
-        env:
-          CHARTS: ${{ steps.scope.outputs.charts }}
-        run: |
-          read -ra charts <<< "${CHARTS}"
-          just check-config rendered "${charts[@]}"
-
-      # Estate-wide on purpose, and never narrowed: it asks whether any chart pins a
-      # first-party image without a contract, which is a question about the whole tree.
-      - name: Report configuration contract coverage
-        run: just check-contract-coverage
-
-      # Key-level, where the step above is chart-level: it fails when an enrolled chart has
-      # a contract key no `# @config` marker in its values.yaml reaches. Reads two committed
-      # files per chart, so it needs neither the render above nor the toolchain install.
-      - name: Check configuration binding markers
-        env:
-          CHARTS: ${{ steps.scope.outputs.charts }}
-        run: |
-          read -ra charts <<< "${CHARTS}"
-          just check-config-bindings "${charts[@]}"
-
-      # The derived schemas, both halves. Every value carrying a `# @config` marker has its
-      # `@schema` block written from that key's constraint — the element schema included, where a
-      # `schema_version: 2` contract publishes what one element of a container holds — and the
-      # Documentation job rewrites those, so this half is a safety net rather than the repair.
-      # The other half is not repairable: a key the producer has not described is transcribed by
-      # hand, held against the appVersion it was read at, and fails when the image moves past it
-      # — which is precisely what an automated bump does — or when the contract catches up. The
-      # two declared departures from a generated block fail here for the mirror-image reason.
-      - name: Check derived config shapes
-        env:
-          CHARTS: ${{ steps.scope.outputs.charts }}
-        run: |
-          read -ra charts <<< "${CHARTS}"
-          just check-config-shapes "${charts[@]}"
-
-      # The credential reference in every contracted chart's README. The generated half the
-      # Documentation job repairs, so this is a safety net for it; the two hand-written columns
-      # beside it are not repairable, and an entry naming a credential the image dropped or a
-      # chart value somebody renamed is exactly what a digest bump produces.
-      - name: Check README credential references
-        env:
-          CHARTS: ${{ steps.scope.outputs.charts }}
-        run: |
-          read -ra charts <<< "${CHARTS}"
-          just check-config-readme "${charts[@]}"
-
-      # The generated round-trip suites, against the contracts they were generated from.
+      #   check      the rendered configuration against the contracts of the images each chart pins
+      #   bindings   every `# @config` marker in values.yaml against the contract key it names, so a
+      #              key the image gained and no chart value reaches fails the bump that repinned it
+      #   shapes     the `@schema` blocks derived from the contract; the Documentation job rewrites
+      #              them, so the generated half is a safety net, and the hand-transcribed half for a
+      #              key the producer has not described fails when the image moves past it
+      #   readme     the credential reference in every contracted chart's README, likewise repaired
+      #              by the Documentation job except for its two hand-written columns
+      #   tests      the generated round-trip suites, which nothing regenerates on purpose, so a
+      #              contract that gained a key leaves its suite short of it unless this says so
+      #   coverage   whether any chart pins a first-party image without a contract; estate-wide
+      #              whatever the selection, because that is a question about the whole tree
       #
-      # `just check` carries this recipe and its three siblings — `check-contracts`,
-      # `check-kube-refs` and `check-crd-refs` — do not, because those are repaired by the
-      # Documentation job on the pull request itself. Nothing regenerates the contract suites,
-      # deliberately, so a contract that gained a key leaves its suite silently short of it
-      # unless something says so.
-      #
-      # Nothing said so here. CI runs the recipes as parallel jobs rather than running
-      # `just check`, so this gate held only for contributors who ran the aggregate locally — and
-      # the drift it exists to catch arrives on a Renovate bump, which is exactly the pull request
-      # nobody runs `just check` on by hand.
-      #
-      # Reads two committed files per chart: no render, no cluster, no toolchain install.
-      - name: Check generated contract suites
-        env:
-          CHARTS: ${{ steps.scope.outputs.charts }}
-        run: |
-          read -ra charts <<< "${CHARTS}"
-          just check-contract-tests "${charts[@]}"
+      # Narrowed to the charts selected above, the same set that was rendered, and to every chart
+      # when that set is empty. The action installs the release `cli` in `terrace.yaml` pins.
+      - name: Check configuration contracts
+        uses: TimSchoenle/actions/actions/terrace/helm-check@81e4009704e0963651bbd8275e31244c1d1e220d # tag=actions-terrace-helm-check-v1.1.0
+        with:
+          charts: ${{ steps.scope.outputs.charts }}
+          since: ''
+          manifests: rendered
 
       # Every `# @config` marker's key is rendered by some template, not only bound in values.
       #
@@ -890,18 +821,21 @@ jobs:
   # this chart's version become. Nothing invoked the recipe, so that reader never received the
   # answer.
   #
+  # The answer goes to the job summary and into one pull request comment, which later pushes
+  # update in place, and which is corrected rather than deleted once the change is gone. A pull
+  # request that never changed a contract gets no comment at all.
+  #
   # Advisory, and structurally so. Differences are the *normal* outcome of a bump, so this job
-  # must never fail on finding them — `contract-diff` exits 0 on differences and 1 only on an
-  # error it cannot report around, and `--exit-code` is deliberately not passed. A red run here
-  # therefore means a contract could not be read, which is worth failing on.
+  # never fails on finding them; a red run means a contract could not be read, which is worth
+  # failing on.
   #
-  # Its own job rather than a step in `config-contracts`, for two reasons. It needs full history
-  # to `git show` the base revision, and making the blocking gate pay for that on every run would
-  # be charging every pull request for a report only bump pull requests read. And it is advisory
-  # where that job is blocking; keeping the two apart is what stops the distinction eroding.
+  # Its own job rather than a step in `config-contracts`, for two reasons. It is the only contract
+  # job that writes to the pull request, so it is the only one holding `pull-requests: write`. And
+  # it is advisory where that job is blocking; keeping the two apart is what stops the distinction
+  # eroding.
   #
-  # Needs no render, no cluster, no toolchain and no network — the other side is `git show`,
-  # exactly as every gate in the group reads the committed file.
+  # Needs no render, no cluster and no network — the other side is `git show`, exactly as every
+  # gate in the group reads the committed file.
   contract-diff:
     name: Contract Diff
     if: github.event_name == 'pull_request'
@@ -909,6 +843,7 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read # to checkout code
+      pull-requests: write # to post and update the contract diff comment
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
@@ -916,40 +851,23 @@ jobs:
           egress-policy: audit
 
       # Full history, because the report is a comparison against the base commit and `git show`
-      # cannot reach it from a shallow clone. This is the only job in the workflow that needs it
-      # for a reason other than chart-testing's changed-file detection.
+      # cannot reach it from a shallow clone.
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Setup toolchain
-        uses: $/.github/actions/setup-toolchain
-
-      # Every configuration gate this job runs delegates to it.
-      - name: Install terrace-contract
-        uses: $/.github/actions/install-terrace-contract
-
-      # Written to the step summary rather than printed, because that is where a reviewer of a
-      # bump looks first and it is the one surface that survives the log being collapsed. Also
-      # echoed to the log, so a failure is diagnosable from the same place as every other job's.
+      # The comment needs a token that can write to this pull request, which a pull request from a
+      # fork does not get; there the report still reaches the job summary. Only the job token's own
+      # comment is updated, so a comment someone pastes the marker into cannot hijack or break it.
       - name: Report contract changes against the base
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: |
-          set -euo pipefail
+        uses: TimSchoenle/actions/actions/terrace/helm-diff@81e4009704e0963651bbd8275e31244c1d1e220d # tag=actions-terrace-helm-diff-v1.1.0
+        with:
+          since: ${{ github.event.pull_request.base.sha }}
+          token: ${{ github.event.pull_request.head.repo.full_name == github.repository && github.token || '' }}
+          comment_author: github-actions[bot]
 
-          report="$(just contract-diff '' "${BASE_SHA}")"
-          echo "${report}"
-
-          {
-            echo '## Configuration contract changes'
-            echo
-            echo '```'
-            echo "${report}"
-            echo '```'
-          } >> "${GITHUB_STEP_SUMMARY}"
   install:
     name: Install & Verify (${{ matrix.chart }}, k8s ${{ matrix.kubernetes }})
     needs: [lint]

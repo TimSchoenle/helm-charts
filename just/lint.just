@@ -63,7 +63,7 @@ lint-policy out='rendered':
 #
 # **No type checking.** mypy would be the obvious companion and is deliberately absent: it ships
 # as a pip package rather than a single binary, and this repository has already decided, in
-# `justfile`'s note on `terrace_contract_version`, that a `pip install` inside a recipe is the
+# `justfile`'s note on `ruff_version`, that a `pip install` inside a recipe is the
 # difference between a gate that reproduces locally and one that does not. Adopting it means solving that first, and
 # doing it badly is worse than the gap.
 #

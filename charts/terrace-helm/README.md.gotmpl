@@ -8,7 +8,7 @@ This is a **library chart**. It renders nothing on its own: a chart depends on i
 partials to turn a service's configuration into the TOML file and the credential files a
 [terrace](https://github.com/TimSchoenle/terrace-config) configuration contract describes. The
 `terrace-contract` gates check the rendered result against the image's published contract, so a
-chart built on these partials is one they can hold to it.
+chart built on these partials is one they can hold to that contract.
 
 ## Usage
 

@@ -32,10 +32,23 @@ data:
 ```
 
 ```yaml
+# templates/secret.yaml
+{{ `{{- if include "terrace-helm.fileConfig.createSecret" (dict "ctx" $ "data" .Values.secrets) }}` }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ `{{ .Release.Name }}` }}
+type: Opaque
+stringData:
+  {{ `{{- include "terrace-helm.fileConfig.secretData" (dict "data" .Values.secrets) | nindent 2 }}` }}
+{{ `{{- end }}` }}
+```
+
+```yaml
 # templates/deployment.yaml, in the pod spec
 {{ `{{- $keys := include "terrace-helm.fileConfig.secretKeys" (dict "ctx" $ "data" .Values.secrets) | fromYamlArray }}` }}
 volumes:
-  {{ `{{- include "terrace-helm.fileConfig.volumes" (dict "configMapName" .Release.Name "secretName" .Release.Name "secretKeys" $keys) | nindent 2 }}` }}
+  {{ `{{- include "terrace-helm.fileConfig.volumes" (dict "configMapName" .Release.Name "secretName" (.Values.existingSecret | default .Release.Name) "secretKeys" $keys) | nindent 2 }}` }}
 containers:
   - name: app
     env:
@@ -43,6 +56,12 @@ containers:
     volumeMounts:
       {{ `{{- include "terrace-helm.fileConfig.volumeMounts" (dict "ctx" $ "secretKeys" $keys) | nindent 6 }}` }}
 ```
+
+The chart renders its own Secret only when `.Values.secrets` holds a non-empty credential and
+`existingSecret` is unset. With `existingSecret` set, the operator provides that Secret, and every
+credential key the chart consumes is projected from it. The credential volume is optional, so a
+missing Secret does not block the pod from starting, but the credential files are then absent and a
+service that requires them fails its own credential check.
 
 Each partial's arguments are documented where it is defined, under `templates/`.
 

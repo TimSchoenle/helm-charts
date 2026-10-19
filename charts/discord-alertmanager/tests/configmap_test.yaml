@@ -43,6 +43,23 @@ tests:
           path: data['config.toml']
           pattern: 'key_labels = ."cluster","namespace".'
 
+  # `engine.dedupe_ignore_labels` is a `structured` key, which the generated round-trip suite
+  # skips, so this is the only test that proves the value reaches the document. It was bound in
+  # `values.yaml` and rendered by no template until `just check-config-wired` ran in CI.
+  - it: writes the labels that do not decide an alert's card
+    set:
+      engine.dedupeIgnoreLabels: [pod, instance]
+    asserts:
+      - matchRegex:
+          path: data['config.toml']
+          pattern: 'dedupe_ignore_labels = ."pod","instance".'
+
+  - it: leaves the dedupe labels to the image's default when none are set
+    asserts:
+      - notMatchRegex:
+          path: data['config.toml']
+          pattern: 'dedupe_ignore_labels'
+
   # The escape hatch is merged *over* everything the chart derives, so it can override a
   # first-class value and not only extend the tree. A chart that merged the other way round
   # would accept the value, render the derived one, and report nothing.

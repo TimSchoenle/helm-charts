@@ -7,9 +7,9 @@
 #
 # Prerequisites, per group:
 #
-#   contracts                   python3 with PyYAML; terrace-contract, for the gates — `just
-#                               install-contract` caches the pinned release locally if it is not
-#                               already on PATH or named by TERRACE_CONTRACT_BIN
+#   contracts                   python3 with PyYAML; terrace-contract, for the gates: the
+#                               release `cli` in terrace.yaml pins, on PATH or named by
+#                               TERRACE_CONTRACT_BIN
 #   contracts                   oras and cosign, for `just contracts` alone — the one networked
 #                               recipe in the repository, and not part of `just check`
 #   deps, docs, render, test    helm (+ `just plugins`), python3 with PyYAML
@@ -81,50 +81,28 @@ helm_version := "4.3.1"
 # of the contract format shares, so a rule this repository proved against nine charts is the same
 # rule a Java service's build runs. See `docs/contract-cli-plan.md` in TimSchoenle/terrace-config.
 #
-# Pinned as a single binary by release URL, exactly as `kubeconform` and `ruff` already are, and
-# for the reason `jv` was: the scripts here are stdlib + PyYAML, and on the Git Bash shell this
-# repository is developed from, an install step that needs a toolchain is the difference between a
-# gate that runs locally and one that does not.
-#
-# `TERRACE_CONTRACT_BIN` overrides it, which is what makes a chart-side fix testable against an
-# unreleased build rather than waiting for a release to prove it.
-#
-# `just install-contract` is the third way in: it caches the pinned release under `contract_cache`
-# below, verified exactly as `.github/actions/install-terrace-contract` verifies it for CI, so a
-# contributor gets a working gate without `sudo` and without building from source. `resolve_contract`
-# checks that cache after `TERRACE_CONTRACT_BIN` and PATH.
-# renovate: datasource=github-tags depName=TimSchoenle/terrace-config extractVersion=^terrace-contract-v(?<version>.*)$
-terrace_contract_version := "0.8.0"
+# Its release is pinned by `cli` in `terrace.yaml`, the one place CI reads it from, so the version
+# the gates run in CI and the version this repository declares cannot disagree. Locally it comes
+# from PATH, or from `TERRACE_CONTRACT_BIN`, which is what makes a chart-side fix testable against
+# an unreleased build rather than waiting for a release to prove it. `resolve_contract` below says
+# how to install the pinned release when neither is set, and `terrace-contract doctor` reports a
+# binary on PATH that is not on the pinned line.
 
-# Where `just install-contract` caches the binary it downloads, keyed by version underneath so a
-# bump fetches a fresh copy on next use rather than silently reusing a stale one. Relative and
-# gitignored: the cache belongs to this checkout, not to the machine, so two worktrees of this
-# repository never fight over it.
-contract_cache := ".cache/terrace-contract"
-
-# Where `resolve_helm` writes the Docker-backed `helm` wrapper it falls back to, for the same
-# reason `contract_cache` above is relative and gitignored: it belongs to this checkout, not to the
-# machine.
+# Where `resolve_helm` writes the Docker-backed `helm` wrapper it falls back to. Relative and
+# gitignored: it belongs to this checkout, not to the machine, so two worktrees of this repository
+# never fight over it.
 helm_docker_cache := ".cache/helm-docker"
 
-# Linter for `.github/scripts`. Pinned as a single binary by release URL for exactly the reason
-# `terrace-contract` above is: a `pip install` inside a recipe is the difference between a gate
-# that runs on the Git Bash shell this repository is developed from and one that does not. ruff ships that
-# way; mypy does not, which is why type checking is not part of the gate — see `just/lint.just`.
+# Linter for `.github/scripts`. Pinned as a single binary by release URL, as `kubeconform` is: a
+# `pip install` inside a recipe is the difference between a gate that runs on the Git Bash shell
+# this repository is developed from and one that does not. ruff ships that way; mypy does not,
+# which is why type checking is not part of the gate — see `just/lint.just`.
 #
 # Pinned rather than floating because a linter is a gate: a new release that adds a rule would
 # turn a pull request red for something its author did not write, and the fix would be a version
 # bump made under time pressure rather than a considered one.
 # renovate: datasource=github-tags depName=astral-sh/ruff extractVersion=^v?(?<version>.*)$
 ruff_version := "0.17.1"
-
-# Registry client and signature verifier for `just contracts`. Only the contract refresh needs
-# these — every gate that reads a contract reads the committed file — which is why they are absent
-# from the `check` aggregate and from every job but the Documentation one.
-# renovate: datasource=github-tags depName=oras-project/oras extractVersion=^v(?<version>.*)$
-oras_version := "1.3.4"
-# renovate: datasource=github-tags depName=sigstore/cosign
-cosign_version := "v3.1.3"
 
 # --------------------------------------------------------------------------------------------
 # Defaults for the parameters CI overrides from a matrix
@@ -193,33 +171,21 @@ fi
 '''
 
 # The contract toolchain, resolved the way `resolve_python` resolves an interpreter: an override
-# first, then PATH, then the repo-local cache `just install-contract` fills, and a message naming
-# the fix rather than a skipped gate. A recipe that needs an external binary and cannot find it
-# fails saying so — the posture every pinned tool here takes.
-#
-# The cache is checked by version and by both the POSIX and the Windows binary name, because
-# `install-contract-cli.py` writes whichever one `platform.system()` says the release ships as —
-# there is no per-OS branch here to keep in step with it.
+# first, then PATH, and a message naming the fix rather than a skipped gate. A recipe that needs an
+# external binary and cannot find it fails saying so — the posture every pinned tool here takes.
 resolve_contract := '''
 contract="${TERRACE_CONTRACT_BIN:-}"
 if [ -z "$contract" ] && command -v terrace-contract >/dev/null 2>&1; then
   contract="terrace-contract"
 fi
 if [ -z "$contract" ]; then
-  cached="''' + contract_cache + "/" + terrace_contract_version + '''/terrace-contract"
-  if [ -x "$cached" ]; then
-    contract="$cached"
-  elif [ -x "${cached}.exe" ]; then
-    contract="${cached}.exe"
-  fi
-fi
-if [ -z "$contract" ]; then
   echo "error: terrace-contract is not on PATH. It is the shared toolchain the configuration" >&2
-  echo "       gates delegate to. Run 'just install-contract' to cache the pinned release" >&2
-  echo "       locally (no sudo, nothing outside this checkout), or set TERRACE_CONTRACT_BIN to" >&2
-  echo "       a local build:" >&2
-  echo "         cargo build --release --manifest-path <terrace-config>/cli/Cargo.toml" >&2
-  echo "         export TERRACE_CONTRACT_BIN=<terrace-config>/cli/target/release/terrace-contract" >&2
+  echo "       gates delegate to. Install the release \`cli\` in terrace.yaml pins, from" >&2
+  echo "       https://github.com/TimSchoenle/terrace-config/releases (a binary per platform," >&2
+  echo "       and a cosign-signed SHA256SUMS to verify it against), or build it:" >&2
+  echo "         cargo install --locked --git https://github.com/TimSchoenle/terrace-config \\" >&2
+  echo "           --tag terrace-contract-v<version> terrace-contract" >&2
+  echo "       TERRACE_CONTRACT_BIN names a local build instead of the one on PATH." >&2
   exit 1
 fi
 '''

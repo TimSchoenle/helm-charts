@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Keep the `common` library's version, and every chart's pin on it, in step with its source.
+"""Keep each library chart's version, and every chart's pin on it, in step with its source.
 
 Every chart in this repository takes `common` from `file://../common` at an exact version, and the
 library is excluded from chart-testing. Two things followed from that, and both had happened:
@@ -25,13 +25,21 @@ The rules, all relative to the base branch:
     on chart-testing's changed list, so the library change gets the install and upgrade tests of
     every chart that renders it.
 
+The libraries are named with `--library`, in dependency order, and default to `common` alone. A
+library may pin one named before it: `common` takes `terrace-helm` from `file://../terrace-helm`.
+Repinning a library changes its `Chart.yaml`, so it counts as a change to that library and bumps
+its version in the same run, which in turn repins and bumps every chart on it. A library's own
+pin is held to the same rule as an application chart's, without the application chart's patch
+bump: the library's version moves through the first rule instead.
+
 With `--check` nothing is written: the script reports what it would change and exits 1 if
 anything, which is the CI gate. Without it, the changes are made, which is what the documentation
 job runs on Renovate branches and what a contributor runs after editing the library.
 
 Edits are byte-level substitutions of one line each, so comments and line endings survive.
 
-Usage: .github/scripts/bump-common-version.py --base origin/main [--check] [--kind patch]
+Usage: .github/scripts/bump-common-version.py --base origin/main [--library terrace-helm
+       --library common] [--check] [--kind patch]
 """
 
 import argparse
@@ -43,13 +51,8 @@ from typing import Any
 
 import yaml
 
-LIBRARY = "common"
+DEFAULT_LIBRARY = "common"
 VERSION_LINE = re.compile(r"^(?P<key>version:[ \t]*)(?P<value>\S+)(?=[ \t]*\r?$)", re.MULTILINE)
-DEPENDENCY_ITEM = re.compile(
-    r"^(?P<indent>[ \t]*)- name:[ \t]*[\"']?" + LIBRARY + r"[\"']?[ \t]*\r?\n"
-    r"(?P<body>(?:(?P=indent)[ \t]+\S[^\r\n]*(?:\r?\n|$))*)",
-    re.MULTILINE,
-)
 DEPENDENCY_VERSION = re.compile(
     r"^(?P<key>[ \t]+version:[ \t]*)(?P<open>[\"']?)(?P<value>[^\"'\s]+)(?P=open)(?=[ \t]*\r?$)",
     re.MULTILINE,
@@ -123,24 +126,33 @@ def replace_top_level_version(text: str, value: str, origin: str) -> str:
     return VERSION_LINE.sub(lambda m: m.group("key") + value, text, count=1)
 
 
-def library_pin(chart: dict[str, Any]) -> str | None:
-    """The version a chart pins `common` at, when it takes it from a `file://` repository."""
+def dependency_item(library: str) -> re.Pattern[str]:
+    """The `- name: <library>` entry of a `dependencies:` list, with its indented body."""
+    return re.compile(
+        r"^(?P<indent>[ \t]*)- name:[ \t]*[\"']?" + re.escape(library) + r"[\"']?[ \t]*\r?\n"
+        r"(?P<body>(?:(?P=indent)[ \t]+\S[^\r\n]*(?:\r?\n|$))*)",
+        re.MULTILINE,
+    )
+
+
+def library_pin(chart: dict[str, Any], library: str) -> str | None:
+    """The version a chart pins `library` at, when it takes it from a `file://` repository."""
     for dependency in chart.get("dependencies") or []:
-        if not isinstance(dependency, dict) or dependency.get("name") != LIBRARY:
+        if not isinstance(dependency, dict) or dependency.get("name") != library:
             continue
         if str(dependency.get("repository", "")).startswith("file://"):
             return str(dependency.get("version", ""))
     return None
 
 
-def replace_library_pin(text: str, value: str, origin: str) -> str:
-    items = list(DEPENDENCY_ITEM.finditer(text))
+def replace_library_pin(text: str, library: str, value: str, origin: str) -> str:
+    items = list(dependency_item(library).finditer(text))
     if len(items) != 1:
-        fail(f"{origin}: expected exactly one `- name: {LIBRARY}` dependency entry")
+        fail(f"{origin}: expected exactly one `- name: {library}` dependency entry")
     item = items[0]
     body = item.group("body")
     if len(DEPENDENCY_VERSION.findall(body)) != 1:
-        fail(f"{origin}: the `{LIBRARY}` dependency entry has no single `version:` line")
+        fail(f"{origin}: the `{library}` dependency entry has no single `version:` line")
     new_body = DEPENDENCY_VERSION.sub(
         lambda m: m.group("key") + m.group("open") + value + m.group("open"), body, count=1
     )
@@ -161,13 +173,24 @@ class Plan:
         self.writes[path] = text
         self.changes.append(change)
 
+    def touches(self, directory: Path) -> list[str]:
+        """The planned writes under `directory`, as the paths `git diff` would print."""
+        return sorted(
+            path.as_posix() for path in self.writes if path.is_relative_to(directory)
+        )
+
     def apply(self) -> None:
         for path, text in self.writes.items():
             path.write_bytes(text.encode("utf-8"))
 
 
 def plan_library(plan: Plan, library_dir: Path, base: str, kind: str) -> str:
-    """Bump the library if its sources moved and its version did not; return its version."""
+    """Bump the library if its sources moved and its version did not; return its version.
+
+    A write this run already planned under the library, a repin on a library before it, counts as
+    a change: under `--check` it is not on disk for `git diff` to see.
+    """
+    library = library_dir.name
     chart_path = library_dir / "Chart.yaml"
     head_text = plan.text(chart_path)
     head_version = parse_semver(
@@ -180,7 +203,7 @@ def plan_library(plan: Plan, library_dir: Path, base: str, kind: str) -> str:
     base_origin = f"{base}:{chart_path.as_posix()}"
     base_version = parse_semver(str(parse_yaml(base_text, base_origin)["version"]), base_origin)
 
-    changed = changed_since(base, library_dir)
+    changed = sorted(set(changed_since(base, library_dir)) | set(plan.touches(library_dir)))
     if not changed or head_version > base_version:
         return format_semver(head_version)
 
@@ -188,37 +211,41 @@ def plan_library(plan: Plan, library_dir: Path, base: str, kind: str) -> str:
     plan.write(
         chart_path,
         replace_top_level_version(head_text, new_version, str(chart_path)),
-        f"{LIBRARY}: version {format_semver(base_version)} -> {new_version} ({kind}); "
+        f"{library}: version {format_semver(base_version)} -> {new_version} ({kind}); "
         f"changed since {base}: {', '.join(changed)}",
     )
     return new_version
 
 
-def plan_consumer(plan: Plan, chart_dir: Path, base: str, library_version: str, release: bool):
-    """Repin one chart on the library, and bump its own version when the pin moved."""
+def plan_consumer(
+    plan: Plan, chart_dir: Path, base: str, library: str, library_version: str, release: bool
+):
+    """Repin one chart on the library, and bump its own version when the pin moved.
+
+    A library consumer is repinned only: its version moves through `plan_library`, which sees the
+    repin as a change to it.
+    """
     chart_path = chart_dir / "Chart.yaml"
     head_text = plan.text(chart_path)
     head_chart = parse_yaml(head_text, str(chart_path))
-    if head_chart.get("type") == "library":
-        return
-    pin = library_pin(head_chart)
+    pin = library_pin(head_chart, library)
     if pin is None:
         return
 
     name = str(head_chart.get("name", chart_dir.name))
     text = head_text
     if pin != library_version:
-        text = replace_library_pin(text, library_version, str(chart_path))
-        plan.write(chart_path, text, f"{name}: {LIBRARY} pin {pin} -> {library_version}")
+        text = replace_library_pin(text, library, library_version, str(chart_path))
+        plan.write(chart_path, text, f"{name}: {library} pin {pin} -> {library_version}")
 
-    if not release:
+    if not release or head_chart.get("type") == "library":
         return
     base_text = read_at_base(base, chart_path)
     if base_text is None:
         return
     base_origin = f"{base}:{chart_path.as_posix()}"
     base_chart = parse_yaml(base_text, base_origin)
-    if library_pin(base_chart) == library_version:
+    if library_pin(base_chart, library) == library_version:
         return
     base_version = parse_semver(str(base_chart["version"]), base_origin)
     head_version = parse_semver(str(head_chart["version"]), str(chart_path))
@@ -229,7 +256,7 @@ def plan_consumer(plan: Plan, chart_dir: Path, base: str, library_version: str, 
         chart_path,
         replace_top_level_version(text, new_version, str(chart_path)),
         f"{name}: version {format_semver(base_version)} -> {new_version} "
-        f"({LIBRARY} {library_pin(base_chart)} -> {library_version})",
+        f"({library} {library_pin(base_chart, library)} -> {library_version})",
     )
 
 
@@ -249,6 +276,12 @@ def main() -> None:
         help="a test-only chart held to the pin rule but never versioned (repeatable)",
     )
     parser.add_argument(
+        "--library",
+        action="append",
+        default=[],
+        help="a library chart under --charts, in dependency order (repeatable; default: common)",
+    )
+    parser.add_argument(
         "--kind",
         choices=(PATCH, MINOR, MAJOR),
         default=PATCH,
@@ -259,23 +292,34 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    library_dir = args.charts / LIBRARY
-    if not (library_dir / "Chart.yaml").is_file():
-        fail(f"{library_dir}/Chart.yaml does not exist")
+    libraries = args.library or [DEFAULT_LIBRARY]
+    if len(set(libraries)) != len(libraries):
+        fail(f"--library names a chart twice: {', '.join(libraries)}")
+    for library in libraries:
+        if not (args.charts / library / "Chart.yaml").is_file():
+            fail(f"{args.charts / library}/Chart.yaml does not exist")
 
+    # One library at a time, in dependency order, so a repin on an earlier library is already
+    # planned when the later library that carries it decides whether it moved.
     plan = Plan()
-    library_version = plan_library(plan, library_dir, args.base, args.kind)
-    for chart_yaml in sorted(args.charts.glob("*/Chart.yaml")):
-        if chart_yaml.parent != library_dir:
-            plan_consumer(plan, chart_yaml.parent, args.base, library_version, release=True)
-    for fixture in args.fixture:
-        plan_consumer(plan, fixture, args.base, library_version, release=False)
+    versions: list[str] = []
+    for library in libraries:
+        library_dir = args.charts / library
+        library_version = plan_library(plan, library_dir, args.base, args.kind)
+        versions.append(f"{library} {library_version}")
+        for chart_yaml in sorted(args.charts.glob("*/Chart.yaml")):
+            if chart_yaml.parent != library_dir:
+                plan_consumer(
+                    plan, chart_yaml.parent, args.base, library, library_version, release=True
+                )
+        for fixture in args.fixture:
+            plan_consumer(plan, fixture, args.base, library, library_version, release=False)
 
     if not plan.changes:
-        print(f"{LIBRARY} {library_version}: version and every pin are in step")
+        print(f"{', '.join(versions)}: versions and every pin are in step")
         return
     if args.check:
-        print(f"error: {LIBRARY} versioning is out of step with {args.base}:", file=sys.stderr)
+        print(f"error: library versioning is out of step with {args.base}:", file=sys.stderr)
         for line in plan.changes:
             print(f"  {line}", file=sys.stderr)
         print("Run `just bump-common-version` and commit the result.", file=sys.stderr)

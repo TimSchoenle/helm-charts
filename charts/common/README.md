@@ -1,6 +1,6 @@
 # common
 
-![Version: 2.6.0](https://img.shields.io/badge/Version-2.6.0-informational?style=flat-square) ![Type: library](https://img.shields.io/badge/Type-library-informational?style=flat-square)
+![Version: 2.7.0](https://img.shields.io/badge/Version-2.7.0-informational?style=flat-square) ![Type: library](https://img.shields.io/badge/Type-library-informational?style=flat-square)
 
 Shared template partials for the TimSchoenle Helm charts
 
@@ -61,7 +61,7 @@ readers only and never appears at a call site.
 |---|---|
 | `core/` | Names, labels, templated values, capability checks, required-value validation |
 | `workload/` | Pod spec, container, images, probes, resources, security contexts, checksums, the ServiceAccount name |
-| `config/` | File-backed configuration, the TOML renderer, and the existing ConfigMap and Secret names |
+| `config/` | The existing ConfigMap and Secret names, and the `common.toml*`, `common.configToml` and `common.fileConfig.*` names, which delegate to [`terrace-helm`](../terrace-helm) |
 | `networking/` | NetworkPolicy, CiliumNetworkPolicy and Gateway API objects |
 | `observability/` | Prometheus rules and Grafana dashboards |
 
@@ -369,6 +369,7 @@ and act as the reference shape for consuming charts.
 | startupProbe.enabled | bool | `false` | Enable the startup probe. |
 | strategy | object | `{}` | Deployment update strategy. Defaults to the Kubernetes default, except for workloads with a ReadWriteOnce volume, which fall back to `Recreate` to avoid a wedged rollout. |
 | terminationGracePeriodSeconds | int | `30` | Grace period for pod shutdown. |
+| terrace-helm | object | `{}` | Values of the `terrace-helm` library this chart depends on, which declares none. Declared because Helm adds the key, with `global` inside it, for every dependency, and this schema refuses a key it does not name. |
 | tolerations | list | `[]` | Tolerations for pod assignment. |
 | topologySpreadConstraints | list | `[]` | Topology spread constraints. |
 

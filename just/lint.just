@@ -4,12 +4,16 @@
 [group('lint')]
 lint: lint-library lint-charts
 
-# `helm lint` the common library. `ct` cannot lint or install a library chart, so `common` stays in
+# `helm lint` the library charts. `ct` cannot lint or install a library chart, so each one stays in
 # `excluded-charts` there and is covered here plus by the fixture's unit tests.
-[doc("helm lint the common library chart, which chart-testing cannot lint")]
+[doc("helm lint the library charts, which chart-testing cannot lint")]
 [group('lint')]
 lint-library:
-    helm lint {{ charts }}/common
+    #!/usr/bin/env bash
+    set -euo pipefail
+    for library in {{ libraries }}; do
+      helm lint '{{ charts }}'/"${library}"
+    done
 
 # Print the charts that changed against the target branch, one path per line, nothing if none did.
 [group('lint')]

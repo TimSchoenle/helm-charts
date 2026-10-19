@@ -1,0 +1,30 @@
+{{- /*
+Exercises `terrace-helm` directly, the way a chart outside this repository uses it: with no
+`common` names, so the ConfigMap and Secret names are passed in rather than derived. Rendered only
+when `terraceHelm.enabled` is set, so the rest of the fixture's suites never see it.
+*/ -}}
+{{- if .Values.terraceHelm.enabled }}
+{{- $keys := include "terrace-helm.fileConfig.secretKeys" (dict "ctx" . "data" .Values.terraceHelm.secrets) | fromYamlArray -}}
+apiVersion: v1
+kind: Pod
+metadata:
+  name: terrace-helm-direct
+spec:
+  containers:
+    - name: app
+      image: registry.invalid/app:1
+      env:
+        {{- include "terrace-helm.fileConfig.env" (dict "ctx" . "prefix" "DIRECT" "secretKeys" $keys) | nindent 8 }}
+      volumeMounts:
+        {{- include "terrace-helm.fileConfig.volumeMounts" (dict "ctx" . "secretKeys" $keys) | nindent 8 }}
+  volumes:
+    {{- include "terrace-helm.fileConfig.volumes" (dict "configMapName" .Values.terraceHelm.configMapName "secretName" .Values.terraceHelm.secretName "secretKeys" $keys) | nindent 4 }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.terraceHelm.configMapName }}
+data:
+  config.toml: |
+    {{- include "terrace-helm.configToml" (dict "ctx" . "maps" (list .Values.terraceHelm.config)) | nindent 4 }}
+{{- end }}

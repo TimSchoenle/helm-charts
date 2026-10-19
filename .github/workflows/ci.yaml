@@ -1066,6 +1066,13 @@ jobs:
             crd/podmonitors.monitoring.coreos.com \
             crd/prometheusrules.monitoring.coreos.com
 
+      # `ct install` builds each chart's dependencies itself, and `helm dependency build` copies
+      # `file://../common` as it stands without building that library's own dependencies. Without
+      # this step the chart would bundle a `common` missing `terrace-helm` and fail to render. Only
+      # the libraries: a consumer's extracted copies from `just deps` would be packaged twice.
+      - name: Build the library charts' dependencies
+        run: just deps-libraries
+
       # `--upgrade` is what makes this job an upgrade test rather than only an install test, and
       # the recipe explains how new charts are partitioned out of it. `origin/main` is named in
       # both the recipe and ct.yaml — keep the two in step.

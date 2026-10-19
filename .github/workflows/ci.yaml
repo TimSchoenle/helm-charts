@@ -864,6 +864,14 @@ jobs:
           read -ra charts <<< "${CHARTS}"
           just check-contract-tests "${charts[@]}"
 
+      # Every `# @config` marker's key is rendered by some template, not only bound in values.
+      #
+      # In `just check` but never in CI, so a marker for a key no template writes passed every
+      # pull request. Offline and reads committed files only; it walks every enrolled chart rather
+      # than the scoped set because the recipe takes no chart names, and the walk is cheap.
+      - name: Check config markers are wired
+        run: just check-config-wired
+
       - name: Contract script unit tests
         run: just test-contract-scripts
 

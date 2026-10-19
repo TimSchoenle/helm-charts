@@ -69,6 +69,9 @@ install-contract *flags:
 # `source` envelope recording which digest they came from. That record is what the offline
 # staleness interlock reads.
 #
+# `terrace-contract pull` does the work. `refresh-contracts.py` stays only because `new-chart.py`
+# and `adopt-config.py` import it to vendor a new chart's first contract.
+#
 # Run by the Documentation job, whose existing commit step carries the result back to the branch.
 # Running it locally is a convenience; `just check-contracts` reports the gap without a network.
 #
@@ -83,9 +86,9 @@ install-contract *flags:
 contracts chart='':
     #!/usr/bin/env bash
     set -euo pipefail
-    {{ resolve_python }}
+    {{ resolve_contract }}
     CONTRACT_SIGNER='{{ contract_signer }}' \
-      "$python" {{ scripts }}/refresh-contracts.py {{ chart }} --charts {{ charts }}
+      "$contract" pull {{ chart }} --charts {{ charts }}
 
 # Report vendored contracts that no longer match the images their charts pin.
 #

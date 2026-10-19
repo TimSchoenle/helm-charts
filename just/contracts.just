@@ -87,8 +87,7 @@ contracts chart='':
     #!/usr/bin/env bash
     set -euo pipefail
     {{ resolve_contract }}
-    CONTRACT_SIGNER='{{ contract_signer }}' \
-      "$contract" pull {{ chart }} --charts {{ charts }}
+    "$contract" pull {{ chart }} --charts {{ charts }}
 
 # Report vendored contracts that no longer match the images their charts pin.
 #
@@ -1014,6 +1013,7 @@ new-chart name repository version description='' reason='' *flags:
     #!/usr/bin/env bash
     set -euo pipefail
     {{ resolve_python }}
+    {{ resolve_contract }}
 
     # `description` and `reason` are recipe parameters rather than flags because `*flags` is
     # interpolated into the command line unquoted, so `just` hands the shell a bare string and
@@ -1024,6 +1024,9 @@ new-chart name repository version description='' reason='' *flags:
     if [ -n '{{ description }}' ]; then args+=(--description '{{ description }}'); fi
     if [ -n '{{ reason }}' ]; then args+=(--reason '{{ reason }}'); fi
 
-    CONTRACT_SIGNER='{{ contract_signer }}' \
-      "$python" {{ scripts }}/new-chart.py '{{ name }}' '{{ repository }}' '{{ version }}' \
-        "${args[@]}" {{ flags }}
+    # The first-party list and the signer come from `terrace.yaml`, resolved by the CLI so the
+    # scaffold and `check-contract-coverage` read one answer rather than two. Captured first so a
+    # bad `terrace.yaml` fails here, under `set -e`, rather than as unreadable input to the script.
+    settings="$("$contract" config show --json)"
+    "$python" {{ scripts }}/new-chart.py '{{ name }}' '{{ repository }}' '{{ version }}' \
+      --settings - "${args[@]}" {{ flags }} <<<"$settings"

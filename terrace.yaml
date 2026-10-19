@@ -1,0 +1,48 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/TimSchoenle/terrace-config/main/spec/helm/v1/repo.schema.json
+#
+# Settings for terrace-contract, read by every `just` gate and by CI. The contract is
+# spec/helm/v1/REPO.md in TimSchoenle/terrace-config; `terrace-contract config show` prints what
+# each setting resolves to and where it came from, and `terrace-contract doctor` checks them.
+version: 1
+
+# The oldest CLI release these settings need: 0.8 is the first to read `terrace.yaml`. A floor,
+# not the pin; `terrace_contract_version` in `justfile` pins the exact release CI installs, and
+# this moves only when a setting here needs a newer one.
+cli: "0.8"
+
+helm:
+  charts: charts
+
+  # The image repositories this organisation builds, and so the ones that can be expected to
+  # publish a configuration contract. A chart pinning any image matched here must carry a
+  # `config-contract.yaml`: either declaring what its rendered configuration has to satisfy, or
+  # opting out explicitly with `documents: []` and a `reason`. A chart pinning only third-party
+  # images (paperless-ngx, teamspeak, postgres) needs nothing, because nobody publishes a contract
+  # for them.
+  #
+  # Read by `just check-contract-coverage` and by `just new-chart`, which decides from the same
+  # list whether a new chart owes a declaration. Matched against `image.repository` as written in
+  # a chart's `values.yaml`: the registry-less form for Docker Hub, fully qualified elsewhere. A
+  # trailing `*` matches any suffix; anything else is an exact repository.
+  firstParty:
+    - timschoenle/*
+    - timmi6790/*
+    - ghcr.io/timschoenle/*
+    - ghcr.io/timmi6790/*
+
+  # The workflow identity an image must be signed by before its contract is vendored. Anything
+  # else is refused: a contract that cannot be proven to belong to the pinned digest is worse than
+  # none, because every gate downstream would trust it.
+  #
+  # Measured against real signatures: the first-party images are signed by release-please's
+  # workflow on the default branch. The repository stays a wildcard because they share one
+  # release pipeline; the workflow path and the ref do not, because those make this a constraint
+  # rather than "signed by anyone with a GitHub account". Both default-branch spellings, because
+  # the repositories differ: `portfolio` and `mp-stats-legacy-viewer` release from `main`, while
+  # `netcup-offer-bot`, `s3-bucket-perma-link` and `cloudflare-access-webhook-redirect` release
+  # from `master`.
+  #
+  # Signing on a branch rather than a tag is weaker than a tag would be: any push to the default
+  # branch of a producing repository can mint a signature this accepts. Tightening it is the
+  # producers' change to make, not this repository's to work around.
+  signer: https://github.com/TimSchoenle/[^/]+/.github/workflows/release-please.yaml@refs/heads/(main|master)

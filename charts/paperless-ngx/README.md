@@ -1,6 +1,6 @@
 # paperless-ngx
 
-![Version: 2.3.23](https://img.shields.io/badge/Version-2.3.23-informational?style=flat-square) ![AppVersion: 3.3.2](https://img.shields.io/badge/AppVersion-3.3.2-informational?style=flat-square)
+![Version: 2.3.24](https://img.shields.io/badge/Version-2.3.24-informational?style=flat-square) ![AppVersion: 3.3.3](https://img.shields.io/badge/AppVersion-3.3.3-informational?style=flat-square)
 
 This chart deploys paperless-ngx — a document management system that scans, indexes and archives your paper documents — hardened to the restricted Pod Security Standard, with per-directory persistence, scheduled document_exporter backups and document_importer restores, optional bundled Valkey, PostgreSQL, Gotenberg and Tika, Ingress and Gateway API publishing, Grafana dashboards and Prometheus alerting rules.
 
@@ -907,11 +907,11 @@ earlier `image.tag` after a major upgrade is not supported by the application. E
 | gateway.tls.certificateRefs | list | `[]` | Certificates the listener terminates with, as `{name}` or `{name, namespace}` entries. Required for a `Terminate` listener: unlike an Ingress, nothing looks a certificate up from the hostname. |
 | gateway.tls.enabled | bool | `false` | Add an HTTPS listener. |
 | gateway.tls.mode | string | `"Terminate"` | TLS mode for the listener. |
-| image | object | `{"pullPolicy":"","registry":"","repository":"ghcr.io/paperless-ngx/paperless-ngx","tag":"3.3.2@sha256:d232cba37cc0bab0d6c6581ecd320383b7a6f49f33e0fd16adda4d009eb600dd"}` | Container image the pod runs, composed as `registry/repository:tag`. |
+| image | object | `{"pullPolicy":"","registry":"","repository":"ghcr.io/paperless-ngx/paperless-ngx","tag":"3.3.3@sha256:dba0242c1df1843643df4eb50ce5639f3a7900f414879088fd5bed8eaf2d456d"}` | Container image the pod runs, composed as `registry/repository:tag`. |
 | image.pullPolicy | string | `""` | The image pull policy. Empty resolves automatically from the tag/digest. |
 | image.registry | string | `""` | Registry host. Empty means Docker Hub, which does not host paperless-ngx — the default below names GitHub's registry explicitly instead. |
 | image.repository | string | `"ghcr.io/paperless-ngx/paperless-ngx"` | The container image repository. The official image, published by the paperless-ngx project, running its whole stack (webserver, consumer, task worker and scheduler) under one s6-overlay supervision tree. |
-| image.tag | string | `"3.3.2@sha256:d232cba37cc0bab0d6c6581ecd320383b7a6f49f33e0fd16adda4d009eb600dd"` | The container image tag. Defaults to the chart's `appVersion` when empty. |
+| image.tag | string | `"3.3.3@sha256:dba0242c1df1843643df4eb50ce5639f3a7900f414879088fd5bed8eaf2d456d"` | The container image tag. Defaults to the chart's `appVersion` when empty. |
 | imagePullSecrets | list | `[]` | Optional image pull secrets for private registries. |
 | ingress | object | `{"annotations":{},"className":"","enabled":false,"host":"","path":"/","pathType":"Prefix","tls":{"enabled":false,"secretName":""}}` | Publishing through an Ingress controller. Mutually exclusive with `gateway` only in the sense that running both is usually a mistake; the chart lets you, for the window in which a cluster migrates from one to the other. |
 | ingress.annotations | object | `{}` | Annotations for the Ingress. This is where controller-specific configuration goes — certificate issuance, and above all the request body size limit: uploading a document through the web UI fails at the controller's default (1 MiB on ingress-nginx) long before paperless sees it. For ingress-nginx that is `nginx.ingress.kubernetes.io/proxy-body-size: 100m`. |

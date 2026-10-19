@@ -1,1175 +1,31 @@
 {
-  "source": {
-    "image": "docker.io/timschoenle/tankovault-frontend",
-    "digest": "sha256:75c732e5387589c7ddf375c6fda0f57a32eef08daf8e87d6264f81a0e825a551",
-    "sha256": "92f5d6e321fe26d12b7d40b5feb189945453bc310703bf3d6b08bd595e28877a",
-    "fetched": "2026-10-15T16:26:54Z"
-  },
   "contract": {
-    "terrace_contract": 1,
-    "producer": {
-      "name": "terrace-config",
-      "version": "0.15.0",
-      "loader": "figment"
-    },
     "app": {
       "name": "tankovault-frontend",
-      "version": "v11.0.5",
-      "source": "https://github.com/TimSchoenle/TankoVault"
+      "source": "https://github.com/TimSchoenle/TankoVault",
+      "version": "v11.1.0"
     },
-    "schema": {
-      "schema_version": 2,
-      "dialect": {
-        "prefix": "TANKOVAULT_",
-        "nesting_separator": "__",
-        "indirection_suffix": "_FILE"
-      },
-      "loader": [
+    "external": {
+      "env": [
         {
-          "env": "TANKOVAULT_CONFIG",
-          "role": "config",
-          "docs": "Names the TOML layer: a file, or a directory whose `*.toml` files are all merged in name order.",
-          "default": "config.toml"
-        },
-        {
-          "env": "TANKOVAULT_SECRETS_DIR",
-          "role": "secrets_dir",
-          "docs": "Names a directory of key-named files — a mounted Kubernetes `Secret` volume. Each file supplies the key its name spells.",
-          "default": null
-        },
-        {
-          "env": "TANKOVAULT_PROFILE",
-          "role": "reserved",
-          "docs": "Read directly from the environment before the layered config exists, so no file may supply it.",
-          "default": null
-        },
-        {
-          "env": "TANKOVAULT_CONFIRM_RESET",
-          "role": "reserved",
-          "docs": "Read directly from the environment before the layered config exists, so no file may supply it.",
-          "default": null
+          "constraint": {
+            "type": "string"
+          },
+          "docs": "Verbosity, as `tracing` directives — `info`, `tankovault_api=debug,info`. Read by `EnvFilter::try_from_default_env`, which is consulted *before* `telemetry.log_filter` and wins over it when set.",
+          "name": "RUST_LOG",
+          "owner": "tracing",
+          "required": false,
+          "secret": false,
+          "text_form": "text",
+          "ty": "String",
+          "values": []
         }
       ],
-      "keys": [
-        {
-          "path": "bind_addr",
-          "env": "TANKOVAULT_BIND_ADDR",
-          "env_file": "TANKOVAULT_BIND_ADDR_FILE",
-          "secrets_file": "bind_addr",
-          "docs": "The public listener, serving both the SPA bundle and the `/v1/*` proxy.",
-          "ty": "String",
-          "values": [],
-          "constraint": {
-            "type": "string"
-          },
-          "text_form": "text",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.service_name",
-          "env": "TANKOVAULT_TELEMETRY__SERVICE_NAME",
-          "env_file": "TANKOVAULT_TELEMETRY__SERVICE_NAME_FILE",
-          "secrets_file": "telemetry__service_name",
-          "docs": "Logical service name reported in traces/metrics.",
-          "ty": "String",
-          "values": [],
-          "constraint": {
-            "type": "string"
-          },
-          "text_form": "text",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": true,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.log_filter",
-          "env": "TANKOVAULT_TELEMETRY__LOG_FILTER",
-          "env_file": "TANKOVAULT_TELEMETRY__LOG_FILTER_FILE",
-          "secrets_file": "telemetry__log_filter",
-          "docs": "**`TANKOVAULT_TELEMETRY__OTLP_ENDPOINT` is removed** (it silently did nothing); setting\nit is now a hard config error. Re-add only with a real `OpenTelemetryLayer`.\n\n`RUST_LOG`-style filter (e.g. `info,tankovault=debug`).",
-          "ty": "String",
-          "values": [],
-          "constraint": {
-            "type": "string"
-          },
-          "text_form": "text",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.json_logs",
-          "env": "TANKOVAULT_TELEMETRY__JSON_LOGS",
-          "env_file": "TANKOVAULT_TELEMETRY__JSON_LOGS_FILE",
-          "secrets_file": "telemetry__json_logs",
-          "docs": "Emit structured JSON logs (production) vs. pretty logs (dev).",
-          "ty": "bool",
-          "values": [],
-          "constraint": {
-            "type": "boolean"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*(true|false)\\s*$",
-            "type": "string"
-          },
-          "text_form": "boolean",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.sentry.enabled",
-          "env": "TANKOVAULT_TELEMETRY__SENTRY__ENABLED",
-          "env_file": "TANKOVAULT_TELEMETRY__SENTRY__ENABLED_FILE",
-          "secrets_file": "telemetry__sentry__enabled",
-          "docs": "Initialise the Sentry client. `false` installs no client, no panic hook and no layer,\nso every other key here is inert and nothing is sent anywhere.",
-          "ty": "bool",
-          "values": [],
-          "constraint": {
-            "type": "boolean"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*(true|false)\\s*$",
-            "type": "string"
-          },
-          "text_form": "boolean",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.sentry.dsn",
-          "env": "TANKOVAULT_TELEMETRY__SENTRY__DSN",
-          "env_file": "TANKOVAULT_TELEMETRY__SENTRY__DSN_FILE",
-          "secrets_file": "telemetry__sentry__dsn",
-          "docs": "Ingest URL, `https://<key>@<host>/<project>`.\n\nA [`SecretString`]: the embedded key is a bearer credential for the project's ingest\nendpoint, and this struct is nested in a `TelemetryConfig` that is logged with `?`.\nAbsent while [`Self::enabled`] is set is a boot failure, not a silent no-op.",
-          "ty": "SecretString",
-          "values": [],
-          "constraint": {
-            "type": "string"
-          },
-          "text_form": "text",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": false,
-          "secret": true,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.sentry.environment",
-          "env": "TANKOVAULT_TELEMETRY__SENTRY__ENVIRONMENT",
-          "env_file": "TANKOVAULT_TELEMETRY__SENTRY__ENVIRONMENT_FILE",
-          "secrets_file": "telemetry__sentry__environment",
-          "docs": "Environment tag on every event. Defaults to `production` under\n`TANKOVAULT_PROFILE=production` and `development` otherwise.",
-          "ty": "String",
-          "values": [],
-          "constraint": {
-            "type": "string"
-          },
-          "text_form": "text",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.sentry.release",
-          "env": "TANKOVAULT_TELEMETRY__SENTRY__RELEASE",
-          "env_file": "TANKOVAULT_TELEMETRY__SENTRY__RELEASE_FILE",
-          "secrets_file": "telemetry__sentry__release",
-          "docs": "Release tag on every event; defaults to the workspace version the binary was built\nfrom, which is what makes a regression attributable to a deploy.",
-          "ty": "String",
-          "values": [],
-          "constraint": {
-            "type": "string"
-          },
-          "text_form": "text",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.sentry.server_name",
-          "env": "TANKOVAULT_TELEMETRY__SENTRY__SERVER_NAME",
-          "env_file": "TANKOVAULT_TELEMETRY__SENTRY__SERVER_NAME_FILE",
-          "secrets_file": "telemetry__sentry__server_name",
-          "docs": "Host tag on every event. Left unset, Sentry reports none: the hostname of a replica is\ninfrastructure detail that [`Self::send_default_pii`] would otherwise gate.",
-          "ty": "String",
-          "values": [],
-          "constraint": {
-            "type": "string"
-          },
-          "text_form": "text",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.sentry.sample_rate",
-          "env": "TANKOVAULT_TELEMETRY__SENTRY__SAMPLE_RATE",
-          "env_file": "TANKOVAULT_TELEMETRY__SENTRY__SAMPLE_RATE_FILE",
-          "secrets_file": "telemetry__sentry__sample_rate",
-          "docs": "Fraction of captured events actually sent, `0.0`-`1.0`. A blunt volume cap — it drops\nwhole issues, not repetitions of one — so leave it at `1.0` unless quota forces it.",
-          "ty": "f32",
-          "values": [],
-          "constraint": {
-            "maximum": 1.0,
-            "minimum": 0.0,
-            "type": "number"
-          },
-          "text_form": "unknown",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.sentry.traces_sample_rate",
-          "env": "TANKOVAULT_TELEMETRY__SENTRY__TRACES_SAMPLE_RATE",
-          "env_file": "TANKOVAULT_TELEMETRY__SENTRY__TRACES_SAMPLE_RATE_FILE",
-          "secrets_file": "telemetry__sentry__traces_sample_rate",
-          "docs": "Fraction of traces this service **starts** that are recorded, `0.0`-`1.0`.\n\n`0.0` (the default) means it starts none of its own. It does **not** mean this service\nis absent from a trace: a request or a broker message arriving with a trace already\nsampled is continued regardless, which is what keeps one reader action readable across\nthe whole tier rather than ending at the first service configured differently. Set it\nuniformly anyway — `0.05`-`0.2` is an ordinary production figure — since the service\nthat *starts* a trace is the one whose rate decides whether it exists at all.",
-          "ty": "f32",
-          "values": [],
-          "constraint": {
-            "maximum": 1.0,
-            "minimum": 0.0,
-            "type": "number"
-          },
-          "text_form": "unknown",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.sentry.capture_level",
-          "env": "TANKOVAULT_TELEMETRY__SENTRY__CAPTURE_LEVEL",
-          "env_file": "TANKOVAULT_TELEMETRY__SENTRY__CAPTURE_LEVEL_FILE",
-          "secrets_file": "telemetry__sentry__capture_level",
-          "docs": "Least severe `tracing` level reported as a Sentry **issue**.",
-          "ty": "SentryLevel",
-          "values": [
-            "off",
-            "error",
-            "warn",
-            "info",
-            "debug",
-            "trace"
-          ],
-          "constraint": {
-            "enum": [
-              "off",
-              "error",
-              "warn",
-              "info",
-              "debug",
-              "trace"
-            ],
-            "type": "string"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*(off|error|warn|info|debug|trace)\\s*$",
-            "type": "string"
-          },
-          "text_form": "choice",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.sentry.breadcrumb_level",
-          "env": "TANKOVAULT_TELEMETRY__SENTRY__BREADCRUMB_LEVEL",
-          "env_file": "TANKOVAULT_TELEMETRY__SENTRY__BREADCRUMB_LEVEL_FILE",
-          "secrets_file": "telemetry__sentry__breadcrumb_level",
-          "docs": "Least severe `tracing` level kept as a **breadcrumb** — the trail attached to the next\nissue. Records at or above [`Self::capture_level`] become issues instead.",
-          "ty": "SentryLevel",
-          "values": [
-            "off",
-            "error",
-            "warn",
-            "info",
-            "debug",
-            "trace"
-          ],
-          "constraint": {
-            "enum": [
-              "off",
-              "error",
-              "warn",
-              "info",
-              "debug",
-              "trace"
-            ],
-            "type": "string"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*(off|error|warn|info|debug|trace)\\s*$",
-            "type": "string"
-          },
-          "text_form": "choice",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.sentry.max_breadcrumbs",
-          "env": "TANKOVAULT_TELEMETRY__SENTRY__MAX_BREADCRUMBS",
-          "env_file": "TANKOVAULT_TELEMETRY__SENTRY__MAX_BREADCRUMBS_FILE",
-          "secrets_file": "telemetry__sentry__max_breadcrumbs",
-          "docs": "How many breadcrumbs one event carries.",
-          "ty": "usize",
-          "values": [],
-          "constraint": {
-            "minimum": 0,
-            "type": "integer"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*\\+?[0-9]+\\s*$",
-            "type": "string"
-          },
-          "text_form": "integer",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.sentry.attach_stacktraces",
-          "env": "TANKOVAULT_TELEMETRY__SENTRY__ATTACH_STACKTRACES",
-          "env_file": "TANKOVAULT_TELEMETRY__SENTRY__ATTACH_STACKTRACES_FILE",
-          "secrets_file": "telemetry__sentry__attach_stacktraces",
-          "docs": "Attach a stack trace to events that carry none of their own.",
-          "ty": "bool",
-          "values": [],
-          "constraint": {
-            "type": "boolean"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*(true|false)\\s*$",
-            "type": "string"
-          },
-          "text_form": "boolean",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.sentry.send_default_pii",
-          "env": "TANKOVAULT_TELEMETRY__SENTRY__SEND_DEFAULT_PII",
-          "env_file": "TANKOVAULT_TELEMETRY__SENTRY__SEND_DEFAULT_PII_FILE",
-          "secrets_file": "telemetry__sentry__send_default_pii",
-          "docs": "Send personally identifying data with every event: the client IP, the full request\nheader set (`Authorization` and `Cookie` included) and the resolved user.\n\n**Off, and worth leaving off.** A reader's IP address and session cookie are exactly\nwhat a crash report does not need in order to be actionable, and Sentry is a third\nparty for the purposes of the data policy this deployment publishes. On, it also\nwidens what the HTTP middleware records, because `sentry-tower` reads this same flag\nto decide whether to redact sensitive headers.",
-          "ty": "bool",
-          "values": [],
-          "constraint": {
-            "type": "boolean"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*(true|false)\\s*$",
-            "type": "string"
-          },
-          "text_form": "boolean",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.sentry.http_transactions",
-          "env": "TANKOVAULT_TELEMETRY__SENTRY__HTTP_TRANSACTIONS",
-          "env_file": "TANKOVAULT_TELEMETRY__SENTRY__HTTP_TRANSACTIONS_FILE",
-          "secrets_file": "telemetry__sentry__http_transactions",
-          "docs": "Record request spans through the shared HTTP stack: one Sentry transaction per\nrequest, named by the *matched route* rather than the URI, so an id in the path does\nnot become its own transaction name.\n\nWhether a started transaction is *kept* is [`Self::traces_sample_rate`]'s decision.\nThis is the switch for a service that should stay out of traces entirely.",
-          "ty": "bool",
-          "values": [],
-          "constraint": {
-            "type": "boolean"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*(true|false)\\s*$",
-            "type": "string"
-          },
-          "text_form": "boolean",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.sentry.span_attributes",
-          "env": "TANKOVAULT_TELEMETRY__SENTRY__SPAN_ATTRIBUTES",
-          "env_file": "TANKOVAULT_TELEMETRY__SENTRY__SPAN_ATTRIBUTES_FILE",
-          "secrets_file": "telemetry__sentry__span_attributes",
-          "docs": "Copy `tracing` span fields onto the Sentry span as attributes. Off: span fields in\nthis workspace routinely carry ids and user-supplied titles, and a transaction is\nstored under a longer retention than a log line.",
-          "ty": "bool",
-          "values": [],
-          "constraint": {
-            "type": "boolean"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*(true|false)\\s*$",
-            "type": "string"
-          },
-          "text_form": "boolean",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.sentry.shutdown_timeout_secs",
-          "env": "TANKOVAULT_TELEMETRY__SENTRY__SHUTDOWN_TIMEOUT_SECS",
-          "env_file": "TANKOVAULT_TELEMETRY__SENTRY__SHUTDOWN_TIMEOUT_SECS_FILE",
-          "secrets_file": "telemetry__sentry__shutdown_timeout_secs",
-          "docs": "How long process exit waits for queued events to drain.",
-          "ty": "u64",
-          "values": [],
-          "constraint": {
-            "minimum": 0,
-            "type": "integer"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*\\+?[0-9]+\\s*$",
-            "type": "string"
-          },
-          "text_form": "integer",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.sentry.debug",
-          "env": "TANKOVAULT_TELEMETRY__SENTRY__DEBUG",
-          "env_file": "TANKOVAULT_TELEMETRY__SENTRY__DEBUG_FILE",
-          "secrets_file": "telemetry__sentry__debug",
-          "docs": "Print the SDK's own diagnostics to stderr. For proving a DSN works, not for running.",
-          "ty": "bool",
-          "values": [],
-          "constraint": {
-            "type": "boolean"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*(true|false)\\s*$",
-            "type": "string"
-          },
-          "text_form": "boolean",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "frontend.static_dir",
-          "env": "TANKOVAULT_FRONTEND__STATIC_DIR",
-          "env_file": "TANKOVAULT_FRONTEND__STATIC_DIR_FILE",
-          "secrets_file": "frontend__static_dir",
-          "docs": "Directory the built SPA bundle is served from. Baked into the image at `/srv/www`.",
-          "ty": "String",
-          "values": [],
-          "constraint": {
-            "type": "string"
-          },
-          "text_form": "text",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "frontend.notices_path",
-          "env": "TANKOVAULT_FRONTEND__NOTICES_PATH",
-          "env_file": "TANKOVAULT_FRONTEND__NOTICES_PATH_FILE",
-          "secrets_file": "frontend__notices_path",
-          "docs": "The generated third-party licence notices, served at `/third-party-notices`.\n\nPoints at the image's own copy (`/THIRD-PARTY-NOTICES`, beside `/LICENSE`) rather than a\nsecond one inside the bundle: it is 300-odd KB, and two copies is the arrangement where\none of them goes stale. Configurable because the path only exists inside the image — a\ndeveloper running `dx serve` and the tests point it at their own checkout.",
-          "ty": "String",
-          "values": [],
-          "constraint": {
-            "type": "string"
-          },
-          "text_form": "text",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "frontend.notices_json_path",
-          "env": "TANKOVAULT_FRONTEND__NOTICES_JSON_PATH",
-          "env_file": "TANKOVAULT_FRONTEND__NOTICES_JSON_PATH_FILE",
-          "secrets_file": "frontend__notices_json_path",
-          "docs": "The same notices as the structured inventory the `/licenses` screen renders, served at\n`/third-party-notices.json`.\n\nWritten into the image by `xtask notices --json` during the build rather than committed:\nit is a second representation of the document above, and the two come out of one merge, so\ncommitting it would double the repository's generated weight for a drift gate the\nplain-text `--check` already provides. A deployment whose image predates it, or a\ndeveloper who has not run the command, serves nothing here and the screen says so.",
-          "ty": "String",
-          "values": [],
-          "constraint": {
-            "type": "string"
-          },
-          "text_form": "text",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "frontend.api_upstream",
-          "env": "TANKOVAULT_FRONTEND__API_UPSTREAM",
-          "env_file": "TANKOVAULT_FRONTEND__API_UPSTREAM_FILE",
-          "secrets_file": "frontend__api_upstream",
-          "docs": "Base origin the `/v1/*` proxy targets, e.g. `http://api:8080`. No trailing slash.",
-          "ty": "String",
-          "values": [],
-          "constraint": {
-            "type": "string"
-          },
-          "text_form": "text",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "frontend.max_body_bytes",
-          "env": "TANKOVAULT_FRONTEND__MAX_BODY_BYTES",
-          "env_file": "TANKOVAULT_FRONTEND__MAX_BODY_BYTES_FILE",
-          "secrets_file": "frontend__max_body_bytes",
-          "docs": "Largest request body accepted on this hop.\n\nEnforced twice: the shared stack's `DefaultBodyLimit` rejects it before buffering (see\n`stack_security` in `main.rs`), and the proxy handler passes the same number to\n`to_bytes` so the two cannot drift.",
-          "ty": "usize",
-          "values": [],
-          "constraint": {
-            "minimum": 0,
-            "type": "integer"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*\\+?[0-9]+\\s*$",
-            "type": "string"
-          },
-          "text_form": "integer",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "frontend.connect_timeout_secs",
-          "env": "TANKOVAULT_FRONTEND__CONNECT_TIMEOUT_SECS",
-          "env_file": "TANKOVAULT_FRONTEND__CONNECT_TIMEOUT_SECS_FILE",
-          "secrets_file": "frontend__connect_timeout_secs",
-          "docs": "Connection-establishment timeout for the upstream — not a whole-request timeout, since\nan SSE stream stays open indefinitely.",
-          "ty": "u64",
-          "values": [],
-          "constraint": {
-            "minimum": 0,
-            "type": "integer"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*\\+?[0-9]+\\s*$",
-            "type": "string"
-          },
-          "text_form": "integer",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "frontend.cloudflare.script_nonce",
-          "env": "TANKOVAULT_FRONTEND__CLOUDFLARE__SCRIPT_NONCE",
-          "env_file": "TANKOVAULT_FRONTEND__CLOUDFLARE__SCRIPT_NONCE_FILE",
-          "secrets_file": "frontend__cloudflare__script_nonce",
-          "docs": "Send a freshly minted `'nonce-…'` in `script-src` on every response.\n\nCloudflare's bot products (Bot Fight Mode, JavaScript Detections, the challenge platform)\ninject an inline `<script>` into the served HTML at the edge, after this service has\nhashed the shell — so `script-src` refuses it and the detection silently never runs.\nCloudflare's documented answer is a nonce: it parses the `Content-Security-Policy`\n*response header* and copies the nonce onto what it injects. That is why nothing is\nstamped into the shell here — the header is the whole contract, and the shell's own\ninline scripts keep running by hash either way.\n\nThe concession is real but narrow: an injected script that can already run could read\nthis header back off a same-origin fetch and admit further inline script. It cannot\nforge one ahead of time (128 CSPRNG bits, minted per response), and it still cannot\nreach `'unsafe-eval'` or an off-origin host. Load-bearing for that: the shell is never\nserved from a stored copy, which is why it is `Cache-Control: no-store` with no validator\nand not `no-cache` — see `FixedResponse::shell` in `main.rs`. A stored shell would pin\none nonce across every reader for the lifetime of the entry, which is `'unsafe-inline'`\nwith extra steps.",
-          "ty": "bool",
-          "values": [],
-          "constraint": {
-            "type": "boolean"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*(true|false)\\s*$",
-            "type": "string"
-          },
-          "text_form": "boolean",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "frontend.cloudflare.turnstile",
-          "env": "TANKOVAULT_FRONTEND__CLOUDFLARE__TURNSTILE",
-          "env_file": "TANKOVAULT_FRONTEND__CLOUDFLARE__TURNSTILE_FILE",
-          "secrets_file": "frontend__cloudflare__turnstile",
-          "docs": "Admit `https://challenges.cloudflare.com` in `script-src` and `frame-src`, for an\nembedded Turnstile widget.\n\nOnly for a widget rendered *in* a page this service serves; a managed-challenge\ninterstitial is a Cloudflare-served document carrying its own policy, and needs nothing\nhere. The origin is Turnstile's only host and `'self'` can never cover it.",
-          "ty": "bool",
-          "values": [],
-          "constraint": {
-            "type": "boolean"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*(true|false)\\s*$",
-            "type": "string"
-          },
-          "text_form": "boolean",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "metrics.enabled",
-          "env": "TANKOVAULT_METRICS__ENABLED",
-          "env_file": "TANKOVAULT_METRICS__ENABLED_FILE",
-          "secrets_file": "metrics__enabled",
-          "docs": "Install the Prometheus recorder and serve the scrape endpoint. When `false` the\nscrape route answers `404` and no measurements are retained.",
-          "ty": "bool",
-          "values": [],
-          "constraint": {
-            "type": "boolean"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*(true|false)\\s*$",
-            "type": "string"
-          },
-          "text_form": "boolean",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "metrics.route",
-          "env": "TANKOVAULT_METRICS__ROUTE",
-          "env_file": "TANKOVAULT_METRICS__ROUTE_FILE",
-          "secrets_file": "metrics__route",
-          "docs": "Path the scrape endpoint is mounted at.",
-          "ty": "String",
-          "values": [],
-          "constraint": {
-            "type": "string"
-          },
-          "text_form": "text",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "metrics.listen",
-          "env": "TANKOVAULT_METRICS__LISTEN",
-          "env_file": "TANKOVAULT_METRICS__LISTEN_FILE",
-          "secrets_file": "metrics__listen",
-          "docs": "Address the scrape endpoint binds to on its **own** listener (default `0.0.0.0:9090`),\nisolated from the service's public port. `None` merges it onto the primary port.",
-          "ty": "String",
-          "values": [],
-          "constraint": {
-            "type": "string"
-          },
-          "text_form": "text",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "metrics.http_requests",
-          "env": "TANKOVAULT_METRICS__HTTP_REQUESTS",
-          "env_file": "TANKOVAULT_METRICS__HTTP_REQUESTS_FILE",
-          "secrets_file": "metrics__http_requests",
-          "docs": "Also record per-request HTTP metrics. Separate from [`Self::enabled`]: the request\nhistogram is the expensive, high-cardinality part.",
-          "ty": "bool",
-          "values": [],
-          "constraint": {
-            "type": "boolean"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*(true|false)\\s*$",
-            "type": "string"
-          },
-          "text_form": "boolean",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "branding.name",
-          "env": "TANKOVAULT_BRANDING__NAME",
-          "env_file": "TANKOVAULT_BRANDING__NAME_FILE",
-          "secrets_file": "branding__name",
-          "docs": "The product name, in prose: email subjects and bodies, page titles, the authenticator\nprompt, the desktop connect screen.",
-          "ty": "String",
-          "values": [],
-          "constraint": {
-            "type": "string"
-          },
-          "text_form": "text",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "branding.wordmark.lead",
-          "env": "TANKOVAULT_BRANDING__WORDMARK__LEAD",
-          "env_file": "TANKOVAULT_BRANDING__WORDMARK__LEAD_FILE",
-          "secrets_file": "branding__wordmark__lead",
-          "docs": "The part drawn in the body colour.",
-          "ty": "String",
-          "values": [],
-          "constraint": {
-            "type": "string"
-          },
-          "text_form": "text",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "branding.wordmark.accent",
-          "env": "TANKOVAULT_BRANDING__WORDMARK__ACCENT",
-          "env_file": "TANKOVAULT_BRANDING__WORDMARK__ACCENT_FILE",
-          "secrets_file": "branding__wordmark__accent",
-          "docs": "The part drawn in the accent colour. Absent draws the lockup as one word.",
-          "ty": "String",
-          "values": [],
-          "constraint": {
-            "type": "string"
-          },
-          "text_form": "text",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "branding.tagline",
-          "env": "TANKOVAULT_BRANDING__TAGLINE",
-          "env_file": "TANKOVAULT_BRANDING__TAGLINE_FILE",
-          "secrets_file": "branding__tagline",
-          "docs": "One line under the wordmark. Unset keeps the shipped, *translated* tagline; setting it\nreplaces that with this string in every language, which is the right trade for an\noperator whose product is not the one the catalogue describes.",
-          "ty": "String",
-          "values": [],
-          "constraint": {
-            "type": "string"
-          },
-          "text_form": "text",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "branding.copyright.holder",
-          "env": "TANKOVAULT_BRANDING__COPYRIGHT__HOLDER",
-          "env_file": "TANKOVAULT_BRANDING__COPYRIGHT__HOLDER_FILE",
-          "secrets_file": "branding__copyright__holder",
-          "docs": "Who holds it.",
-          "ty": "String",
-          "values": [],
-          "constraint": {
-            "type": "string"
-          },
-          "text_form": "text",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "branding.copyright.year",
-          "env": "TANKOVAULT_BRANDING__COPYRIGHT__YEAR",
-          "env_file": "TANKOVAULT_BRANDING__COPYRIGHT__YEAR_FILE",
-          "secrets_file": "branding__copyright__year",
-          "docs": "The year, or a range (`2024–2026`). Unset resolves to the current year at request time,\nso a deployment nobody has touched since December is not still claiming last year.",
-          "ty": "String",
-          "values": [],
-          "constraint": {
-            "type": "string"
-          },
-          "text_form": "text",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "branding.copyright.notice",
-          "env": "TANKOVAULT_BRANDING__COPYRIGHT__NOTICE",
-          "env_file": "TANKOVAULT_BRANDING__COPYRIGHT__NOTICE_FILE",
-          "secrets_file": "branding__copyright__notice",
-          "docs": "The whole notice, verbatim, when the `© {year} {holder}` shape does not fit. Wins over\nboth fields above and over the catalogue's translation of the line.",
-          "ty": "String",
-          "values": [],
-          "constraint": {
-            "type": "string"
-          },
-          "text_form": "text",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "branding.licence.name",
-          "env": "TANKOVAULT_BRANDING__LICENCE__NAME",
-          "env_file": "TANKOVAULT_BRANDING__LICENCE__NAME_FILE",
-          "secrets_file": "branding__licence__name",
-          "docs": "What the footer prints.",
-          "ty": "String",
-          "values": [],
-          "constraint": {
-            "type": "string"
-          },
-          "text_form": "text",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "branding.licence.url",
-          "env": "TANKOVAULT_BRANDING__LICENCE__URL",
-          "env_file": "TANKOVAULT_BRANDING__LICENCE__URL_FILE",
-          "secrets_file": "branding__licence__url",
-          "docs": "Where the label links, when the operator publishes the text somewhere. Unset renders the\nlabel as plain text, which is what a self-hosted deployment with no public licence page\nshould show rather than a dead link.",
-          "ty": "String",
-          "values": [],
-          "constraint": {
-            "type": "string"
-          },
-          "text_form": "text",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "branding.project_url",
-          "env": "TANKOVAULT_BRANDING__PROJECT_URL",
-          "env_file": "TANKOVAULT_BRANDING__PROJECT_URL_FILE",
-          "secrets_file": "branding__project_url",
-          "docs": "Where the project lives — the footer's source link and the desktop About tab.",
-          "ty": "String",
-          "values": [],
-          "constraint": {
-            "type": "string"
-          },
-          "text_form": "text",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "branding.releases_url",
-          "env": "TANKOVAULT_BRANDING__RELEASES_URL",
-          "env_file": "TANKOVAULT_BRANDING__RELEASES_URL_FILE",
-          "secrets_file": "branding__releases_url",
-          "docs": "Where a reader downloads the native client.",
-          "ty": "String",
-          "values": [],
-          "constraint": {
-            "type": "string"
-          },
-          "text_form": "text",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "branding.bot_user_agent",
-          "env": "TANKOVAULT_BRANDING__BOT_USER_AGENT",
-          "env_file": "TANKOVAULT_BRANDING__BOT_USER_AGENT_FILE",
-          "secrets_file": "branding__bot_user_agent",
-          "docs": "The identifiable crawler user-agent, applied to any provider still carrying the built-in\ndefault. A provider whose politeness names its own user-agent keeps it.",
-          "ty": "String",
-          "values": [],
-          "constraint": {
-            "type": "string"
-          },
-          "text_form": "text",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        }
-      ]
+      "ignore": [
+        "KUBERNETES_*",
+        "HOSTNAME"
+      ],
+      "unknown": "reject"
     },
     "json_schema": {
       "$schema": "http://json-schema.org/draft-07/schema#",
@@ -1434,27 +290,1171 @@
       "title": "tankovault-frontend configuration",
       "type": "object"
     },
-    "external": {
-      "env": [
+    "producer": {
+      "loader": "figment",
+      "name": "terrace-config",
+      "version": "0.15.1"
+    },
+    "schema": {
+      "dialect": {
+        "indirection_suffix": "_FILE",
+        "nesting_separator": "__",
+        "prefix": "TANKOVAULT_"
+      },
+      "keys": [
         {
-          "name": "RUST_LOG",
-          "owner": "tracing",
-          "docs": "Verbosity, as `tracing` directives — `info`, `tankovault_api=debug,info`. Read by `EnvFilter::try_from_default_env`, which is consulted *before* `telemetry.log_filter` and wins over it when set.",
-          "ty": "String",
-          "values": [],
+          "aliases": [],
           "constraint": {
             "type": "string"
           },
-          "text_form": "text",
+          "default": null,
+          "default_value": null,
+          "docs": "The public listener, serving both the SPA bundle and the `/v1/*` proxy.",
+          "env": "TANKOVAULT_BIND_ADDR",
+          "env_aliases": [],
+          "env_file": "TANKOVAULT_BIND_ADDR_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "bind_addr",
           "required": false,
-          "secret": false
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "bind_addr",
+          "secrets_file_aliases": [],
+          "text_form": "text",
+          "ty": "String",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "string"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "Logical service name reported in traces/metrics.",
+          "env": "TANKOVAULT_TELEMETRY__SERVICE_NAME",
+          "env_aliases": [],
+          "env_file": "TANKOVAULT_TELEMETRY__SERVICE_NAME_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.service_name",
+          "required": true,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "telemetry__service_name",
+          "secrets_file_aliases": [],
+          "text_form": "text",
+          "ty": "String",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "string"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "**`TANKOVAULT_TELEMETRY__OTLP_ENDPOINT` is removed** (it silently did nothing); setting\nit is now a hard config error. Re-add only with a real `OpenTelemetryLayer`.\n\n`RUST_LOG`-style filter (e.g. `info,tankovault=debug`).",
+          "env": "TANKOVAULT_TELEMETRY__LOG_FILTER",
+          "env_aliases": [],
+          "env_file": "TANKOVAULT_TELEMETRY__LOG_FILTER_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.log_filter",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "telemetry__log_filter",
+          "secrets_file_aliases": [],
+          "text_form": "text",
+          "ty": "String",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "boolean"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "Emit structured JSON logs (production) vs. pretty logs (dev).",
+          "env": "TANKOVAULT_TELEMETRY__JSON_LOGS",
+          "env_aliases": [],
+          "env_file": "TANKOVAULT_TELEMETRY__JSON_LOGS_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.json_logs",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "telemetry__json_logs",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*(true|false)\\s*$",
+            "type": "string"
+          },
+          "text_form": "boolean",
+          "ty": "bool",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "boolean"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "Initialise the Sentry client. `false` installs no client, no panic hook and no layer,\nso every other key here is inert and nothing is sent anywhere.",
+          "env": "TANKOVAULT_TELEMETRY__SENTRY__ENABLED",
+          "env_aliases": [],
+          "env_file": "TANKOVAULT_TELEMETRY__SENTRY__ENABLED_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.sentry.enabled",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "telemetry__sentry__enabled",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*(true|false)\\s*$",
+            "type": "string"
+          },
+          "text_form": "boolean",
+          "ty": "bool",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "string"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "Ingest URL, `https://<key>@<host>/<project>`.\n\nA [`SecretString`]: the embedded key is a bearer credential for the project's ingest\nendpoint, and this struct is nested in a `TelemetryConfig` that is logged with `?`.\nAbsent while [`Self::enabled`] is set is a boot failure, not a silent no-op.",
+          "env": "TANKOVAULT_TELEMETRY__SENTRY__DSN",
+          "env_aliases": [],
+          "env_file": "TANKOVAULT_TELEMETRY__SENTRY__DSN_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.sentry.dsn",
+          "required": false,
+          "reserved": false,
+          "secret": true,
+          "secrets_file": "telemetry__sentry__dsn",
+          "secrets_file_aliases": [],
+          "text_form": "text",
+          "ty": "SecretString",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "string"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "Environment tag on every event. Defaults to `production` under\n`TANKOVAULT_PROFILE=production` and `development` otherwise.",
+          "env": "TANKOVAULT_TELEMETRY__SENTRY__ENVIRONMENT",
+          "env_aliases": [],
+          "env_file": "TANKOVAULT_TELEMETRY__SENTRY__ENVIRONMENT_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.sentry.environment",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "telemetry__sentry__environment",
+          "secrets_file_aliases": [],
+          "text_form": "text",
+          "ty": "String",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "string"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "Release tag on every event; defaults to the workspace version the binary was built\nfrom, which is what makes a regression attributable to a deploy.",
+          "env": "TANKOVAULT_TELEMETRY__SENTRY__RELEASE",
+          "env_aliases": [],
+          "env_file": "TANKOVAULT_TELEMETRY__SENTRY__RELEASE_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.sentry.release",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "telemetry__sentry__release",
+          "secrets_file_aliases": [],
+          "text_form": "text",
+          "ty": "String",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "string"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "Host tag on every event. Left unset, Sentry reports none: the hostname of a replica is\ninfrastructure detail that [`Self::send_default_pii`] would otherwise gate.",
+          "env": "TANKOVAULT_TELEMETRY__SENTRY__SERVER_NAME",
+          "env_aliases": [],
+          "env_file": "TANKOVAULT_TELEMETRY__SENTRY__SERVER_NAME_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.sentry.server_name",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "telemetry__sentry__server_name",
+          "secrets_file_aliases": [],
+          "text_form": "text",
+          "ty": "String",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "type": "number"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "Fraction of captured events actually sent, `0.0`-`1.0`. A blunt volume cap — it drops\nwhole issues, not repetitions of one — so leave it at `1.0` unless quota forces it.",
+          "env": "TANKOVAULT_TELEMETRY__SENTRY__SAMPLE_RATE",
+          "env_aliases": [],
+          "env_file": "TANKOVAULT_TELEMETRY__SENTRY__SAMPLE_RATE_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.sentry.sample_rate",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "telemetry__sentry__sample_rate",
+          "secrets_file_aliases": [],
+          "text_form": "unknown",
+          "ty": "f32",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "type": "number"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "Fraction of traces this service **starts** that are recorded, `0.0`-`1.0`.\n\n`0.0` (the default) means it starts none of its own. It does **not** mean this service\nis absent from a trace: a request or a broker message arriving with a trace already\nsampled is continued regardless, which is what keeps one reader action readable across\nthe whole tier rather than ending at the first service configured differently. Set it\nuniformly anyway — `0.05`-`0.2` is an ordinary production figure — since the service\nthat *starts* a trace is the one whose rate decides whether it exists at all.",
+          "env": "TANKOVAULT_TELEMETRY__SENTRY__TRACES_SAMPLE_RATE",
+          "env_aliases": [],
+          "env_file": "TANKOVAULT_TELEMETRY__SENTRY__TRACES_SAMPLE_RATE_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.sentry.traces_sample_rate",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "telemetry__sentry__traces_sample_rate",
+          "secrets_file_aliases": [],
+          "text_form": "unknown",
+          "ty": "f32",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "enum": [
+              "off",
+              "error",
+              "warn",
+              "info",
+              "debug",
+              "trace"
+            ],
+            "type": "string"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "Least severe `tracing` level reported as a Sentry **issue**.",
+          "env": "TANKOVAULT_TELEMETRY__SENTRY__CAPTURE_LEVEL",
+          "env_aliases": [],
+          "env_file": "TANKOVAULT_TELEMETRY__SENTRY__CAPTURE_LEVEL_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.sentry.capture_level",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "telemetry__sentry__capture_level",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*(off|error|warn|info|debug|trace)\\s*$",
+            "type": "string"
+          },
+          "text_form": "choice",
+          "ty": "SentryLevel",
+          "values": [
+            "off",
+            "error",
+            "warn",
+            "info",
+            "debug",
+            "trace"
+          ]
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "enum": [
+              "off",
+              "error",
+              "warn",
+              "info",
+              "debug",
+              "trace"
+            ],
+            "type": "string"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "Least severe `tracing` level kept as a **breadcrumb** — the trail attached to the next\nissue. Records at or above [`Self::capture_level`] become issues instead.",
+          "env": "TANKOVAULT_TELEMETRY__SENTRY__BREADCRUMB_LEVEL",
+          "env_aliases": [],
+          "env_file": "TANKOVAULT_TELEMETRY__SENTRY__BREADCRUMB_LEVEL_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.sentry.breadcrumb_level",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "telemetry__sentry__breadcrumb_level",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*(off|error|warn|info|debug|trace)\\s*$",
+            "type": "string"
+          },
+          "text_form": "choice",
+          "ty": "SentryLevel",
+          "values": [
+            "off",
+            "error",
+            "warn",
+            "info",
+            "debug",
+            "trace"
+          ]
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "How many breadcrumbs one event carries.",
+          "env": "TANKOVAULT_TELEMETRY__SENTRY__MAX_BREADCRUMBS",
+          "env_aliases": [],
+          "env_file": "TANKOVAULT_TELEMETRY__SENTRY__MAX_BREADCRUMBS_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.sentry.max_breadcrumbs",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "telemetry__sentry__max_breadcrumbs",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*\\+?[0-9]+\\s*$",
+            "type": "string"
+          },
+          "text_form": "integer",
+          "ty": "usize",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "boolean"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "Attach a stack trace to events that carry none of their own.",
+          "env": "TANKOVAULT_TELEMETRY__SENTRY__ATTACH_STACKTRACES",
+          "env_aliases": [],
+          "env_file": "TANKOVAULT_TELEMETRY__SENTRY__ATTACH_STACKTRACES_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.sentry.attach_stacktraces",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "telemetry__sentry__attach_stacktraces",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*(true|false)\\s*$",
+            "type": "string"
+          },
+          "text_form": "boolean",
+          "ty": "bool",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "boolean"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "Send personally identifying data with every event: the client IP, the full request\nheader set (`Authorization` and `Cookie` included) and the resolved user.\n\n**Off, and worth leaving off.** A reader's IP address and session cookie are exactly\nwhat a crash report does not need in order to be actionable, and Sentry is a third\nparty for the purposes of the data policy this deployment publishes. On, it also\nwidens what the HTTP middleware records, because `sentry-tower` reads this same flag\nto decide whether to redact sensitive headers.",
+          "env": "TANKOVAULT_TELEMETRY__SENTRY__SEND_DEFAULT_PII",
+          "env_aliases": [],
+          "env_file": "TANKOVAULT_TELEMETRY__SENTRY__SEND_DEFAULT_PII_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.sentry.send_default_pii",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "telemetry__sentry__send_default_pii",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*(true|false)\\s*$",
+            "type": "string"
+          },
+          "text_form": "boolean",
+          "ty": "bool",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "boolean"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "Record request spans through the shared HTTP stack: one Sentry transaction per\nrequest, named by the *matched route* rather than the URI, so an id in the path does\nnot become its own transaction name.\n\nWhether a started transaction is *kept* is [`Self::traces_sample_rate`]'s decision.\nThis is the switch for a service that should stay out of traces entirely.",
+          "env": "TANKOVAULT_TELEMETRY__SENTRY__HTTP_TRANSACTIONS",
+          "env_aliases": [],
+          "env_file": "TANKOVAULT_TELEMETRY__SENTRY__HTTP_TRANSACTIONS_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.sentry.http_transactions",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "telemetry__sentry__http_transactions",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*(true|false)\\s*$",
+            "type": "string"
+          },
+          "text_form": "boolean",
+          "ty": "bool",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "boolean"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "Copy `tracing` span fields onto the Sentry span as attributes. Off: span fields in\nthis workspace routinely carry ids and user-supplied titles, and a transaction is\nstored under a longer retention than a log line.",
+          "env": "TANKOVAULT_TELEMETRY__SENTRY__SPAN_ATTRIBUTES",
+          "env_aliases": [],
+          "env_file": "TANKOVAULT_TELEMETRY__SENTRY__SPAN_ATTRIBUTES_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.sentry.span_attributes",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "telemetry__sentry__span_attributes",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*(true|false)\\s*$",
+            "type": "string"
+          },
+          "text_form": "boolean",
+          "ty": "bool",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "How long process exit waits for queued events to drain.",
+          "env": "TANKOVAULT_TELEMETRY__SENTRY__SHUTDOWN_TIMEOUT_SECS",
+          "env_aliases": [],
+          "env_file": "TANKOVAULT_TELEMETRY__SENTRY__SHUTDOWN_TIMEOUT_SECS_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.sentry.shutdown_timeout_secs",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "telemetry__sentry__shutdown_timeout_secs",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*\\+?[0-9]+\\s*$",
+            "type": "string"
+          },
+          "text_form": "integer",
+          "ty": "u64",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "boolean"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "Print the SDK's own diagnostics to stderr. For proving a DSN works, not for running.",
+          "env": "TANKOVAULT_TELEMETRY__SENTRY__DEBUG",
+          "env_aliases": [],
+          "env_file": "TANKOVAULT_TELEMETRY__SENTRY__DEBUG_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.sentry.debug",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "telemetry__sentry__debug",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*(true|false)\\s*$",
+            "type": "string"
+          },
+          "text_form": "boolean",
+          "ty": "bool",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "string"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "Directory the built SPA bundle is served from. Baked into the image at `/srv/www`.",
+          "env": "TANKOVAULT_FRONTEND__STATIC_DIR",
+          "env_aliases": [],
+          "env_file": "TANKOVAULT_FRONTEND__STATIC_DIR_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "frontend.static_dir",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "frontend__static_dir",
+          "secrets_file_aliases": [],
+          "text_form": "text",
+          "ty": "String",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "string"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "The generated third-party licence notices, served at `/third-party-notices`.\n\nPoints at the image's own copy (`/THIRD-PARTY-NOTICES`, beside `/LICENSE`) rather than a\nsecond one inside the bundle: it is 300-odd KB, and two copies is the arrangement where\none of them goes stale. Configurable because the path only exists inside the image — a\ndeveloper running `dx serve` and the tests point it at their own checkout.",
+          "env": "TANKOVAULT_FRONTEND__NOTICES_PATH",
+          "env_aliases": [],
+          "env_file": "TANKOVAULT_FRONTEND__NOTICES_PATH_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "frontend.notices_path",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "frontend__notices_path",
+          "secrets_file_aliases": [],
+          "text_form": "text",
+          "ty": "String",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "string"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "The same notices as the structured inventory the `/licenses` screen renders, served at\n`/third-party-notices.json`.\n\nWritten into the image by `xtask notices --json` during the build rather than committed:\nit is a second representation of the document above, and the two come out of one merge, so\ncommitting it would double the repository's generated weight for a drift gate the\nplain-text `--check` already provides. A deployment whose image predates it, or a\ndeveloper who has not run the command, serves nothing here and the screen says so.",
+          "env": "TANKOVAULT_FRONTEND__NOTICES_JSON_PATH",
+          "env_aliases": [],
+          "env_file": "TANKOVAULT_FRONTEND__NOTICES_JSON_PATH_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "frontend.notices_json_path",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "frontend__notices_json_path",
+          "secrets_file_aliases": [],
+          "text_form": "text",
+          "ty": "String",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "string"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "Base origin the `/v1/*` proxy targets, e.g. `http://api:8080`. No trailing slash.",
+          "env": "TANKOVAULT_FRONTEND__API_UPSTREAM",
+          "env_aliases": [],
+          "env_file": "TANKOVAULT_FRONTEND__API_UPSTREAM_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "frontend.api_upstream",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "frontend__api_upstream",
+          "secrets_file_aliases": [],
+          "text_form": "text",
+          "ty": "String",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "Largest request body accepted on this hop.\n\nEnforced twice: the shared stack's `DefaultBodyLimit` rejects it before buffering (see\n`stack_security` in `main.rs`), and the proxy handler passes the same number to\n`to_bytes` so the two cannot drift.",
+          "env": "TANKOVAULT_FRONTEND__MAX_BODY_BYTES",
+          "env_aliases": [],
+          "env_file": "TANKOVAULT_FRONTEND__MAX_BODY_BYTES_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "frontend.max_body_bytes",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "frontend__max_body_bytes",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*\\+?[0-9]+\\s*$",
+            "type": "string"
+          },
+          "text_form": "integer",
+          "ty": "usize",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "Connection-establishment timeout for the upstream — not a whole-request timeout, since\nan SSE stream stays open indefinitely.",
+          "env": "TANKOVAULT_FRONTEND__CONNECT_TIMEOUT_SECS",
+          "env_aliases": [],
+          "env_file": "TANKOVAULT_FRONTEND__CONNECT_TIMEOUT_SECS_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "frontend.connect_timeout_secs",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "frontend__connect_timeout_secs",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*\\+?[0-9]+\\s*$",
+            "type": "string"
+          },
+          "text_form": "integer",
+          "ty": "u64",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "boolean"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "Send a freshly minted `'nonce-…'` in `script-src` on every response.\n\nCloudflare's bot products (Bot Fight Mode, JavaScript Detections, the challenge platform)\ninject an inline `<script>` into the served HTML at the edge, after this service has\nhashed the shell — so `script-src` refuses it and the detection silently never runs.\nCloudflare's documented answer is a nonce: it parses the `Content-Security-Policy`\n*response header* and copies the nonce onto what it injects. That is why nothing is\nstamped into the shell here — the header is the whole contract, and the shell's own\ninline scripts keep running by hash either way.\n\nThe concession is real but narrow: an injected script that can already run could read\nthis header back off a same-origin fetch and admit further inline script. It cannot\nforge one ahead of time (128 CSPRNG bits, minted per response), and it still cannot\nreach `'unsafe-eval'` or an off-origin host. Load-bearing for that: the shell is never\nserved from a stored copy, which is why it is `Cache-Control: no-store` with no validator\nand not `no-cache` — see `FixedResponse::shell` in `main.rs`. A stored shell would pin\none nonce across every reader for the lifetime of the entry, which is `'unsafe-inline'`\nwith extra steps.",
+          "env": "TANKOVAULT_FRONTEND__CLOUDFLARE__SCRIPT_NONCE",
+          "env_aliases": [],
+          "env_file": "TANKOVAULT_FRONTEND__CLOUDFLARE__SCRIPT_NONCE_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "frontend.cloudflare.script_nonce",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "frontend__cloudflare__script_nonce",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*(true|false)\\s*$",
+            "type": "string"
+          },
+          "text_form": "boolean",
+          "ty": "bool",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "boolean"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "Admit `https://challenges.cloudflare.com` in `script-src` and `frame-src`, for an\nembedded Turnstile widget.\n\nOnly for a widget rendered *in* a page this service serves; a managed-challenge\ninterstitial is a Cloudflare-served document carrying its own policy, and needs nothing\nhere. The origin is Turnstile's only host and `'self'` can never cover it.",
+          "env": "TANKOVAULT_FRONTEND__CLOUDFLARE__TURNSTILE",
+          "env_aliases": [],
+          "env_file": "TANKOVAULT_FRONTEND__CLOUDFLARE__TURNSTILE_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "frontend.cloudflare.turnstile",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "frontend__cloudflare__turnstile",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*(true|false)\\s*$",
+            "type": "string"
+          },
+          "text_form": "boolean",
+          "ty": "bool",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "boolean"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "Install the Prometheus recorder and serve the scrape endpoint. When `false` the\nscrape route answers `404` and no measurements are retained.",
+          "env": "TANKOVAULT_METRICS__ENABLED",
+          "env_aliases": [],
+          "env_file": "TANKOVAULT_METRICS__ENABLED_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "metrics.enabled",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "metrics__enabled",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*(true|false)\\s*$",
+            "type": "string"
+          },
+          "text_form": "boolean",
+          "ty": "bool",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "string"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "Path the scrape endpoint is mounted at.",
+          "env": "TANKOVAULT_METRICS__ROUTE",
+          "env_aliases": [],
+          "env_file": "TANKOVAULT_METRICS__ROUTE_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "metrics.route",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "metrics__route",
+          "secrets_file_aliases": [],
+          "text_form": "text",
+          "ty": "String",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "string"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "Address the scrape endpoint binds to on its **own** listener (default `0.0.0.0:9090`),\nisolated from the service's public port. `None` merges it onto the primary port.",
+          "env": "TANKOVAULT_METRICS__LISTEN",
+          "env_aliases": [],
+          "env_file": "TANKOVAULT_METRICS__LISTEN_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "metrics.listen",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "metrics__listen",
+          "secrets_file_aliases": [],
+          "text_form": "text",
+          "ty": "String",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "boolean"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "Also record per-request HTTP metrics. Separate from [`Self::enabled`]: the request\nhistogram is the expensive, high-cardinality part.",
+          "env": "TANKOVAULT_METRICS__HTTP_REQUESTS",
+          "env_aliases": [],
+          "env_file": "TANKOVAULT_METRICS__HTTP_REQUESTS_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "metrics.http_requests",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "metrics__http_requests",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*(true|false)\\s*$",
+            "type": "string"
+          },
+          "text_form": "boolean",
+          "ty": "bool",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "string"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "The product name, in prose: email subjects and bodies, page titles, the authenticator\nprompt, the desktop connect screen.",
+          "env": "TANKOVAULT_BRANDING__NAME",
+          "env_aliases": [],
+          "env_file": "TANKOVAULT_BRANDING__NAME_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "branding.name",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "branding__name",
+          "secrets_file_aliases": [],
+          "text_form": "text",
+          "ty": "String",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "string"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "The part drawn in the body colour.",
+          "env": "TANKOVAULT_BRANDING__WORDMARK__LEAD",
+          "env_aliases": [],
+          "env_file": "TANKOVAULT_BRANDING__WORDMARK__LEAD_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "branding.wordmark.lead",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "branding__wordmark__lead",
+          "secrets_file_aliases": [],
+          "text_form": "text",
+          "ty": "String",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "string"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "The part drawn in the accent colour. Absent draws the lockup as one word.",
+          "env": "TANKOVAULT_BRANDING__WORDMARK__ACCENT",
+          "env_aliases": [],
+          "env_file": "TANKOVAULT_BRANDING__WORDMARK__ACCENT_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "branding.wordmark.accent",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "branding__wordmark__accent",
+          "secrets_file_aliases": [],
+          "text_form": "text",
+          "ty": "String",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "string"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "One line under the wordmark. Unset keeps the shipped, *translated* tagline; setting it\nreplaces that with this string in every language, which is the right trade for an\noperator whose product is not the one the catalogue describes.",
+          "env": "TANKOVAULT_BRANDING__TAGLINE",
+          "env_aliases": [],
+          "env_file": "TANKOVAULT_BRANDING__TAGLINE_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "branding.tagline",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "branding__tagline",
+          "secrets_file_aliases": [],
+          "text_form": "text",
+          "ty": "String",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "string"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "Who holds it.",
+          "env": "TANKOVAULT_BRANDING__COPYRIGHT__HOLDER",
+          "env_aliases": [],
+          "env_file": "TANKOVAULT_BRANDING__COPYRIGHT__HOLDER_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "branding.copyright.holder",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "branding__copyright__holder",
+          "secrets_file_aliases": [],
+          "text_form": "text",
+          "ty": "String",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "string"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "The year, or a range (`2024–2026`). Unset resolves to the current year at request time,\nso a deployment nobody has touched since December is not still claiming last year.",
+          "env": "TANKOVAULT_BRANDING__COPYRIGHT__YEAR",
+          "env_aliases": [],
+          "env_file": "TANKOVAULT_BRANDING__COPYRIGHT__YEAR_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "branding.copyright.year",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "branding__copyright__year",
+          "secrets_file_aliases": [],
+          "text_form": "text",
+          "ty": "String",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "string"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "The whole notice, verbatim, when the `© {year} {holder}` shape does not fit. Wins over\nboth fields above and over the catalogue's translation of the line.",
+          "env": "TANKOVAULT_BRANDING__COPYRIGHT__NOTICE",
+          "env_aliases": [],
+          "env_file": "TANKOVAULT_BRANDING__COPYRIGHT__NOTICE_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "branding.copyright.notice",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "branding__copyright__notice",
+          "secrets_file_aliases": [],
+          "text_form": "text",
+          "ty": "String",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "string"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "What the footer prints.",
+          "env": "TANKOVAULT_BRANDING__LICENCE__NAME",
+          "env_aliases": [],
+          "env_file": "TANKOVAULT_BRANDING__LICENCE__NAME_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "branding.licence.name",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "branding__licence__name",
+          "secrets_file_aliases": [],
+          "text_form": "text",
+          "ty": "String",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "string"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "Where the label links, when the operator publishes the text somewhere. Unset renders the\nlabel as plain text, which is what a self-hosted deployment with no public licence page\nshould show rather than a dead link.",
+          "env": "TANKOVAULT_BRANDING__LICENCE__URL",
+          "env_aliases": [],
+          "env_file": "TANKOVAULT_BRANDING__LICENCE__URL_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "branding.licence.url",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "branding__licence__url",
+          "secrets_file_aliases": [],
+          "text_form": "text",
+          "ty": "String",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "string"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "Where the project lives — the footer's source link and the desktop About tab.",
+          "env": "TANKOVAULT_BRANDING__PROJECT_URL",
+          "env_aliases": [],
+          "env_file": "TANKOVAULT_BRANDING__PROJECT_URL_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "branding.project_url",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "branding__project_url",
+          "secrets_file_aliases": [],
+          "text_form": "text",
+          "ty": "String",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "string"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "Where a reader downloads the native client.",
+          "env": "TANKOVAULT_BRANDING__RELEASES_URL",
+          "env_aliases": [],
+          "env_file": "TANKOVAULT_BRANDING__RELEASES_URL_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "branding.releases_url",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "branding__releases_url",
+          "secrets_file_aliases": [],
+          "text_form": "text",
+          "ty": "String",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "string"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "The identifiable crawler user-agent, applied to any provider still carrying the built-in\ndefault. A provider whose politeness names its own user-agent keeps it.",
+          "env": "TANKOVAULT_BRANDING__BOT_USER_AGENT",
+          "env_aliases": [],
+          "env_file": "TANKOVAULT_BRANDING__BOT_USER_AGENT_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "branding.bot_user_agent",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "branding__bot_user_agent",
+          "secrets_file_aliases": [],
+          "text_form": "text",
+          "ty": "String",
+          "values": []
         }
       ],
-      "ignore": [
-        "KUBERNETES_*",
-        "HOSTNAME"
+      "loader": [
+        {
+          "default": "config.toml",
+          "docs": "Names the TOML layer: a file, or a directory whose `*.toml` files are all merged in name order.",
+          "env": "TANKOVAULT_CONFIG",
+          "role": "config"
+        },
+        {
+          "default": null,
+          "docs": "Names a directory of key-named files — a mounted Kubernetes `Secret` volume. Each file supplies the key its name spells.",
+          "env": "TANKOVAULT_SECRETS_DIR",
+          "role": "secrets_dir"
+        },
+        {
+          "default": null,
+          "docs": "Read directly from the environment before the layered config exists, so no file may supply it.",
+          "env": "TANKOVAULT_PROFILE",
+          "role": "reserved"
+        },
+        {
+          "default": null,
+          "docs": "Read directly from the environment before the layered config exists, so no file may supply it.",
+          "env": "TANKOVAULT_CONFIRM_RESET",
+          "role": "reserved"
+        }
       ],
-      "unknown": "reject"
-    }
+      "schema_version": 2
+    },
+    "terrace_contract": 1
+  },
+  "source": {
+    "digest": "sha256:c177c15802550fe69cb453168a0461edbde55160a6112e746ed2a895f8f5936e",
+    "fetched": "2026-10-19T14:20:25Z",
+    "image": "docker.io/timschoenle/tankovault-frontend",
+    "sha256": "597bd960ed57792c78fc660f795f2de3df6606c00980f69909948b9a21e46aa7"
   }
 }

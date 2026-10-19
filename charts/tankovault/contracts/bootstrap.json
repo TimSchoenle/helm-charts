@@ -1,229 +1,31 @@
 {
-  "source": {
-    "image": "docker.io/timschoenle/tankovault-bootstrap",
-    "digest": "sha256:52d56b8a440b2df91266730a9402cb907ffc9e8c26135896c3831e7f41aea239",
-    "sha256": "6e21882f2d2eb523356056c899d20ebe00a74449f669b4e665ffa042c8829cff",
-    "fetched": "2026-10-15T16:27:46Z"
-  },
   "contract": {
-    "terrace_contract": 1,
-    "producer": {
-      "name": "terrace-config",
-      "version": "0.15.0",
-      "loader": "figment"
-    },
     "app": {
       "name": "tankovault-bootstrap",
-      "version": "v11.0.5",
-      "source": "https://github.com/TimSchoenle/TankoVault"
+      "source": "https://github.com/TimSchoenle/TankoVault",
+      "version": "v11.1.0"
     },
-    "schema": {
-      "schema_version": 2,
-      "dialect": {
-        "prefix": "TANKOVAULT_",
-        "nesting_separator": "__",
-        "indirection_suffix": "_FILE"
-      },
-      "loader": [
+    "external": {
+      "env": [
         {
-          "env": "TANKOVAULT_CONFIG",
-          "role": "config",
-          "docs": "Names the TOML layer: a file, or a directory whose `*.toml` files are all merged in name order.",
-          "default": "config.toml"
-        },
-        {
-          "env": "TANKOVAULT_SECRETS_DIR",
-          "role": "secrets_dir",
-          "docs": "Names a directory of key-named files — a mounted Kubernetes `Secret` volume. Each file supplies the key its name spells.",
-          "default": null
-        },
-        {
-          "env": "TANKOVAULT_PROFILE",
-          "role": "reserved",
-          "docs": "Read directly from the environment before the layered config exists, so no file may supply it.",
-          "default": null
-        },
-        {
-          "env": "TANKOVAULT_CONFIRM_RESET",
-          "role": "reserved",
-          "docs": "Read directly from the environment before the layered config exists, so no file may supply it.",
-          "default": null
+          "constraint": {
+            "type": "string"
+          },
+          "docs": "Verbosity, as `tracing` directives — `info`, `tankovault_api=debug,info`. Read by `EnvFilter::try_from_default_env`, which is consulted *before* `telemetry.log_filter` and wins over it when set.",
+          "name": "RUST_LOG",
+          "owner": "tracing",
+          "required": false,
+          "secret": false,
+          "text_form": "text",
+          "ty": "String",
+          "values": []
         }
       ],
-      "keys": [
-        {
-          "path": "database.url",
-          "env": "TANKOVAULT_DATABASE__URL",
-          "env_file": "TANKOVAULT_DATABASE__URL_FILE",
-          "secrets_file": "database__url",
-          "docs": "e.g. `postgres://user:pass@host:5432/tankovault`.\n\nA [`SecretString`]: the DSN carries the password, and this struct's `Debug` is nested\ninside state routinely logged with `?`.",
-          "ty": "SecretString",
-          "values": [],
-          "constraint": {
-            "type": "string"
-          },
-          "text_form": "text",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": true,
-          "secret": true,
-          "reserved": false
-        },
-        {
-          "path": "database.max_connections",
-          "env": "TANKOVAULT_DATABASE__MAX_CONNECTIONS",
-          "env_file": "TANKOVAULT_DATABASE__MAX_CONNECTIONS_FILE",
-          "secrets_file": "database__max_connections",
-          "docs": "Upper bound on the connection pool.",
-          "ty": "u32",
-          "values": [],
-          "constraint": {
-            "maximum": 4294967295,
-            "minimum": 0,
-            "type": "integer"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*\\+?[0-9]+\\s*$",
-            "type": "string"
-          },
-          "text_form": "integer",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "database.acquire_timeout_secs",
-          "env": "TANKOVAULT_DATABASE__ACQUIRE_TIMEOUT_SECS",
-          "env_file": "TANKOVAULT_DATABASE__ACQUIRE_TIMEOUT_SECS_FILE",
-          "secrets_file": "database__acquire_timeout_secs",
-          "docs": "How long a caller waits for a pooled connection before failing, in seconds.",
-          "ty": "u64",
-          "values": [],
-          "constraint": {
-            "minimum": 0,
-            "type": "integer"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*\\+?[0-9]+\\s*$",
-            "type": "string"
-          },
-          "text_form": "integer",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "auth.password_pepper",
-          "env": "TANKOVAULT_AUTH__PASSWORD_PEPPER",
-          "env_file": "TANKOVAULT_AUTH__PASSWORD_PEPPER_FILE",
-          "secrets_file": "auth__password_pepper",
-          "docs": "Server-side password pepper: mixed into every argon2id hash so a leak alone can't be\nbrute-forced offline. Empty (default) is un-peppered, for compatibility with old\nhashes; once configured it must stay stable or passwords stop verifying.",
-          "ty": "SecretString",
-          "values": [],
-          "constraint": {
-            "type": "string"
-          },
-          "text_form": "text",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": false,
-          "secret": true,
-          "reserved": false
-        },
-        {
-          "path": "seed_admin_email",
-          "env": "TANKOVAULT_SEED_ADMIN_EMAIL",
-          "env_file": "TANKOVAULT_SEED_ADMIN_EMAIL_FILE",
-          "secrets_file": "seed_admin_email",
-          "docs": "Address of the account to seed. An account already holding it is left untouched.",
-          "ty": "String",
-          "values": [],
-          "constraint": {
-            "type": "string"
-          },
-          "text_form": "text",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "seed_admin_username",
-          "env": "TANKOVAULT_SEED_ADMIN_USERNAME",
-          "env_file": "TANKOVAULT_SEED_ADMIN_USERNAME_FILE",
-          "secrets_file": "seed_admin_username",
-          "docs": "Name of the account to seed. An account already holding it is left untouched.",
-          "ty": "String",
-          "values": [],
-          "constraint": {
-            "type": "string"
-          },
-          "text_form": "text",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "seed_admin_password",
-          "env": "TANKOVAULT_SEED_ADMIN_PASSWORD",
-          "env_file": "TANKOVAULT_SEED_ADMIN_PASSWORD_FILE",
-          "secrets_file": "seed_admin_password",
-          "docs": "No default, unlike `xtask seed`: a published image must not be able to create an account\nwhose password is written down in this repository.",
-          "ty": "SecretString",
-          "values": [],
-          "constraint": {
-            "type": "string"
-          },
-          "text_form": "text",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": false,
-          "secret": true,
-          "reserved": false
-        }
-      ]
+      "ignore": [
+        "KUBERNETES_*",
+        "HOSTNAME"
+      ],
+      "unknown": "reject"
     },
     "json_schema": {
       "$schema": "http://json-schema.org/draft-07/schema#",
@@ -279,27 +81,225 @@
       "title": "tankovault-bootstrap configuration",
       "type": "object"
     },
-    "external": {
-      "env": [
+    "producer": {
+      "loader": "figment",
+      "name": "terrace-config",
+      "version": "0.15.1"
+    },
+    "schema": {
+      "dialect": {
+        "indirection_suffix": "_FILE",
+        "nesting_separator": "__",
+        "prefix": "TANKOVAULT_"
+      },
+      "keys": [
         {
-          "name": "RUST_LOG",
-          "owner": "tracing",
-          "docs": "Verbosity, as `tracing` directives — `info`, `tankovault_api=debug,info`. Read by `EnvFilter::try_from_default_env`, which is consulted *before* `telemetry.log_filter` and wins over it when set.",
-          "ty": "String",
-          "values": [],
+          "aliases": [],
           "constraint": {
             "type": "string"
           },
+          "default": null,
+          "default_value": null,
+          "docs": "e.g. `postgres://user:pass@host:5432/tankovault`.\n\nA [`SecretString`]: the DSN carries the password, and this struct's `Debug` is nested\ninside state routinely logged with `?`.",
+          "env": "TANKOVAULT_DATABASE__URL",
+          "env_aliases": [],
+          "env_file": "TANKOVAULT_DATABASE__URL_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "database.url",
+          "required": true,
+          "reserved": false,
+          "secret": true,
+          "secrets_file": "database__url",
+          "secrets_file_aliases": [],
           "text_form": "text",
+          "ty": "SecretString",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "maximum": 4294967295,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "Upper bound on the connection pool.",
+          "env": "TANKOVAULT_DATABASE__MAX_CONNECTIONS",
+          "env_aliases": [],
+          "env_file": "TANKOVAULT_DATABASE__MAX_CONNECTIONS_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "database.max_connections",
           "required": false,
-          "secret": false
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "database__max_connections",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*\\+?[0-9]+\\s*$",
+            "type": "string"
+          },
+          "text_form": "integer",
+          "ty": "u32",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "How long a caller waits for a pooled connection before failing, in seconds.",
+          "env": "TANKOVAULT_DATABASE__ACQUIRE_TIMEOUT_SECS",
+          "env_aliases": [],
+          "env_file": "TANKOVAULT_DATABASE__ACQUIRE_TIMEOUT_SECS_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "database.acquire_timeout_secs",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "database__acquire_timeout_secs",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*\\+?[0-9]+\\s*$",
+            "type": "string"
+          },
+          "text_form": "integer",
+          "ty": "u64",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "string"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "Server-side password pepper: mixed into every argon2id hash so a leak alone can't be\nbrute-forced offline. Empty (default) is un-peppered, for compatibility with old\nhashes; once configured it must stay stable or passwords stop verifying.",
+          "env": "TANKOVAULT_AUTH__PASSWORD_PEPPER",
+          "env_aliases": [],
+          "env_file": "TANKOVAULT_AUTH__PASSWORD_PEPPER_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "auth.password_pepper",
+          "required": false,
+          "reserved": false,
+          "secret": true,
+          "secrets_file": "auth__password_pepper",
+          "secrets_file_aliases": [],
+          "text_form": "text",
+          "ty": "SecretString",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "string"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "Address of the account to seed. An account already holding it is left untouched.",
+          "env": "TANKOVAULT_SEED_ADMIN_EMAIL",
+          "env_aliases": [],
+          "env_file": "TANKOVAULT_SEED_ADMIN_EMAIL_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "seed_admin_email",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "seed_admin_email",
+          "secrets_file_aliases": [],
+          "text_form": "text",
+          "ty": "String",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "string"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "Name of the account to seed. An account already holding it is left untouched.",
+          "env": "TANKOVAULT_SEED_ADMIN_USERNAME",
+          "env_aliases": [],
+          "env_file": "TANKOVAULT_SEED_ADMIN_USERNAME_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "seed_admin_username",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "seed_admin_username",
+          "secrets_file_aliases": [],
+          "text_form": "text",
+          "ty": "String",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "string"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "No default, unlike `xtask seed`: a published image must not be able to create an account\nwhose password is written down in this repository.",
+          "env": "TANKOVAULT_SEED_ADMIN_PASSWORD",
+          "env_aliases": [],
+          "env_file": "TANKOVAULT_SEED_ADMIN_PASSWORD_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "seed_admin_password",
+          "required": false,
+          "reserved": false,
+          "secret": true,
+          "secrets_file": "seed_admin_password",
+          "secrets_file_aliases": [],
+          "text_form": "text",
+          "ty": "SecretString",
+          "values": []
         }
       ],
-      "ignore": [
-        "KUBERNETES_*",
-        "HOSTNAME"
+      "loader": [
+        {
+          "default": "config.toml",
+          "docs": "Names the TOML layer: a file, or a directory whose `*.toml` files are all merged in name order.",
+          "env": "TANKOVAULT_CONFIG",
+          "role": "config"
+        },
+        {
+          "default": null,
+          "docs": "Names a directory of key-named files — a mounted Kubernetes `Secret` volume. Each file supplies the key its name spells.",
+          "env": "TANKOVAULT_SECRETS_DIR",
+          "role": "secrets_dir"
+        },
+        {
+          "default": null,
+          "docs": "Read directly from the environment before the layered config exists, so no file may supply it.",
+          "env": "TANKOVAULT_PROFILE",
+          "role": "reserved"
+        },
+        {
+          "default": null,
+          "docs": "Read directly from the environment before the layered config exists, so no file may supply it.",
+          "env": "TANKOVAULT_CONFIRM_RESET",
+          "role": "reserved"
+        }
       ],
-      "unknown": "reject"
-    }
+      "schema_version": 2
+    },
+    "terrace_contract": 1
+  },
+  "source": {
+    "digest": "sha256:f59155bf3473dc35fcefc0ac01dccc0376d05f196ea3dcd0e5c25abed8209822",
+    "fetched": "2026-10-19T14:20:25Z",
+    "image": "docker.io/timschoenle/tankovault-bootstrap",
+    "sha256": "bef994ee53bceca88266640e381348e216903a416a6a37f929636a1bc191339d"
   }
 }

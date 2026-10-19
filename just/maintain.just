@@ -224,38 +224,43 @@ bump-chart-versions base='main':
       --base "$(git merge-base 'origin/{{ base }}' HEAD)" --charts {{ charts }}
 
 # --------------------------------------------------------------------------------------------
-# The common library's version and every pin on it
+# The library charts' versions and every pin on them
 # --------------------------------------------------------------------------------------------
 #
-# Every chart takes `charts/common` from `file://../common` at an exact version, and chart-testing
-# excludes the library, so nothing used to require a library change to move its version or the
+# Every chart takes `charts/common` from `file://../common` at an exact version, and `common`
+# takes `charts/terrace-helm` the same way. Chart-testing
+# excludes both libraries, so nothing used to require a library change to move its version or the
 # charts that bundle it. #623 changed the library after `common-2.4.1` was tagged and moved
 # neither. The rules live in the script's header. The documentation job runs the bump on every
 # pull request, after the schema repins that are the usual source of such a change, and Lint
 # Charts runs the check.
 
-# Bump `charts/common` if it changed since the merge base with `base`, repin every chart on it and
-# bump each repinned chart. `kind` is how far the library moves when it needs to.
-[doc("Bump the common library if it changed, repin every chart on it, and bump each repinned chart")]
+# Bump each library in `libraries` that changed since the merge base with `base`, repin every chart
+# on it and bump each repinned chart. `kind` is how far a library moves when it needs to.
+[doc("Bump each library chart that changed, repin every chart on it, and bump each repinned chart")]
 [group('maintain')]
 bump-common-version base='main' kind='patch':
     #!/usr/bin/env bash
     set -euo pipefail
     {{ resolve_python }}
+    libraries=()
+    for library in {{ libraries }}; do libraries+=(--library "$library"); done
     "$python" {{ scripts }}/bump-common-version.py \
       --base "$(git merge-base 'origin/{{ base }}' HEAD)" --charts {{ charts }} \
-      --fixture '{{ fixture }}' --kind '{{ kind }}'
+      --fixture '{{ fixture }}' "${libraries[@]}" --kind '{{ kind }}'
 
 # The same rules as a gate: report what `bump-common-version` would change, and fail if anything.
-[doc("Fail when the common library changed without a version bump, or a chart pins a stale version")]
+[doc("Fail when a library chart changed without a version bump, or a chart pins a stale version")]
 [group('maintain')]
 check-common-version base='main':
     #!/usr/bin/env bash
     set -euo pipefail
     {{ resolve_python }}
+    libraries=()
+    for library in {{ libraries }}; do libraries+=(--library "$library"); done
     "$python" {{ scripts }}/bump-common-version.py \
       --base "$(git merge-base 'origin/{{ base }}' HEAD)" --charts {{ charts }} \
-      --fixture '{{ fixture }}' --check
+      --fixture '{{ fixture }}' "${libraries[@]}" --check
 
 # Unit tests for both version bump scripts, run against throwaway git repositories.
 [doc("Unit tests for the chart and common-library version bump scripts")]

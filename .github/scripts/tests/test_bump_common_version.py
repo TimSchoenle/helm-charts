@@ -60,6 +60,8 @@ def git(cwd: Path, *args: str) -> None:
 
 
 class BumpCommonVersionTest(unittest.TestCase):
+    library_text = LIBRARY
+
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
@@ -117,7 +119,9 @@ class BumpCommonVersionTest(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("common: version 2.4.1 -> 2.4.2", out)
         self.assertIn("charts/common/templates/_names.tpl", out)
-        self.assertEqual(self.read("charts/common/Chart.yaml"), LIBRARY, "--check must not write")
+        self.assertEqual(
+            self.read("charts/common/Chart.yaml"), self.library_text, "--check must not write"
+        )
 
     def test_library_edit_bumps_library_repins_and_bumps_consumers(self) -> None:
         self.edit_library()
@@ -206,6 +210,94 @@ class BumpCommonVersionTest(unittest.TestCase):
         self.assertIn("\r\nversion: 1.2.4\r\n", text)
         self.assertIn("    version: 2.4.2\r\n", text)
         self.assertNotIn("\n", text.replace("\r\n", ""))
+
+
+BASE_LIBRARY = """\
+apiVersion: v2
+name: base
+type: library
+version: 1.0.0
+"""
+
+# `common` as it stands once it depends on a library of its own, as it does on `terrace-helm`.
+LAYERED_LIBRARY = LIBRARY + """\
+dependencies:
+  - name: base
+    version: 1.0.0
+    repository: "file://../base"
+"""
+
+
+class LayeredLibrariesTest(BumpCommonVersionTest):
+    """Two libraries, the second depending on the first, as `common` depends on `terrace-helm`.
+
+    Inherits every single-library test, which must hold unchanged once a second library exists.
+    """
+
+    library_text = LAYERED_LIBRARY
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.write("charts/base/Chart.yaml", BASE_LIBRARY)
+        self.write("charts/base/templates/_toml.tpl", NAMES.format(body=""))
+        self.write("charts/common/Chart.yaml", LAYERED_LIBRARY)
+        git(self.root, "add", "-A")
+        git(self.root, "commit", "-q", "-m", "layered")
+
+    def run_script(self, *extra: str) -> tuple[int, str]:
+        return super().run_script("--library", "base", "--library", "common", *extra)
+
+    def edit_base(self) -> None:
+        self.write("charts/base/templates/_toml.tpl", NAMES.format(body="x"))
+
+    def test_hand_bumped_library_is_kept_and_consumers_follow(self) -> None:
+        # The inherited test rewrites `common` from the single-library text, dropping its pin.
+        self.edit_library()
+        self.write("charts/common/Chart.yaml", LAYERED_LIBRARY.replace("2.4.1", "3.0.0"))
+        self.run_script()
+        self.assertIn("    version: 3.0.0\n", self.read("charts/beta/Chart.yaml"))
+
+    def test_repinned_consumer_without_its_own_bump_fails_the_check(self) -> None:
+        self.write("charts/common/Chart.yaml", LAYERED_LIBRARY.replace("2.4.1", "2.4.2"))
+        self.edit_library()
+        code, out = self.run_script("--check")
+        self.assertEqual(code, 1)
+        self.assertIn("alpha: common pin 2.4.1 -> 2.4.2", out)
+
+    def test_base_edit_cascades_through_common_to_every_chart(self) -> None:
+        self.edit_base()
+        code, out = self.run_script()
+        self.assertEqual(code, 0, out)
+        self.assertIn("version: 1.0.1\n", self.read("charts/base/Chart.yaml"))
+        common = self.read("charts/common/Chart.yaml")
+        self.assertIn("\nversion: 2.4.2\n", common, "the repin is a change to common")
+        self.assertIn("    version: 1.0.1\n", common)
+        for name in ("alpha", "beta"):
+            text = self.read(f"charts/{name}/Chart.yaml")
+            self.assertIn("\nversion: 1.2.4\n", text)
+            self.assertIn("    version: 2.4.2\n", text)
+        self.assertEqual(self.run_script("--check")[0], 0)
+
+    def test_base_edit_fails_the_check_at_every_level(self) -> None:
+        self.edit_base()
+        code, out = self.run_script("--check")
+        self.assertEqual(code, 1)
+        self.assertIn("base: version 1.0.0 -> 1.0.1", out)
+        self.assertIn("common: base pin 1.0.0 -> 1.0.1", out)
+        self.assertIn("common: version 2.4.1 -> 2.4.2", out)
+        self.assertIn("alpha: version 1.2.3 -> 1.2.4", out)
+        self.assertEqual(self.read("charts/common/Chart.yaml"), LAYERED_LIBRARY)
+
+    def test_common_edit_leaves_base_alone(self) -> None:
+        self.edit_library()
+        self.run_script()
+        self.assertEqual(self.read("charts/base/Chart.yaml"), BASE_LIBRARY)
+        self.assertIn("    version: 1.0.0\n", self.read("charts/common/Chart.yaml"))
+
+    def test_library_named_twice_is_refused(self) -> None:
+        code, out = super().run_script("--library", "common", "--library", "common")
+        self.assertEqual(code, 1)
+        self.assertIn("names a chart twice", out)
 
 
 if __name__ == "__main__":

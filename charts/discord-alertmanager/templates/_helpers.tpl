@@ -74,6 +74,10 @@ engine:
   {{- if not (kindIs "invalid" .Values.engine.deadmanWindowSecs) }}
   deadman_window_secs: {{ .Values.engine.deadmanWindowSecs }}
   {{- end }}
+  {{- with .Values.engine.dedupeIgnoreLabels }}
+  dedupe_ignore_labels:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
   {{- if not (kindIs "invalid" .Values.engine.dispatchers) }}
   dispatchers: {{ .Values.engine.dispatchers }}
   {{- end }}

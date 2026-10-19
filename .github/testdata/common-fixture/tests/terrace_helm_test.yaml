@@ -1,0 +1,63 @@
+suite: terrace-helm called directly
+# `common` delegates its config partials to `terrace-helm`, so the other suites cover the shared
+# logic. This one covers what only a direct caller sees: names passed in rather than derived.
+templates:
+  - terrace-helm.yaml
+set:
+  terraceHelm.enabled: true
+tests:
+  - it: names the volumes after the names it is given
+    set:
+      terraceHelm.secrets:
+        api__token: secret
+    documentSelector:
+      path: kind
+      value: Pod
+    asserts:
+      - equal:
+          path: spec.volumes[0].configMap.name
+          value: direct-config
+      - equal:
+          path: spec.volumes[1].projected.sources[0].secret.name
+          value: direct-secret
+      - contains:
+          path: spec.containers[0].env
+          content:
+            name: DIRECT_SECRETS_DIR
+            value: /etc/common-fixture/secrets
+
+  - it: needs no Secret name when there are no credentials
+    set:
+      terraceHelm.secretName: ""
+    documentSelector:
+      path: kind
+      value: Pod
+    asserts:
+      - lengthEqual:
+          path: spec.volumes
+          count: 1
+
+  - it: refuses credentials without a Secret name to read them from
+    set:
+      terraceHelm.secretName: ""
+      terraceHelm.secrets:
+        api__token: secret
+    asserts:
+      - failedTemplate:
+          errorPattern: "secretName is required when there are secret keys"
+
+  - it: refuses a missing ConfigMap name
+    set:
+      terraceHelm.configMapName: ""
+    asserts:
+      - failedTemplate:
+          errorPattern: "configMapName is required"
+
+  - it: renders the configuration as TOML
+    documentSelector:
+      path: kind
+      value: ConfigMap
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '\Aname = "direct"'

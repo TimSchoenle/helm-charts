@@ -77,6 +77,9 @@ the chart's own README before installing it.
 [`common`](charts/common) is not published. Consumers pull it from `file://../common`, so a
 chart is packaged with the library version its own `Chart.yaml` pinned at release time.
 
+[`terrace-helm`](charts/terrace-helm) is not published. Consumers pull it from `file://../terrace-helm`, so a
+chart is packaged with the library version its own `Chart.yaml` pinned at release time.
+
 Versions are absent from that table on purpose. They change on nearly every pull request, and a
 rendered version column turned this one file into a merge conflict across concurrent bump
 branches. `helm search repo timschoenle --versions` lists what is published.
@@ -170,7 +173,7 @@ Everything else belongs to the individual chart, whose README lists every value 
 | | Supported |
 | --- | --- |
 | Helm | 3 and 4 |
-| Library chart | `common` 2.6.0 |
+| Library chart | `common` 2.7.0 |
 | Kubernetes | `>=1.28.0-0`, the `kubeVersion` every chart declares. `just sync-kube-floor` sets it to the lowest release in the `validate-manifests` matrix of [.github/workflows/ci.yaml](.github/workflows/ci.yaml). |
 
 ## Documentation

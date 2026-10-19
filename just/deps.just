@@ -3,9 +3,14 @@
 # `charts/*/charts/`, `charts/*/Chart.lock` and `charts/*/definitions/` are gitignored, so a fresh
 # clone can neither lint, render nor test until `just deps` has run.
 
-# Resolve the `common` library dependency, for one chart or for all of them plus the fixture.
+# Resolve the library dependencies, for one chart or for all of them plus the fixture.
+#
+# The libraries go first, through `deps-libraries`. `helm dependency update` copies a `file://`
+# dependency from its directory as it stands, `charts/` included, and never resolves that
+# dependency's own dependencies. `common` depends on `terrace-helm`, so a chart updated before
+# `charts/common/charts/` holds `terrace-helm` would bundle a `common` that cannot render.
 [group('deps')]
-deps chart='': && deps-extract
+deps chart='': deps-libraries && deps-extract
     #!/usr/bin/env bash
     set -euo pipefail
 
@@ -15,15 +20,37 @@ deps chart='': && deps-extract
     }
 
     if [ -n '{{ chart }}' ]; then
-      update '{{ charts }}/{{ chart }}'
+      case ' {{ libraries }} ' in
+        *' {{ chart }} '*) ;;
+        *) update '{{ charts }}/{{ chart }}' ;;
+      esac
       exit 0
     fi
 
     for dir in {{ charts }}/*/; do
       [ -f "${dir}Chart.yaml" ] || continue
+      case ' {{ libraries }} ' in
+        *" $(basename "$dir") "*) continue ;;
+      esac
       update "${dir%/}"
     done
     update '{{ fixture }}'
+
+# Resolve the library charts' own dependencies, in dependency order, and nothing else.
+#
+# What the release workflow runs before chart-releaser, which packages every other chart itself
+# with `--dependency-update`: it needs `charts/common/charts/` built and must not find the
+# extracted copies `deps-extract` leaves under a consumer, which it would package alongside the
+# archive.
+[doc("Resolve the library charts' own dependencies, in dependency order")]
+[group('deps')]
+deps-libraries:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    for library in {{ libraries }}; do
+      echo "==> dependencies: {{ charts }}/${library}"
+      helm dependency update '{{ charts }}'/"${library}"
+    done
 
 # Unpack each built dependency archive next to itself. helm-schema resolves the library chart's
 # `common.*` definitions from the extracted tree rather than from the archive, so schema
@@ -35,6 +62,10 @@ deps-extract:
     set -euo pipefail
     for dir in {{ charts }}/*/charts/; do
       [ -d "$dir" ] || continue
+      # A library's own dependencies stay archived. Helm loads an extracted directory alongside
+      # its archive, so extracting them would put a second copy into every chart that bundles the
+      # library, and no schema pass reads a library's dependencies.
+      grep -q '^type:[[:space:]]*library' "${dir%charts/}Chart.yaml" && continue
       for archive in "$dir"*.tgz; do
         [ -f "$archive" ] || continue
         # Replace the previous extraction rather than unpacking over it. Helm loads the extracted

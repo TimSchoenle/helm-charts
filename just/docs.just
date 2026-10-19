@@ -26,17 +26,21 @@ docs: schema config-readme chart-readmes
 # and the config shapes, which are the element schemas the images publish — and both have to run
 # *before* helm-schema, since they edit helm-schema's input.
 #
-# The other two are helm-schema, because one pass cannot cover both. Walking `charts/` finds
+# The rest are helm-schema, because one pass cannot cover every chart. Walking `charts/` finds
 # `charts/common` and the extracted copy of it under every consumer, and the generator keys its
 # results by chart *name* — so the vendored copies shadow the library itself and its own
 # `values.schema.json` is never written. That is silent: the stale file stays checked in and the
-# run exits 0. The second pass points straight at the library, with `--no-dependencies` because a
-# library chart has none.
+# run exits 0. One further pass per library points straight at it, with `--no-dependencies`
+# because a library's values are documentation and never merge with its dependencies'.
 [doc("Generate every chart's values.schema.json from the @schema blocks in its values.yaml")]
 [group('docs')]
 schema: schema-presets config-shapes
-    helm schema --add-schema-reference --chart-search-root {{ charts }}
-    helm schema --add-schema-reference --chart-search-root {{ charts }}/common --no-dependencies
+    #!/usr/bin/env bash
+    set -euo pipefail
+    helm schema --add-schema-reference --chart-search-root '{{ charts }}'
+    for library in {{ libraries }}; do
+      helm schema --add-schema-reference --chart-search-root '{{ charts }}'/"${library}" --no-dependencies
+    done
 
 # Regenerate the alert presets' `@schema` blocks from the rules they constrain.
 #

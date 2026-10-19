@@ -42,6 +42,11 @@ charts := "charts"
 configs := ".github/configs"
 scripts := ".github/scripts"
 
+# The library charts under `charts/`, in dependency order: each may depend only on those before it.
+# `terrace-helm` is the configuration-contract library other Helm repositories consume; `common`
+# depends on it and owns everything else the charts here share.
+libraries := "terrace-helm common"
+
 # Test-only consumer of the `common` library chart. It lives outside `charts/` so that
 # chart-testing and chart-releaser never see it, which is also why no `charts/*` loop reaches it.
 fixture := ".github/testdata/common-fixture"

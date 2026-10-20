@@ -59,7 +59,7 @@ lint-policy out='rendered':
 #
 # **Lints, does not format.** The files are hand-formatted to a house style the formatter
 # disagrees with in places — notably the long argument lists laid out to be read as tables — and
-# reflowing 11,000 lines to settle that is a change nobody asked for.
+# reflowing the directory to settle that is a change nobody asked for.
 #
 # **No type checking.** mypy would be the obvious companion and is deliberately absent: it ships
 # as a pip package rather than a single binary, and this repository has already decided, in

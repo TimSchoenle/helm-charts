@@ -39,12 +39,16 @@ plain/                   copied only when it does not
 `contract/` and `plain/` are the same files written two ways rather than one file with a
 conditional, because the difference is structural: a plain chart has no configuration document, no
 secrets directory and no `_FILE` indirection, so its podspec is not the contracted one with parts
-switched off. `config_scaffold.Surface` is the seam that picks between them.
+switched off. `just new-chart` copies one or the other, decided by `--no-contract`.
 
 Placeholders are `%%NAME%%`, and they are *not* Go template syntax — these files are full of
 `{{ ... }}` that must survive to the chart untouched, so the scaffolder substitutes a form Helm
-never looks at. `new-chart.py` refuses a file that still holds one after substitution: a
-placeholder nobody replaced would otherwise reach the chart as literal text and render as itself.
+never looks at. Two parties fill them. `just new-chart` substitutes the ones the chart's name and
+pin decide — `%%CHART%%`, `%%DESCRIPTION%%`, `%%APP_VERSION%%`, `%%SOURCE%%`, `%%COMMON_VERSION%%`
+— as it copies. `terrace-contract helm init` fills the ones only the contract knows —
+`%%PREFIX%%`, `%%ENV_PREFIX%%`, `%%SEPARATOR%%`, `%%DOCUMENT_KEY%%` — and refuses a file that still
+holds any other: a placeholder nobody replaced would otherwise reach the chart as literal text and
+render as itself.
 
 ## Generated rather than copied
 
@@ -58,7 +62,7 @@ Everything that depends on what the image actually reads. On the contracted form
     contract-tests.yaml     the round-trip enrolment, with a prerequisite per required credential
     ci/test-values.yaml     the credentials the render guard demands, and nothing else
     tests/configmap_test.yaml   a first suite, for a person to extend
-    contracts/<name>.json   vendored by `refresh-contracts.py` from the image's registry
+    contracts/<name>.json   vendored by `terrace-contract helm init` from the image's registry
 
 On the plain form, `values.yaml` stops after the image block, `_helpers.tpl` defines nothing, and
 the fixture is empty. Each is deliberately *less* than the contracted equivalent rather than the
@@ -81,4 +85,4 @@ the chart or the scaffold is behind is the work — the recipe only makes the li
 
 What *is* gated is the result. A chart this scaffold produces is checked by `just check` like any
 other, so a chassis block that stops rendering fails on the next chart somebody creates — and
-`tests/test_contract_scaffold.py` renders both forms from a hand-built contract on every run.
+`terrace-contract`'s own tests render both forms from a hand-built contract on every run.

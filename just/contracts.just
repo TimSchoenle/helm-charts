@@ -40,8 +40,8 @@
 # `source` envelope recording which digest they came from. That record is what the offline
 # staleness interlock reads.
 #
-# `terrace-contract pull` does the work. `refresh-contracts.py` stays only because `new-chart.py`
-# and `adopt-config.py` import it to vendor a new chart's first contract.
+# `terrace-contract pull` does the work, and is the only path into `charts/*/contracts/`:
+# `just new-chart` vendors a new chart's first contract through the same fetch.
 #
 # Run by the Documentation job, whose existing commit step carries the result back to the branch.
 # Running it locally is a convenience; `just check-contracts` reports the gap without a network.
@@ -162,17 +162,26 @@ check-contract-coverage:
 # It reads as a comment inside a comment because that is exactly what it is: inside the `@schema`
 # delimiters the text is the schema, parsed as YAML, so a YAML comment there is discarded by the
 # only parser that reads it. That is the one position in the file both generators ignore, and it
-# was found by measuring ten of them — see `config_bindings.py`.
+# was found by measuring ten of them.
 #
-# This recipe is the gate over them. The grammar, the five rules, the placement constraint the
-# two generated artefacts impose and every deliberate omission are in `config_bindings.py`'s and
-# `check-config-bindings.py`'s docstrings, which is where they belong rather than repeated here.
+# This recipe is the gate over them. The grammar, the rules, the placement constraint the two
+# generated artefacts impose and every deliberate omission are documented with `terrace-contract
+# bindings`, in its `markers` and `bindings` modules, which is where they belong rather than
+# repeated here.
 #
 # **Nothing writes a marker onto a value that already exists.** Such a marker is a claim about
 # somebody else's value, and a generator guessing which key that value feeds guesses wrong in a
 # way that reads exactly like a right answer. A marker written *with* the value it belongs to,
 # from one key, is a different artefact — that is `just new-chart` and `just adopt-config`, and
 # each says so where it is defined.
+#
+# **It also checks that every marked key is rendered.** A marker can pass every contract rule
+# while no template emits anything for it: the value exists, is typed and bound, and the define
+# nobody edited still renders what it rendered before. `tankovault`'s
+# `scheduler`/`statementTimeouts` addition (commit `ee094b4`) is the measured case. So a marker
+# whose key's leaf name appears in no `templates/*.tpl` file fails here too. Deliberately crude —
+# a text search, not a template parser — because it proves presence, not correctness; what it
+# catches is the one failure with no other net under it: nobody wired the key anywhere.
 #
 # Enrolment is opt-in and declared, by `bindings: true` in `config-contract.yaml`, so a gate that
 # failed unenrolled charts is not red for work nobody has scheduled — and does not end up
@@ -184,7 +193,7 @@ check-contract-coverage:
 # four of this format's rules come from — an unscoped marker binding every document that
 # declares the key, several markers on one value, a chart-level `unbound` taking a list of keys,
 # and a lone `composed` being legitimate — because its nine documents falsified the first draft of
-# each. `check-config-bindings.py` records which measurement forced which.
+# each.
 #
 # **In `just check`, unlike most of this group.** The recipes kept out of the aggregate are kept
 # out for one of two reasons: they need a network (`contracts`), or they print rather than assert
@@ -205,36 +214,6 @@ check-config-bindings *only:
     {{ resolve_contract }}
     "$contract" bindings --charts {{ charts }} --format github {{ only }}
 
-# Confirm every `# @config` marker's key is actually rendered by some template.
-#
-# `check-config-bindings` above holds a marker against the *contract*: does the key exist, does
-# the class match, is the scope right. None of that opens a single `.tpl` file, so a marker can
-# pass every one of those checks while the chart renders nothing for it — the value exists, is
-# typed and bound, and the define nobody edited still emits exactly what it emitted before.
-# `tankovault`'s `scheduler`/`statementTimeouts` addition (commit `ee094b4`) is the measured case:
-# markers, schema and round-trip tests all present, `[scheduler]`/`[statement_timeouts]` reaching
-# no rendered document, silently, until the generated suite happened to be run.
-#
-# Deliberately crude — a text search for the key's leaf name under `templates/*.tpl`, nothing that
-# parses Go templates or TOML — matching this repository's own conclusion in `config_bindings.py`
-# that nothing round-trips template-plus-comments, so a line-based reader is the only
-# implementation that does not silently disagree with itself. It proves presence, not
-# correctness: whether a hit is wired to the right value, the right service, the right
-# falsy-vs-null guard is still `adopt-config.py`'s job for a brand-new root and a person's job for
-# everything else. What this catches is the one failure with no other net under it at all —
-# nobody wired the key anywhere — across every marker, including the ones no generator will ever
-# write.
-#
-# Offline, and reads only committed files, like `check-config-bindings` beside it. Same
-# enrolled-charts-only posture: a chart declares `bindings: true` or it is not checked.
-[doc("Confirm every `# @config` marker's key is rendered by some template, not just bound")]
-[group('contracts')]
-check-config-wired:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    {{ resolve_python }}
-    "$python" {{ scripts }}/check-config-wired.py --charts {{ charts }}
-
 # Write the chart values a contract's unbound keys are owed, from the contract itself.
 #
 # The writer for the failure the gate above reports. `check-config-bindings` says, per key, that
@@ -248,7 +227,7 @@ check-config-wired:
 # each `reserved` key and each credential, and the `value:` column of the credential's row. Those
 # two write-offs are the only ones whose *reason* the contract states rather than a person
 # deciding it, which is the whole licence for writing them and is why an ordinary key never
-# reaches that file: it gets a value instead. `adopt-config.py` argues the boundary.
+# reaches that file: it gets a value instead. `terrace-contract adopt` argues the boundary.
 #
 # What it will not write is the `derivedConfig` and `secretData` lines: a chart's template is
 # hand-written, and an edit made blind to its `with` blocks and its `if` gates is one nobody can
@@ -256,19 +235,22 @@ check-config-wired:
 # value exists, is typed, documented and bound or written off, and reaches nothing until somebody
 # wires the projection.
 #
-# **It never touches a value that already exists.** That is the boundary `config_bindings.py`
-# draws in bold and it holds: on an existing value a generated marker is a guess about which key
+# **It never touches a value that already exists.** That is the boundary the marker format draws in
+# bold and it holds: on an existing value a generated marker is a guess about which key
 # that value feeds, and a wrong guess reads exactly like a right one. Here the value does not
 # exist — the key is the fact, and the value and its marker are emitted together from it, so the
 # marker *is* the mapping. A key whose chart value is already there is refused, with the marker
 # line to write by hand.
 #
-# Prints by default and writes under `--write`, as `just add-tunable` does. Deliberately NOT in
-# `just check`: it is a generator, and an aggregate whose whole output is a pass or a fail is not
-# where one belongs. Offline, like everything in this group but the refresh.
+# Prints the plan by default and writes under `--write`, as `just add-tunable` does; `--diff`
+# prints the unified diff `--write` would apply, and `--check` exits 1 while anything is owed.
+# Deliberately NOT in `just check`: it is a generator, and an aggregate whose whole output is a
+# pass or a fail is not where one belongs — `check-config-bindings` is the gate that reports what
+# this would write. Offline, like everything in this group but the refresh.
 #
 #   just adopt-config                             every enrolled chart, planned and printed
 #   just adopt-config netcup-offer-bot            one chart
+#   just adopt-config netcup-offer-bot --diff     the patch it would apply
 #   just adopt-config netcup-offer-bot --write    insert the blocks
 #   just adopt-config tankovault --key metrics.enabled --write    one key of one chart
 [doc("Write the values a chart's unbound contract keys are owed, from the contract")]
@@ -276,8 +258,8 @@ check-config-wired:
 adopt-config chart='' *flags:
     #!/usr/bin/env bash
     set -euo pipefail
-    {{ resolve_python }}
-    "$python" {{ scripts }}/adopt-config.py '{{ chart }}' --charts {{ charts }} {{ flags }}
+    {{ resolve_contract }}
+    "$contract" adopt {{ chart }} --charts {{ charts }} {{ flags }}
 
 # Refresh a chart's contracts from the image it pins, then write the values the new keys are owed.
 #
@@ -326,15 +308,9 @@ adopt-config chart='' *flags:
 # `just config-readme`, because the `credentials` row this command now writes is a column of the
 # generated credential table and `just check-config-readme` is blocking.
 #
-# `just update-contract-bindings-snapshot`, last, because a new `# @config` marker also moves the
-# (chart, keys, external) tuples `test_every_enrolled_chart_passes_the_gate` pins in
-# `snapshots/contract_bindings_gate.json` — the one binding test that walks the real chart tree
-# instead of a fixture. Left stale it is the same failure as the other four: not wrong, just a
-# generated file a later, unrelated pull request is left to explain.
-#
-# The five above were each the sole thing left red on a run where every other generated file had
+# The four above were each the sole thing left red on a run where every other generated file had
 # already been brought up to date. Which is the pattern worth naming: a values block invalidates
-# five committed artefacts, and finding them one CI run at a time is what this chain replaces.
+# four committed artefacts, and finding them one CI run at a time is what this chain replaces.
 #
 # **What it cannot write is a removal.** A key the contract dropped, or a property it dropped from
 # a key's element, is still read by the chart's templates and still set by its hand-written tests
@@ -439,27 +415,16 @@ sync-config chart='' *flags: (contracts chart)
         # run.
         echo
         just check-config-bindings || status=1
-        just check-config-wired || status=1
         just check-values-docs >/dev/null || {
           status=1
           echo "error: a value carries no description; run 'just check-values-docs'" >&2
         }
-
-        # Last, because it reads the same gate `check-config-bindings` just ran and refuses to
-        # write if that gate is failing. Adopting a value is exactly the change that moves the
-        # (chart, keys, external) tuples `test_every_enrolled_chart_passes_the_gate` pins in
-        # `snapshots/contract_bindings_gate.json` — a new `# @config` marker changes how many
-        # bindings the real chart tree resolves to. Recalculating it here turns that drift into a
-        # reviewable diff in this commit instead of a red `test-contract-scripts` on whatever pull
-        # request runs it next.
-        echo
-        just update-contract-bindings-snapshot || status=1
         ;;
       *)
         echo
         echo "==> with --write this would also regenerate values.schema.json, the round-trip"
-        echo "    suites, the rendered snapshots and the bindings gate snapshot, and re-run the"
-        echo "    offline gates."
+        echo "    suites, the rendered snapshots and the credential table, and re-run the offline"
+        echo "    gates."
         ;;
     esac
 
@@ -544,36 +509,6 @@ check-config-shapes *only:
     set -euo pipefail
     {{ resolve_contract }}
     "$contract" shapes --charts {{ charts }} --check --format github {{ only }}
-
-# Unit tests for the scripts in `.github/scripts` that still read a contract.
-#
-# It used to be `test-contract-union`, and the union is not tested here any more: the contract
-# model, the classification order, the two-step value check and the three gates moved into
-# `terrace-contract`, and their tests moved with them. A rule and the test that holds it belong in
-# the same repository, or one of them is checking a copy.
-#
-# What is left is this repository's own vocabulary — the `@config` markers, the derived `@schema`
-# blocks, the credential inventory, the generated suites, the diff and the writers — every one of
-# which is a chart convention rather than a fact about the format.
-[doc("Unit tests for the scripts that still read a contract")]
-[group('contracts')]
-test-contract-scripts:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    {{ resolve_python }}
-    "$python" -m unittest discover -s {{ scripts }}/tests -p 'test_contract_*.py' -v
-
-# `test_every_enrolled_chart_passes_the_gate` walks the real chart tree rather than a fixture, so
-# it is the one binding test that legitimately drifts whenever a chart's `@config` markers gain or
-# lose a key or a document. Regenerating it here, in one command, keeps that drift a reviewable
-# diff instead of a hand-computed number typed into the test.
-[doc("Regenerate the real-chart-tree snapshot the bindings gate test checks against")]
-[group('contracts')]
-update-contract-bindings-snapshot:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    {{ resolve_python }}
-    "$python" {{ scripts }}/tests/update_contract_bindings_snapshot.py
 
 # --------------------------------------------------------------------------------------------
 # Reading a contract, rather than checking against one
@@ -684,13 +619,7 @@ contract-migrations chart='' ref='origin/main':
     #!/usr/bin/env bash
     set -euo pipefail
     {{ resolve_contract }}
-    {{ resolve_python }}
-    # Through a file rather than a pipe, so a failure of the first command is its own exit status
-    # and not a JSON error from the second.
-    report="$(mktemp)"
-    trap 'rm -f "$report"' EXIT
-    "$contract" diff {{ chart }} --since '{{ ref }}' --charts {{ charts }} --json >"$report"
-    "$python" {{ scripts }}/contract-migrations.py "$report" --since '{{ ref }}' --charts {{ charts }}
+    "$contract" migrate {{ chart }} --since '{{ ref }}' --charts {{ charts }}
 
 # --------------------------------------------------------------------------------------------
 # The credential surface
@@ -942,12 +871,17 @@ check-config-readme *only:
 # written by reading a 400 KB JSON document by hand, so a key gets missed, and a key nothing
 # surfaces is exactly the defect `check-config-bindings` exists to catch after the fact.
 #
-# **The second networked recipe in this repository, and it uses the first one to do it.** The
-# vendoring is `refresh-contracts.py` itself, called as a module rather than reimplemented, so a
-# contract this writes has been through the same signature verification, the same label agreement
-# check and the same `source` envelope as every contract `just contracts` has ever written. There
-# is no second path into `charts/*/contracts/` — one that arrived some other way would be trusted
-# by every gate downstream.
+# **Two halves, and two owners.** The chassis is this repository's: the recipe copies
+# `.github/templates/chart`, substituting the placeholders the chart's name and pin decide. The
+# configuration half is the contract's: `terrace-contract helm init` writes it, and fills the
+# placeholders only the contract knows. See `.github/templates/chart/README.md` for the split.
+#
+# **The second networked recipe in this repository, and it uses the first one's fetch.** `helm
+# init` vendors the contract through the same code `terrace-contract pull` runs, so a contract this
+# writes has been through the same signature verification, the same label agreement check and the
+# same `source` envelope as every contract `just contracts` has ever written. There is no second
+# path into `charts/*/contracts/` — one that arrived some other way would be trusted by every gate
+# downstream.
 #
 # Deliberately NOT in `just check`, for the reason `contracts` is not: `check` is the network-free
 # set. It is also not something an aggregate could run, since it creates a directory.
@@ -986,18 +920,95 @@ new-chart name repository version description='' reason='' *flags:
     {{ resolve_python }}
     {{ resolve_contract }}
 
-    # `description` and `reason` are recipe parameters rather than flags because `*flags` is
-    # interpolated into the command line unquoted, so `just` hands the shell a bare string and
-    # the shell word-splits it. A one-word reason survives that; a sentence does not, and one
-    # containing a `;` terminates the command. Both are prose by definition, so both get a
-    # parameter this recipe can quote.
-    args=(--charts {{ charts }} --templates .github/templates/chart)
-    if [ -n '{{ description }}' ]; then args+=(--description '{{ description }}'); fi
-    if [ -n '{{ reason }}' ]; then args+=(--reason '{{ reason }}'); fi
+    templates=.github/templates/chart
+    chart='{{ charts }}/{{ name }}'
+    form=contract
+    for flag in {{ flags }}; do
+      if [ "$flag" = --no-contract ]; then form=plain; fi
+    done
 
-    # The first-party list and the signer come from `terrace.yaml`, resolved by the CLI so the
-    # scaffold and `check-contract-coverage` read one answer rather than two. Captured first so a
-    # bad `terrace.yaml` fails here, under `set -e`, rather than as unreadable input to the script.
-    settings="$("$contract" config show --json)"
-    "$python" {{ scripts }}/new-chart.py '{{ name }}' '{{ repository }}' '{{ version }}' \
-      --settings - "${args[@]}" {{ flags }} <<<"$settings"
+    # A directory already there is somebody's chart. `helm init` refuses only the files it would
+    # write differently, so this half refuses the directory itself, before copying anything over it.
+    if [ -e "$chart" ]; then
+      echo "error: $chart already exists; pick another name or remove it" >&2
+      exit 1
+    fi
+
+    common="$(sed -n 's/^version:[[:space:]]*//p' '{{ charts }}/common/Chart.yaml' | tr -d "\"' ")"
+    if [ -z "$common" ]; then
+      echo "error: {{ charts }}/common/Chart.yaml: cannot read the library's version" >&2
+      exit 1
+    fi
+
+    # `description` and `reason` are recipe parameters rather than flags because `*flags` is
+    # interpolated into the command line unquoted, so the shell word-splits it. A one-word reason
+    # survives that; a sentence does not, and one containing a `;` terminates the command. Both are
+    # prose by definition, so both get a parameter this recipe can quote.
+    description={{ quote(description) }}
+    if [ -z "$description" ]; then
+      description="TODO: what {{ name }} deploys, in one sentence. Written by hand — helm-docs publishes this."
+    fi
+    # `Chart.yaml` holds it in double quotes, so a `"` or a `\` in it is escaped for YAML first.
+    description="${description//\\/\\\\}"
+    description="${description//\"/\\\"}"
+    # The image path without its registry host, which is how this repository names its images:
+    # `ghcr.io/timschoenle/foo` and `timschoenle/foo` both point at github.com/timschoenle/foo.
+    # A first segment with a `.` or `:`, or `localhost`, is a host, as for image normalization.
+    path={{ quote(repository) }}
+    case "${path%%/*}" in
+      *.* | *:* | localhost) path="${path#*/}" ;;
+    esac
+    source="https://github.com/$path"
+
+    # The replacement side of a sed `s|...|...|`, escaped.
+    escape() { printf '%s' "$1" | sed -e 's/[\\|&]/\\&/g'; }
+
+    # The repository's half: the shared files, then the form's own, with the five placeholders a
+    # chart's name and pin decide. `%%PREFIX%%`, `%%ENV_PREFIX%%`, `%%SEPARATOR%%` and
+    # `%%DOCUMENT_KEY%%` are the contract's, and are left for `helm init` to fill.
+    copy() {
+      local from="$1"
+      (cd "$from" && find . -type f ! -name values.chassis.yaml ! -name README.md \
+         ! -path './contract/*' ! -path './plain/*' -print) |
+      while IFS= read -r file; do
+        mkdir -p "$chart/$(dirname "$file")"
+        sed -e "s|%%CHART%%|$(escape '{{ name }}')|g" \
+            -e "s|%%DESCRIPTION%%|$(escape "$description")|g" \
+            -e "s|%%APP_VERSION%%|$(escape '{{ version }}')|g" \
+            -e "s|%%SOURCE%%|$(escape "$source")|g" \
+            -e "s|%%COMMON_VERSION%%|$(escape "$common")|g" \
+            "$from/$file" > "$chart/$file"
+      done
+    }
+    # Anything that fails from here on removes the chart, so a failed run leaves no directory.
+    finished=0
+    trap 'if [ "$finished" != 1 ]; then rm -rf "$chart"; echo "       removed the partial chart at $chart" >&2; fi' EXIT
+    mkdir -p "$chart"
+    copy "$templates"
+    copy "$templates/$form"
+
+    # The contract's half. It plans every file before writing one, so a refusal leaves nothing of
+    # its own behind, and the trap above removes the copy with it.
+    args=(--charts '{{ charts }}' --image '{{ repository }}:{{ version }}' --chassis "$templates/values.chassis.yaml")
+    reason={{ quote(reason) }}
+    if [ -n "$reason" ]; then args+=(--reason "$reason"); fi
+    "$contract" helm init '{{ name }}' "${args[@]}" {{ flags }} --write
+
+    # The one gate that reads nothing but values.yaml, so the only one that can run before
+    # `just deps` has resolved the library. The closing below says the chart passes `just check`.
+    if ! documented="$("$python" {{ scripts }}/check-values-docs.py --charts '{{ charts }}' 2>&1)"; then
+      grep -v '^documented: ' <<<"$documented" >&2
+      exit 1
+    fi
+    finished=1
+
+    # The steps that are this repository's rather than the contract's.
+    cat <<EOF
+
+    ==> and what this repository's half leaves:
+        - Write the description in $chart/Chart.yaml and the prose in
+          README.md.gotmpl. Both are placeholders, and helm-docs publishes them.
+        - just deps && just docs        # resolve the library, generate the schema and README
+        - just check                    # every offline gate, this chart included
+
+    EOF

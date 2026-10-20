@@ -58,8 +58,9 @@ Everything that depends on what the image actually reads. On the contracted form
                             documentation from `docs`, its default from `default_value`, and the
                             `# @config` marker naming the key it feeds
     templates/_helpers.tpl  `derivedConfig`, `secretData`, `secretKeys`, `validateValues`
-    config-contract.yaml    the document, its source selector, its image and its consumers
-    contract-tests.yaml     the round-trip enrolment, with a prerequisite per required credential
+    config-contract.yaml    the document and only what differs from the declaration defaults,
+                            enrolled in the marker check and the round-trip suites, with a
+                            prerequisite per required credential
     ci/test-values.yaml     the credentials the render guard demands, and nothing else
     tests/configmap_test.yaml   a first suite, for a person to extend
     contracts/<name>.json   vendored by `terrace-contract helm init` from the image's registry

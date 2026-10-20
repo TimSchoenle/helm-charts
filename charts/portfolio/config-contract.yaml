@@ -1,13 +1,13 @@
 # vim: set ft=yaml:
+# yaml-language-server: $schema=https://raw.githubusercontent.com/TimSchoenle/terrace-config/main/spec/helm/v1/declaration.schema.json
 
-# What this chart's rendered configuration must satisfy, and which images decide that.
+# What this chart's rendered configuration must satisfy, which images decide that, and the gates
+# the chart is enrolled in. A key left out takes its default (spec/helm/v1/DEFAULTS.md in
+# terrace-config): the ConfigMap labelled with the release, its `config.toml`, the one image at
+# `image` with its contract under the document's name, and the workloads that mount it.
+# This prints the file with every default written out:
 #
-# Per-chart and self-describing, so adding a chart never edits a central file — the same
-# principle `just chart-index` already follows. `just check-config` reads this, unions the
-# contracts of every image listed, and validates the rendered ConfigMap, the container
-# environment and the mounted secret file names against the result. A chart with no such file is
-# skipped; `documents: []` plus a `reason` is the only permitted opt-out, and
-# `just check-contract-coverage` is what stops it from being escaped by forgetting.
+#   terrace-contract config show --chart portfolio
 
 # What this chart adds to the credential reference in its README, which `just config-readme`
 # generates from the contract. The rows are the contract's — every key it marks `secret: true`,
@@ -28,6 +28,12 @@ credentials:
 # report without a word. With the switch here, markers without it and it without markers are both
 # errors.
 bindings: true
+
+# Enrols this chart in the generated round-trip suites (`just contract-tests`). They prove what
+# `just check-config` cannot: that a setting written into `config` arrives in the rendered document
+# at the path the image reads it from. Each document's `tests` block states what every generated
+# case has to carry before this chart will render.
+tests: true
 
 # Contract keys no chart value binds, each group with the reason it does not.
 #
@@ -56,39 +62,52 @@ unbound:
 documents:
   - name: server
 
-    # Where the rendered document is, in the output of `helm template`.
-    #
-    # Matched by label rather than by name, and by `app.kubernetes.io/instance` specifically.
-    # That label is `.Release.Name`, which is the one identifier neither `nameOverride` nor
-    # `fullnameOverride` can move: `app.kubernetes.io/name` follows the first and every object's
-    # name follows the second, so a selector written against either would silently match nothing
-    # under a values file that sets it. `just render` names the release after the chart, so the
-    # value below is what every rendered pair carries. A selector matching zero or several
-    # objects is reported rather than resolved, so a selector that does go stale fails loudly
-    # instead of turning into a skipped check.
-    source:
-      kind: ConfigMap
-      selector: { app.kubernetes.io/instance: portfolio }
-      key: config.toml
-      format: toml
+    # No exemptions. `configExtraToml` is the one value that could need one: it is appended
+    # verbatim and never parsed, so keys it introduces are invisible to the renderer that would
+    # have to declare them. No `ci/` values file sets it; a fixture that does needs
+    # `exempt: [{values: <file>, gates: [closed], reason: ...}]`.
+    tests:
+      # The values every generated case carries, minus whichever of them the case is itself
+      # probing. Expressed as flat dotted paths under `config`, so a collision between a baseline
+      # entry and the key a case probes is a string comparison a reader can check by eye.
+      baseline:
+        config.csp.cloudflare.script_nonce: false
 
-    # Every binary that reads this document. Their contracts are unioned; one image here, so the
-    # union is the identity — as it is for every document in this repository, `tankovault`
-    # included, since that chart declares one document per service rather than one shared by all
-    # nine.
-    images:
-      - values: image
-        contract: contracts/server.json
+      # The chart values every generated case carries, with no exception, because without them the
+      # chart refuses to render at all.
+      prerequisites:
+        values:
+          existingSecret: portfolio-contract-probe
+          legal.documents.imprint.title.en: Imprint
+          legal.documents.imprint.body.en: "# Imprint\n"
+          legal.documents.privacy.title.en: Privacy Policy
+          legal.documents.privacy.body.en: "# Privacy Policy\n"
 
-    # The pods that mount it, for the environment and secret-file gates.
-    consumers:
-      - workload: { kind: Deployment, selector: { app.kubernetes.io/instance: portfolio } }
-        containers: [portfolio]
+        reason: >-
+          Twelve of this document's keys are `sentry.*`, and every one of them carries a
+          `when sentry.enabled` clause — so a case probing one switches Sentry on, and
+          `portfolio.validateValues` then refuses the render unless a DSN is available: an enabled
+          client with nowhere to report is a CrashLoopBackOff rather than a degraded feature.
+          Naming an `existingSecret` satisfies that guard without putting a credential-shaped
+          string in a committed test file, which is the same reason no probe is ever synthesised
+          for a `secret: true` key. It changes nothing the cases assert against — the DSN travels
+          as a file in the secrets directory and is never written into `config.toml` — and the
+          Secret it names does not have to exist for a template render.
 
-    # Pairs this document is not fully checked for, each with a reason.
-    #
-    # None. `configExtraToml` is the one value that could need one — it is appended verbatim and
-    # never parsed, so keys it introduces are invisible to the renderer that would have to
-    # declare them — but no `ci/` values file sets it. A fixture that does would need
-    # `gates: [closed]` here.
-    exempt: []
+          `legal.documents` is required by `values.schema.json` to carry an `imprint` and a
+          `privacy` entry — the image refuses to start without both, and the schema now states
+          that rather than leaving it to a runtime crash. Every case renders the chart, so every
+          case needs both, with real enough content (`title` and `body`) that a document is not
+          merely present but plausibly published; neither key is under `config`, so nothing here
+          can collide with a probe.
+
+      reason: >-
+        `portfolio.validateValues` fails the render when `csp.hash_inline_scripts` is false while
+        `csp.cloudflare.script_nonce` is true — dropping the hashes restores `'unsafe-inline'`,
+        which a browser ignores as soon as the policy carries a nonce, so every document would
+        render blank. Both keys are optional booleans defaulting to true, so the probe for the
+        first is `false` and would walk straight into the pair. Turning the nonce off across the
+        suite is the combination the chart's own tests already call legitimate: a deployment with
+        no Cloudflare bot product in front of it. The entry is dropped from the case probing
+        `csp.cloudflare.script_nonce` itself, which is what keeps that case proving the chart
+        delivered the value rather than the baseline having supplied it.

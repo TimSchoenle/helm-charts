@@ -139,8 +139,8 @@ def main(argv: list[str]) -> int:
         print(f"error: {charts}: no such directory", file=sys.stderr)
         return 1
 
-    # Walked here rather than through `config_declaration.chart_dirs`, because this reads no
-    # declaration and a chart without one is exactly as interesting to it as a chart with one.
+    # Every chart directory, not only the ones with a declaration: this reads no declaration, and a
+    # chart without one is exactly as interesting to it as a chart with one.
     directories = [charts / args.chart] if args.chart else sorted(charts.iterdir())
 
     drifted = 0

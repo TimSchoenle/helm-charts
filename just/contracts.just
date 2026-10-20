@@ -944,15 +944,21 @@ new-chart name repository version description='' reason='' *flags:
     # interpolated into the command line unquoted, so the shell word-splits it. A one-word reason
     # survives that; a sentence does not, and one containing a `;` terminates the command. Both are
     # prose by definition, so both get a parameter this recipe can quote.
-    description='{{ description }}'
+    description={{ quote(description) }}
     if [ -z "$description" ]; then
       description="TODO: what {{ name }} deploys, in one sentence. Written by hand — helm-docs publishes this."
     fi
     # `Chart.yaml` holds it in double quotes, so a `"` or a `\` in it is escaped for YAML first.
     description="${description//\\/\\\\}"
     description="${description//\"/\\\"}"
-    repository='{{ repository }}'
-    source="https://github.com/${repository##*/}"
+    # The image path without its registry host, which is how this repository names its images:
+    # `ghcr.io/timschoenle/foo` and `timschoenle/foo` both point at github.com/timschoenle/foo.
+    # A first segment with a `.` or `:`, or `localhost`, is a host, as for image normalization.
+    path={{ quote(repository) }}
+    case "${path%%/*}" in
+      *.* | *:* | localhost) path="${path#*/}" ;;
+    esac
+    source="https://github.com/$path"
 
     # The replacement side of a sed `s|...|...|`, escaped.
     escape() { printf '%s' "$1" | sed -e 's/[\\|&]/\\&/g'; }
@@ -984,7 +990,8 @@ new-chart name repository version description='' reason='' *flags:
     # The contract's half. It plans every file before writing one, so a refusal leaves nothing of
     # its own behind, and the trap above removes the copy with it.
     args=(--charts '{{ charts }}' --image '{{ repository }}:{{ version }}' --chassis "$templates/values.chassis.yaml")
-    if [ -n '{{ reason }}' ]; then args+=(--reason '{{ reason }}'); fi
+    reason={{ quote(reason) }}
+    if [ -n "$reason" ]; then args+=(--reason "$reason"); fi
     "$contract" helm init '{{ name }}' "${args[@]}" {{ flags }} --write
 
     # The one gate that reads nothing but values.yaml, so the only one that can run before

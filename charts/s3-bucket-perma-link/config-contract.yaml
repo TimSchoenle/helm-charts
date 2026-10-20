@@ -1,11 +1,13 @@
 # vim: set ft=yaml:
+# yaml-language-server: $schema=https://raw.githubusercontent.com/TimSchoenle/terrace-config/main/spec/helm/v1/declaration.schema.json
 
-# What this chart's rendered configuration must satisfy, and which images decide that.
+# What this chart's rendered configuration must satisfy, which images decide that, and the gates
+# the chart is enrolled in. A key left out takes its default (spec/helm/v1/DEFAULTS.md in
+# terrace-config): the ConfigMap labelled with the release, its `config.toml`, the one image at
+# `image` with its contract under the document's name, and the workloads that mount it.
+# This prints the file with every default written out:
 #
-# Per-chart and self-describing, so adding a chart never edits a central file — the same
-# principle `just chart-index` already follows. `just check-config` reads this, unions the
-# contracts of every image listed, and validates the rendered ConfigMap, the container
-# environment and the mounted secret file names against the result.
+#   terrace-contract config show --chart s3-bucket-perma-link
 
 # What this chart adds to the credential reference in its README, which `just config-readme`
 # generates from the contract. The rows are the contract's — every key it marks `secret: true`,
@@ -33,6 +35,12 @@ credentials:
 # errors.
 bindings: true
 
+# Enrols this chart in the generated round-trip suites (`just contract-tests`). They prove what
+# `just check-config` cannot: that a setting written into `config` arrives in the rendered document
+# at the path the image reads it from. Each document's `tests` block states what every generated
+# case has to carry before this chart will render.
+tests: true
+
 # Contract keys no chart value binds, each group with the reason it does not.
 #
 # Chart-level: a key nothing surfaces is unsurfaced in every document that declares it, and this
@@ -53,30 +61,44 @@ unbound:
 
 documents:
   - name: server
+    tests:
+      # The chart values every generated case carries, the identity case among them: this chart's
+      # `validateValues` fails the template before a ConfigMap exists for any case to assert
+      # against, so there is no case here that can do without them.
+      #
+      # Flat dotted paths, exactly as the helm-unittest `set` block they become spells them, and a
+      # leaf is free to be a structure. This chart is why: `bucket.entries` is a map of maps keyed
+      # by the request path each link is served at, and spelling one entry as three dotted paths
+      # would put the request path — a `/`-bearing key — inside the dotted path itself. Nothing
+      # here may name a path under `config`: a prerequisite is never dropped for the case it
+      # collides with, the way a baseline is, so one written into the tree the cases probe could
+      # supply the very value a case exists to prove the chart delivered. The generator refuses one
+      # outright.
+      prerequisites:
+        values:
+          bucket.entries:
+            render-prerequisite:
+              bucket: render-prerequisite
+              object: render-prerequisite
+          existingSecret: s3-perma-link-contract-probe
 
-    # Where the rendered document is, in the output of `helm template`.
-    #
-    # Matched by label rather than by rendered name, and by `app.kubernetes.io/instance`: that
-    # label is `.Release.Name`, the one identifier neither `nameOverride` nor `fullnameOverride`
-    # can move — `app.kubernetes.io/name` follows the first and every object's name follows the
-    # second. `just render` names the release after the chart, so the value below is what every
-    # rendered pair carries. A selector matching zero or several objects is reported rather than
-    # resolved, so a stale one fails loudly instead of becoming a skipped check.
-    source:
-      kind: ConfigMap
-      selector: { app.kubernetes.io/instance: s3-bucket-perma-link }
-      key: config.toml
-      format: toml
+        reason: >-
+          `s3-bucket-perma-link.validateValues` refuses a render with no `bucket.entries` — a
+          server with no entry serves nothing — and refuses an entry missing either its `bucket` or
+          its `object`, so the smallest thing that renders is one complete entry rather than an
+          empty map. The guard runs from `configmap.yaml`, so without it there is no document for
+          any case to assert against. Supplied as the chart's own first-class value although the
+          guard reads the effective tree and would accept it through `config` too: `config` is
+          where every probe is written, and a prerequisite there is refused for that reason.
+          `bucket.entries` is `structured` in the contract and carries no case of its own — the
+          keys beneath it are the operator's own names — so nothing this suite proves is being
+          covered up by the entry above. The chart merges `.Values.config` over everything it
+          derives from its values, so a probe still wins wherever the two would meet.
 
-    # Every binary that reads this document. One image here, so the union is the identity.
-    images:
-      - values: image
-        contract: contracts/server.json
-
-    # The pods that mount it, for the environment and secret-file gates.
-    consumers:
-      - workload: { kind: Deployment, selector: { app.kubernetes.io/instance: s3-bucket-perma-link } }
-        containers: [s3-bucket-perma-link]
-
-    # Pairs this document is not fully checked for, each with a reason.
-    exempt: []
+          `existingSecret` is the second entry, and it answers a different guard. Every
+          `telemetry.sentry.*` key carries a `when telemetry.sentry.enabled` clause, so a case
+          probing one switches Sentry on and the chart then refuses the render unless a DSN is
+          available. Naming a Secret satisfies that without a credential-shaped string in a
+          committed file, and changes nothing the cases assert against: the DSN travels as a file
+          in the secrets directory and never reaches `config.toml`. The Secret does not have to
+          exist for a template render.

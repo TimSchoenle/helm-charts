@@ -710,12 +710,11 @@ check-config-secrets out='rendered' *args:
 
 # Generate the helm-unittest suites that prove each chart delivers what its contract declares.
 #
-# A chart is enrolled by carrying `charts/<chart>/contract-tests.yaml`, exactly as
-# `config-contract.yaml` is what enrols it in `just check-config` — so the rollout is a property
-# of the tree rather than a list somebody has to remember to edit, and a chart states there which
-# values every generated case has to carry before it will render at all.
+# A chart is enrolled by `tests: true` in its `config-contract.yaml` — so the rollout is a property
+# of the tree rather than a list somebody has to remember to edit — and each document's `tests`
+# block states which values every generated case has to carry before the chart will render at all.
 #
-# Every chart with a contract is enrolled — all seven, 22 suites between them. The rollout ran
+# Every chart with a contract is enrolled — all seven, 15 suites between them. The rollout ran
 # one chart at a time because the probe written into a chart's values is chosen from the contract
 # rather than by a person, and what that is worth against a real image is answered by running it
 # and not by reviewing it. What each chart needed was measured the same way, by enrolling it and

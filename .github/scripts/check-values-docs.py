@@ -36,12 +36,13 @@ descending at the description. A rule that demanded one would produce `# -- The 
 Why this parser reads text rather than YAML
 --------------------------------------------------------------------------------------------
 
-The same reason `config_bindings` does: PyYAML discards comments, and the description *is* a
-comment. `yaml.safe_load` returns a mapping in which no `# --` has ever existed.
+The same reason the `# @config` marker reader in `terrace-contract` does: PyYAML discards
+comments, and the description *is* a comment. `yaml.safe_load` returns a mapping in which no `# --`
+has ever existed.
 
 The description has to be the last comment run directly above the key, with no blank line between
-it and the key — the placement helm-docs and helm-schema both require, measured and recorded in
-`config_bindings`' header. This reader therefore walks back from the key over contiguous comment
+it and the key — the placement helm-docs and helm-schema both require, measured and recorded with
+that marker reader. This reader therefore walks back from the key over contiguous comment
 lines and stops at anything else, blank lines included, so a description that has drifted away
 from its value reads as missing here rather than passing a check it would fail in the generators.
 

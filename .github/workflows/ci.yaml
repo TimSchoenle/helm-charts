@@ -780,7 +780,8 @@ jobs:
       #
       #   check      the rendered configuration against the contracts of the images each chart pins
       #   bindings   every `# @config` marker in values.yaml against the contract key it names, so a
-      #              key the image gained and no chart value reaches fails the bump that repinned it
+      #              key the image gained and no chart value reaches fails the bump that repinned it;
+      #              and every marked key against the templates, so one nothing renders fails too
       #   shapes     the `@schema` blocks derived from the contract; the Documentation job rewrites
       #              them, so the generated half is a safety net, and the hand-transcribed half for a
       #              key the producer has not described fails when the image moves past it
@@ -800,16 +801,6 @@ jobs:
           since: ''
           manifests: rendered
 
-      # Every `# @config` marker's key is rendered by some template, not only bound in values.
-      #
-      # In `just check` but never in CI, so a marker for a key no template writes passed every
-      # pull request. Offline and reads committed files only; it walks every enrolled chart rather
-      # than the scoped set because the recipe takes no chart names, and the walk is cheap.
-      - name: Check config markers are wired
-        run: just check-config-wired
-
-      - name: Contract script unit tests
-        run: just test-contract-scripts
 
 
   # What changed in the images' configuration contracts, and what it costs the charts.

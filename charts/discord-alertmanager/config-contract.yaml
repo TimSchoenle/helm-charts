@@ -1,11 +1,13 @@
 # vim: set ft=yaml:
+# yaml-language-server: $schema=https://raw.githubusercontent.com/TimSchoenle/terrace-config/main/spec/helm/v1/declaration.schema.json
 
-# What this chart's rendered configuration must satisfy, and which image decides that.
+# What this chart's rendered configuration must satisfy, which images decide that, and the gates
+# the chart is enrolled in. A key left out takes its default (spec/helm/v1/DEFAULTS.md in
+# terrace-config): the ConfigMap labelled with the release, its `config.toml`, the one image at
+# `image` with its contract under the document's name, and the workloads that mount it.
+# This prints the file with every default written out:
 #
-# Scaffolded by `just new-chart`. Per-chart and self-describing, so adding a chart never
-# edits a central file. `just check-config` reads this, unions the contracts of every
-# image listed, and validates the rendered ConfigMap, the container environment and the
-# mounted secret file names against the result.
+#   terrace-contract config show --chart discord-alertmanager
 
 # What this chart adds to the credential reference in its README, which `just config-readme`
 # generates from the contract. The rows are the contract's — every key it marks `secret: true`,
@@ -38,6 +40,12 @@ credentials:
 # Declared rather than inferred from the chart carrying markers: a chart that loses them
 # would otherwise drop out of that gate's report without a word.
 bindings: true
+
+# Enrols this chart in the generated round-trip suites (`just contract-tests`). They prove what
+# `just check-config` cannot: that a setting written into `config` arrives in the rendered document
+# at the path the image reads it from. Each document's `tests` block states what every generated
+# case has to carry before this chart will render.
+tests: true
 
 # Contract keys no chart value binds, each group with the reason it does not.
 #
@@ -107,30 +115,65 @@ unbound:
 
 documents:
   - name: discord-alertmanager
+    tests:
+      # The chart values every generated case carries, without which there is no rendered document
+      # for any case to assert against.
+      #
+      # Flat dotted paths, exactly as the helm-unittest `set` block they become spells them. Nothing
+      # here may name a path under `config`: a prerequisite is never dropped for the case it
+      # collides with, the way a baseline is, so one written into the tree the cases probe could
+      # supply the very value a case exists to prove the chart delivered. The generator refuses one
+      # outright.
+      prerequisites:
+        values:
+          discord.token: render-prerequisite-token
+          alertmanager.endpoints:
+            - http://render-prerequisite.invalid:9093
+          existingSecret: discord-alertmanager-contract-probe
 
-    # Where the rendered document is, in the output of `helm template`.
-    #
-    # Matched by label rather than by rendered name, and by `app.kubernetes.io/instance`:
-    # that label is `.Release.Name`, the one identifier neither `nameOverride` nor
-    # `fullnameOverride` can move. `just render` names the release after the chart, so
-    # the value below is what every rendered pair carries. A selector matching zero or
-    # several objects is reported rather than resolved.
-    source:
-      kind: ConfigMap
-      selector: { app.kubernetes.io/instance: discord-alertmanager }
-      key: config.toml
-      format: toml
+        reason: >-
+          `discord-alertmanager.validateValues` refuses a render that could only produce a
+          CrashLoopBackOff, and both of these are that case. `SerenitySink::from_token` and
+          `AlertmanagerClient::new` are constructed in `main` before the listener binds, and the
+          second returns `Config("no Alertmanager endpoint is configured")` for an empty list — so a
+          release missing either exits during startup rather than running degraded. The guard runs
+          from `configmap.yaml`, so without both there is no ConfigMap for any case to assert
+          against.
 
-    # Every binary that reads this document. One image here, so the union is the
-    # identity.
-    images:
-      - values: image
-        contract: contracts/discord-alertmanager.json
+          Neither is one this suite covers in any case. `discord.token` is a credential: it travels
+          the Secret under the file name `discord__token` and is never written into the
+          configuration document at all, so there is no document pair for a probe to check.
+          `alertmanager.endpoints` is `structured` in the contract and is refused a probe for that
+          reason, and is named in the generated file's skip list.
 
-    # The pods that mount it, for the environment and secret-file gates.
-    consumers:
-      - workload: { kind: Deployment, selector: { app.kubernetes.io/instance: discord-alertmanager } }
-        containers: [discord-alertmanager]
+          Supplied as the chart's own first-class values although the guard reads the effective tree
+          and would accept the endpoint list through `config` too: `config` is where every probe is
+          written, and a prerequisite there is refused. `.invalid` is reserved by RFC 2606 and can
+          never resolve, which keeps a value that looks like a deployment's real Alertmanager from
+          being mistaken for one. The chart merges `.Values.config` over everything it derives from
+          these values, so a probe still wins wherever the two would meet.
 
-    # Pairs this document is not fully checked for, each with a reason.
-    exempt: []
+          `existingSecret` is the third entry, and it answers a third guard. `storage.backend` is a
+          `choice` whose other member is `postgres`, so the case probing it selects that backend —
+          and the chart then refuses the render unless a connection URL is available, because the
+          pool is opened during startup. Naming a Secret satisfies that without a credential-shaped
+          string in a committed file, and changes nothing any case asserts: the URL travels as a
+          file in the secrets directory and never reaches `config.toml`. The Secret does not have
+          to exist for a template render.
+
+      # Keys whose probe stays in the raw configuration tree rather than going into the chart's own
+      # value for them.
+      unrouted:
+        - keys:
+            - storage.sqlite.path
+          reason: >-
+            `discord-alertmanager.validateValues` refuses a `storage.sqlite.path` that is not a file
+            under `persistence.data.mountPath`: the container runs with a read-only root filesystem,
+            so the database can only be created inside the mounted volume, and anywhere else the pod
+            starts, fails to open the file and crash-loops. The probe is a token naming the key it
+            tests, which no rule derived from the contract could place under a mount path the chart
+            decides — the contract types this `String` and says nothing about where the file has to
+            live. The case therefore writes through `config`, where the guard does not read, and
+            proves the raw tree reaches `storage.sqlite.path` in the document; that the chart's own
+            `storage.sqlite.path` value reaches it too is covered by `configmap_test.yaml`, which
+            can pick a path under `/data` because a person wrote it.

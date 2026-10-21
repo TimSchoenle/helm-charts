@@ -1,813 +1,66 @@
 {
-  "source": {
-    "image": "docker.io/timschoenle/portfolio",
-    "digest": "sha256:0041ed32c3cf0dc26e895d8d3add4f053337e8e8bad12df70c01f0311b16e6cb",
-    "sha256": "c15cc6eff39480fc4eddb6ca3e5ed28f4a7e82bd3295c0b12fd86a3a6d628906",
-    "fetched": "2026-10-04T18:34:15Z"
-  },
   "contract": {
-    "terrace_contract": 1,
-    "producer": {
-      "name": "terrace-config",
-      "version": "0.13.0",
-      "loader": "figment"
-    },
     "app": {
       "name": "portfolio",
-      "version": "v3.1.3",
-      "source": "https://github.com/TimSchoenle/Portfolio"
+      "source": "https://github.com/TimSchoenle/Portfolio",
+      "version": "v3.2.0"
     },
-    "schema": {
-      "schema_version": 2,
-      "dialect": {
-        "prefix": "PORTFOLIO_",
-        "nesting_separator": "__",
-        "indirection_suffix": "_FILE"
-      },
-      "loader": [
+    "external": {
+      "env": [
         {
-          "env": "PORTFOLIO_CONFIG",
-          "role": "config",
-          "docs": "Names the TOML layer: a file, or a directory whose `*.toml` files are all merged in name order.",
-          "default": "config.toml"
+          "constraint": {
+            "maximum": 65535,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "default": "8080",
+          "docs": "Bind port. Read by the Dioxus toolchain, not by this loader.",
+          "name": "PORT",
+          "owner": "dioxus",
+          "required": false,
+          "secret": false,
+          "text_constraint": {
+            "pattern": "^\\s*\\+?[0-9]+\\s*$",
+            "type": "string"
+          },
+          "text_form": "integer",
+          "ty": "u16",
+          "values": []
         },
         {
-          "env": "PORTFOLIO_SECRETS_DIR",
-          "role": "secrets_dir",
-          "docs": "Names a directory of key-named files — a mounted Kubernetes `Secret` volume. Each file supplies the key its name spells.",
-          "default": null
+          "constraint": {
+            "type": "string"
+          },
+          "default": "0.0.0.0",
+          "docs": "Bind address. Read by the Dioxus toolchain, not by this loader.",
+          "name": "IP",
+          "owner": "dioxus",
+          "required": false,
+          "secret": false,
+          "text_form": "unknown",
+          "ty": "IpAddr",
+          "values": []
+        },
+        {
+          "constraint": {
+            "type": "string"
+          },
+          "default": "info",
+          "docs": "Verbosity, as `tracing` directives — `info`, `web=debug,info`.",
+          "name": "RUST_LOG",
+          "owner": "tracing",
+          "required": false,
+          "secret": false,
+          "text_form": "text",
+          "ty": "String",
+          "values": []
         }
       ],
-      "keys": [
-        {
-          "path": "assets.dist_dir",
-          "env": "PORTFOLIO_ASSETS__DIST_DIR",
-          "env_file": "PORTFOLIO_ASSETS__DIST_DIR_FILE",
-          "secrets_file": "assets__dist_dir",
-          "docs": "Directory holding the `dx bundle` output, relative to the working directory.\n\nThe image runs from `/app`, next to `public/`, so the default resolves without anything\nbeing set.",
-          "ty": "PathBuf",
-          "values": [],
-          "constraint": {
-            "type": "string"
-          },
-          "text_form": "text",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "public",
-          "default_value": "public",
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "csp.hash_inline_scripts",
-          "env": "PORTFOLIO_CSP__HASH_INLINE_SCRIPTS",
-          "env_file": "PORTFOLIO_CSP__HASH_INLINE_SCRIPTS_FILE",
-          "secrets_file": "csp__hash_inline_scripts",
-          "docs": "Hash every inline `<script>` in the document being served instead of admitting all inline\nscript with `'unsafe-inline'`.\n\nOn — the default — the server hashes the response body it is about to send, so the only\ninline scripts that run are the ones it rendered itself. That is the whole point of the\nexercise: `'unsafe-inline'` admits an injected `<script>` just as readily as the Dioxus\nhydration bootstrap.\n\nOff is the escape hatch, and it exists because the failure mode is silent: an inline\nscript the scanner does not see is refused by the browser, and the evidence is a blank\npage and a console message nobody is watching. Turning it off restores `'unsafe-inline'`\nthrough an environment variable and a restart rather than a redeploy. Known cases: a\ndevelopment server that injects its own live-reload script downstream of this process,\nand any future renderer change that emits script this server never sees.\n\nThe two settings are mutually exclusive in the browser, not merely different: a policy\ncarrying any hash or nonce makes `'unsafe-inline'` inert, which is why there is one switch\nhere rather than two independent ones.",
-          "ty": "bool",
-          "values": [],
-          "constraint": {
-            "type": "boolean"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*(true|false)\\s*$",
-            "type": "string"
-          },
-          "text_form": "boolean",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "true",
-          "default_value": true,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "csp.cloudflare.script_nonce",
-          "env": "PORTFOLIO_CSP__CLOUDFLARE__SCRIPT_NONCE",
-          "env_file": "PORTFOLIO_CSP__CLOUDFLARE__SCRIPT_NONCE_FILE",
-          "secrets_file": "csp__cloudflare__script_nonce",
-          "docs": "Reserve a per-response nonce in `script-src` for the script Cloudflare injects at the edge.\n\nOn by default, because this site is delivered through a Cloudflare Tunnel with the bot\nproducts active; the `__cf_bm` and `cf_clearance` cookies they set are the observable\nhalf of the same feature. Those products inject an inline `<script>` into the HTML\n*after* it leaves this process, so no hash this server computes can cover it;\n`script-src` refuses it and the detection silently never runs.\nCloudflare's documented answer is to parse the `Content-Security-Policy` response header\nand copy the nonce onto what it injects, so nothing has to be stamped into the document.\n\nIt carries one obligation the server discharges (`Cache-Control: no-cache` on every\ndocument, so a nonce is never shared between readers) and one it cannot: **no Cloudflare\nCache Rule may cache the shell**. A \"Cache Everything\" rule overrides the origin's\n`Cache-Control`, satisfying the obligation here and violating it at the edge, and nothing\ninside this process can see that.",
-          "ty": "bool",
-          "values": [],
-          "constraint": {
-            "type": "boolean"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*(true|false)\\s*$",
-            "type": "string"
-          },
-          "text_form": "boolean",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "true",
-          "default_value": true,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "csp.cloudflare.turnstile",
-          "env": "PORTFOLIO_CSP__CLOUDFLARE__TURNSTILE",
-          "env_file": "PORTFOLIO_CSP__CLOUDFLARE__TURNSTILE_FILE",
-          "secrets_file": "csp__cloudflare__turnstile",
-          "docs": "Admit `https://challenges.cloudflare.com` in `script-src` and `frame-src`, for a Turnstile\nwidget.\n\nOff: this site has no form behind a challenge. A managed-challenge interstitial needs\nnothing here either — that is a Cloudflare-served document carrying its own policy.",
-          "ty": "bool",
-          "values": [],
-          "constraint": {
-            "type": "boolean"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*(true|false)\\s*$",
-            "type": "string"
-          },
-          "text_form": "boolean",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "false",
-          "default_value": false,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "csp.cloudflare.web_analytics",
-          "env": "PORTFOLIO_CSP__CLOUDFLARE__WEB_ANALYTICS",
-          "env_file": "PORTFOLIO_CSP__CLOUDFLARE__WEB_ANALYTICS_FILE",
-          "secrets_file": "csp__cloudflare__web_analytics",
-          "docs": "Admit the Cloudflare Web Analytics beacon and the endpoint it reports to.\n\nOff: this site measures nothing, which the privacy page states. Only for the *manual*\nsnippet — the automatic edge injection is an inline script and needs `script_nonce`\ninstead.",
-          "ty": "bool",
-          "values": [],
-          "constraint": {
-            "type": "boolean"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*(true|false)\\s*$",
-            "type": "string"
-          },
-          "text_form": "boolean",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "false",
-          "default_value": false,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "hsts.max_age_secs",
-          "env": "PORTFOLIO_HSTS__MAX_AGE_SECS",
-          "env_file": "PORTFOLIO_HSTS__MAX_AGE_SECS_FILE",
-          "secrets_file": "hsts__max_age_secs",
-          "docs": "How long, in seconds, a browser keeps to HTTPS after seeing the header. Zero clears it.\n\nZero is the documented way to *withdraw* HSTS: browsers drop the host from their list on\nthe next response. It is refused together with `preload`, which that would contradict.",
-          "ty": "u64",
-          "values": [],
-          "constraint": {
-            "minimum": 0,
-            "type": "integer"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*\\+?[0-9]+\\s*$",
-            "type": "string"
-          },
-          "text_form": "integer",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "31536000",
-          "default_value": 31536000,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "hsts.include_subdomains",
-          "env": "PORTFOLIO_HSTS__INCLUDE_SUBDOMAINS",
-          "env_file": "PORTFOLIO_HSTS__INCLUDE_SUBDOMAINS_FILE",
-          "secrets_file": "hsts__include_subdomains",
-          "docs": "Apply the policy to every subdomain as well (`includeSubDomains`).",
-          "ty": "bool",
-          "values": [],
-          "constraint": {
-            "type": "boolean"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*(true|false)\\s*$",
-            "type": "string"
-          },
-          "text_form": "boolean",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "true",
-          "default_value": true,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "hsts.preload",
-          "env": "PORTFOLIO_HSTS__PRELOAD",
-          "env_file": "PORTFOLIO_HSTS__PRELOAD_FILE",
-          "secrets_file": "hsts__preload",
-          "docs": "Ask to be included in the browsers' built-in HSTS preload list (`preload`).\n\nThe list's own requirements are enforced at boot: `include_subdomains` on and a\n`max_age_secs` of at least one year.",
-          "ty": "bool",
-          "values": [],
-          "constraint": {
-            "type": "boolean"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*(true|false)\\s*$",
-            "type": "string"
-          },
-          "text_form": "boolean",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "true",
-          "default_value": true,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "isr.cache_dir",
-          "env": "PORTFOLIO_ISR__CACHE_DIR",
-          "env_file": "PORTFOLIO_ISR__CACHE_DIR_FILE",
-          "secrets_file": "isr__cache_dir",
-          "docs": "Writable directory rendered HTML is cached into. Unset or empty disables ISR.\n\nKeep it *outside* the bundled `public/` asset tree so those content-hashed assets stay\nimmutable. The image points it at a sub-directory of `/tmp`, which the deployment already\nprovides as a writable mount even under a read-only root filesystem.",
-          "ty": "PathBuf",
-          "values": [],
-          "constraint": {
-            "type": "string"
-          },
-          "text_form": "text",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": "ISR off; the image sets `/tmp/isr`",
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "isr.ttl_secs",
-          "env": "PORTFOLIO_ISR__TTL_SECS",
-          "env_file": "PORTFOLIO_ISR__TTL_SECS_FILE",
-          "secrets_file": "isr__ttl_secs",
-          "docs": "Revalidation interval in seconds. Zero means a permanent cache.\n\nEvery page renders from compile-time data, so the only thing that changes the output is a\nnew build, which starts from an empty cache anyway. A positive value opts into a finite,\ntime-based TTL, which is useful only when a *persistent* cache volume is shared across\ndeploys.",
-          "ty": "u64",
-          "values": [],
-          "constraint": {
-            "minimum": 0,
-            "type": "integer"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*\\+?[0-9]+\\s*$",
-            "type": "string"
-          },
-          "text_form": "integer",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "0",
-          "default_value": 0,
-          "note": "permanent",
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "sentry.enabled",
-          "env": "PORTFOLIO_SENTRY__ENABLED",
-          "env_file": "PORTFOLIO_SENTRY__ENABLED_FILE",
-          "secrets_file": "sentry__enabled",
-          "docs": "Initialize the Sentry client. `false` installs no client, no panic hook, no `tracing`\nlayer and no HTTP middleware, so every other key here is inert and nothing leaves the\nprocess.\n\nIt also decides who owns the log subscriber. Off — the default — the Dioxus toolchain\ninstalls its own, which is the behavior this server has always had. On, the server\ninstalls one first (still reading `RUST_LOG`, still formatting the same way) because a\nSentry layer has to be a layer *of* the subscriber, and the framework's is not\nextensible after the fact.",
-          "ty": "bool",
-          "values": [],
-          "constraint": {
-            "type": "boolean"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*(true|false)\\s*$",
-            "type": "string"
-          },
-          "text_form": "boolean",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "false",
-          "default_value": false,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "sentry.dsn",
-          "env": "PORTFOLIO_SENTRY__DSN",
-          "env_file": "PORTFOLIO_SENTRY__DSN_FILE",
-          "secrets_file": "sentry__dsn",
-          "docs": "Ingest URL, `https://<key>@<host>/<project>`.\n\nThe embedded key is a bearer credential for the project's ingest endpoint, so it is held\nas a `SecretString` — this block is nested in a `ServerConfig` that is printed with `?` on\nthe refusal path. Supply it as `PORTFOLIO_SENTRY__DSN_FILE=/run/secrets/sentry_dsn`, or as\n`sentry__dsn` inside `$PORTFOLIO_SECRETS_DIR`, so it never enters the process\nenvironment — where `/proc/<pid>/environ`, a crash dump and `docker inspect` all carry\nit, and every child process inherits it.\n\nAbsent while `sentry.enabled` is set is a boot failure, not a silent no-op.",
-          "ty": "SecretString",
-          "values": [],
-          "constraint": {
-            "type": "string"
-          },
-          "text_form": "text",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": false,
-          "secret": true,
-          "reserved": false
-        },
-        {
-          "path": "sentry.environment",
-          "env": "PORTFOLIO_SENTRY__ENVIRONMENT",
-          "env_file": "PORTFOLIO_SENTRY__ENVIRONMENT_FILE",
-          "secrets_file": "sentry__environment",
-          "docs": "Environment tag on every event.\n\nUnset resolves to `production` for a release build and `development` otherwise, which is\nthe only distinction this workspace has: it ships one image, and the thing that separates\na developer's `dx serve` from the deployed container is the profile it was built with.",
-          "ty": "String",
-          "values": [],
-          "constraint": {
-            "type": "string"
-          },
-          "text_form": "text",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": "`production` in a release build, `development` otherwise",
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "sentry.release",
-          "env": "PORTFOLIO_SENTRY__RELEASE",
-          "env_file": "PORTFOLIO_SENTRY__RELEASE_FILE",
-          "secrets_file": "sentry__release",
-          "docs": "Release tag on every event.\n\nUnset resolves to `portfolio@<version>`, the workspace version the binary was built from\n— which is what makes a regression attributable to a deploy, since every deploy of this\nsite is a new image cut from a new version.",
-          "ty": "String",
-          "values": [],
-          "constraint": {
-            "type": "string"
-          },
-          "text_form": "text",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": "`portfolio@` and the built version",
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "sentry.server_name",
-          "env": "PORTFOLIO_SENTRY__SERVER_NAME",
-          "env_file": "PORTFOLIO_SENTRY__SERVER_NAME_FILE",
-          "secrets_file": "sentry__server_name",
-          "docs": "Host tag on every event.\n\nLeft unset, Sentry reports none. The hostname of a replica is infrastructure detail that\n`sentry.send_default_pii` would otherwise be the gate for, and this site runs one image\nbehind a tunnel, so it identifies nothing an event does not already say.",
-          "ty": "String",
-          "values": [],
-          "constraint": {
-            "type": "string"
-          },
-          "text_form": "text",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "sentry.sample_rate",
-          "env": "PORTFOLIO_SENTRY__SAMPLE_RATE",
-          "env_file": "PORTFOLIO_SENTRY__SAMPLE_RATE_FILE",
-          "secrets_file": "sentry__sample_rate",
-          "docs": "Fraction of captured events actually sent, `0.0`–`1.0`.\n\nA blunt volume cap: it drops whole issues rather than repetitions of one, so a rare bug\nis exactly as likely to be dropped as a noisy one. Leave it at `1.0` unless a quota\nforces otherwise.",
-          "ty": "f32",
-          "values": [],
-          "constraint": {
-            "maximum": 1.0,
-            "minimum": 0.0,
-            "type": "number"
-          },
-          "text_form": "unknown",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "1",
-          "default_value": 1.0,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "sentry.traces_sample_rate",
-          "env": "PORTFOLIO_SENTRY__TRACES_SAMPLE_RATE",
-          "env_file": "PORTFOLIO_SENTRY__TRACES_SAMPLE_RATE_FILE",
-          "secrets_file": "sentry__traces_sample_rate",
-          "docs": "Fraction of request traces recorded, `0.0`–`1.0`.\n\n`0.0` — the default — records none, which is what keeps switching Sentry on for crash\nreporting from also switching performance data on. `0.05`–`0.2` is an ordinary\nproduction figure.\n\nThis server starts every trace it has: it is the edge, and nothing upstream of it hands\nit a sampled trace to continue. That is the difference from a service tier, where the\nrate of whoever *starts* the trace decides whether it exists at all.",
-          "ty": "f32",
-          "values": [],
-          "constraint": {
-            "maximum": 1.0,
-            "minimum": 0.0,
-            "type": "number"
-          },
-          "text_form": "unknown",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "0",
-          "default_value": 0.0,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "sentry.capture_level",
-          "env": "PORTFOLIO_SENTRY__CAPTURE_LEVEL",
-          "env_file": "PORTFOLIO_SENTRY__CAPTURE_LEVEL_FILE",
-          "secrets_file": "sentry__capture_level",
-          "docs": "Least severe `tracing` level reported as a Sentry **issue**.",
-          "ty": "SentryLevel",
-          "values": [
-            "off",
-            "error",
-            "warn",
-            "info",
-            "debug",
-            "trace"
-          ],
-          "constraint": {
-            "enum": [
-              "off",
-              "error",
-              "warn",
-              "info",
-              "debug",
-              "trace"
-            ],
-            "type": "string"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*(off|error|warn|info|debug|trace)\\s*$",
-            "type": "string"
-          },
-          "text_form": "choice",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "error",
-          "default_value": "error",
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "sentry.breadcrumb_level",
-          "env": "PORTFOLIO_SENTRY__BREADCRUMB_LEVEL",
-          "env_file": "PORTFOLIO_SENTRY__BREADCRUMB_LEVEL_FILE",
-          "secrets_file": "sentry__breadcrumb_level",
-          "docs": "Least severe `tracing` level kept as a **breadcrumb**, the trail attached to the next\nissue.\n\nRecords at or above `sentry.capture_level` become issues instead, so the two thresholds\npartition the stream rather than overlapping on it.",
-          "ty": "SentryLevel",
-          "values": [
-            "off",
-            "error",
-            "warn",
-            "info",
-            "debug",
-            "trace"
-          ],
-          "constraint": {
-            "enum": [
-              "off",
-              "error",
-              "warn",
-              "info",
-              "debug",
-              "trace"
-            ],
-            "type": "string"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*(off|error|warn|info|debug|trace)\\s*$",
-            "type": "string"
-          },
-          "text_form": "choice",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "info",
-          "default_value": "info",
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "sentry.max_breadcrumbs",
-          "env": "PORTFOLIO_SENTRY__MAX_BREADCRUMBS",
-          "env_file": "PORTFOLIO_SENTRY__MAX_BREADCRUMBS_FILE",
-          "secrets_file": "sentry__max_breadcrumbs",
-          "docs": "How many breadcrumbs one event carries.",
-          "ty": "usize",
-          "values": [],
-          "constraint": {
-            "minimum": 0,
-            "type": "integer"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*\\+?[0-9]+\\s*$",
-            "type": "string"
-          },
-          "text_form": "integer",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "100",
-          "default_value": 100,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "sentry.attach_stacktraces",
-          "env": "PORTFOLIO_SENTRY__ATTACH_STACKTRACES",
-          "env_file": "PORTFOLIO_SENTRY__ATTACH_STACKTRACES_FILE",
-          "secrets_file": "sentry__attach_stacktraces",
-          "docs": "Attach a stack trace to events that carry none of their own.",
-          "ty": "bool",
-          "values": [],
-          "constraint": {
-            "type": "boolean"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*(true|false)\\s*$",
-            "type": "string"
-          },
-          "text_form": "boolean",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "true",
-          "default_value": true,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "sentry.send_default_pii",
-          "env": "PORTFOLIO_SENTRY__SEND_DEFAULT_PII",
-          "env_file": "PORTFOLIO_SENTRY__SEND_DEFAULT_PII_FILE",
-          "secrets_file": "sentry__send_default_pii",
-          "docs": "Send personally identifying data with every event: the client IP, the full request header\nset (`Cookie` included) and the resolved user.\n\n**Off, and worth leaving off.** A reader's IP address and cookies are exactly what a\ncrash report does not need in order to be actionable, and every event sent is personal\ndata handed to a third party, which the published privacy notice would then have to\nname. On, it also widens what the HTTP middleware records, because `sentry-tower` reads\nthis same flag to decide whether to redact sensitive request headers.",
-          "ty": "bool",
-          "values": [],
-          "constraint": {
-            "type": "boolean"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*(true|false)\\s*$",
-            "type": "string"
-          },
-          "text_form": "boolean",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "false",
-          "default_value": false,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "sentry.http_transactions",
-          "env": "PORTFOLIO_SENTRY__HTTP_TRANSACTIONS",
-          "env_file": "PORTFOLIO_SENTRY__HTTP_TRANSACTIONS_FILE",
-          "secrets_file": "sentry__http_transactions",
-          "docs": "Record one Sentry transaction per request, named by the *matched route* rather than by\nthe URI — so `/api/v1/legal/{slug}` does not become one transaction name per document.\n\nWhether a started transaction is *kept* is `sentry.traces_sample_rate`'s decision; this is\nthe switch for taking the middleware out entirely.",
-          "ty": "bool",
-          "values": [],
-          "constraint": {
-            "type": "boolean"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*(true|false)\\s*$",
-            "type": "string"
-          },
-          "text_form": "boolean",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "true",
-          "default_value": true,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "sentry.span_attributes",
-          "env": "PORTFOLIO_SENTRY__SPAN_ATTRIBUTES",
-          "env_file": "PORTFOLIO_SENTRY__SPAN_ATTRIBUTES_FILE",
-          "secrets_file": "sentry__span_attributes",
-          "docs": "Copy `tracing` span fields onto the Sentry span as attributes.\n\nOff. Span fields here routinely carry request paths and the negotiated locale, and a\ntransaction is stored under a longer retention than a log line.",
-          "ty": "bool",
-          "values": [],
-          "constraint": {
-            "type": "boolean"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*(true|false)\\s*$",
-            "type": "string"
-          },
-          "text_form": "boolean",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "false",
-          "default_value": false,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "sentry.debug",
-          "env": "PORTFOLIO_SENTRY__DEBUG",
-          "env_file": "PORTFOLIO_SENTRY__DEBUG_FILE",
-          "secrets_file": "sentry__debug",
-          "docs": "Print the SDK's own diagnostics to stderr. For proving a DSN works, not for running.",
-          "ty": "bool",
-          "values": [],
-          "constraint": {
-            "type": "boolean"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*(true|false)\\s*$",
-            "type": "string"
-          },
-          "text_form": "boolean",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "false",
-          "default_value": false,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "legal.default_locale",
-          "env": "PORTFOLIO_LEGAL__DEFAULT_LOCALE",
-          "env_file": "PORTFOLIO_LEGAL__DEFAULT_LOCALE_FILE",
-          "secrets_file": "legal__default_locale",
-          "docs": "Locale served when neither the request nor its `Accept-Language` header matches a\npublished one, for example `en`. Without it, the first published locale in alphabetical\norder is served.",
-          "ty": "String",
-          "values": [],
-          "constraint": {
-            "type": "string"
-          },
-          "text_form": "text",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "legal.documents",
-          "env": "PORTFOLIO_LEGAL__DOCUMENTS",
-          "env_file": "PORTFOLIO_LEGAL__DOCUMENTS_FILE",
-          "secrets_file": "legal__documents",
-          "docs": "The published documents, keyed by the slug their URL uses. A slug is lowercase letters,\ndigits, `_` and `-`, at most 64 characters, and starts with a letter or a digit.",
-          "ty": "BTreeMap<String, LegalDocument>",
-          "values": [],
-          "constraint": {
-            "additionalProperties": {
-              "additionalProperties": false,
-              "properties": {
-                "body": {
-                  "additionalProperties": {
-                    "type": "string"
-                  },
-                  "description": "Markdown text per locale, keyed by locale (`en`, `de-AT`). Usually supplied through a\n`…__BODY__<LOCALE>_FILE` variable naming a mounted file. Each text is at most 1 MiB.\nExclusive with `url`.",
-                  "type": "object"
-                },
-                "order": {
-                  "description": "Position in the index, lowest first. Documents with the same value are ordered by slug.",
-                  "maximum": 2147483647,
-                  "minimum": -2147483648,
-                  "type": "integer"
-                },
-                "title": {
-                  "additionalProperties": {
-                    "type": "string"
-                  },
-                  "description": "Display title per locale, keyed like `body`.",
-                  "type": "object"
-                },
-                "updated": {
-                  "description": "The \"last updated\" line, displayed verbatim.",
-                  "type": "string"
-                },
-                "url": {
-                  "description": "Absolute `http` or `https` URL of a document hosted elsewhere, without credentials.\nExclusive with `body`.",
-                  "type": "string"
-                }
-              },
-              "type": "object"
-            },
-            "required": [
-              "imprint",
-              "privacy"
-            ],
-            "type": "object"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*[\\[\\{][\\s\\S]*[\\]\\}]\\s*$",
-            "type": "string"
-          },
-          "text_form": "structured",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": true,
-          "secret": false,
-          "reserved": false
-        }
-      ]
+      "ignore": [
+        "KUBERNETES_*",
+        "HOSTNAME"
+      ],
+      "unknown": "reject"
     },
     "json_schema": {
       "$schema": "http://json-schema.org/draft-07/schema#",
@@ -1049,62 +302,809 @@
       "title": "portfolio configuration",
       "type": "object"
     },
-    "external": {
-      "env": [
+    "producer": {
+      "loader": "figment",
+      "name": "terrace-config",
+      "version": "0.15.1"
+    },
+    "schema": {
+      "dialect": {
+        "indirection_suffix": "_FILE",
+        "nesting_separator": "__",
+        "prefix": "PORTFOLIO_"
+      },
+      "keys": [
         {
-          "name": "PORT",
-          "owner": "dioxus",
-          "docs": "Bind port. Read by the Dioxus toolchain, not by this loader.",
-          "ty": "u16",
-          "values": [],
+          "aliases": [],
           "constraint": {
-            "maximum": 65535,
+            "type": "string"
+          },
+          "default": "public",
+          "default_value": "public",
+          "docs": "Directory holding the `dx bundle` output, relative to the working directory.\n\nThe image runs from `/app`, next to `public/`, so the default resolves without anything\nbeing set.",
+          "env": "PORTFOLIO_ASSETS__DIST_DIR",
+          "env_aliases": [],
+          "env_file": "PORTFOLIO_ASSETS__DIST_DIR_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "assets.dist_dir",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "assets__dist_dir",
+          "secrets_file_aliases": [],
+          "text_form": "text",
+          "ty": "PathBuf",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "boolean"
+          },
+          "default": "true",
+          "default_value": true,
+          "docs": "Hash every inline `<script>` in the document being served instead of admitting all inline\nscript with `'unsafe-inline'`.\n\nOn — the default — the server hashes the response body it is about to send, so the only\ninline scripts that run are the ones it rendered itself. That is the whole point of the\nexercise: `'unsafe-inline'` admits an injected `<script>` just as readily as the Dioxus\nhydration bootstrap.\n\nOff is the escape hatch, and it exists because the failure mode is silent: an inline\nscript the scanner does not see is refused by the browser, and the evidence is a blank\npage and a console message nobody is watching. Turning it off restores `'unsafe-inline'`\nthrough an environment variable and a restart rather than a redeploy. Known cases: a\ndevelopment server that injects its own live-reload script downstream of this process,\nand any future renderer change that emits script this server never sees.\n\nThe two settings are mutually exclusive in the browser, not merely different: a policy\ncarrying any hash or nonce makes `'unsafe-inline'` inert, which is why there is one switch\nhere rather than two independent ones.",
+          "env": "PORTFOLIO_CSP__HASH_INLINE_SCRIPTS",
+          "env_aliases": [],
+          "env_file": "PORTFOLIO_CSP__HASH_INLINE_SCRIPTS_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "csp.hash_inline_scripts",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "csp__hash_inline_scripts",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*(true|false)\\s*$",
+            "type": "string"
+          },
+          "text_form": "boolean",
+          "ty": "bool",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "boolean"
+          },
+          "default": "true",
+          "default_value": true,
+          "docs": "Reserve a per-response nonce in `script-src` for the script Cloudflare injects at the edge.\n\nOn by default, because this site is delivered through a Cloudflare Tunnel with the bot\nproducts active; the `__cf_bm` and `cf_clearance` cookies they set are the observable\nhalf of the same feature. Those products inject an inline `<script>` into the HTML\n*after* it leaves this process, so no hash this server computes can cover it;\n`script-src` refuses it and the detection silently never runs.\nCloudflare's documented answer is to parse the `Content-Security-Policy` response header\nand copy the nonce onto what it injects, so nothing has to be stamped into the document.\n\nIt carries one obligation the server discharges (`Cache-Control: no-cache` on every\ndocument, so a nonce is never shared between readers) and one it cannot: **no Cloudflare\nCache Rule may cache the shell**. A \"Cache Everything\" rule overrides the origin's\n`Cache-Control`, satisfying the obligation here and violating it at the edge, and nothing\ninside this process can see that.",
+          "env": "PORTFOLIO_CSP__CLOUDFLARE__SCRIPT_NONCE",
+          "env_aliases": [],
+          "env_file": "PORTFOLIO_CSP__CLOUDFLARE__SCRIPT_NONCE_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "csp.cloudflare.script_nonce",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "csp__cloudflare__script_nonce",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*(true|false)\\s*$",
+            "type": "string"
+          },
+          "text_form": "boolean",
+          "ty": "bool",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "boolean"
+          },
+          "default": "false",
+          "default_value": false,
+          "docs": "Admit `https://challenges.cloudflare.com` in `script-src` and `frame-src`, for a Turnstile\nwidget.\n\nOff: this site has no form behind a challenge. A managed-challenge interstitial needs\nnothing here either — that is a Cloudflare-served document carrying its own policy.",
+          "env": "PORTFOLIO_CSP__CLOUDFLARE__TURNSTILE",
+          "env_aliases": [],
+          "env_file": "PORTFOLIO_CSP__CLOUDFLARE__TURNSTILE_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "csp.cloudflare.turnstile",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "csp__cloudflare__turnstile",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*(true|false)\\s*$",
+            "type": "string"
+          },
+          "text_form": "boolean",
+          "ty": "bool",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "boolean"
+          },
+          "default": "false",
+          "default_value": false,
+          "docs": "Admit the Cloudflare Web Analytics beacon and the endpoint it reports to.\n\nOff: this site measures nothing, which the privacy page states. Only for the *manual*\nsnippet — the automatic edge injection is an inline script and needs `script_nonce`\ninstead.",
+          "env": "PORTFOLIO_CSP__CLOUDFLARE__WEB_ANALYTICS",
+          "env_aliases": [],
+          "env_file": "PORTFOLIO_CSP__CLOUDFLARE__WEB_ANALYTICS_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "csp.cloudflare.web_analytics",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "csp__cloudflare__web_analytics",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*(true|false)\\s*$",
+            "type": "string"
+          },
+          "text_form": "boolean",
+          "ty": "bool",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
             "minimum": 0,
             "type": "integer"
           },
+          "default": "31536000",
+          "default_value": 31536000,
+          "docs": "How long, in seconds, a browser keeps to HTTPS after seeing the header. Zero clears it.\n\nZero is the documented way to *withdraw* HSTS: browsers drop the host from their list on\nthe next response. It is refused together with `preload`, which that would contradict.",
+          "env": "PORTFOLIO_HSTS__MAX_AGE_SECS",
+          "env_aliases": [],
+          "env_file": "PORTFOLIO_HSTS__MAX_AGE_SECS_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "hsts.max_age_secs",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "hsts__max_age_secs",
+          "secrets_file_aliases": [],
           "text_constraint": {
             "pattern": "^\\s*\\+?[0-9]+\\s*$",
             "type": "string"
           },
           "text_form": "integer",
-          "default": "8080",
-          "required": false,
-          "secret": false
+          "ty": "u64",
+          "values": []
         },
         {
-          "name": "IP",
-          "owner": "dioxus",
-          "docs": "Bind address. Read by the Dioxus toolchain, not by this loader.",
-          "ty": "IpAddr",
-          "values": [],
+          "aliases": [],
+          "constraint": {
+            "type": "boolean"
+          },
+          "default": "true",
+          "default_value": true,
+          "docs": "Apply the policy to every subdomain as well (`includeSubDomains`).",
+          "env": "PORTFOLIO_HSTS__INCLUDE_SUBDOMAINS",
+          "env_aliases": [],
+          "env_file": "PORTFOLIO_HSTS__INCLUDE_SUBDOMAINS_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "hsts.include_subdomains",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "hsts__include_subdomains",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*(true|false)\\s*$",
+            "type": "string"
+          },
+          "text_form": "boolean",
+          "ty": "bool",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "boolean"
+          },
+          "default": "true",
+          "default_value": true,
+          "docs": "Ask to be included in the browsers' built-in HSTS preload list (`preload`).\n\nThe list's own requirements are enforced at boot: `include_subdomains` on and a\n`max_age_secs` of at least one year.",
+          "env": "PORTFOLIO_HSTS__PRELOAD",
+          "env_aliases": [],
+          "env_file": "PORTFOLIO_HSTS__PRELOAD_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "hsts.preload",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "hsts__preload",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*(true|false)\\s*$",
+            "type": "string"
+          },
+          "text_form": "boolean",
+          "ty": "bool",
+          "values": []
+        },
+        {
+          "aliases": [],
           "constraint": {
             "type": "string"
           },
-          "text_form": "unknown",
-          "default": "0.0.0.0",
+          "default": null,
+          "default_value": null,
+          "docs": "Writable directory rendered HTML is cached into. Unset or empty disables ISR.\n\nKeep it *outside* the bundled `public/` asset tree so those content-hashed assets stay\nimmutable. The image points it at a sub-directory of `/tmp`, which the deployment already\nprovides as a writable mount even under a read-only root filesystem.",
+          "env": "PORTFOLIO_ISR__CACHE_DIR",
+          "env_aliases": [],
+          "env_file": "PORTFOLIO_ISR__CACHE_DIR_FILE",
+          "env_file_aliases": [],
+          "note": "ISR off; the image sets `/tmp/isr`",
+          "path": "isr.cache_dir",
           "required": false,
-          "secret": false
-        },
-        {
-          "name": "RUST_LOG",
-          "owner": "tracing",
-          "docs": "Verbosity, as `tracing` directives — `info`, `web=debug,info`.",
-          "ty": "String",
-          "values": [],
-          "constraint": {
-            "type": "string"
-          },
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "isr__cache_dir",
+          "secrets_file_aliases": [],
           "text_form": "text",
-          "default": "info",
+          "ty": "PathBuf",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "default": "0",
+          "default_value": 0,
+          "docs": "Revalidation interval in seconds. Zero means a permanent cache.\n\nEvery page renders from compile-time data, so the only thing that changes the output is a\nnew build, which starts from an empty cache anyway. A positive value opts into a finite,\ntime-based TTL, which is useful only when a *persistent* cache volume is shared across\ndeploys.",
+          "env": "PORTFOLIO_ISR__TTL_SECS",
+          "env_aliases": [],
+          "env_file": "PORTFOLIO_ISR__TTL_SECS_FILE",
+          "env_file_aliases": [],
+          "note": "permanent",
+          "path": "isr.ttl_secs",
           "required": false,
-          "secret": false
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "isr__ttl_secs",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*\\+?[0-9]+\\s*$",
+            "type": "string"
+          },
+          "text_form": "integer",
+          "ty": "u64",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "boolean"
+          },
+          "default": "false",
+          "default_value": false,
+          "docs": "Initialize the Sentry client. `false` installs no client, no panic hook, no `tracing`\nlayer and no HTTP middleware, so every other key here is inert and nothing leaves the\nprocess.\n\nIt also decides who owns the log subscriber. Off — the default — the Dioxus toolchain\ninstalls its own, which is the behavior this server has always had. On, the server\ninstalls one first (still reading `RUST_LOG`, still formatting the same way) because a\nSentry layer has to be a layer *of* the subscriber, and the framework's is not\nextensible after the fact.",
+          "env": "PORTFOLIO_SENTRY__ENABLED",
+          "env_aliases": [],
+          "env_file": "PORTFOLIO_SENTRY__ENABLED_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "sentry.enabled",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "sentry__enabled",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*(true|false)\\s*$",
+            "type": "string"
+          },
+          "text_form": "boolean",
+          "ty": "bool",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "string"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "Ingest URL, `https://<key>@<host>/<project>`.\n\nThe embedded key is a bearer credential for the project's ingest endpoint, so it is held\nas a `SecretString` — this block is nested in a `ServerConfig` that is printed with `?` on\nthe refusal path. Supply it as `PORTFOLIO_SENTRY__DSN_FILE=/run/secrets/sentry_dsn`, or as\n`sentry__dsn` inside `$PORTFOLIO_SECRETS_DIR`, so it never enters the process\nenvironment — where `/proc/<pid>/environ`, a crash dump and `docker inspect` all carry\nit, and every child process inherits it.\n\nAbsent while `sentry.enabled` is set is a boot failure, not a silent no-op.",
+          "env": "PORTFOLIO_SENTRY__DSN",
+          "env_aliases": [],
+          "env_file": "PORTFOLIO_SENTRY__DSN_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "sentry.dsn",
+          "required": false,
+          "reserved": false,
+          "secret": true,
+          "secrets_file": "sentry__dsn",
+          "secrets_file_aliases": [],
+          "text_form": "text",
+          "ty": "SecretString",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "string"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "Environment tag on every event.\n\nUnset resolves to `production` for a release build and `development` otherwise, which is\nthe only distinction this workspace has: it ships one image, and the thing that separates\na developer's `dx serve` from the deployed container is the profile it was built with.",
+          "env": "PORTFOLIO_SENTRY__ENVIRONMENT",
+          "env_aliases": [],
+          "env_file": "PORTFOLIO_SENTRY__ENVIRONMENT_FILE",
+          "env_file_aliases": [],
+          "note": "`production` in a release build, `development` otherwise",
+          "path": "sentry.environment",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "sentry__environment",
+          "secrets_file_aliases": [],
+          "text_form": "text",
+          "ty": "String",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "string"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "Release tag on every event.\n\nUnset resolves to `portfolio@<version>`, the workspace version the binary was built from\n— which is what makes a regression attributable to a deploy, since every deploy of this\nsite is a new image cut from a new version.",
+          "env": "PORTFOLIO_SENTRY__RELEASE",
+          "env_aliases": [],
+          "env_file": "PORTFOLIO_SENTRY__RELEASE_FILE",
+          "env_file_aliases": [],
+          "note": "`portfolio@` and the built version",
+          "path": "sentry.release",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "sentry__release",
+          "secrets_file_aliases": [],
+          "text_form": "text",
+          "ty": "String",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "string"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "Host tag on every event.\n\nLeft unset, Sentry reports none. The hostname of a replica is infrastructure detail that\n`sentry.send_default_pii` would otherwise be the gate for, and this site runs one image\nbehind a tunnel, so it identifies nothing an event does not already say.",
+          "env": "PORTFOLIO_SENTRY__SERVER_NAME",
+          "env_aliases": [],
+          "env_file": "PORTFOLIO_SENTRY__SERVER_NAME_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "sentry.server_name",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "sentry__server_name",
+          "secrets_file_aliases": [],
+          "text_form": "text",
+          "ty": "String",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "type": "number"
+          },
+          "default": "1",
+          "default_value": 1.0,
+          "docs": "Fraction of captured events actually sent, `0.0`–`1.0`.\n\nA blunt volume cap: it drops whole issues rather than repetitions of one, so a rare bug\nis exactly as likely to be dropped as a noisy one. Leave it at `1.0` unless a quota\nforces otherwise.",
+          "env": "PORTFOLIO_SENTRY__SAMPLE_RATE",
+          "env_aliases": [],
+          "env_file": "PORTFOLIO_SENTRY__SAMPLE_RATE_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "sentry.sample_rate",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "sentry__sample_rate",
+          "secrets_file_aliases": [],
+          "text_form": "unknown",
+          "ty": "f32",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "type": "number"
+          },
+          "default": "0",
+          "default_value": 0.0,
+          "docs": "Fraction of request traces recorded, `0.0`–`1.0`.\n\n`0.0` — the default — records none, which is what keeps switching Sentry on for crash\nreporting from also switching performance data on. `0.05`–`0.2` is an ordinary\nproduction figure.\n\nThis server starts every trace it has: it is the edge, and nothing upstream of it hands\nit a sampled trace to continue. That is the difference from a service tier, where the\nrate of whoever *starts* the trace decides whether it exists at all.",
+          "env": "PORTFOLIO_SENTRY__TRACES_SAMPLE_RATE",
+          "env_aliases": [],
+          "env_file": "PORTFOLIO_SENTRY__TRACES_SAMPLE_RATE_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "sentry.traces_sample_rate",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "sentry__traces_sample_rate",
+          "secrets_file_aliases": [],
+          "text_form": "unknown",
+          "ty": "f32",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "enum": [
+              "off",
+              "error",
+              "warn",
+              "info",
+              "debug",
+              "trace"
+            ],
+            "type": "string"
+          },
+          "default": "error",
+          "default_value": "error",
+          "docs": "Least severe `tracing` level reported as a Sentry **issue**.",
+          "env": "PORTFOLIO_SENTRY__CAPTURE_LEVEL",
+          "env_aliases": [],
+          "env_file": "PORTFOLIO_SENTRY__CAPTURE_LEVEL_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "sentry.capture_level",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "sentry__capture_level",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*(off|error|warn|info|debug|trace)\\s*$",
+            "type": "string"
+          },
+          "text_form": "choice",
+          "ty": "SentryLevel",
+          "values": [
+            "off",
+            "error",
+            "warn",
+            "info",
+            "debug",
+            "trace"
+          ]
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "enum": [
+              "off",
+              "error",
+              "warn",
+              "info",
+              "debug",
+              "trace"
+            ],
+            "type": "string"
+          },
+          "default": "info",
+          "default_value": "info",
+          "docs": "Least severe `tracing` level kept as a **breadcrumb**, the trail attached to the next\nissue.\n\nRecords at or above `sentry.capture_level` become issues instead, so the two thresholds\npartition the stream rather than overlapping on it.",
+          "env": "PORTFOLIO_SENTRY__BREADCRUMB_LEVEL",
+          "env_aliases": [],
+          "env_file": "PORTFOLIO_SENTRY__BREADCRUMB_LEVEL_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "sentry.breadcrumb_level",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "sentry__breadcrumb_level",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*(off|error|warn|info|debug|trace)\\s*$",
+            "type": "string"
+          },
+          "text_form": "choice",
+          "ty": "SentryLevel",
+          "values": [
+            "off",
+            "error",
+            "warn",
+            "info",
+            "debug",
+            "trace"
+          ]
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "default": "100",
+          "default_value": 100,
+          "docs": "How many breadcrumbs one event carries.",
+          "env": "PORTFOLIO_SENTRY__MAX_BREADCRUMBS",
+          "env_aliases": [],
+          "env_file": "PORTFOLIO_SENTRY__MAX_BREADCRUMBS_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "sentry.max_breadcrumbs",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "sentry__max_breadcrumbs",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*\\+?[0-9]+\\s*$",
+            "type": "string"
+          },
+          "text_form": "integer",
+          "ty": "usize",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "boolean"
+          },
+          "default": "true",
+          "default_value": true,
+          "docs": "Attach a stack trace to events that carry none of their own.",
+          "env": "PORTFOLIO_SENTRY__ATTACH_STACKTRACES",
+          "env_aliases": [],
+          "env_file": "PORTFOLIO_SENTRY__ATTACH_STACKTRACES_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "sentry.attach_stacktraces",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "sentry__attach_stacktraces",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*(true|false)\\s*$",
+            "type": "string"
+          },
+          "text_form": "boolean",
+          "ty": "bool",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "boolean"
+          },
+          "default": "false",
+          "default_value": false,
+          "docs": "Send personally identifying data with every event: the client IP, the full request header\nset (`Cookie` included) and the resolved user.\n\n**Off, and worth leaving off.** A reader's IP address and cookies are exactly what a\ncrash report does not need in order to be actionable, and every event sent is personal\ndata handed to a third party, which the published privacy notice would then have to\nname. On, it also widens what the HTTP middleware records, because `sentry-tower` reads\nthis same flag to decide whether to redact sensitive request headers.",
+          "env": "PORTFOLIO_SENTRY__SEND_DEFAULT_PII",
+          "env_aliases": [],
+          "env_file": "PORTFOLIO_SENTRY__SEND_DEFAULT_PII_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "sentry.send_default_pii",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "sentry__send_default_pii",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*(true|false)\\s*$",
+            "type": "string"
+          },
+          "text_form": "boolean",
+          "ty": "bool",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "boolean"
+          },
+          "default": "true",
+          "default_value": true,
+          "docs": "Record one Sentry transaction per request, named by the *matched route* rather than by\nthe URI — so `/api/v1/legal/{slug}` does not become one transaction name per document.\n\nWhether a started transaction is *kept* is `sentry.traces_sample_rate`'s decision; this is\nthe switch for taking the middleware out entirely.",
+          "env": "PORTFOLIO_SENTRY__HTTP_TRANSACTIONS",
+          "env_aliases": [],
+          "env_file": "PORTFOLIO_SENTRY__HTTP_TRANSACTIONS_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "sentry.http_transactions",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "sentry__http_transactions",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*(true|false)\\s*$",
+            "type": "string"
+          },
+          "text_form": "boolean",
+          "ty": "bool",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "boolean"
+          },
+          "default": "false",
+          "default_value": false,
+          "docs": "Copy `tracing` span fields onto the Sentry span as attributes.\n\nOff. Span fields here routinely carry request paths and the negotiated locale, and a\ntransaction is stored under a longer retention than a log line.",
+          "env": "PORTFOLIO_SENTRY__SPAN_ATTRIBUTES",
+          "env_aliases": [],
+          "env_file": "PORTFOLIO_SENTRY__SPAN_ATTRIBUTES_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "sentry.span_attributes",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "sentry__span_attributes",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*(true|false)\\s*$",
+            "type": "string"
+          },
+          "text_form": "boolean",
+          "ty": "bool",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "boolean"
+          },
+          "default": "false",
+          "default_value": false,
+          "docs": "Print the SDK's own diagnostics to stderr. For proving a DSN works, not for running.",
+          "env": "PORTFOLIO_SENTRY__DEBUG",
+          "env_aliases": [],
+          "env_file": "PORTFOLIO_SENTRY__DEBUG_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "sentry.debug",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "sentry__debug",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*(true|false)\\s*$",
+            "type": "string"
+          },
+          "text_form": "boolean",
+          "ty": "bool",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "string"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "Locale served when neither the request nor its `Accept-Language` header matches a\npublished one, for example `en`. Without it, the first published locale in alphabetical\norder is served.",
+          "env": "PORTFOLIO_LEGAL__DEFAULT_LOCALE",
+          "env_aliases": [],
+          "env_file": "PORTFOLIO_LEGAL__DEFAULT_LOCALE_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "legal.default_locale",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "legal__default_locale",
+          "secrets_file_aliases": [],
+          "text_form": "text",
+          "ty": "String",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "additionalProperties": {
+              "additionalProperties": false,
+              "properties": {
+                "body": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "description": "Markdown text per locale, keyed by locale (`en`, `de-AT`). Usually supplied through a\n`…__BODY__<LOCALE>_FILE` variable naming a mounted file. Each text is at most 1 MiB.\nExclusive with `url`.",
+                  "type": "object"
+                },
+                "order": {
+                  "description": "Position in the index, lowest first. Documents with the same value are ordered by slug.",
+                  "maximum": 2147483647,
+                  "minimum": -2147483648,
+                  "type": "integer"
+                },
+                "title": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "description": "Display title per locale, keyed like `body`.",
+                  "type": "object"
+                },
+                "updated": {
+                  "description": "The \"last updated\" line, displayed verbatim.",
+                  "type": "string"
+                },
+                "url": {
+                  "description": "Absolute `http` or `https` URL of a document hosted elsewhere, without credentials.\nExclusive with `body`.",
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "required": [
+              "imprint",
+              "privacy"
+            ],
+            "type": "object"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "The published documents, keyed by the slug their URL uses. A slug is lowercase letters,\ndigits, `_` and `-`, at most 64 characters, and starts with a letter or a digit.",
+          "env": "PORTFOLIO_LEGAL__DOCUMENTS",
+          "env_aliases": [],
+          "env_file": "PORTFOLIO_LEGAL__DOCUMENTS_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "legal.documents",
+          "required": true,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "legal__documents",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*[\\[\\{][\\s\\S]*[\\]\\}]\\s*$",
+            "type": "string"
+          },
+          "text_form": "structured",
+          "ty": "BTreeMap<String, LegalDocument>",
+          "values": []
         }
       ],
-      "ignore": [
-        "KUBERNETES_*",
-        "HOSTNAME"
+      "loader": [
+        {
+          "default": "config.toml",
+          "docs": "Names the TOML layer: a file, or a directory whose `*.toml` files are all merged in name order.",
+          "env": "PORTFOLIO_CONFIG",
+          "role": "config"
+        },
+        {
+          "default": null,
+          "docs": "Names a directory of key-named files — a mounted Kubernetes `Secret` volume. Each file supplies the key its name spells.",
+          "env": "PORTFOLIO_SECRETS_DIR",
+          "role": "secrets_dir"
+        }
       ],
-      "unknown": "reject"
-    }
+      "schema_version": 2
+    },
+    "terrace_contract": 1
+  },
+  "source": {
+    "digest": "sha256:10b98d3894b67e8dd155ab1481a982c427284979d7dce4c587654b8307a61dce",
+    "fetched": "2026-10-21T15:19:13Z",
+    "image": "docker.io/timschoenle/portfolio",
+    "sha256": "e47db0eb55158d09634e1d5e1d77ecb8796c39813898de1c170d1e3ca89c7b04"
   }
 }

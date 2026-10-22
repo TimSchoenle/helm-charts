@@ -1,0 +1,151 @@
+# yaml-language-server: $schema=https://storage.googleapis.com/coderabbit_public_assets/schema.v2.json
+tone_instructions: "Direct, no filler, no praise."
+
+reviews:
+  profile: assertive
+
+  auto_review:
+    # CodeRabbit cannot filter by head branch, so automated pull requests are
+    # skipped by author: Renovate opens `renovate/*`, the release manager app
+    # opens `chore/helm/auto-update/*`. Both the bot login and the bare app slug
+    # are listed because the match is exact.
+    ignore_usernames:
+      - "renovate[bot]"
+      - "renovate"
+      - "automatic-release-manager[bot]"
+      - "automatic-release-manager"
+
+  # Generated or vendored files; CI regenerates them on every pull request.
+  # Review their sources instead. Chart.lock, charts/*/charts/ and *.tgz are
+  # gitignored and never reach a diff.
+  path_filters:
+    - "!README.md" # rendered from .github/templates/README.md.hbs
+    - "!charts/*/README.md" # helm-docs output of README.md.gotmpl
+    - "!charts/*/values.schema.json" # helm-schema output of the @schema blocks in values.yaml
+    - "!charts/*/contracts/**" # vendored by `terrace-contract pull`
+    - "!charts/*/tests/__snapshot__/**"
+    - "!charts/*/tests/contract_roundtrip_*_test.yaml" # `just contract-tests`
+
+  path_instructions:
+    - path: "charts/**"
+      instructions: |
+        Every change under a chart directory that alters the packaged chart requires a `version`
+        bump in that chart's Chart.yaml (chart-releaser only publishes a moved version):
+        - major: removed or renamed values, changed defaults that alter behaviour of existing
+          releases, or changes to immutable fields (Deployment/StatefulSet selectors and selector
+          labels, volumeClaimTemplates, Service clusterIP). A major also needs an entry in the
+          chart's UPGRADING.md (create one if absent).
+        - minor: new values or resources that are off by default or backwards compatible.
+        - patch: fixes, image bumps (also move `appVersion` with the main image).
+        Exempt: tests/, ci/, rules-tests/ and README.md.gotmpl-only changes do not need a bump.
+        A chart must pin the current `charts/common` version in its `dependencies`.
+    - path: "charts/*/values.yaml"
+      instructions: |
+        - Every key needs a helm-docs `# --` description; grouping keys need one too.
+        - Types and constraints live in `# @schema` blocks; values.schema.json is generated from
+          them. Flag a new or changed key whose @schema block is missing or contradicts the
+          default (type, enum, required, additionalProperties).
+        - Images are pinned as `tag: <version>@sha256:<digest>`; flag a tag without a digest.
+        - Secure defaults: runAsNonRoot, readOnlyRootFilesystem, allowPrivilegeEscalation false,
+          all capabilities dropped, seccompProfile RuntimeDefault, automountServiceAccountToken
+          false unless the workload calls the API, resource requests and limits set.
+        - No credentials, tokens or DSNs as defaults; secrets must be settable via an existing
+          Secret reference. NetworkPolicy and RBAC defaults must be least privilege.
+    - path: "charts/*/templates/**"
+      instructions: |
+        Go templates rendering Kubernetes manifests. Flag:
+        - Unquoted string values that YAML can reinterpret (`yes`, `1.0`, `0123`, empty), missing
+          `| quote` / `toYaml` for user input, and wrong `indent`/`nindent` widths.
+        - Mandatory inputs not guarded by `required` or the common chart's validation helpers.
+        - `tpl` applied to values that are not documented as templated (template injection).
+        - Labels or names hand-built instead of using the common chart's `_labels.tpl` and
+          `_names.tpl` helpers; selector labels that would change on upgrade.
+        - Missing checksum annotations when a referenced ConfigMap/Secret changes.
+        - Resource names that can exceed 63 characters without `trunc 63 | trimSuffix "-"`.
+        - API versions below the chart's `kubeVersion` floor or removed in supported versions.
+        - Any new template without a matching helm-unittest suite under the chart's tests/.
+    - path: "charts/common/**"
+      instructions: |
+        Library chart consumed by every application chart. Any change is a cross-chart change:
+        bump its version, repin every consumer and bump each consumer (`just bump-common-version`).
+        Treat helper signature, output shape or default changes as breaking for all consumers.
+        Behaviour must be covered by the fixture suites under .github/testdata/common-fixture/.
+    - path: "charts/terrace-helm/**"
+      instructions: |
+        Library chart rendering configuration files from contracts. Same rules as charts/common:
+        version bump on any change, output-shape changes are breaking for every consumer.
+    - path: "charts/*/tests/**"
+      instructions: |
+        helm-unittest suites. Check that assertions pin the specific field under test (not only
+        `isKind`/`hasDocuments`), negative cases exist for conditionals and `required` failures,
+        and security_test.yaml keeps asserting the restricted Pod Security baseline.
+    - path: "charts/*/rules/**"
+      instructions: |
+        PrometheusRule sources. Check PromQL correctness (rate windows vs scrape interval, `for`
+        durations, label matchers scoped to the release), that thresholds come from tunables.yaml,
+        and that every alert has summary and description annotations and a promtool test in the
+        chart's rules-tests/.
+    - path: "charts/*/config-contract.yaml"
+      instructions: |
+        terrace-contract declaration. Flag opt-outs (`documents: []`) without a concrete reason
+        and credentials whose `value` key does not exist in the chart's values.yaml.
+    - path: "charts/*/README.md.gotmpl"
+      instructions: |
+        Source of the chart README. Do not edit content between the generated HTML comment
+        markers by hand; review wording, install instructions and links.
+    - path: ".github/templates/**"
+      instructions: |
+        Root README template and the `just new-chart` scaffold. Scaffold changes propagate to
+        every future chart: hold them to the same secure-default and documentation rules.
+    - path: ".github/scripts/**/*.py"
+      instructions: |
+        CI gate and maintenance scripts. Gates must fail closed: flag swallowed exceptions,
+        exit 0 on parse errors, or checks that pass when no input was found. Require unit tests
+        under .github/scripts/tests/ for version-bump and comparison logic.
+    - path: ".github/workflows/**"
+      instructions: |
+        Every third-party action must be pinned to a full commit SHA with a version comment.
+        Require least-privilege `permissions:` at workflow or job level, `persist-credentials: false`
+        on checkout unless pushing, no untrusted `${{ github.event.* }}` / `github.head_ref`
+        interpolation into `run:`, and no `pull_request_target` that checks out or executes PR code.
+        Jobs that commit back to PR branches must not run for forks.
+    - path: "**/*.sh"
+      instructions: |
+        Require `set -euo pipefail`, quoted expansions, and no reliance on GNU-only flags
+        without a comment.
+    - path: "just/*.just"
+      instructions: |
+        Recipes CI runs verbatim. Shebang recipes need `set -euo pipefail` and quoted expansions;
+        gates must fail closed when their input is empty or missing.
+
+  pre_merge_checks:
+    title:
+      mode: error
+      requirements: |
+        Must follow Conventional Commits: `type(scope)?!?: subject`. Allowed types: feat, fix, perf,
+        revert, docs, refactor, test, style, ci, build, chore, deps. Scope is the chart name when
+        the change is confined to one chart. Lowercase, imperative subject, no trailing period.
+
+  tools:
+    actionlint:
+      enabled: true
+    # Already run by the Security workflow.
+    zizmor:
+      enabled: false
+    gitleaks:
+      enabled: true
+    shellcheck:
+      enabled: true
+    markdownlint:
+      enabled: true
+    # `ct lint` already runs yamllint with .github/configs/lintconf.yaml, and templates/ are Go
+    # templates that yamllint cannot parse.
+    yamllint:
+      enabled: false
+    checkov:
+      enabled: true
+    trivy:
+      enabled: true
+    # Already run by `just lint-python` in CI.
+    ruff:
+      enabled: false

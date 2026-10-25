@@ -1,698 +1,62 @@
 {
-  "source": {
-    "image": "docker.io/timmi6790/cloudflare-access-webhook-redirect",
-    "digest": "sha256:e4dd826b8ccd8de07dda8a2cd062a82aa69504d5762e6d9fa289c33bab7d96ba",
-    "sha256": "919a2945f40fe93527e34cb725cf5e86f9487bb18e28258c538b7e8824b4ced1",
-    "fetched": "2026-10-17T03:18:35Z"
-  },
   "contract": {
-    "terrace_contract": 1,
-    "producer": {
-      "name": "terrace-config",
-      "version": "0.15.1",
-      "loader": "figment"
-    },
     "app": {
       "name": "cloudflare-access-webhook-redirect",
-      "version": "v2.3.5",
-      "source": "https://github.com/TimSchoenle/cloudflare-access-webhook-redirect"
+      "source": "https://github.com/TimSchoenle/cloudflare-access-webhook-redirect",
+      "version": "v2.3.6"
     },
-    "schema": {
-      "schema_version": 2,
-      "dialect": {
-        "prefix": "WEBHOOK_REDIRECT_",
-        "nesting_separator": "__",
-        "indirection_suffix": "_FILE"
-      },
-      "loader": [
+    "external": {
+      "env": [
         {
-          "env": "WEBHOOK_REDIRECT_CONFIG",
-          "role": "config",
-          "docs": "Names the TOML layer: a file, or a directory whose `*.toml` files are all merged in name order.",
-          "default": "config.toml"
+          "constraint": {
+            "type": "string"
+          },
+          "docs": "Proxy for event submission over HTTP. Read only while `telemetry.sentry.enabled` is set.",
+          "name": "HTTP_PROXY",
+          "owner": "the Sentry SDK",
+          "required": false,
+          "secret": false,
+          "text_form": "text",
+          "ty": "String",
+          "values": []
         },
         {
-          "env": "WEBHOOK_REDIRECT_SECRETS_DIR",
-          "role": "secrets_dir",
-          "docs": "Names a directory of key-named files — a mounted Kubernetes `Secret` volume. Each file supplies the key its name spells.",
-          "default": null
+          "constraint": {
+            "type": "string"
+          },
+          "docs": "Proxy for event submission over HTTPS; falls back to `HTTP_PROXY`. Read only while `telemetry.sentry.enabled` is set.",
+          "name": "HTTPS_PROXY",
+          "owner": "the Sentry SDK",
+          "required": false,
+          "secret": false,
+          "text_form": "text",
+          "ty": "String",
+          "values": []
+        },
+        {
+          "constraint": {
+            "type": "boolean"
+          },
+          "docs": "`false` submits events without verifying the ingest endpoint's certificate. Leave unset.",
+          "name": "SSL_VERIFY",
+          "owner": "the Sentry SDK",
+          "required": false,
+          "secret": false,
+          "text_constraint": {
+            "pattern": "^\\s*(true|false)\\s*$",
+            "type": "string"
+          },
+          "text_form": "boolean",
+          "ty": "bool",
+          "values": []
         }
       ],
-      "keys": [
-        {
-          "path": "server.host",
-          "env": "WEBHOOK_REDIRECT_SERVER__HOST",
-          "env_file": "WEBHOOK_REDIRECT_SERVER__HOST_FILE",
-          "secrets_file": "server__host",
-          "docs": "Bind address. Containers usually want `0.0.0.0`.",
-          "ty": "String",
-          "values": [],
-          "constraint": {
-            "type": "string"
-          },
-          "text_form": "text",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "127.0.0.1",
-          "default_value": "127.0.0.1",
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "server.port",
-          "env": "WEBHOOK_REDIRECT_SERVER__PORT",
-          "env_file": "WEBHOOK_REDIRECT_SERVER__PORT_FILE",
-          "secrets_file": "server__port",
-          "docs": "Bind port.",
-          "ty": "u16",
-          "values": [],
-          "constraint": {
-            "maximum": 65535,
-            "minimum": 0,
-            "type": "integer"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*\\+?[0-9]+\\s*$",
-            "type": "string"
-          },
-          "text_form": "integer",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "8080",
-          "default_value": 8080,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.log_level",
-          "env": "WEBHOOK_REDIRECT_TELEMETRY__LOG_LEVEL",
-          "env_file": "WEBHOOK_REDIRECT_TELEMETRY__LOG_LEVEL_FILE",
-          "secrets_file": "telemetry__log_level",
-          "docs": "Minimum level emitted by the subscriber.\n\nRead as a [`LogLevel`] rather than as a `tracing` type so an unusable value fails the\nboot with a configuration error naming the key, instead of after the subscriber is\ninstalled — and so the spellings this key takes are the ones the settings table lists.",
-          "ty": "LogLevel",
-          "values": [
-            "error",
-            "warn",
-            "info",
-            "debug",
-            "trace"
-          ],
-          "constraint": {
-            "enum": [
-              "error",
-              "warn",
-              "info",
-              "debug",
-              "trace"
-            ],
-            "type": "string"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*(error|warn|info|debug|trace)\\s*$",
-            "type": "string"
-          },
-          "text_form": "choice",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "info",
-          "default_value": "info",
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.sentry.enabled",
-          "env": "WEBHOOK_REDIRECT_TELEMETRY__SENTRY__ENABLED",
-          "env_file": "WEBHOOK_REDIRECT_TELEMETRY__SENTRY__ENABLED_FILE",
-          "secrets_file": "telemetry__sentry__enabled",
-          "docs": "Initialise the Sentry client. `false` installs no client, no panic hook, no `tracing`\nlayer and no HTTP middleware, so every other key here is inert and nothing is sent\nanywhere.",
-          "ty": "bool",
-          "values": [],
-          "constraint": {
-            "type": "boolean"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*(true|false)\\s*$",
-            "type": "string"
-          },
-          "text_form": "boolean",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "false",
-          "default_value": false,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.sentry.dsn",
-          "env": "WEBHOOK_REDIRECT_TELEMETRY__SENTRY__DSN",
-          "env_file": "WEBHOOK_REDIRECT_TELEMETRY__SENTRY__DSN_FILE",
-          "secrets_file": "telemetry__sentry__dsn",
-          "docs": "Ingest URL, `https://<key>@<host>/<project>`.\n\nA [`SecretString`]: the embedded key is a bearer credential for the project's ingest\nendpoint. Absent while `enabled` is set fails the boot rather than reporting nowhere.",
-          "ty": "SecretString",
-          "values": [],
-          "constraint": {
-            "type": "string"
-          },
-          "text_form": "text",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": false,
-          "secret": true,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.sentry.environment",
-          "env": "WEBHOOK_REDIRECT_TELEMETRY__SENTRY__ENVIRONMENT",
-          "env_file": "WEBHOOK_REDIRECT_TELEMETRY__SENTRY__ENVIRONMENT_FILE",
-          "secrets_file": "telemetry__sentry__environment",
-          "docs": "Environment tag on every event, such as `production` or `staging`.\n\nHas a default rather than being optional so the field is never empty when the SDK's own\ndefaults run: an unset `environment` is the one field they would fill from\n`SENTRY_ENVIRONMENT`, which is a second configuration channel that bypasses the layered\nloader and its shadow-key rejection. `release` and `dsn` are always set for the same\nreason.",
-          "ty": "String",
-          "values": [],
-          "constraint": {
-            "type": "string"
-          },
-          "text_form": "text",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "production",
-          "default_value": "production",
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.sentry.release",
-          "env": "WEBHOOK_REDIRECT_TELEMETRY__SENTRY__RELEASE",
-          "env_file": "WEBHOOK_REDIRECT_TELEMETRY__SENTRY__RELEASE_FILE",
-          "secrets_file": "telemetry__sentry__release",
-          "docs": "Release tag on every event. Defaults to the crate name and version the binary was built\nfrom, which is what makes a regression attributable to a deploy.",
-          "ty": "String",
-          "values": [],
-          "constraint": {
-            "type": "string"
-          },
-          "text_form": "text",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.sentry.server_name",
-          "env": "WEBHOOK_REDIRECT_TELEMETRY__SENTRY__SERVER_NAME",
-          "env_file": "WEBHOOK_REDIRECT_TELEMETRY__SENTRY__SERVER_NAME_FILE",
-          "secrets_file": "telemetry__sentry__server_name",
-          "docs": "Host tag on every event. Left unset, Sentry reports none: the hostname of a replica is\ninfrastructure detail that `send_default_pii` would otherwise gate.",
-          "ty": "String",
-          "values": [],
-          "constraint": {
-            "type": "string"
-          },
-          "text_form": "text",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.sentry.sample_rate",
-          "env": "WEBHOOK_REDIRECT_TELEMETRY__SENTRY__SAMPLE_RATE",
-          "env_file": "WEBHOOK_REDIRECT_TELEMETRY__SENTRY__SAMPLE_RATE_FILE",
-          "secrets_file": "telemetry__sentry__sample_rate",
-          "docs": "Fraction of captured events actually sent, `0.0`-`1.0`. A blunt volume cap — it drops\nwhole issues, not repetitions of one — so leave it at `1.0` unless quota forces it.",
-          "ty": "f32",
-          "values": [],
-          "constraint": {
-            "maximum": 1.0,
-            "minimum": 0.0,
-            "type": "number"
-          },
-          "text_form": "unknown",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "1",
-          "default_value": 1.0,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.sentry.traces_sample_rate",
-          "env": "WEBHOOK_REDIRECT_TELEMETRY__SENTRY__TRACES_SAMPLE_RATE",
-          "env_file": "WEBHOOK_REDIRECT_TELEMETRY__SENTRY__TRACES_SAMPLE_RATE_FILE",
-          "secrets_file": "telemetry__sentry__traces_sample_rate",
-          "docs": "Fraction of traces this proxy **starts** that are recorded, `0.0`-`1.0`.\n\n`0.0` (the default) means it starts none of its own. It does **not** mean the proxy is\nabsent from a trace: a request arriving with a `sentry-trace` header already sampled is\ncontinued regardless, which is what keeps one webhook delivery readable across the\ncaller, this hop and the Cloudflare Access protected service behind it.",
-          "ty": "f32",
-          "values": [],
-          "constraint": {
-            "maximum": 1.0,
-            "minimum": 0.0,
-            "type": "number"
-          },
-          "text_form": "unknown",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "0",
-          "default_value": 0.0,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.sentry.capture_level",
-          "env": "WEBHOOK_REDIRECT_TELEMETRY__SENTRY__CAPTURE_LEVEL",
-          "env_file": "WEBHOOK_REDIRECT_TELEMETRY__SENTRY__CAPTURE_LEVEL_FILE",
-          "secrets_file": "telemetry__sentry__capture_level",
-          "docs": "Least severe `tracing` level reported as a Sentry **issue**: `off`, `error`, `warn`,\n`info`, `debug` or `trace`.\n\nBounded from above by `telemetry.log_level`: the Sentry layer sits under the same filter\nthe console log does, so a record that level drops is never reported either.",
-          "ty": "SentryLevel",
-          "values": [
-            "off",
-            "error",
-            "warn",
-            "info",
-            "debug",
-            "trace"
-          ],
-          "constraint": {
-            "enum": [
-              "off",
-              "error",
-              "warn",
-              "info",
-              "debug",
-              "trace"
-            ],
-            "type": "string"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*(off|error|warn|info|debug|trace)\\s*$",
-            "type": "string"
-          },
-          "text_form": "choice",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "error",
-          "default_value": "error",
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.sentry.breadcrumb_level",
-          "env": "WEBHOOK_REDIRECT_TELEMETRY__SENTRY__BREADCRUMB_LEVEL",
-          "env_file": "WEBHOOK_REDIRECT_TELEMETRY__SENTRY__BREADCRUMB_LEVEL_FILE",
-          "secrets_file": "telemetry__sentry__breadcrumb_level",
-          "docs": "Least severe `tracing` level kept as a **breadcrumb** — the trail attached to the next\nissue. Same spellings as `capture_level`; records at or above it become issues instead.",
-          "ty": "SentryLevel",
-          "values": [
-            "off",
-            "error",
-            "warn",
-            "info",
-            "debug",
-            "trace"
-          ],
-          "constraint": {
-            "enum": [
-              "off",
-              "error",
-              "warn",
-              "info",
-              "debug",
-              "trace"
-            ],
-            "type": "string"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*(off|error|warn|info|debug|trace)\\s*$",
-            "type": "string"
-          },
-          "text_form": "choice",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "info",
-          "default_value": "info",
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.sentry.max_breadcrumbs",
-          "env": "WEBHOOK_REDIRECT_TELEMETRY__SENTRY__MAX_BREADCRUMBS",
-          "env_file": "WEBHOOK_REDIRECT_TELEMETRY__SENTRY__MAX_BREADCRUMBS_FILE",
-          "secrets_file": "telemetry__sentry__max_breadcrumbs",
-          "docs": "How many breadcrumbs one event carries.",
-          "ty": "usize",
-          "values": [],
-          "constraint": {
-            "minimum": 0,
-            "type": "integer"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*\\+?[0-9]+\\s*$",
-            "type": "string"
-          },
-          "text_form": "integer",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "100",
-          "default_value": 100,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.sentry.attach_stacktraces",
-          "env": "WEBHOOK_REDIRECT_TELEMETRY__SENTRY__ATTACH_STACKTRACES",
-          "env_file": "WEBHOOK_REDIRECT_TELEMETRY__SENTRY__ATTACH_STACKTRACES_FILE",
-          "secrets_file": "telemetry__sentry__attach_stacktraces",
-          "docs": "Attach a stack trace to events that carry none of their own.",
-          "ty": "bool",
-          "values": [],
-          "constraint": {
-            "type": "boolean"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*(true|false)\\s*$",
-            "type": "string"
-          },
-          "text_form": "boolean",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "true",
-          "default_value": true,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.sentry.send_default_pii",
-          "env": "WEBHOOK_REDIRECT_TELEMETRY__SENTRY__SEND_DEFAULT_PII",
-          "env_file": "WEBHOOK_REDIRECT_TELEMETRY__SENTRY__SEND_DEFAULT_PII_FILE",
-          "secrets_file": "telemetry__sentry__send_default_pii",
-          "docs": "Send personally identifying data with every event: the client IP, the full request header\nset, and request bodies of a known content type.\n\n**Off, and worth leaving off.** Every header this proxy receives is forwarded to a\nCloudflare Access protected service, so the header set of a webhook delivery routinely\ncarries the caller's own signing secret — which is exactly what a crash report does not\nneed in order to be actionable.",
-          "ty": "bool",
-          "values": [],
-          "constraint": {
-            "type": "boolean"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*(true|false)\\s*$",
-            "type": "string"
-          },
-          "text_form": "boolean",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "false",
-          "default_value": false,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.sentry.http_transactions",
-          "env": "WEBHOOK_REDIRECT_TELEMETRY__SENTRY__HTTP_TRANSACTIONS",
-          "env_file": "WEBHOOK_REDIRECT_TELEMETRY__SENTRY__HTTP_TRANSACTIONS_FILE",
-          "secrets_file": "telemetry__sentry__http_transactions",
-          "docs": "Record one Sentry transaction per request, named by the method and the matched path.\n\nWhether a started transaction is *kept* is `traces_sample_rate`'s decision. This is the\nswitch for a deployment that should stay out of traces entirely while still reporting\nerrors.",
-          "ty": "bool",
-          "values": [],
-          "constraint": {
-            "type": "boolean"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*(true|false)\\s*$",
-            "type": "string"
-          },
-          "text_form": "boolean",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "true",
-          "default_value": true,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.sentry.span_attributes",
-          "env": "WEBHOOK_REDIRECT_TELEMETRY__SENTRY__SPAN_ATTRIBUTES",
-          "env_file": "WEBHOOK_REDIRECT_TELEMETRY__SENTRY__SPAN_ATTRIBUTES_FILE",
-          "secrets_file": "telemetry__sentry__span_attributes",
-          "docs": "Copy `tracing` span fields onto the Sentry span as attributes. Off: the request span this\nproxy opens carries the full request path, and a transaction is stored under a longer\nretention than a log line.",
-          "ty": "bool",
-          "values": [],
-          "constraint": {
-            "type": "boolean"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*(true|false)\\s*$",
-            "type": "string"
-          },
-          "text_form": "boolean",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "false",
-          "default_value": false,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.sentry.shutdown_timeout_secs",
-          "env": "WEBHOOK_REDIRECT_TELEMETRY__SENTRY__SHUTDOWN_TIMEOUT_SECS",
-          "env_file": "WEBHOOK_REDIRECT_TELEMETRY__SENTRY__SHUTDOWN_TIMEOUT_SECS_FILE",
-          "secrets_file": "telemetry__sentry__shutdown_timeout_secs",
-          "docs": "How long process exit waits for queued events to drain.",
-          "ty": "u64",
-          "values": [],
-          "constraint": {
-            "minimum": 0,
-            "type": "integer"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*\\+?[0-9]+\\s*$",
-            "type": "string"
-          },
-          "text_form": "integer",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "2",
-          "default_value": 2,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.sentry.debug",
-          "env": "WEBHOOK_REDIRECT_TELEMETRY__SENTRY__DEBUG",
-          "env_file": "WEBHOOK_REDIRECT_TELEMETRY__SENTRY__DEBUG_FILE",
-          "secrets_file": "telemetry__sentry__debug",
-          "docs": "Print the SDK's own diagnostics to stderr. For proving a DSN works, not for running.",
-          "ty": "bool",
-          "values": [],
-          "constraint": {
-            "type": "boolean"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*(true|false)\\s*$",
-            "type": "string"
-          },
-          "text_form": "boolean",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "false",
-          "default_value": false,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "cloudflare.client_id",
-          "env": "WEBHOOK_REDIRECT_CLOUDFLARE__CLIENT_ID",
-          "env_file": "WEBHOOK_REDIRECT_CLOUDFLARE__CLIENT_ID_FILE",
-          "secrets_file": "cloudflare__client_id",
-          "docs": "`CF-Access-Client-Id` header value.",
-          "ty": "SecretString",
-          "values": [],
-          "constraint": {
-            "type": "string"
-          },
-          "text_form": "text",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": true,
-          "secret": true,
-          "reserved": false
-        },
-        {
-          "path": "cloudflare.client_secret",
-          "env": "WEBHOOK_REDIRECT_CLOUDFLARE__CLIENT_SECRET",
-          "env_file": "WEBHOOK_REDIRECT_CLOUDFLARE__CLIENT_SECRET_FILE",
-          "secrets_file": "cloudflare__client_secret",
-          "docs": "`CF-Access-Client-Secret` header value.",
-          "ty": "SecretString",
-          "values": [],
-          "constraint": {
-            "type": "string"
-          },
-          "text_form": "text",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": true,
-          "secret": true,
-          "reserved": false
-        },
-        {
-          "path": "webhook.target_base",
-          "env": "WEBHOOK_REDIRECT_WEBHOOK__TARGET_BASE",
-          "env_file": "WEBHOOK_REDIRECT_WEBHOOK__TARGET_BASE_FILE",
-          "secrets_file": "webhook__target_base",
-          "docs": "Base URL of the Cloudflare Access protected service every allowed path is joined onto.",
-          "ty": "Url",
-          "values": [],
-          "constraint": {
-            "type": "string"
-          },
-          "text_form": "unknown",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": true,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "webhook.paths",
-          "env": "WEBHOOK_REDIRECT_WEBHOOK__PATHS",
-          "env_file": "WEBHOOK_REDIRECT_WEBHOOK__PATHS_FILE",
-          "secrets_file": "webhook__paths",
-          "docs": "Path regex to the methods allowed on it.\n\nA table rather than the packed string the environment layer forced, so a pattern\ncontaining the old separators is no longer unspellable:\n\n```toml\n[webhook.paths]\n\"/webhook/.*\" = [\"ALL\"]\n\"/api/public/.*\" = [\"GET\", \"POST\"]\n```",
-          "ty": "HashMap<String, HashSet<AllowedMethod>>",
-          "values": [],
-          "constraint": {
-            "additionalProperties": {
-              "items": {
-                "enum": [
-                  "ALL",
-                  "all",
-                  "GET",
-                  "get",
-                  "POST",
-                  "post",
-                  "PUT",
-                  "put",
-                  "PATCH",
-                  "patch",
-                  "DELETE",
-                  "delete"
-                ],
-                "type": "string"
-              },
-              "type": "array",
-              "uniqueItems": true
-            },
-            "type": "object"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*[\\[\\{][\\s\\S]*[\\]\\}]\\s*$",
-            "type": "string"
-          },
-          "text_form": "structured",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": true,
-          "secret": false,
-          "reserved": false
-        }
-      ]
+      "ignore": [
+        "HOSTNAME",
+        "KUBERNETES_*",
+        "TZ"
+      ],
+      "unknown": "reject"
     },
     "json_schema": {
       "$schema": "http://json-schema.org/draft-07/schema#",
@@ -895,58 +259,694 @@
       "title": "cloudflare-access-webhook-redirect configuration",
       "type": "object"
     },
-    "external": {
-      "env": [
+    "producer": {
+      "loader": "figment",
+      "name": "terrace-config",
+      "version": "0.15.2"
+    },
+    "schema": {
+      "dialect": {
+        "indirection_suffix": "_FILE",
+        "nesting_separator": "__",
+        "prefix": "WEBHOOK_REDIRECT_"
+      },
+      "keys": [
         {
-          "name": "HTTP_PROXY",
-          "owner": "the Sentry SDK",
-          "docs": "Proxy for event submission over HTTP. Read only while `telemetry.sentry.enabled` is set.",
-          "ty": "String",
-          "values": [],
+          "aliases": [],
           "constraint": {
             "type": "string"
           },
-          "text_form": "text",
+          "default": "127.0.0.1",
+          "default_value": "127.0.0.1",
+          "docs": "Bind address. Containers usually want `0.0.0.0`.",
+          "env": "WEBHOOK_REDIRECT_SERVER__HOST",
+          "env_aliases": [],
+          "env_file": "WEBHOOK_REDIRECT_SERVER__HOST_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "server.host",
           "required": false,
-          "secret": false
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "server__host",
+          "secrets_file_aliases": [],
+          "text_form": "text",
+          "ty": "String",
+          "values": []
         },
         {
-          "name": "HTTPS_PROXY",
-          "owner": "the Sentry SDK",
-          "docs": "Proxy for event submission over HTTPS; falls back to `HTTP_PROXY`. Read only while `telemetry.sentry.enabled` is set.",
-          "ty": "String",
-          "values": [],
+          "aliases": [],
           "constraint": {
+            "maximum": 65535,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "default": "8080",
+          "default_value": 8080,
+          "docs": "Bind port.",
+          "env": "WEBHOOK_REDIRECT_SERVER__PORT",
+          "env_aliases": [],
+          "env_file": "WEBHOOK_REDIRECT_SERVER__PORT_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "server.port",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "server__port",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*\\+?[0-9]+\\s*$",
             "type": "string"
           },
-          "text_form": "text",
-          "required": false,
-          "secret": false
+          "text_form": "integer",
+          "ty": "u16",
+          "values": []
         },
         {
-          "name": "SSL_VERIFY",
-          "owner": "the Sentry SDK",
-          "docs": "`false` submits events without verifying the ingest endpoint's certificate. Leave unset.",
-          "ty": "bool",
-          "values": [],
+          "aliases": [],
+          "constraint": {
+            "enum": [
+              "error",
+              "warn",
+              "info",
+              "debug",
+              "trace"
+            ],
+            "type": "string"
+          },
+          "default": "info",
+          "default_value": "info",
+          "docs": "Minimum level emitted by the subscriber.\n\nRead as a [`LogLevel`] rather than as a `tracing` type so an unusable value fails the\nboot with a configuration error naming the key, instead of after the subscriber is\ninstalled — and so the spellings this key takes are the ones the settings table lists.",
+          "env": "WEBHOOK_REDIRECT_TELEMETRY__LOG_LEVEL",
+          "env_aliases": [],
+          "env_file": "WEBHOOK_REDIRECT_TELEMETRY__LOG_LEVEL_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.log_level",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "telemetry__log_level",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*(error|warn|info|debug|trace)\\s*$",
+            "type": "string"
+          },
+          "text_form": "choice",
+          "ty": "LogLevel",
+          "values": [
+            "error",
+            "warn",
+            "info",
+            "debug",
+            "trace"
+          ]
+        },
+        {
+          "aliases": [],
           "constraint": {
             "type": "boolean"
           },
+          "default": "false",
+          "default_value": false,
+          "docs": "Initialise the Sentry client. `false` installs no client, no panic hook, no `tracing`\nlayer and no HTTP middleware, so every other key here is inert and nothing is sent\nanywhere.",
+          "env": "WEBHOOK_REDIRECT_TELEMETRY__SENTRY__ENABLED",
+          "env_aliases": [],
+          "env_file": "WEBHOOK_REDIRECT_TELEMETRY__SENTRY__ENABLED_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.sentry.enabled",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "telemetry__sentry__enabled",
+          "secrets_file_aliases": [],
           "text_constraint": {
             "pattern": "^\\s*(true|false)\\s*$",
             "type": "string"
           },
           "text_form": "boolean",
+          "ty": "bool",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "string"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "Ingest URL, `https://<key>@<host>/<project>`.\n\nA [`SecretString`]: the embedded key is a bearer credential for the project's ingest\nendpoint. Absent while `enabled` is set fails the boot rather than reporting nowhere.",
+          "env": "WEBHOOK_REDIRECT_TELEMETRY__SENTRY__DSN",
+          "env_aliases": [],
+          "env_file": "WEBHOOK_REDIRECT_TELEMETRY__SENTRY__DSN_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.sentry.dsn",
           "required": false,
-          "secret": false
+          "reserved": false,
+          "secret": true,
+          "secrets_file": "telemetry__sentry__dsn",
+          "secrets_file_aliases": [],
+          "text_form": "text",
+          "ty": "SecretString",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "string"
+          },
+          "default": "production",
+          "default_value": "production",
+          "docs": "Environment tag on every event, such as `production` or `staging`.\n\nHas a default rather than being optional so the field is never empty when the SDK's own\ndefaults run: an unset `environment` is the one field they would fill from\n`SENTRY_ENVIRONMENT`, which is a second configuration channel that bypasses the layered\nloader and its shadow-key rejection. `release` and `dsn` are always set for the same\nreason.",
+          "env": "WEBHOOK_REDIRECT_TELEMETRY__SENTRY__ENVIRONMENT",
+          "env_aliases": [],
+          "env_file": "WEBHOOK_REDIRECT_TELEMETRY__SENTRY__ENVIRONMENT_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.sentry.environment",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "telemetry__sentry__environment",
+          "secrets_file_aliases": [],
+          "text_form": "text",
+          "ty": "String",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "string"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "Release tag on every event. Defaults to the crate name and version the binary was built\nfrom, which is what makes a regression attributable to a deploy.",
+          "env": "WEBHOOK_REDIRECT_TELEMETRY__SENTRY__RELEASE",
+          "env_aliases": [],
+          "env_file": "WEBHOOK_REDIRECT_TELEMETRY__SENTRY__RELEASE_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.sentry.release",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "telemetry__sentry__release",
+          "secrets_file_aliases": [],
+          "text_form": "text",
+          "ty": "String",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "string"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "Host tag on every event. Left unset, Sentry reports none: the hostname of a replica is\ninfrastructure detail that `send_default_pii` would otherwise gate.",
+          "env": "WEBHOOK_REDIRECT_TELEMETRY__SENTRY__SERVER_NAME",
+          "env_aliases": [],
+          "env_file": "WEBHOOK_REDIRECT_TELEMETRY__SENTRY__SERVER_NAME_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.sentry.server_name",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "telemetry__sentry__server_name",
+          "secrets_file_aliases": [],
+          "text_form": "text",
+          "ty": "String",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "type": "number"
+          },
+          "default": "1",
+          "default_value": 1.0,
+          "docs": "Fraction of captured events actually sent, `0.0`-`1.0`. A blunt volume cap — it drops\nwhole issues, not repetitions of one — so leave it at `1.0` unless quota forces it.",
+          "env": "WEBHOOK_REDIRECT_TELEMETRY__SENTRY__SAMPLE_RATE",
+          "env_aliases": [],
+          "env_file": "WEBHOOK_REDIRECT_TELEMETRY__SENTRY__SAMPLE_RATE_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.sentry.sample_rate",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "telemetry__sentry__sample_rate",
+          "secrets_file_aliases": [],
+          "text_form": "unknown",
+          "ty": "f32",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "type": "number"
+          },
+          "default": "0",
+          "default_value": 0.0,
+          "docs": "Fraction of traces this proxy **starts** that are recorded, `0.0`-`1.0`.\n\n`0.0` (the default) means it starts none of its own. It does **not** mean the proxy is\nabsent from a trace: a request arriving with a `sentry-trace` header already sampled is\ncontinued regardless, which is what keeps one webhook delivery readable across the\ncaller, this hop and the Cloudflare Access protected service behind it.",
+          "env": "WEBHOOK_REDIRECT_TELEMETRY__SENTRY__TRACES_SAMPLE_RATE",
+          "env_aliases": [],
+          "env_file": "WEBHOOK_REDIRECT_TELEMETRY__SENTRY__TRACES_SAMPLE_RATE_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.sentry.traces_sample_rate",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "telemetry__sentry__traces_sample_rate",
+          "secrets_file_aliases": [],
+          "text_form": "unknown",
+          "ty": "f32",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "enum": [
+              "off",
+              "error",
+              "warn",
+              "info",
+              "debug",
+              "trace"
+            ],
+            "type": "string"
+          },
+          "default": "error",
+          "default_value": "error",
+          "docs": "Least severe `tracing` level reported as a Sentry **issue**: `off`, `error`, `warn`,\n`info`, `debug` or `trace`.\n\nBounded from above by `telemetry.log_level`: the Sentry layer sits under the same filter\nthe console log does, so a record that level drops is never reported either.",
+          "env": "WEBHOOK_REDIRECT_TELEMETRY__SENTRY__CAPTURE_LEVEL",
+          "env_aliases": [],
+          "env_file": "WEBHOOK_REDIRECT_TELEMETRY__SENTRY__CAPTURE_LEVEL_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.sentry.capture_level",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "telemetry__sentry__capture_level",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*(off|error|warn|info|debug|trace)\\s*$",
+            "type": "string"
+          },
+          "text_form": "choice",
+          "ty": "SentryLevel",
+          "values": [
+            "off",
+            "error",
+            "warn",
+            "info",
+            "debug",
+            "trace"
+          ]
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "enum": [
+              "off",
+              "error",
+              "warn",
+              "info",
+              "debug",
+              "trace"
+            ],
+            "type": "string"
+          },
+          "default": "info",
+          "default_value": "info",
+          "docs": "Least severe `tracing` level kept as a **breadcrumb** — the trail attached to the next\nissue. Same spellings as `capture_level`; records at or above it become issues instead.",
+          "env": "WEBHOOK_REDIRECT_TELEMETRY__SENTRY__BREADCRUMB_LEVEL",
+          "env_aliases": [],
+          "env_file": "WEBHOOK_REDIRECT_TELEMETRY__SENTRY__BREADCRUMB_LEVEL_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.sentry.breadcrumb_level",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "telemetry__sentry__breadcrumb_level",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*(off|error|warn|info|debug|trace)\\s*$",
+            "type": "string"
+          },
+          "text_form": "choice",
+          "ty": "SentryLevel",
+          "values": [
+            "off",
+            "error",
+            "warn",
+            "info",
+            "debug",
+            "trace"
+          ]
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "default": "100",
+          "default_value": 100,
+          "docs": "How many breadcrumbs one event carries.",
+          "env": "WEBHOOK_REDIRECT_TELEMETRY__SENTRY__MAX_BREADCRUMBS",
+          "env_aliases": [],
+          "env_file": "WEBHOOK_REDIRECT_TELEMETRY__SENTRY__MAX_BREADCRUMBS_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.sentry.max_breadcrumbs",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "telemetry__sentry__max_breadcrumbs",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*\\+?[0-9]+\\s*$",
+            "type": "string"
+          },
+          "text_form": "integer",
+          "ty": "usize",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "boolean"
+          },
+          "default": "true",
+          "default_value": true,
+          "docs": "Attach a stack trace to events that carry none of their own.",
+          "env": "WEBHOOK_REDIRECT_TELEMETRY__SENTRY__ATTACH_STACKTRACES",
+          "env_aliases": [],
+          "env_file": "WEBHOOK_REDIRECT_TELEMETRY__SENTRY__ATTACH_STACKTRACES_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.sentry.attach_stacktraces",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "telemetry__sentry__attach_stacktraces",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*(true|false)\\s*$",
+            "type": "string"
+          },
+          "text_form": "boolean",
+          "ty": "bool",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "boolean"
+          },
+          "default": "false",
+          "default_value": false,
+          "docs": "Send personally identifying data with every event: the client IP, the full request header\nset, and request bodies of a known content type.\n\n**Off, and worth leaving off.** Every header this proxy receives is forwarded to a\nCloudflare Access protected service, so the header set of a webhook delivery routinely\ncarries the caller's own signing secret — which is exactly what a crash report does not\nneed in order to be actionable.",
+          "env": "WEBHOOK_REDIRECT_TELEMETRY__SENTRY__SEND_DEFAULT_PII",
+          "env_aliases": [],
+          "env_file": "WEBHOOK_REDIRECT_TELEMETRY__SENTRY__SEND_DEFAULT_PII_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.sentry.send_default_pii",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "telemetry__sentry__send_default_pii",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*(true|false)\\s*$",
+            "type": "string"
+          },
+          "text_form": "boolean",
+          "ty": "bool",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "boolean"
+          },
+          "default": "true",
+          "default_value": true,
+          "docs": "Record one Sentry transaction per request, named by the method and the matched path.\n\nWhether a started transaction is *kept* is `traces_sample_rate`'s decision. This is the\nswitch for a deployment that should stay out of traces entirely while still reporting\nerrors.",
+          "env": "WEBHOOK_REDIRECT_TELEMETRY__SENTRY__HTTP_TRANSACTIONS",
+          "env_aliases": [],
+          "env_file": "WEBHOOK_REDIRECT_TELEMETRY__SENTRY__HTTP_TRANSACTIONS_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.sentry.http_transactions",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "telemetry__sentry__http_transactions",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*(true|false)\\s*$",
+            "type": "string"
+          },
+          "text_form": "boolean",
+          "ty": "bool",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "boolean"
+          },
+          "default": "false",
+          "default_value": false,
+          "docs": "Copy `tracing` span fields onto the Sentry span as attributes. Off: the request span this\nproxy opens carries the full request path, and a transaction is stored under a longer\nretention than a log line.",
+          "env": "WEBHOOK_REDIRECT_TELEMETRY__SENTRY__SPAN_ATTRIBUTES",
+          "env_aliases": [],
+          "env_file": "WEBHOOK_REDIRECT_TELEMETRY__SENTRY__SPAN_ATTRIBUTES_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.sentry.span_attributes",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "telemetry__sentry__span_attributes",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*(true|false)\\s*$",
+            "type": "string"
+          },
+          "text_form": "boolean",
+          "ty": "bool",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "default": "2",
+          "default_value": 2,
+          "docs": "How long process exit waits for queued events to drain.",
+          "env": "WEBHOOK_REDIRECT_TELEMETRY__SENTRY__SHUTDOWN_TIMEOUT_SECS",
+          "env_aliases": [],
+          "env_file": "WEBHOOK_REDIRECT_TELEMETRY__SENTRY__SHUTDOWN_TIMEOUT_SECS_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.sentry.shutdown_timeout_secs",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "telemetry__sentry__shutdown_timeout_secs",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*\\+?[0-9]+\\s*$",
+            "type": "string"
+          },
+          "text_form": "integer",
+          "ty": "u64",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "boolean"
+          },
+          "default": "false",
+          "default_value": false,
+          "docs": "Print the SDK's own diagnostics to stderr. For proving a DSN works, not for running.",
+          "env": "WEBHOOK_REDIRECT_TELEMETRY__SENTRY__DEBUG",
+          "env_aliases": [],
+          "env_file": "WEBHOOK_REDIRECT_TELEMETRY__SENTRY__DEBUG_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.sentry.debug",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "telemetry__sentry__debug",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*(true|false)\\s*$",
+            "type": "string"
+          },
+          "text_form": "boolean",
+          "ty": "bool",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "string"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "`CF-Access-Client-Id` header value.",
+          "env": "WEBHOOK_REDIRECT_CLOUDFLARE__CLIENT_ID",
+          "env_aliases": [],
+          "env_file": "WEBHOOK_REDIRECT_CLOUDFLARE__CLIENT_ID_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "cloudflare.client_id",
+          "required": true,
+          "reserved": false,
+          "secret": true,
+          "secrets_file": "cloudflare__client_id",
+          "secrets_file_aliases": [],
+          "text_form": "text",
+          "ty": "SecretString",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "string"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "`CF-Access-Client-Secret` header value.",
+          "env": "WEBHOOK_REDIRECT_CLOUDFLARE__CLIENT_SECRET",
+          "env_aliases": [],
+          "env_file": "WEBHOOK_REDIRECT_CLOUDFLARE__CLIENT_SECRET_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "cloudflare.client_secret",
+          "required": true,
+          "reserved": false,
+          "secret": true,
+          "secrets_file": "cloudflare__client_secret",
+          "secrets_file_aliases": [],
+          "text_form": "text",
+          "ty": "SecretString",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "string"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "Base URL of the Cloudflare Access protected service every allowed path is joined onto.",
+          "env": "WEBHOOK_REDIRECT_WEBHOOK__TARGET_BASE",
+          "env_aliases": [],
+          "env_file": "WEBHOOK_REDIRECT_WEBHOOK__TARGET_BASE_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "webhook.target_base",
+          "required": true,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "webhook__target_base",
+          "secrets_file_aliases": [],
+          "text_form": "unknown",
+          "ty": "Url",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "additionalProperties": {
+              "items": {
+                "enum": [
+                  "ALL",
+                  "all",
+                  "GET",
+                  "get",
+                  "POST",
+                  "post",
+                  "PUT",
+                  "put",
+                  "PATCH",
+                  "patch",
+                  "DELETE",
+                  "delete"
+                ],
+                "type": "string"
+              },
+              "type": "array",
+              "uniqueItems": true
+            },
+            "type": "object"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "Path regex to the methods allowed on it.\n\nA table rather than the packed string the environment layer forced, so a pattern\ncontaining the old separators is no longer unspellable:\n\n```toml\n[webhook.paths]\n\"/webhook/.*\" = [\"ALL\"]\n\"/api/public/.*\" = [\"GET\", \"POST\"]\n```",
+          "env": "WEBHOOK_REDIRECT_WEBHOOK__PATHS",
+          "env_aliases": [],
+          "env_file": "WEBHOOK_REDIRECT_WEBHOOK__PATHS_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "webhook.paths",
+          "required": true,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "webhook__paths",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*[\\[\\{][\\s\\S]*[\\]\\}]\\s*$",
+            "type": "string"
+          },
+          "text_form": "structured",
+          "ty": "HashMap<String, HashSet<AllowedMethod>>",
+          "values": []
         }
       ],
-      "ignore": [
-        "HOSTNAME",
-        "KUBERNETES_*",
-        "TZ"
+      "loader": [
+        {
+          "default": "config.toml",
+          "docs": "Names the TOML layer: a file, or a directory whose `*.toml` files are all merged in name order.",
+          "env": "WEBHOOK_REDIRECT_CONFIG",
+          "role": "config"
+        },
+        {
+          "default": null,
+          "docs": "Names a directory of key-named files — a mounted Kubernetes `Secret` volume. Each file supplies the key its name spells.",
+          "env": "WEBHOOK_REDIRECT_SECRETS_DIR",
+          "role": "secrets_dir"
+        }
       ],
-      "unknown": "reject"
-    }
+      "schema_version": 2
+    },
+    "terrace_contract": 1
+  },
+  "source": {
+    "digest": "sha256:ea5636f20667bf7cf335467cbab65940721a04c2c82ac29be95b347369a7eb30",
+    "fetched": "2026-10-25T15:48:08Z",
+    "image": "docker.io/timmi6790/cloudflare-access-webhook-redirect",
+    "sha256": "dcb93eab89e0556dd26cf4c5a4991c44ae89c9d640c48318e0115c3ca9f65fd4"
   }
 }

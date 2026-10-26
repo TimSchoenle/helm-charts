@@ -1,2520 +1,14 @@
 {
-  "source": {
-    "image": "docker.io/timschoenle/discord-alertmanager",
-    "digest": "sha256:6d9d9e1dde15ee6b4308894c6788386d10b7f26723d2d448018ac19e60f6a13d",
-    "sha256": "f991026905f07314a15747074357b42c2d6a891d266d6dad5844809357d2da7f",
-    "fetched": "2026-10-17T15:21:18Z"
-  },
   "contract": {
-    "terrace_contract": 1,
-    "producer": {
-      "name": "terrace-config",
-      "version": "0.15.1",
-      "loader": "figment"
-    },
     "app": {
       "name": "discord-alertmanager",
-      "version": "v0.9.1",
-      "source": "https://github.com/TimSchoenle/discord-alertmanager"
+      "source": "https://github.com/TimSchoenle/discord-alertmanager",
+      "version": "v0.9.2"
     },
-    "schema": {
-      "schema_version": 2,
-      "dialect": {
-        "prefix": "DAM_",
-        "nesting_separator": "__",
-        "indirection_suffix": "_FILE"
-      },
-      "loader": [
-        {
-          "env": "DAM_CONFIG",
-          "role": "config",
-          "docs": "Names the TOML layer: a file, or a directory whose `*.toml` files are all merged in name order.",
-          "default": "config.toml"
-        },
-        {
-          "env": "DAM_SECRETS_DIR",
-          "role": "secrets_dir",
-          "docs": "Names a directory of key-named files — a mounted Kubernetes `Secret` volume. Each file supplies the key its name spells.",
-          "default": null
-        }
-      ],
-      "keys": [
-        {
-          "path": "discord.token",
-          "env": "DAM_DISCORD__TOKEN",
-          "env_file": "DAM_DISCORD__TOKEN_FILE",
-          "secrets_file": "discord__token",
-          "docs": "Bot token. Supply it through `DAM_DISCORD__TOKEN_FILE` or the secrets directory.\n\nPassing it as a plain environment variable puts it in the output of `docker inspect` and\nin any crash reporter that captures the environment.",
-          "ty": "SecretString",
-          "values": [],
-          "constraint": {
-            "type": "string"
-          },
-          "text_form": "text",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": false,
-          "secret": true,
-          "reserved": false
-        },
-        {
-          "path": "discord.dev_guild_id",
-          "env": "DAM_DISCORD__DEV_GUILD_ID",
-          "env_file": "DAM_DISCORD__DEV_GUILD_ID_FILE",
-          "secrets_file": "discord__dev_guild_id",
-          "docs": "Guild to register slash commands into. Registration is global when unset.\n\nGuild-scoped commands appear immediately; global ones take up to an hour to propagate.\nSet this in development and leave it unset in production.",
-          "ty": "u64",
-          "values": [],
-          "constraint": {
-            "minimum": 0,
-            "type": "integer"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*\\+?[0-9]+\\s*$",
-            "type": "string"
-          },
-          "text_form": "integer",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "discord.capture_reply_text",
-          "env": "DAM_DISCORD__CAPTURE_REPLY_TEXT",
-          "env_file": "DAM_DISCORD__CAPTURE_REPLY_TEXT_FILE",
-          "secrets_file": "discord__capture_reply_text",
-          "docs": "Capture the text of thread replies, which needs the privileged `MESSAGE_CONTENT` intent.\n\nA card marks itself responded without this: the author and channel of a reply arrive\nwithout the privileged intent, and that is all the detection needs. Only the text of the\nreply is gated, so leaving this off costs nothing except the reply preview.",
-          "ty": "bool",
-          "values": [],
-          "constraint": {
-            "type": "boolean"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*(true|false)\\s*$",
-            "type": "string"
-          },
-          "text_form": "boolean",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "false",
-          "default_value": false,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "discord.capabilities.view",
-          "env": "DAM_DISCORD__CAPABILITIES__VIEW",
-          "env_file": "DAM_DISCORD__CAPABILITIES__VIEW_FILE",
-          "secrets_file": "discord__capabilities__view",
-          "docs": "Read alerts, silences and routes. Grants no mutation of any kind.",
-          "ty": "Vec<String>",
-          "values": [],
-          "constraint": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*[\\[\\{][\\s\\S]*[\\]\\}]\\s*$",
-            "type": "string"
-          },
-          "text_form": "structured",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "[@everyone]",
-          "default_value": [
-            "@everyone"
-          ],
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "discord.capabilities.operate",
-          "env": "DAM_DISCORD__CAPABILITIES__OPERATE",
-          "env_file": "DAM_DISCORD__CAPABILITIES__OPERATE_FILE",
-          "secrets_file": "discord__capabilities__operate",
-          "docs": "Acknowledge, assign, and add or remove bot-local ignores.",
-          "ty": "Vec<String>",
-          "values": [],
-          "constraint": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*[\\[\\{][\\s\\S]*[\\]\\}]\\s*$",
-            "type": "string"
-          },
-          "text_form": "structured",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "[]",
-          "default_value": [],
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "discord.capabilities.silence",
-          "env": "DAM_DISCORD__CAPABILITIES__SILENCE",
-          "env_file": "DAM_DISCORD__CAPABILITIES__SILENCE_FILE",
-          "secrets_file": "discord__capabilities__silence",
-          "docs": "Create, extend and expire Alertmanager silences, which affects every receiver.",
-          "ty": "Vec<String>",
-          "values": [],
-          "constraint": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*[\\[\\{][\\s\\S]*[\\]\\}]\\s*$",
-            "type": "string"
-          },
-          "text_form": "structured",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "[]",
-          "default_value": [],
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "discord.capabilities.admin",
-          "env": "DAM_DISCORD__CAPABILITIES__ADMIN",
-          "env_file": "DAM_DISCORD__CAPABILITIES__ADMIN_FILE",
-          "secrets_file": "discord__capabilities__admin",
-          "docs": "Manage routes and read the effective configuration.",
-          "ty": "Vec<String>",
-          "values": [],
-          "constraint": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*[\\[\\{][\\s\\S]*[\\]\\}]\\s*$",
-            "type": "string"
-          },
-          "text_form": "structured",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "[]",
-          "default_value": [],
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "alertmanager.endpoints",
-          "env": "DAM_ALERTMANAGER__ENDPOINTS",
-          "env_file": "DAM_ALERTMANAGER__ENDPOINTS_FILE",
-          "secrets_file": "alertmanager__endpoints",
-          "docs": "Base URLs of the Alertmanager peers, tried in order.\n\nList every peer of a high-availability set. Silences gossip between peers, so any of them\naccepts a write and the first one that answers is used.",
-          "ty": "Vec<Url>",
-          "values": [],
-          "constraint": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*[\\[\\{][\\s\\S]*[\\]\\}]\\s*$",
-            "type": "string"
-          },
-          "text_form": "structured",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "[]",
-          "default_value": [],
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "alertmanager.bearer_token",
-          "env": "DAM_ALERTMANAGER__BEARER_TOKEN",
-          "env_file": "DAM_ALERTMANAGER__BEARER_TOKEN_FILE",
-          "secrets_file": "alertmanager__bearer_token",
-          "docs": "Bearer token sent to Alertmanager. Supply it through the secrets directory or `_FILE`.",
-          "ty": "SecretString",
-          "values": [],
-          "constraint": {
-            "type": "string"
-          },
-          "text_form": "text",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": false,
-          "secret": true,
-          "reserved": false
-        },
-        {
-          "path": "alertmanager.basic_username",
-          "env": "DAM_ALERTMANAGER__BASIC_USERNAME",
-          "env_file": "DAM_ALERTMANAGER__BASIC_USERNAME_FILE",
-          "secrets_file": "alertmanager__basic_username",
-          "docs": "Username for basic authentication. Ignored when `bearer_token` is set.",
-          "ty": "String",
-          "values": [],
-          "constraint": {
-            "type": "string"
-          },
-          "text_form": "text",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "alertmanager.basic_password",
-          "env": "DAM_ALERTMANAGER__BASIC_PASSWORD",
-          "env_file": "DAM_ALERTMANAGER__BASIC_PASSWORD_FILE",
-          "secrets_file": "alertmanager__basic_password",
-          "docs": "Password for basic authentication. Supply it through the secrets directory or `_FILE`.",
-          "ty": "SecretString",
-          "values": [],
-          "constraint": {
-            "type": "string"
-          },
-          "text_form": "text",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": false,
-          "secret": true,
-          "reserved": false
-        },
-        {
-          "path": "alertmanager.ca_bundle",
-          "env": "DAM_ALERTMANAGER__CA_BUNDLE",
-          "env_file": "DAM_ALERTMANAGER__CA_BUNDLE_FILE",
-          "secrets_file": "alertmanager__ca_bundle",
-          "docs": "PEM bundle of certificate authorities to trust in addition to the system roots.\n\nThere is deliberately no option to skip verification. An Alertmanager reachable only over\na certificate nothing trusts is a certificate to fix, not a check to disable.",
-          "ty": "PathBuf",
-          "values": [],
-          "constraint": {
-            "type": "string"
-          },
-          "text_form": "text",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "alertmanager.timeout_secs",
-          "env": "DAM_ALERTMANAGER__TIMEOUT_SECS",
-          "env_file": "DAM_ALERTMANAGER__TIMEOUT_SECS_FILE",
-          "secrets_file": "alertmanager__timeout_secs",
-          "docs": "Seconds to wait for a whole request before giving up.",
-          "ty": "u64",
-          "values": [],
-          "constraint": {
-            "minimum": 1,
-            "type": "integer"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*\\+?[0-9]+\\s*$",
-            "type": "string"
-          },
-          "text_form": "integer",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "10",
-          "default_value": 10,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "alertmanager.connect_timeout_secs",
-          "env": "DAM_ALERTMANAGER__CONNECT_TIMEOUT_SECS",
-          "env_file": "DAM_ALERTMANAGER__CONNECT_TIMEOUT_SECS_FILE",
-          "secrets_file": "alertmanager__connect_timeout_secs",
-          "docs": "Seconds to wait for a connection before trying the next endpoint.\n\nShort on purpose. This is how quickly a dead peer is abandoned for a live one.",
-          "ty": "u64",
-          "values": [],
-          "constraint": {
-            "minimum": 1,
-            "type": "integer"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*\\+?[0-9]+\\s*$",
-            "type": "string"
-          },
-          "text_form": "integer",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "2",
-          "default_value": 2,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "alertmanager.retry.initial_backoff_ms",
-          "env": "DAM_ALERTMANAGER__RETRY__INITIAL_BACKOFF_MS",
-          "env_file": "DAM_ALERTMANAGER__RETRY__INITIAL_BACKOFF_MS_FILE",
-          "secrets_file": "alertmanager__retry__initial_backoff_ms",
-          "docs": "Milliseconds to wait before the first retry.",
-          "ty": "u64",
-          "values": [],
-          "constraint": {
-            "minimum": 0,
-            "type": "integer"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*\\+?[0-9]+\\s*$",
-            "type": "string"
-          },
-          "text_form": "integer",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "200",
-          "default_value": 200,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "alertmanager.retry.max_backoff_secs",
-          "env": "DAM_ALERTMANAGER__RETRY__MAX_BACKOFF_SECS",
-          "env_file": "DAM_ALERTMANAGER__RETRY__MAX_BACKOFF_SECS_FILE",
-          "secrets_file": "alertmanager__retry__max_backoff_secs",
-          "docs": "Ceiling on a single wait, in seconds.",
-          "ty": "u64",
-          "values": [],
-          "constraint": {
-            "minimum": 0,
-            "type": "integer"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*\\+?[0-9]+\\s*$",
-            "type": "string"
-          },
-          "text_form": "integer",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "10",
-          "default_value": 10,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "alertmanager.retry.max_elapsed_secs",
-          "env": "DAM_ALERTMANAGER__RETRY__MAX_ELAPSED_SECS",
-          "env_file": "DAM_ALERTMANAGER__RETRY__MAX_ELAPSED_SECS_FILE",
-          "secrets_file": "alertmanager__retry__max_elapsed_secs",
-          "docs": "Seconds to keep retrying one request before giving up on it.",
-          "ty": "u64",
-          "values": [],
-          "constraint": {
-            "minimum": 0,
-            "type": "integer"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*\\+?[0-9]+\\s*$",
-            "type": "string"
-          },
-          "text_form": "integer",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "45",
-          "default_value": 45,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "storage.backend",
-          "env": "DAM_STORAGE__BACKEND",
-          "env_file": "DAM_STORAGE__BACKEND_FILE",
-          "secrets_file": "storage__backend",
-          "docs": "Which backend the bot connects to.",
-          "ty": "Backend",
-          "values": [
-            "sqlite",
-            "postgres"
-          ],
-          "constraint": {
-            "enum": [
-              "sqlite",
-              "postgres"
-            ],
-            "type": "string"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*(sqlite|postgres)\\s*$",
-            "type": "string"
-          },
-          "text_form": "choice",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "sqlite",
-          "default_value": "sqlite",
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "storage.sqlite.path",
-          "env": "DAM_STORAGE__SQLITE__PATH",
-          "env_file": "DAM_STORAGE__SQLITE__PATH_FILE",
-          "secrets_file": "storage__sqlite__path",
-          "docs": "Path to the database file, created on first start if it does not exist.",
-          "ty": "PathBuf",
-          "values": [],
-          "constraint": {
-            "type": "string"
-          },
-          "text_form": "text",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "discord-alertmanager.db",
-          "default_value": "discord-alertmanager.db",
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "storage.sqlite.max_connections",
-          "env": "DAM_STORAGE__SQLITE__MAX_CONNECTIONS",
-          "env_file": "DAM_STORAGE__SQLITE__MAX_CONNECTIONS_FILE",
-          "secrets_file": "storage__sqlite__max_connections",
-          "docs": "Size of the read pool. The writer is always one connection.",
-          "ty": "u32",
-          "values": [],
-          "constraint": {
-            "maximum": 4294967295,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*\\+?[0-9]+\\s*$",
-            "type": "string"
-          },
-          "text_form": "integer",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "4",
-          "default_value": 4,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "storage.sqlite.acquire_timeout_secs",
-          "env": "DAM_STORAGE__SQLITE__ACQUIRE_TIMEOUT_SECS",
-          "env_file": "DAM_STORAGE__SQLITE__ACQUIRE_TIMEOUT_SECS_FILE",
-          "secrets_file": "storage__sqlite__acquire_timeout_secs",
-          "docs": "Seconds to wait for a connection from the pool before failing the operation.",
-          "ty": "u64",
-          "values": [],
-          "constraint": {
-            "minimum": 1,
-            "type": "integer"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*\\+?[0-9]+\\s*$",
-            "type": "string"
-          },
-          "text_form": "integer",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "5",
-          "default_value": 5,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "storage.sqlite.migrate_on_start",
-          "env": "DAM_STORAGE__SQLITE__MIGRATE_ON_START",
-          "env_file": "DAM_STORAGE__SQLITE__MIGRATE_ON_START_FILE",
-          "secrets_file": "storage__sqlite__migrate_on_start",
-          "docs": "Run pending migrations during startup.\n\nSet this false where a separate job owns migrations, which is what a `GitOps` deployment\nusually wants: the bot then refuses to start against a schema it does not recognise\ninstead of migrating underneath a running replica.",
-          "ty": "bool",
-          "values": [],
-          "constraint": {
-            "type": "boolean"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*(true|false)\\s*$",
-            "type": "string"
-          },
-          "text_form": "boolean",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "true",
-          "default_value": true,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "storage.postgres.url",
-          "env": "DAM_STORAGE__POSTGRES__URL",
-          "env_file": "DAM_STORAGE__POSTGRES__URL_FILE",
-          "secrets_file": "storage__postgres__url",
-          "docs": "Connection URL. Supply it through `DAM_STORAGE__POSTGRES__URL_FILE` or the secrets\ndirectory, since it carries the password.",
-          "ty": "SecretString",
-          "values": [],
-          "constraint": {
-            "type": "string"
-          },
-          "text_form": "text",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": false,
-          "secret": true,
-          "reserved": false
-        },
-        {
-          "path": "storage.postgres.max_connections",
-          "env": "DAM_STORAGE__POSTGRES__MAX_CONNECTIONS",
-          "env_file": "DAM_STORAGE__POSTGRES__MAX_CONNECTIONS_FILE",
-          "secrets_file": "storage__postgres__max_connections",
-          "docs": "Maximum pooled connections.",
-          "ty": "u32",
-          "values": [],
-          "constraint": {
-            "maximum": 4294967295,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*\\+?[0-9]+\\s*$",
-            "type": "string"
-          },
-          "text_form": "integer",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "16",
-          "default_value": 16,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "storage.postgres.acquire_timeout_secs",
-          "env": "DAM_STORAGE__POSTGRES__ACQUIRE_TIMEOUT_SECS",
-          "env_file": "DAM_STORAGE__POSTGRES__ACQUIRE_TIMEOUT_SECS_FILE",
-          "secrets_file": "storage__postgres__acquire_timeout_secs",
-          "docs": "Seconds to wait for a connection from the pool before failing the operation.",
-          "ty": "u64",
-          "values": [],
-          "constraint": {
-            "minimum": 1,
-            "type": "integer"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*\\+?[0-9]+\\s*$",
-            "type": "string"
-          },
-          "text_form": "integer",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "5",
-          "default_value": 5,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "storage.postgres.migrate_on_start",
-          "env": "DAM_STORAGE__POSTGRES__MIGRATE_ON_START",
-          "env_file": "DAM_STORAGE__POSTGRES__MIGRATE_ON_START_FILE",
-          "secrets_file": "storage__postgres__migrate_on_start",
-          "docs": "Run pending migrations during startup.",
-          "ty": "bool",
-          "values": [],
-          "constraint": {
-            "type": "boolean"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*(true|false)\\s*$",
-            "type": "string"
-          },
-          "text_form": "boolean",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "true",
-          "default_value": true,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "ingest.bind",
-          "env": "DAM_INGEST__BIND",
-          "env_file": "DAM_INGEST__BIND_FILE",
-          "secrets_file": "ingest__bind",
-          "docs": "Address and port to listen on.",
-          "ty": "SocketAddr",
-          "values": [],
-          "constraint": {
-            "type": "string"
-          },
-          "text_form": "unknown",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "0.0.0.0:9099",
-          "default_value": "0.0.0.0:9099",
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "ingest.webhook_path",
-          "env": "DAM_INGEST__WEBHOOK_PATH",
-          "env_file": "DAM_INGEST__WEBHOOK_PATH_FILE",
-          "secrets_file": "ingest__webhook_path",
-          "docs": "Path Alertmanager posts the version-4 envelope to.",
-          "ty": "String",
-          "values": [],
-          "constraint": {
-            "type": "string"
-          },
-          "text_form": "text",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "/webhook",
-          "default_value": "/webhook",
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "ingest.webhook_token",
-          "env": "DAM_INGEST__WEBHOOK_TOKEN",
-          "env_file": "DAM_INGEST__WEBHOOK_TOKEN_FILE",
-          "secrets_file": "ingest__webhook_token",
-          "docs": "Bearer token every webhook request has to carry.\n\nCompared in constant time. A mismatch is a 401 with no body, so a caller learns that the\ntoken was wrong and nothing about how it was wrong. Leaving this unset disables the check\nand is only defensible where the listener is unreachable from outside the namespace.",
-          "ty": "SecretString",
-          "values": [],
-          "constraint": {
-            "type": "string"
-          },
-          "text_form": "text",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": false,
-          "secret": true,
-          "reserved": false
-        },
-        {
-          "path": "ingest.body_limit_bytes",
-          "env": "DAM_INGEST__BODY_LIMIT_BYTES",
-          "env_file": "DAM_INGEST__BODY_LIMIT_BYTES_FILE",
-          "secrets_file": "ingest__body_limit_bytes",
-          "docs": "Largest accepted request body, in bytes.",
-          "ty": "usize",
-          "values": [],
-          "constraint": {
-            "minimum": 0,
-            "type": "integer"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*\\+?[0-9]+\\s*$",
-            "type": "string"
-          },
-          "text_form": "integer",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "1048576",
-          "default_value": 1048576,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "ingest.request_timeout_secs",
-          "env": "DAM_INGEST__REQUEST_TIMEOUT_SECS",
-          "env_file": "DAM_INGEST__REQUEST_TIMEOUT_SECS_FILE",
-          "secrets_file": "ingest__request_timeout_secs",
-          "docs": "Seconds a request may take before the listener abandons it.",
-          "ty": "u64",
-          "values": [],
-          "constraint": {
-            "minimum": 0,
-            "type": "integer"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*\\+?[0-9]+\\s*$",
-            "type": "string"
-          },
-          "text_form": "integer",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "10",
-          "default_value": 10,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "ingest.max_concurrent_requests",
-          "env": "DAM_INGEST__MAX_CONCURRENT_REQUESTS",
-          "env_file": "DAM_INGEST__MAX_CONCURRENT_REQUESTS_FILE",
-          "secrets_file": "ingest__max_concurrent_requests",
-          "docs": "Requests handled at once. Further requests queue rather than being rejected.",
-          "ty": "usize",
-          "values": [],
-          "constraint": {
-            "minimum": 0,
-            "type": "integer"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*\\+?[0-9]+\\s*$",
-            "type": "string"
-          },
-          "text_form": "integer",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "64",
-          "default_value": 64,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "ingest.shutdown_drain_secs",
-          "env": "DAM_INGEST__SHUTDOWN_DRAIN_SECS",
-          "env_file": "DAM_INGEST__SHUTDOWN_DRAIN_SECS_FILE",
-          "secrets_file": "ingest__shutdown_drain_secs",
-          "docs": "Seconds to let in-flight requests finish during shutdown.",
-          "ty": "u64",
-          "values": [],
-          "constraint": {
-            "minimum": 0,
-            "type": "integer"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*\\+?[0-9]+\\s*$",
-            "type": "string"
-          },
-          "text_form": "integer",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "10",
-          "default_value": 10,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "engine.dispatchers",
-          "env": "DAM_ENGINE__DISPATCHERS",
-          "env_file": "DAM_ENGINE__DISPATCHERS_FILE",
-          "secrets_file": "engine__dispatchers",
-          "docs": "Outbox dispatcher workers.\n\nWork is hashed into one lane per worker by its dedupe key, so every effect for one alert\nlands on one worker. Raising this widens the fan-out across alerts and never splits an\nalert across two workers.",
-          "ty": "u32",
-          "values": [],
-          "constraint": {
-            "maximum": 65535,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*\\+?[0-9]+\\s*$",
-            "type": "string"
-          },
-          "text_form": "integer",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "4",
-          "default_value": 4,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "engine.outbox_lease_secs",
-          "env": "DAM_ENGINE__OUTBOX_LEASE_SECS",
-          "env_file": "DAM_ENGINE__OUTBOX_LEASE_SECS_FILE",
-          "secrets_file": "engine__outbox_lease_secs",
-          "docs": "Seconds a claimed outbox row stays claimed before a janitor may reclaim it.\n\nThe janitor reclaims at three times this, which is the margin for a worker that is slow\nrather than dead.",
-          "ty": "u64",
-          "values": [],
-          "constraint": {
-            "minimum": 1,
-            "type": "integer"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*\\+?[0-9]+\\s*$",
-            "type": "string"
-          },
-          "text_form": "integer",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "30",
-          "default_value": 30,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "engine.outbox_batch_size",
-          "env": "DAM_ENGINE__OUTBOX_BATCH_SIZE",
-          "env_file": "DAM_ENGINE__OUTBOX_BATCH_SIZE_FILE",
-          "secrets_file": "engine__outbox_batch_size",
-          "docs": "Outbox rows one worker claims per pass.",
-          "ty": "u32",
-          "values": [],
-          "constraint": {
-            "maximum": 4294967295,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*\\+?[0-9]+\\s*$",
-            "type": "string"
-          },
-          "text_form": "integer",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "16",
-          "default_value": 16,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "engine.reconcile_interval_secs",
-          "env": "DAM_ENGINE__RECONCILE_INTERVAL_SECS",
-          "env_file": "DAM_ENGINE__RECONCILE_INTERVAL_SECS_FILE",
-          "secrets_file": "engine__reconcile_interval_secs",
-          "docs": "Seconds between reconciler polls of the Alertmanager alert set.\n\nThe reconciler is the authoritative path. Anything Alertmanager has that the database does\nnot is injected as a synthetic event, and anything firing in the database that Alertmanager\nhas not had for two consecutive polls is treated as resolved. That is what makes the bot\nconverge after a restart or a partition.",
-          "ty": "u64",
-          "values": [],
-          "constraint": {
-            "minimum": 0,
-            "type": "integer"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*\\+?[0-9]+\\s*$",
-            "type": "string"
-          },
-          "text_form": "integer",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "60",
-          "default_value": 60,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "engine.silence_sync_interval_secs",
-          "env": "DAM_ENGINE__SILENCE_SYNC_INTERVAL_SECS",
-          "env_file": "DAM_ENGINE__SILENCE_SYNC_INTERVAL_SECS_FILE",
-          "secrets_file": "engine__silence_sync_interval_secs",
-          "docs": "Seconds between silence syncs.",
-          "ty": "u64",
-          "values": [],
-          "constraint": {
-            "minimum": 0,
-            "type": "integer"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*\\+?[0-9]+\\s*$",
-            "type": "string"
-          },
-          "text_form": "integer",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "30",
-          "default_value": 30,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "engine.escalation_interval_secs",
-          "env": "DAM_ENGINE__ESCALATION_INTERVAL_SECS",
-          "env_file": "DAM_ENGINE__ESCALATION_INTERVAL_SECS_FILE",
-          "secrets_file": "engine__escalation_interval_secs",
-          "docs": "Seconds between escalation timer sweeps.",
-          "ty": "u64",
-          "values": [],
-          "constraint": {
-            "minimum": 0,
-            "type": "integer"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*\\+?[0-9]+\\s*$",
-            "type": "string"
-          },
-          "text_form": "integer",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "15",
-          "default_value": 15,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "engine.prune_interval_secs",
-          "env": "DAM_ENGINE__PRUNE_INTERVAL_SECS",
-          "env_file": "DAM_ENGINE__PRUNE_INTERVAL_SECS_FILE",
-          "secrets_file": "engine__prune_interval_secs",
-          "docs": "Seconds between retention sweeps.",
-          "ty": "u64",
-          "values": [],
-          "constraint": {
-            "minimum": 0,
-            "type": "integer"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*\\+?[0-9]+\\s*$",
-            "type": "string"
-          },
-          "text_form": "integer",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "3600",
-          "default_value": 3600,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "engine.deadman_window_secs",
-          "env": "DAM_ENGINE__DEADMAN_WINDOW_SECS",
-          "env_file": "DAM_ENGINE__DEADMAN_WINDOW_SECS_FILE",
-          "secrets_file": "engine__deadman_window_secs",
-          "docs": "Seconds of webhook silence that, combined with an unreachable Alertmanager, trips the\ndeadman.",
-          "ty": "u64",
-          "values": [],
-          "constraint": {
-            "minimum": 0,
-            "type": "integer"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*\\+?[0-9]+\\s*$",
-            "type": "string"
-          },
-          "text_form": "integer",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "1800",
-          "default_value": 1800,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "engine.regroup_window_secs",
-          "env": "DAM_ENGINE__REGROUP_WINDOW_SECS",
-          "env_file": "DAM_ENGINE__REGROUP_WINDOW_SECS_FILE",
-          "secrets_file": "engine__regroup_window_secs",
-          "docs": "Seconds a resolved card stays re-armable.\n\nAn alert that fires again inside the window, measured from when its card resolved, turns\nthat card back to firing, reopens its thread and counts a flap. Past the window a new card\nis posted carrying a link to the previous one, which keeps its history.",
-          "ty": "u64",
-          "values": [],
-          "constraint": {
-            "minimum": 0,
-            "type": "integer"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*\\+?[0-9]+\\s*$",
-            "type": "string"
-          },
-          "text_form": "integer",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "1800",
-          "default_value": 1800,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "engine.dedupe_ignore_labels",
-          "env": "DAM_ENGINE__DEDUPE_IGNORE_LABELS",
-          "env_file": "DAM_ENGINE__DEDUPE_IGNORE_LABELS_FILE",
-          "secrets_file": "engine__dedupe_ignore_labels",
-          "docs": "Labels that do not decide which card an alert is shown on.\n\nAlertmanager's fingerprint covers every label, so a label whose value churns gives one\ncondition a new fingerprint, and a new card, each time it changes. Naming such a label here\nputs every alert that differs only in it onto one card: the card follows whichever of them\nis firing and resolves when the last one does. `pod` and `instance` are the usual\ncandidates on Kubernetes, where a rollout replaces both. Per-alert routes only; a group\nroute is already keyed by Alertmanager's group.",
-          "ty": "Vec<String>",
-          "values": [],
-          "constraint": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*[\\[\\{][\\s\\S]*[\\]\\}]\\s*$",
-            "type": "string"
-          },
-          "text_form": "structured",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "[]",
-          "default_value": [],
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "engine.persist_events",
-          "env": "DAM_ENGINE__PERSIST_EVENTS",
-          "env_file": "DAM_ENGINE__PERSIST_EVENTS_FILE",
-          "secrets_file": "engine__persist_events",
-          "docs": "Record a row in `alert_events` for every state transition.\n\nTurning this off keeps the current `alerts` row and drops the history. The four reasons\nthe bot keeps its own alert table all rest on the current row, so nothing else changes.",
-          "ty": "bool",
-          "values": [],
-          "constraint": {
-            "type": "boolean"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*(true|false)\\s*$",
-            "type": "string"
-          },
-          "text_form": "boolean",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "true",
-          "default_value": true,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "engine.storm.threshold",
-          "env": "DAM_ENGINE__STORM__THRESHOLD",
-          "env_file": "DAM_ENGINE__STORM__THRESHOLD_FILE",
-          "secrets_file": "engine__storm__threshold",
-          "docs": "Alerts on one route inside the window that trigger digest mode.",
-          "ty": "u32",
-          "values": [],
-          "constraint": {
-            "maximum": 4294967295,
-            "minimum": 0,
-            "type": "integer"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*\\+?[0-9]+\\s*$",
-            "type": "string"
-          },
-          "text_form": "integer",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "50",
-          "default_value": 50,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "engine.storm.window_secs",
-          "env": "DAM_ENGINE__STORM__WINDOW_SECS",
-          "env_file": "DAM_ENGINE__STORM__WINDOW_SECS_FILE",
-          "secrets_file": "engine__storm__window_secs",
-          "docs": "Length of the window, in seconds.",
-          "ty": "u64",
-          "values": [],
-          "constraint": {
-            "minimum": 1,
-            "type": "integer"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*\\+?[0-9]+\\s*$",
-            "type": "string"
-          },
-          "text_form": "integer",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "60",
-          "default_value": 60,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "engine.storm.forum_threshold",
-          "env": "DAM_ENGINE__STORM__FORUM_THRESHOLD",
-          "env_file": "DAM_ENGINE__STORM__FORUM_THRESHOLD_FILE",
-          "secrets_file": "engine__storm__forum_threshold",
-          "docs": "Threshold for forum routes, which is lower.\n\nCreating a forum post is heavier than sending a message and is rate-limited per channel,\nso a forum route reaches trouble sooner than a text one.",
-          "ty": "u32",
-          "values": [],
-          "constraint": {
-            "maximum": 4294967295,
-            "minimum": 0,
-            "type": "integer"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*\\+?[0-9]+\\s*$",
-            "type": "string"
-          },
-          "text_form": "integer",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "20",
-          "default_value": 20,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "engine.retention.events_days",
-          "env": "DAM_ENGINE__RETENTION__EVENTS_DAYS",
-          "env_file": "DAM_ENGINE__RETENTION__EVENTS_DAYS_FILE",
-          "secrets_file": "engine__retention__events_days",
-          "docs": "Days of `alert_events` history. This is the expensive table.",
-          "ty": "u32",
-          "values": [],
-          "constraint": {
-            "maximum": 4294967295,
-            "minimum": 0,
-            "type": "integer"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*\\+?[0-9]+\\s*$",
-            "type": "string"
-          },
-          "text_form": "integer",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "30",
-          "default_value": 30,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "engine.retention.resolved_days",
-          "env": "DAM_ENGINE__RETENTION__RESOLVED_DAYS",
-          "env_file": "DAM_ENGINE__RETENTION__RESOLVED_DAYS_FILE",
-          "secrets_file": "engine__retention__resolved_days",
-          "docs": "Days a resolved alert and its notification are kept.",
-          "ty": "u32",
-          "values": [],
-          "constraint": {
-            "maximum": 4294967295,
-            "minimum": 0,
-            "type": "integer"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*\\+?[0-9]+\\s*$",
-            "type": "string"
-          },
-          "text_form": "integer",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "30",
-          "default_value": 30,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "engine.retention.audit_days",
-          "env": "DAM_ENGINE__RETENTION__AUDIT_DAYS",
-          "env_file": "DAM_ENGINE__RETENTION__AUDIT_DAYS_FILE",
-          "secrets_file": "engine__retention__audit_days",
-          "docs": "Days of `audit_log`.\n\nKept far longer than the rest because it is small and it is the record of what people\ndecided. Check this horizon against what an incident review actually needs.",
-          "ty": "u32",
-          "values": [],
-          "constraint": {
-            "maximum": 4294967295,
-            "minimum": 0,
-            "type": "integer"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*\\+?[0-9]+\\s*$",
-            "type": "string"
-          },
-          "text_form": "integer",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "365",
-          "default_value": 365,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "render.debounce_secs",
-          "env": "DAM_RENDER__DEBOUNCE_SECS",
-          "env_file": "DAM_RENDER__DEBOUNCE_SECS_FILE",
-          "secrets_file": "render__debounce_secs",
-          "docs": "Seconds to coalesce edits to one card before sending them.\n\nEvery edit is also skipped when the newly computed render hash matches the stored one, so\na burst of updates that change nothing visible costs no API calls at all.",
-          "ty": "u64",
-          "values": [],
-          "constraint": {
-            "minimum": 0,
-            "type": "integer"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*\\+?[0-9]+\\s*$",
-            "type": "string"
-          },
-          "text_form": "integer",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "3",
-          "default_value": 3,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "render.description_budget",
-          "env": "DAM_RENDER__DESCRIPTION_BUDGET",
-          "env_file": "DAM_RENDER__DESCRIPTION_BUDGET_FILE",
-          "secrets_file": "render__description_budget",
-          "docs": "Characters of annotation text a card may carry before it is truncated.\n\nDiscord caps an embed at 6000 characters across every field, and a single alert can carry\na five-thousand-character annotation. The truncation marker links to `/alerts show`, which\nhas the full text.",
-          "ty": "usize",
-          "values": [],
-          "constraint": {
-            "maximum": 4096,
-            "minimum": 0,
-            "type": "integer"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*\\+?[0-9]+\\s*$",
-            "type": "string"
-          },
-          "text_form": "integer",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "1500",
-          "default_value": 1500,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "render.key_labels",
-          "env": "DAM_RENDER__KEY_LABELS",
-          "env_file": "DAM_RENDER__KEY_LABELS_FILE",
-          "secrets_file": "render__key_labels",
-          "docs": "Labels promoted to their own inline field on the card, in order.\n\nEverything else stays in `/alerts show`. Three or four is the useful number; a card that\nlists sixty labels is a card nobody reads during an incident.",
-          "ty": "Vec<String>",
-          "values": [],
-          "constraint": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*[\\[\\{][\\s\\S]*[\\]\\}]\\s*$",
-            "type": "string"
-          },
-          "text_form": "structured",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "[namespace, instance, job]",
-          "default_value": [
-            "namespace",
-            "instance",
-            "job"
-          ],
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "render.thread_archive_after_minutes",
-          "env": "DAM_RENDER__THREAD_ARCHIVE_AFTER_MINUTES",
-          "env_file": "DAM_RENDER__THREAD_ARCHIVE_AFTER_MINUTES_FILE",
-          "secrets_file": "render__thread_archive_after_minutes",
-          "docs": "Minutes of inactivity after which an alert thread archives.\n\nDiscord accepts only 60, 1440, 4320 and 10080. A firing alert holds 10080 regardless, so\nthat a week-long incident never archives underneath the people working it.",
-          "ty": "u32",
-          "values": [],
-          "constraint": {
-            "maximum": 10080,
-            "minimum": 60,
-            "type": "integer"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*\\+?[0-9]+\\s*$",
-            "type": "string"
-          },
-          "text_form": "integer",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "1440",
-          "default_value": 1440,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "render.show_fingerprint",
-          "env": "DAM_RENDER__SHOW_FINGERPRINT",
-          "env_file": "DAM_RENDER__SHOW_FINGERPRINT_FILE",
-          "secrets_file": "render__show_fingerprint",
-          "docs": "Show a short fingerprint in the card footer.",
-          "ty": "bool",
-          "values": [],
-          "constraint": {
-            "type": "boolean"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*(true|false)\\s*$",
-            "type": "string"
-          },
-          "text_form": "boolean",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "true",
-          "default_value": true,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "links.prometheus_base",
-          "env": "DAM_LINKS__PROMETHEUS_BASE",
-          "env_file": "DAM_LINKS__PROMETHEUS_BASE_FILE",
-          "secrets_file": "links__prometheus_base",
-          "docs": "Prometheus base URL, available to templates as `links.prometheus_base`.",
-          "ty": "Url",
-          "values": [],
-          "constraint": {
-            "type": "string"
-          },
-          "text_form": "unknown",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "links.grafana_base",
-          "env": "DAM_LINKS__GRAFANA_BASE",
-          "env_file": "DAM_LINKS__GRAFANA_BASE_FILE",
-          "secrets_file": "links__grafana_base",
-          "docs": "Grafana base URL, available to templates as `links.grafana_base`.",
-          "ty": "Url",
-          "values": [],
-          "constraint": {
-            "type": "string"
-          },
-          "text_form": "unknown",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "links.allowed_hosts",
-          "env": "DAM_LINKS__ALLOWED_HOSTS",
-          "env_file": "DAM_LINKS__ALLOWED_HOSTS_FILE",
-          "secrets_file": "links__allowed_hosts",
-          "docs": "Hosts a rendered button may point at.\n\nAn empty list rejects every button, which is the safe reading of \"nothing was configured\".\nThe scheme is checked separately and is always `http` or `https`.",
-          "ty": "Vec<String>",
-          "values": [],
-          "constraint": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*[\\[\\{][\\s\\S]*[\\]\\}]\\s*$",
-            "type": "string"
-          },
-          "text_form": "structured",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "[]",
-          "default_value": [],
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "links.window_lead_secs",
-          "env": "DAM_LINKS__WINDOW_LEAD_SECS",
-          "env_file": "DAM_LINKS__WINDOW_LEAD_SECS_FILE",
-          "secrets_file": "links__window_lead_secs",
-          "docs": "Seconds of graph shown before the alert started.",
-          "ty": "u64",
-          "values": [],
-          "constraint": {
-            "minimum": 0,
-            "type": "integer"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*\\+?[0-9]+\\s*$",
-            "type": "string"
-          },
-          "text_form": "integer",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "900",
-          "default_value": 900,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "links.window_trail_secs",
-          "env": "DAM_LINKS__WINDOW_TRAIL_SECS",
-          "env_file": "DAM_LINKS__WINDOW_TRAIL_SECS_FILE",
-          "secrets_file": "links__window_trail_secs",
-          "docs": "Seconds of graph shown after the alert ended, or after now while it is firing.",
-          "ty": "u64",
-          "values": [],
-          "constraint": {
-            "minimum": 0,
-            "type": "integer"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*\\+?[0-9]+\\s*$",
-            "type": "string"
-          },
-          "text_form": "integer",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "300",
-          "default_value": 300,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "links.buttons",
-          "env": "DAM_LINKS__BUTTONS",
-          "env_file": "DAM_LINKS__BUTTONS_FILE",
-          "secrets_file": "links__buttons",
-          "docs": "The buttons themselves, rendered in order.",
-          "ty": "Vec<LinkButton>",
-          "values": [],
-          "constraint": {
-            "items": {
-              "additionalProperties": false,
-              "properties": {
-                "label": {
-                  "description": "Text on the button. Discord truncates past 80 characters.",
-                  "type": "string"
-                },
-                "url": {
-                  "description": "URL template, rendered with `minijinja` against `alert`, `labels`, `annotations`, `links`\nand `window`.\n\nEvery substitution in a URL is percent-encoded. A template that interpolates a value\nwithout a filter is refused when the template is compiled, not when it is rendered, so the\nmistake surfaces at boot.",
-                  "type": "string"
-                },
-                "when": {
-                  "description": "Expression that has to be truthy for the button to appear.\n\nLeave it unset for a button that always appears. `annotations.runbook_url` is the common\ncase: no runbook annotation, no runbook button.",
-                  "type": "string"
-                }
-              },
-              "type": "object"
-            },
-            "type": "array"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*[\\[\\{][\\s\\S]*[\\]\\}]\\s*$",
-            "type": "string"
-          },
-          "text_form": "structured",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "[]",
-          "default_value": [],
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "observability.metrics_enabled",
-          "env": "DAM_OBSERVABILITY__METRICS_ENABLED",
-          "env_file": "DAM_OBSERVABILITY__METRICS_ENABLED_FILE",
-          "secrets_file": "observability__metrics_enabled",
-          "docs": "Serve Prometheus metrics at `/metrics` on the ingest listener.",
-          "ty": "bool",
-          "values": [],
-          "constraint": {
-            "type": "boolean"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*(true|false)\\s*$",
-            "type": "string"
-          },
-          "text_form": "boolean",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "true",
-          "default_value": true,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "observability.admin_channel_id",
-          "env": "DAM_OBSERVABILITY__ADMIN_CHANNEL_ID",
-          "env_file": "DAM_OBSERVABILITY__ADMIN_CHANNEL_ID_FILE",
-          "secrets_file": "observability__admin_channel_id",
-          "docs": "Channel the deadman and route-health notices post to.\n\nThe deadman fires when no webhook has arrived inside the deadman window *and*\nAlertmanager is unreachable. Pair it with a `Watchdog` alert in Prometheus, so that\nsilence on one side is always noise on the other.",
-          "ty": "u64",
-          "values": [],
-          "constraint": {
-            "minimum": 0,
-            "type": "integer"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*\\+?[0-9]+\\s*$",
-            "type": "string"
-          },
-          "text_form": "integer",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.log_level",
-          "env": "DAM_TELEMETRY__LOG_LEVEL",
-          "env_file": "DAM_TELEMETRY__LOG_LEVEL_FILE",
-          "secrets_file": "telemetry__log_level",
-          "docs": "Filter directives for the log stream, in `RUST_LOG` syntax.\n\nA comma-separated list of `target=level` directives with an optional bare level as the\ndefault, so `warn,dam_engine=debug` raises one crate and leaves the rest alone. A directive\nthat does not parse stops the process rather than being ignored: a filter that silently\nreverted to its default would be discovered while reading logs that should have been there.\n\nA bare word is a target name and not a level, so a misspelt `waarn` is read as a directive\nabout a crate that does not exist. It parses, it stops nothing, and it filters nothing —\ncheck a level change took effect rather than assuming it did.",
-          "ty": "String",
-          "values": [],
-          "constraint": {
-            "type": "string"
-          },
-          "text_form": "text",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "warn,discord_alertmanager=info,dam_=info",
-          "default_value": "warn,discord_alertmanager=info,dam_=info",
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.log_format",
-          "env": "DAM_TELEMETRY__LOG_FORMAT",
-          "env_file": "DAM_TELEMETRY__LOG_FORMAT_FILE",
-          "secrets_file": "telemetry__log_format",
-          "docs": "How each log line is written.",
-          "ty": "LogFormat",
-          "values": [
-            "plain",
-            "json"
-          ],
-          "constraint": {
-            "enum": [
-              "plain",
-              "json"
-            ],
-            "type": "string"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*(plain|json)\\s*$",
-            "type": "string"
-          },
-          "text_form": "choice",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "plain",
-          "default_value": "plain",
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.sentry.dsn",
-          "env": "DAM_TELEMETRY__SENTRY__DSN",
-          "env_file": "DAM_TELEMETRY__SENTRY__DSN_FILE",
-          "secrets_file": "telemetry__sentry__dsn",
-          "docs": "Project DSN. Reporting is off while this is unset.\n\nIt is a credential: anyone holding it can write events into the project. Supply it through\n`DAM_SENTRY__DSN_FILE` or the secrets directory rather than as a plain environment\nvariable.",
-          "ty": "SecretString",
-          "values": [],
-          "constraint": {
-            "type": "string"
-          },
-          "text_form": "text",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": false,
-          "secret": true,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.sentry.environment",
-          "env": "DAM_TELEMETRY__SENTRY__ENVIRONMENT",
-          "env_file": "DAM_TELEMETRY__SENTRY__ENVIRONMENT_FILE",
-          "secrets_file": "telemetry__sentry__environment",
-          "docs": "Deployment this process belongs to, which every event is tagged with.\n\nSet deliberately rather than left at the default. Sentry groups, alerts and retention are\nall keyed on it, and a staging replica reporting as `production` is worse than one that\nreports nothing.",
-          "ty": "String",
-          "values": [],
-          "constraint": {
-            "type": "string"
-          },
-          "text_form": "text",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "production",
-          "default_value": "production",
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.sentry.release",
-          "env": "DAM_TELEMETRY__SENTRY__RELEASE",
-          "env_file": "DAM_TELEMETRY__SENTRY__RELEASE_FILE",
-          "secrets_file": "telemetry__sentry__release",
-          "docs": "Release every event is attributed to. Defaults to the bot's own version.\n\nOverride it only where the image carries a version this binary does not know, such as a\nbuild that appends a commit to the tag.",
-          "ty": "String",
-          "values": [],
-          "constraint": {
-            "type": "string"
-          },
-          "text_form": "text",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.sentry.server_name",
-          "env": "DAM_TELEMETRY__SENTRY__SERVER_NAME",
-          "env_file": "DAM_TELEMETRY__SENTRY__SERVER_NAME_FILE",
-          "secrets_file": "telemetry__sentry__server_name",
-          "docs": "Host name reported with each event. Defaults to the machine's own.\n\nWorth setting where the machine name is an ephemeral pod hash, which groups nothing.",
-          "ty": "String",
-          "values": [],
-          "constraint": {
-            "type": "string"
-          },
-          "text_form": "text",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.sentry.sample_rate",
-          "env": "DAM_TELEMETRY__SENTRY__SAMPLE_RATE",
-          "env_file": "DAM_TELEMETRY__SENTRY__SAMPLE_RATE_FILE",
-          "secrets_file": "telemetry__sentry__sample_rate",
-          "docs": "Fraction of events that are sent, from `0.0` to `1.0`.\n\nA blunt instrument: it drops whole events at random, so an error that fires once is the one\nmost likely to be lost. Leave it at `1.0` and shed volume with `event_level` instead.",
-          "ty": "f32",
-          "values": [],
-          "constraint": {
-            "maximum": 1.0,
-            "minimum": 0.0,
-            "type": "number"
-          },
-          "text_form": "unknown",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "1",
-          "default_value": 1.0,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.sentry.traces_sample_rate",
-          "env": "DAM_TELEMETRY__SENTRY__TRACES_SAMPLE_RATE",
-          "env_file": "DAM_TELEMETRY__SENTRY__TRACES_SAMPLE_RATE_FILE",
-          "secrets_file": "telemetry__sentry__traces_sample_rate",
-          "docs": "Fraction of traces that are sent, from `0.0` to `1.0`. Tracing is off at `0.0`.\n\nEvery webhook batch, every outbox item, every periodic pass and every slash command is one\ntrace, so the rate multiplies the busiest path in the process rather than the rarest. Start\nlow.",
-          "ty": "f32",
-          "values": [],
-          "constraint": {
-            "maximum": 1.0,
-            "minimum": 0.0,
-            "type": "number"
-          },
-          "text_form": "unknown",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "0",
-          "default_value": 0.0,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.sentry.event_level",
-          "env": "DAM_TELEMETRY__SENTRY__EVENT_LEVEL",
-          "env_file": "DAM_TELEMETRY__SENTRY__EVENT_LEVEL_FILE",
-          "secrets_file": "telemetry__sentry__event_level",
-          "docs": "Level at or above which a log record is sent as an event of its own.",
-          "ty": "CaptureLevel",
-          "values": [
-            "off",
-            "error",
-            "warn",
-            "info",
-            "debug",
-            "trace"
-          ],
-          "constraint": {
-            "enum": [
-              "off",
-              "error",
-              "warn",
-              "info",
-              "debug",
-              "trace"
-            ],
-            "type": "string"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*(off|error|warn|info|debug|trace)\\s*$",
-            "type": "string"
-          },
-          "text_form": "choice",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "error",
-          "default_value": "error",
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.sentry.breadcrumb_level",
-          "env": "DAM_TELEMETRY__SENTRY__BREADCRUMB_LEVEL",
-          "env_file": "DAM_TELEMETRY__SENTRY__BREADCRUMB_LEVEL_FILE",
-          "secrets_file": "telemetry__sentry__breadcrumb_level",
-          "docs": "Level at or above which a log record is kept as a breadcrumb behind the next event.\n\nBreadcrumbs never leave the process on their own. They are attached to the event that\nfollows them, which is what turns \"a dispatch failed\" into the sequence that led there.",
-          "ty": "CaptureLevel",
-          "values": [
-            "off",
-            "error",
-            "warn",
-            "info",
-            "debug",
-            "trace"
-          ],
-          "constraint": {
-            "enum": [
-              "off",
-              "error",
-              "warn",
-              "info",
-              "debug",
-              "trace"
-            ],
-            "type": "string"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*(off|error|warn|info|debug|trace)\\s*$",
-            "type": "string"
-          },
-          "text_form": "choice",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "info",
-          "default_value": "info",
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.sentry.span_level",
-          "env": "DAM_TELEMETRY__SENTRY__SPAN_LEVEL",
-          "env_file": "DAM_TELEMETRY__SENTRY__SPAN_LEVEL_FILE",
-          "secrets_file": "telemetry__sentry__span_level",
-          "docs": "Level at or above which a span joins the trace.\n\nOnly this bot's own spans are traced, whatever this says, and there is no key to widen\nthat. A dependency instruments its internals for its own logs, and the fields it attaches\nare debug renderings of whatever the call was holding — not something to hand to a third\nparty, and enough of them to bury the trace they surround.",
-          "ty": "CaptureLevel",
-          "values": [
-            "off",
-            "error",
-            "warn",
-            "info",
-            "debug",
-            "trace"
-          ],
-          "constraint": {
-            "enum": [
-              "off",
-              "error",
-              "warn",
-              "info",
-              "debug",
-              "trace"
-            ],
-            "type": "string"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*(off|error|warn|info|debug|trace)\\s*$",
-            "type": "string"
-          },
-          "text_form": "choice",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "info",
-          "default_value": "info",
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.sentry.attach_stacktrace",
-          "env": "DAM_TELEMETRY__SENTRY__ATTACH_STACKTRACE",
-          "env_file": "DAM_TELEMETRY__SENTRY__ATTACH_STACKTRACE_FILE",
-          "secrets_file": "telemetry__sentry__attach_stacktrace",
-          "docs": "Attach a stack trace to every event, not only to panics.\n\nUseful while a fault is being chased and expensive afterwards: it captures and symbolicates\na backtrace on every capture, including the ones that were only ever going to be counted.",
-          "ty": "bool",
-          "values": [],
-          "constraint": {
-            "type": "boolean"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*(true|false)\\s*$",
-            "type": "string"
-          },
-          "text_form": "boolean",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "false",
-          "default_value": false,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.sentry.send_default_pii",
-          "env": "DAM_TELEMETRY__SENTRY__SEND_DEFAULT_PII",
-          "env_file": "DAM_TELEMETRY__SENTRY__SEND_DEFAULT_PII_FILE",
-          "secrets_file": "telemetry__sentry__send_default_pii",
-          "docs": "Send the IP addresses, headers and user identifiers Sentry calls default PII.\n\nOff, and worth leaving off. The alerts this bot handles carry infrastructure labels, and\nthe Discord side carries user identifiers; neither needs to reach a third party for an\nerror report to be actionable.",
-          "ty": "bool",
-          "values": [],
-          "constraint": {
-            "type": "boolean"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*(true|false)\\s*$",
-            "type": "string"
-          },
-          "text_form": "boolean",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "false",
-          "default_value": false,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.sentry.max_breadcrumbs",
-          "env": "DAM_TELEMETRY__SENTRY__MAX_BREADCRUMBS",
-          "env_file": "DAM_TELEMETRY__SENTRY__MAX_BREADCRUMBS_FILE",
-          "secrets_file": "telemetry__sentry__max_breadcrumbs",
-          "docs": "How many breadcrumbs are kept behind an event.",
-          "ty": "usize",
-          "values": [],
-          "constraint": {
-            "minimum": 0,
-            "type": "integer"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*\\+?[0-9]+\\s*$",
-            "type": "string"
-          },
-          "text_form": "integer",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "100",
-          "default_value": 100,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.sentry.shutdown_timeout_secs",
-          "env": "DAM_TELEMETRY__SENTRY__SHUTDOWN_TIMEOUT_SECS",
-          "env_file": "DAM_TELEMETRY__SENTRY__SHUTDOWN_TIMEOUT_SECS_FILE",
-          "secrets_file": "telemetry__sentry__shutdown_timeout_secs",
-          "docs": "Seconds to spend delivering whatever is still queued during shutdown.\n\nSpent on the way out, after the listener has stopped, so it lengthens a restart by at most\nthis much. Zero abandons the queue, which loses exactly the report explaining why the\nprocess is stopping.",
-          "ty": "u64",
-          "values": [],
-          "constraint": {
-            "minimum": 0,
-            "type": "integer"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*\\+?[0-9]+\\s*$",
-            "type": "string"
-          },
-          "text_form": "integer",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "2",
-          "default_value": 2,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.sentry.debug",
-          "env": "DAM_TELEMETRY__SENTRY__DEBUG",
-          "env_file": "DAM_TELEMETRY__SENTRY__DEBUG_FILE",
-          "secrets_file": "telemetry__sentry__debug",
-          "docs": "Log what the Sentry client itself is doing.\n\nFor diagnosing reporting that is not arriving, and nothing else. It is noisy, and it prints\nthe DSN.",
-          "ty": "bool",
-          "values": [],
-          "constraint": {
-            "type": "boolean"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*(true|false)\\s*$",
-            "type": "string"
-          },
-          "text_form": "boolean",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "false",
-          "default_value": false,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "routes",
-          "env": "DAM_ROUTES",
-          "env_file": "DAM_ROUTES_FILE",
-          "secrets_file": "routes",
-          "docs": "Routes declared in the file, which cannot be edited or deleted from Discord.\n\nDeclaring a route here is what makes a deployment reproducible from its manifests. A route\nthat disappears from this list is disabled rather than deleted, so the notifications it\ncreated keep their history. `/route add` writes the other kind, which lives only in the\ndatabase.",
-          "ty": "Vec<RouteConfig>",
-          "values": [],
-          "constraint": {
-            "items": {
-              "additionalProperties": false,
-              "properties": {
-                "continue_to_next": {
-                  "description": "Keep evaluating later routes after this one matches.\n\nThis is Alertmanager's own `continue`, spelled out because `continue` is a Rust keyword.",
-                  "type": "boolean"
-                },
-                "enabled": {
-                  "description": "Whether the route is live.\n\nA route removed from this file is disabled rather than deleted, so the notifications it\ncreated keep their foreign key and stay renderable.",
-                  "type": "boolean"
-                },
-                "escalation": {
-                  "additionalProperties": false,
-                  "properties": {
-                    "after_secs": {
-                      "description": "Seconds a card may stay firing and unacknowledged before it escalates.\n\nUnset disables escalation on this route, which is the default: a route that escalates\nwithout anybody having asked for it is a second mention nobody expected.",
-                      "minimum": 0,
-                      "type": "integer"
-                    },
-                    "roles": {
-                      "description": "Role ids the escalation mentions. Falls back to `mentions.roles` when empty.",
-                      "items": {
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": "array"
-                    },
-                    "users": {
-                      "description": "User ids the escalation mentions. Falls back to `mentions.users` when empty.\n\nNaming a person here rather than a role is what makes an escalation reach somebody who is\nnot watching the channel it fires in.",
-                      "items": {
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": "array"
-                    }
-                  },
-                  "type": "object"
-                },
-                "group_strategy": {
-                  "description": "Whether one card covers one alert or one Alertmanager group.",
-                  "enum": [
-                    "per_alert",
-                    "per_group",
-                    "digest"
-                  ],
-                  "type": "string"
-                },
-                "guild_id": {
-                  "description": "Guild this route belongs to.",
-                  "minimum": 0,
-                  "type": "integer"
-                },
-                "matchers": {
-                  "description": "Alertmanager matcher expression, such as `severity=critical, namespace=~prod-.*`.\n\nThe operators are Alertmanager's: `=`, `!=`, `=~` and `!~`. A regex is fully anchored and\nmatches the empty string when the label is absent, which is what Alertmanager does. A\npattern longer than 512 bytes is refused, and compiled patterns carry size limits, because\nthese also arrive from `/route add`.",
-                  "type": "string"
-                },
-                "mentions": {
-                  "additionalProperties": false,
-                  "properties": {
-                    "min_severity": {
-                      "description": "Lowest severity that mentions anyone.",
-                      "enum": [
-                        "info",
-                        "warning",
-                        "critical"
-                      ],
-                      "type": "string"
-                    },
-                    "roles": {
-                      "description": "Role ids mentioned on a new firing alert.",
-                      "items": {
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": "array"
-                    },
-                    "users": {
-                      "description": "User ids mentioned on a new firing alert.",
-                      "items": {
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "type": "array"
-                    }
-                  },
-                  "type": "object"
-                },
-                "min_severity": {
-                  "description": "Lowest severity this route accepts. Every severity passes when unset.",
-                  "enum": [
-                    "info",
-                    "warning",
-                    "critical"
-                  ],
-                  "type": "string"
-                },
-                "name": {
-                  "description": "Name shown in `/route list` and in a card's footer. Unique within a guild.",
-                  "type": "string"
-                },
-                "priority": {
-                  "description": "Evaluation order. Lower runs first.",
-                  "maximum": 2147483647,
-                  "minimum": -2147483648,
-                  "type": "integer"
-                },
-                "target": {
-                  "additionalProperties": false,
-                  "properties": {
-                    "id": {
-                      "description": "Snowflake of the channel, thread or user.",
-                      "minimum": 0,
-                      "type": "integer"
-                    },
-                    "kind": {
-                      "description": "What sort of channel `id` names.\n\n`/route test` checks the channel's actual type against this before the route is accepted,\nbecause posting a plain message to a forum channel fails at delivery time otherwise.",
-                      "enum": [
-                        "text",
-                        "forum",
-                        "thread",
-                        "dm"
-                      ],
-                      "type": "string"
-                    },
-                    "policy": {
-                      "additionalProperties": false,
-                      "properties": {
-                        "archive_on_resolve": {
-                          "description": "Archive a forum post when its alert resolves.",
-                          "type": "boolean"
-                        },
-                        "auto_archive_minutes": {
-                          "description": "Minutes of inactivity before a resolved post or thread archives.\n\nDiscord accepts 60, 1440, 4320 and 10080. Unset takes\n`render.thread_archive_after_minutes`. A card that is still firing holds 10080 whatever\nthis says, so that a long incident never archives underneath the people working it.",
-                          "maximum": 10080,
-                          "minimum": 60,
-                          "type": "integer"
-                        },
-                        "bump_on_state_change": {
-                          "description": "Post a one-line thread note on every state change.\n\nEditing a message does not bump a forum's activity sort; only a new message does. Without\nthis, a state change that only edits the card leaves the post buried where it was. The\nnote also gives the post the readable timeline that an edited-in-place card deliberately\ndoes not keep.",
-                          "type": "boolean"
-                        },
-                        "default_tag": {
-                          "description": "Tag applied when nothing else resolves, for a channel with `REQUIRE_TAG` set.",
-                          "type": "string"
-                        },
-                        "label_tags": {
-                          "description": "Labels whose values become tags, at most three.\n\nUse low-cardinality labels only. A forum channel holds 20 tags and a post holds 5; the bot\nrefuses to create a new tag once the channel reaches 18, so an unbounded label exhausts\nthe budget in an afternoon and later posts lose their tags.",
-                          "items": {
-                            "type": "string"
-                          },
-                          "type": "array"
-                        },
-                        "lock_on_resolve": {
-                          "description": "Lock a forum post when its alert resolves.\n\nA locked thread needs `MANAGE_THREADS` to reopen, and a flap has to reopen one. Without\nthat permission the notification is marked orphaned and a fresh card is posted, so leave\nthis off unless the permission is held.",
-                          "type": "boolean"
-                        },
-                        "manage_tags": {
-                          "description": "Create missing forum tags, which needs `MANAGE_CHANNELS`.\n\nCreated tags are non-moderated on purpose: a moderated tag can only be applied by a member\nholding `MANAGE_THREADS`, while a non-moderated one can be set by the thread's owner,\nwhich the bot is. Without the permission the bot applies the tags that already resolve and\nreports the gap in `/route test`; a missing tag never fails a notification.",
-                          "type": "boolean"
-                        },
-                        "max_pinned": {
-                          "description": "Most posts pinned at once.",
-                          "maximum": 4294967295,
-                          "minimum": 0,
-                          "type": "integer"
-                        },
-                        "pin_min_severity": {
-                          "description": "Lowest severity that pins an unacknowledged post.\n\nPinned posts are a free \"needs attention\" tray at the top of the index. The pin is dropped\non acknowledgement or resolution, and a pin that fails is a warning that never blocks the\nnotification.",
-                          "enum": [
-                            "info",
-                            "warning",
-                            "critical"
-                          ],
-                          "type": "string"
-                        },
-                        "severity_tags": {
-                          "description": "Apply a tag named after the alert's severity.",
-                          "type": "boolean"
-                        },
-                        "state_tags": {
-                          "additionalProperties": false,
-                          "properties": {
-                            "acked": {
-                              "description": "Tag for an alert somebody has taken.",
-                              "type": "string"
-                            },
-                            "firing": {
-                              "description": "Tag for an alert that is firing and unacknowledged.",
-                              "type": "string"
-                            },
-                            "resolved": {
-                              "description": "Tag for an alert that has resolved.",
-                              "type": "string"
-                            },
-                            "silenced": {
-                              "description": "Tag for an alert an Alertmanager silence is suppressing.",
-                              "type": "string"
-                            }
-                          },
-                          "type": "object"
-                        },
-                        "thread_kind": {
-                          "description": "Whether that thread is visible to the channel or only to invited members.\n\nA private thread is not anchored to the card, so the card has to carry a link to it and\nthe bot has to invite the mentioned roles' members. Choose it for routes whose labels are\nsensitive, and accept both costs.",
-                          "enum": [
-                            "public",
-                            "private"
-                          ],
-                          "type": "string"
-                        },
-                        "thread_when": {
-                          "description": "When a text-channel route opens a thread for a card.",
-                          "enum": [
-                            "never",
-                            "on_create",
-                            "on_ack",
-                            "on_first_reply"
-                          ],
-                          "type": "string"
-                        },
-                        "title_template": {
-                          "description": "Title template for a forum post, rendered with `minijinja`.\n\nA forum post title is mandatory and 1 to 100 characters, so this falls back to the alert\nname and then to the fingerprint. An empty title fails post creation outright.",
-                          "type": "string"
-                        }
-                      },
-                      "type": "object"
-                    }
-                  },
-                  "type": "object"
-                }
-              },
-              "type": "object"
-            },
-            "type": "array"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*[\\[\\{][\\s\\S]*[\\]\\}]\\s*$",
-            "type": "string"
-          },
-          "text_form": "structured",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "[]",
-          "default_value": [],
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        }
-      ]
+    "external": {
+      "env": [],
+      "ignore": [],
+      "unknown": "reject"
     },
     "json_schema": {
       "$schema": "http://json-schema.org/draft-07/schema#",
@@ -3376,10 +870,2516 @@
       "title": "discord-alertmanager configuration",
       "type": "object"
     },
-    "external": {
-      "env": [],
-      "ignore": [],
-      "unknown": "reject"
-    }
+    "producer": {
+      "loader": "figment",
+      "name": "terrace-config",
+      "version": "0.15.2"
+    },
+    "schema": {
+      "dialect": {
+        "indirection_suffix": "_FILE",
+        "nesting_separator": "__",
+        "prefix": "DAM_"
+      },
+      "keys": [
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "string"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "Bot token. Supply it through `DAM_DISCORD__TOKEN_FILE` or the secrets directory.\n\nPassing it as a plain environment variable puts it in the output of `docker inspect` and\nin any crash reporter that captures the environment.",
+          "env": "DAM_DISCORD__TOKEN",
+          "env_aliases": [],
+          "env_file": "DAM_DISCORD__TOKEN_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "discord.token",
+          "required": false,
+          "reserved": false,
+          "secret": true,
+          "secrets_file": "discord__token",
+          "secrets_file_aliases": [],
+          "text_form": "text",
+          "ty": "SecretString",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "Guild to register slash commands into. Registration is global when unset.\n\nGuild-scoped commands appear immediately; global ones take up to an hour to propagate.\nSet this in development and leave it unset in production.",
+          "env": "DAM_DISCORD__DEV_GUILD_ID",
+          "env_aliases": [],
+          "env_file": "DAM_DISCORD__DEV_GUILD_ID_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "discord.dev_guild_id",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "discord__dev_guild_id",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*\\+?[0-9]+\\s*$",
+            "type": "string"
+          },
+          "text_form": "integer",
+          "ty": "u64",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "boolean"
+          },
+          "default": "false",
+          "default_value": false,
+          "docs": "Capture the text of thread replies, which needs the privileged `MESSAGE_CONTENT` intent.\n\nA card marks itself responded without this: the author and channel of a reply arrive\nwithout the privileged intent, and that is all the detection needs. Only the text of the\nreply is gated, so leaving this off costs nothing except the reply preview.",
+          "env": "DAM_DISCORD__CAPTURE_REPLY_TEXT",
+          "env_aliases": [],
+          "env_file": "DAM_DISCORD__CAPTURE_REPLY_TEXT_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "discord.capture_reply_text",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "discord__capture_reply_text",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*(true|false)\\s*$",
+            "type": "string"
+          },
+          "text_form": "boolean",
+          "ty": "bool",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "default": "[@everyone]",
+          "default_value": [
+            "@everyone"
+          ],
+          "docs": "Read alerts, silences and routes. Grants no mutation of any kind.",
+          "env": "DAM_DISCORD__CAPABILITIES__VIEW",
+          "env_aliases": [],
+          "env_file": "DAM_DISCORD__CAPABILITIES__VIEW_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "discord.capabilities.view",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "discord__capabilities__view",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*[\\[\\{][\\s\\S]*[\\]\\}]\\s*$",
+            "type": "string"
+          },
+          "text_form": "structured",
+          "ty": "Vec<String>",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "default": "[]",
+          "default_value": [],
+          "docs": "Acknowledge, assign, and add or remove bot-local ignores.",
+          "env": "DAM_DISCORD__CAPABILITIES__OPERATE",
+          "env_aliases": [],
+          "env_file": "DAM_DISCORD__CAPABILITIES__OPERATE_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "discord.capabilities.operate",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "discord__capabilities__operate",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*[\\[\\{][\\s\\S]*[\\]\\}]\\s*$",
+            "type": "string"
+          },
+          "text_form": "structured",
+          "ty": "Vec<String>",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "default": "[]",
+          "default_value": [],
+          "docs": "Create, extend and expire Alertmanager silences, which affects every receiver.",
+          "env": "DAM_DISCORD__CAPABILITIES__SILENCE",
+          "env_aliases": [],
+          "env_file": "DAM_DISCORD__CAPABILITIES__SILENCE_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "discord.capabilities.silence",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "discord__capabilities__silence",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*[\\[\\{][\\s\\S]*[\\]\\}]\\s*$",
+            "type": "string"
+          },
+          "text_form": "structured",
+          "ty": "Vec<String>",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "default": "[]",
+          "default_value": [],
+          "docs": "Manage routes and read the effective configuration.",
+          "env": "DAM_DISCORD__CAPABILITIES__ADMIN",
+          "env_aliases": [],
+          "env_file": "DAM_DISCORD__CAPABILITIES__ADMIN_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "discord.capabilities.admin",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "discord__capabilities__admin",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*[\\[\\{][\\s\\S]*[\\]\\}]\\s*$",
+            "type": "string"
+          },
+          "text_form": "structured",
+          "ty": "Vec<String>",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "default": "[]",
+          "default_value": [],
+          "docs": "Base URLs of the Alertmanager peers, tried in order.\n\nList every peer of a high-availability set. Silences gossip between peers, so any of them\naccepts a write and the first one that answers is used.",
+          "env": "DAM_ALERTMANAGER__ENDPOINTS",
+          "env_aliases": [],
+          "env_file": "DAM_ALERTMANAGER__ENDPOINTS_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "alertmanager.endpoints",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "alertmanager__endpoints",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*[\\[\\{][\\s\\S]*[\\]\\}]\\s*$",
+            "type": "string"
+          },
+          "text_form": "structured",
+          "ty": "Vec<Url>",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "string"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "Bearer token sent to Alertmanager. Supply it through the secrets directory or `_FILE`.",
+          "env": "DAM_ALERTMANAGER__BEARER_TOKEN",
+          "env_aliases": [],
+          "env_file": "DAM_ALERTMANAGER__BEARER_TOKEN_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "alertmanager.bearer_token",
+          "required": false,
+          "reserved": false,
+          "secret": true,
+          "secrets_file": "alertmanager__bearer_token",
+          "secrets_file_aliases": [],
+          "text_form": "text",
+          "ty": "SecretString",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "string"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "Username for basic authentication. Ignored when `bearer_token` is set.",
+          "env": "DAM_ALERTMANAGER__BASIC_USERNAME",
+          "env_aliases": [],
+          "env_file": "DAM_ALERTMANAGER__BASIC_USERNAME_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "alertmanager.basic_username",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "alertmanager__basic_username",
+          "secrets_file_aliases": [],
+          "text_form": "text",
+          "ty": "String",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "string"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "Password for basic authentication. Supply it through the secrets directory or `_FILE`.",
+          "env": "DAM_ALERTMANAGER__BASIC_PASSWORD",
+          "env_aliases": [],
+          "env_file": "DAM_ALERTMANAGER__BASIC_PASSWORD_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "alertmanager.basic_password",
+          "required": false,
+          "reserved": false,
+          "secret": true,
+          "secrets_file": "alertmanager__basic_password",
+          "secrets_file_aliases": [],
+          "text_form": "text",
+          "ty": "SecretString",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "string"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "PEM bundle of certificate authorities to trust in addition to the system roots.\n\nThere is deliberately no option to skip verification. An Alertmanager reachable only over\na certificate nothing trusts is a certificate to fix, not a check to disable.",
+          "env": "DAM_ALERTMANAGER__CA_BUNDLE",
+          "env_aliases": [],
+          "env_file": "DAM_ALERTMANAGER__CA_BUNDLE_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "alertmanager.ca_bundle",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "alertmanager__ca_bundle",
+          "secrets_file_aliases": [],
+          "text_form": "text",
+          "ty": "PathBuf",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "default": "10",
+          "default_value": 10,
+          "docs": "Seconds to wait for a whole request before giving up.",
+          "env": "DAM_ALERTMANAGER__TIMEOUT_SECS",
+          "env_aliases": [],
+          "env_file": "DAM_ALERTMANAGER__TIMEOUT_SECS_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "alertmanager.timeout_secs",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "alertmanager__timeout_secs",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*\\+?[0-9]+\\s*$",
+            "type": "string"
+          },
+          "text_form": "integer",
+          "ty": "u64",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "default": "2",
+          "default_value": 2,
+          "docs": "Seconds to wait for a connection before trying the next endpoint.\n\nShort on purpose. This is how quickly a dead peer is abandoned for a live one.",
+          "env": "DAM_ALERTMANAGER__CONNECT_TIMEOUT_SECS",
+          "env_aliases": [],
+          "env_file": "DAM_ALERTMANAGER__CONNECT_TIMEOUT_SECS_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "alertmanager.connect_timeout_secs",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "alertmanager__connect_timeout_secs",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*\\+?[0-9]+\\s*$",
+            "type": "string"
+          },
+          "text_form": "integer",
+          "ty": "u64",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "default": "200",
+          "default_value": 200,
+          "docs": "Milliseconds to wait before the first retry.",
+          "env": "DAM_ALERTMANAGER__RETRY__INITIAL_BACKOFF_MS",
+          "env_aliases": [],
+          "env_file": "DAM_ALERTMANAGER__RETRY__INITIAL_BACKOFF_MS_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "alertmanager.retry.initial_backoff_ms",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "alertmanager__retry__initial_backoff_ms",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*\\+?[0-9]+\\s*$",
+            "type": "string"
+          },
+          "text_form": "integer",
+          "ty": "u64",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "default": "10",
+          "default_value": 10,
+          "docs": "Ceiling on a single wait, in seconds.",
+          "env": "DAM_ALERTMANAGER__RETRY__MAX_BACKOFF_SECS",
+          "env_aliases": [],
+          "env_file": "DAM_ALERTMANAGER__RETRY__MAX_BACKOFF_SECS_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "alertmanager.retry.max_backoff_secs",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "alertmanager__retry__max_backoff_secs",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*\\+?[0-9]+\\s*$",
+            "type": "string"
+          },
+          "text_form": "integer",
+          "ty": "u64",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "default": "45",
+          "default_value": 45,
+          "docs": "Seconds to keep retrying one request before giving up on it.",
+          "env": "DAM_ALERTMANAGER__RETRY__MAX_ELAPSED_SECS",
+          "env_aliases": [],
+          "env_file": "DAM_ALERTMANAGER__RETRY__MAX_ELAPSED_SECS_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "alertmanager.retry.max_elapsed_secs",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "alertmanager__retry__max_elapsed_secs",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*\\+?[0-9]+\\s*$",
+            "type": "string"
+          },
+          "text_form": "integer",
+          "ty": "u64",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "enum": [
+              "sqlite",
+              "postgres"
+            ],
+            "type": "string"
+          },
+          "default": "sqlite",
+          "default_value": "sqlite",
+          "docs": "Which backend the bot connects to.",
+          "env": "DAM_STORAGE__BACKEND",
+          "env_aliases": [],
+          "env_file": "DAM_STORAGE__BACKEND_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "storage.backend",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "storage__backend",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*(sqlite|postgres)\\s*$",
+            "type": "string"
+          },
+          "text_form": "choice",
+          "ty": "Backend",
+          "values": [
+            "sqlite",
+            "postgres"
+          ]
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "string"
+          },
+          "default": "discord-alertmanager.db",
+          "default_value": "discord-alertmanager.db",
+          "docs": "Path to the database file, created on first start if it does not exist.",
+          "env": "DAM_STORAGE__SQLITE__PATH",
+          "env_aliases": [],
+          "env_file": "DAM_STORAGE__SQLITE__PATH_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "storage.sqlite.path",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "storage__sqlite__path",
+          "secrets_file_aliases": [],
+          "text_form": "text",
+          "ty": "PathBuf",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "maximum": 4294967295,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "default": "4",
+          "default_value": 4,
+          "docs": "Size of the read pool. The writer is always one connection.",
+          "env": "DAM_STORAGE__SQLITE__MAX_CONNECTIONS",
+          "env_aliases": [],
+          "env_file": "DAM_STORAGE__SQLITE__MAX_CONNECTIONS_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "storage.sqlite.max_connections",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "storage__sqlite__max_connections",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*\\+?[0-9]+\\s*$",
+            "type": "string"
+          },
+          "text_form": "integer",
+          "ty": "u32",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "default": "5",
+          "default_value": 5,
+          "docs": "Seconds to wait for a connection from the pool before failing the operation.",
+          "env": "DAM_STORAGE__SQLITE__ACQUIRE_TIMEOUT_SECS",
+          "env_aliases": [],
+          "env_file": "DAM_STORAGE__SQLITE__ACQUIRE_TIMEOUT_SECS_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "storage.sqlite.acquire_timeout_secs",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "storage__sqlite__acquire_timeout_secs",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*\\+?[0-9]+\\s*$",
+            "type": "string"
+          },
+          "text_form": "integer",
+          "ty": "u64",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "boolean"
+          },
+          "default": "true",
+          "default_value": true,
+          "docs": "Run pending migrations during startup.\n\nSet this false where a separate job owns migrations, which is what a `GitOps` deployment\nusually wants: the bot then refuses to start against a schema it does not recognise\ninstead of migrating underneath a running replica.",
+          "env": "DAM_STORAGE__SQLITE__MIGRATE_ON_START",
+          "env_aliases": [],
+          "env_file": "DAM_STORAGE__SQLITE__MIGRATE_ON_START_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "storage.sqlite.migrate_on_start",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "storage__sqlite__migrate_on_start",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*(true|false)\\s*$",
+            "type": "string"
+          },
+          "text_form": "boolean",
+          "ty": "bool",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "string"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "Connection URL. Supply it through `DAM_STORAGE__POSTGRES__URL_FILE` or the secrets\ndirectory, since it carries the password.",
+          "env": "DAM_STORAGE__POSTGRES__URL",
+          "env_aliases": [],
+          "env_file": "DAM_STORAGE__POSTGRES__URL_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "storage.postgres.url",
+          "required": false,
+          "reserved": false,
+          "secret": true,
+          "secrets_file": "storage__postgres__url",
+          "secrets_file_aliases": [],
+          "text_form": "text",
+          "ty": "SecretString",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "maximum": 4294967295,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "default": "16",
+          "default_value": 16,
+          "docs": "Maximum pooled connections.",
+          "env": "DAM_STORAGE__POSTGRES__MAX_CONNECTIONS",
+          "env_aliases": [],
+          "env_file": "DAM_STORAGE__POSTGRES__MAX_CONNECTIONS_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "storage.postgres.max_connections",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "storage__postgres__max_connections",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*\\+?[0-9]+\\s*$",
+            "type": "string"
+          },
+          "text_form": "integer",
+          "ty": "u32",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "default": "5",
+          "default_value": 5,
+          "docs": "Seconds to wait for a connection from the pool before failing the operation.",
+          "env": "DAM_STORAGE__POSTGRES__ACQUIRE_TIMEOUT_SECS",
+          "env_aliases": [],
+          "env_file": "DAM_STORAGE__POSTGRES__ACQUIRE_TIMEOUT_SECS_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "storage.postgres.acquire_timeout_secs",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "storage__postgres__acquire_timeout_secs",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*\\+?[0-9]+\\s*$",
+            "type": "string"
+          },
+          "text_form": "integer",
+          "ty": "u64",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "boolean"
+          },
+          "default": "true",
+          "default_value": true,
+          "docs": "Run pending migrations during startup.",
+          "env": "DAM_STORAGE__POSTGRES__MIGRATE_ON_START",
+          "env_aliases": [],
+          "env_file": "DAM_STORAGE__POSTGRES__MIGRATE_ON_START_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "storage.postgres.migrate_on_start",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "storage__postgres__migrate_on_start",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*(true|false)\\s*$",
+            "type": "string"
+          },
+          "text_form": "boolean",
+          "ty": "bool",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "string"
+          },
+          "default": "0.0.0.0:9099",
+          "default_value": "0.0.0.0:9099",
+          "docs": "Address and port to listen on.",
+          "env": "DAM_INGEST__BIND",
+          "env_aliases": [],
+          "env_file": "DAM_INGEST__BIND_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "ingest.bind",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "ingest__bind",
+          "secrets_file_aliases": [],
+          "text_form": "unknown",
+          "ty": "SocketAddr",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "string"
+          },
+          "default": "/webhook",
+          "default_value": "/webhook",
+          "docs": "Path Alertmanager posts the version-4 envelope to.",
+          "env": "DAM_INGEST__WEBHOOK_PATH",
+          "env_aliases": [],
+          "env_file": "DAM_INGEST__WEBHOOK_PATH_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "ingest.webhook_path",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "ingest__webhook_path",
+          "secrets_file_aliases": [],
+          "text_form": "text",
+          "ty": "String",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "string"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "Bearer token every webhook request has to carry.\n\nCompared in constant time. A mismatch is a 401 with no body, so a caller learns that the\ntoken was wrong and nothing about how it was wrong. Leaving this unset disables the check\nand is only defensible where the listener is unreachable from outside the namespace.",
+          "env": "DAM_INGEST__WEBHOOK_TOKEN",
+          "env_aliases": [],
+          "env_file": "DAM_INGEST__WEBHOOK_TOKEN_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "ingest.webhook_token",
+          "required": false,
+          "reserved": false,
+          "secret": true,
+          "secrets_file": "ingest__webhook_token",
+          "secrets_file_aliases": [],
+          "text_form": "text",
+          "ty": "SecretString",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "default": "1048576",
+          "default_value": 1048576,
+          "docs": "Largest accepted request body, in bytes.",
+          "env": "DAM_INGEST__BODY_LIMIT_BYTES",
+          "env_aliases": [],
+          "env_file": "DAM_INGEST__BODY_LIMIT_BYTES_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "ingest.body_limit_bytes",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "ingest__body_limit_bytes",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*\\+?[0-9]+\\s*$",
+            "type": "string"
+          },
+          "text_form": "integer",
+          "ty": "usize",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "default": "10",
+          "default_value": 10,
+          "docs": "Seconds a request may take before the listener abandons it.",
+          "env": "DAM_INGEST__REQUEST_TIMEOUT_SECS",
+          "env_aliases": [],
+          "env_file": "DAM_INGEST__REQUEST_TIMEOUT_SECS_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "ingest.request_timeout_secs",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "ingest__request_timeout_secs",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*\\+?[0-9]+\\s*$",
+            "type": "string"
+          },
+          "text_form": "integer",
+          "ty": "u64",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "default": "64",
+          "default_value": 64,
+          "docs": "Requests handled at once. Further requests queue rather than being rejected.",
+          "env": "DAM_INGEST__MAX_CONCURRENT_REQUESTS",
+          "env_aliases": [],
+          "env_file": "DAM_INGEST__MAX_CONCURRENT_REQUESTS_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "ingest.max_concurrent_requests",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "ingest__max_concurrent_requests",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*\\+?[0-9]+\\s*$",
+            "type": "string"
+          },
+          "text_form": "integer",
+          "ty": "usize",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "default": "10",
+          "default_value": 10,
+          "docs": "Seconds to let in-flight requests finish during shutdown.",
+          "env": "DAM_INGEST__SHUTDOWN_DRAIN_SECS",
+          "env_aliases": [],
+          "env_file": "DAM_INGEST__SHUTDOWN_DRAIN_SECS_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "ingest.shutdown_drain_secs",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "ingest__shutdown_drain_secs",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*\\+?[0-9]+\\s*$",
+            "type": "string"
+          },
+          "text_form": "integer",
+          "ty": "u64",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "maximum": 65535,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "default": "4",
+          "default_value": 4,
+          "docs": "Outbox dispatcher workers.\n\nWork is hashed into one lane per worker by its dedupe key, so every effect for one alert\nlands on one worker. Raising this widens the fan-out across alerts and never splits an\nalert across two workers.",
+          "env": "DAM_ENGINE__DISPATCHERS",
+          "env_aliases": [],
+          "env_file": "DAM_ENGINE__DISPATCHERS_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "engine.dispatchers",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "engine__dispatchers",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*\\+?[0-9]+\\s*$",
+            "type": "string"
+          },
+          "text_form": "integer",
+          "ty": "u32",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "default": "30",
+          "default_value": 30,
+          "docs": "Seconds a claimed outbox row stays claimed before a janitor may reclaim it.\n\nThe janitor reclaims at three times this, which is the margin for a worker that is slow\nrather than dead.",
+          "env": "DAM_ENGINE__OUTBOX_LEASE_SECS",
+          "env_aliases": [],
+          "env_file": "DAM_ENGINE__OUTBOX_LEASE_SECS_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "engine.outbox_lease_secs",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "engine__outbox_lease_secs",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*\\+?[0-9]+\\s*$",
+            "type": "string"
+          },
+          "text_form": "integer",
+          "ty": "u64",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "maximum": 4294967295,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "default": "16",
+          "default_value": 16,
+          "docs": "Outbox rows one worker claims per pass.",
+          "env": "DAM_ENGINE__OUTBOX_BATCH_SIZE",
+          "env_aliases": [],
+          "env_file": "DAM_ENGINE__OUTBOX_BATCH_SIZE_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "engine.outbox_batch_size",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "engine__outbox_batch_size",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*\\+?[0-9]+\\s*$",
+            "type": "string"
+          },
+          "text_form": "integer",
+          "ty": "u32",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "default": "60",
+          "default_value": 60,
+          "docs": "Seconds between reconciler polls of the Alertmanager alert set.\n\nThe reconciler is the authoritative path. Anything Alertmanager has that the database does\nnot is injected as a synthetic event, and anything firing in the database that Alertmanager\nhas not had for two consecutive polls is treated as resolved. That is what makes the bot\nconverge after a restart or a partition.",
+          "env": "DAM_ENGINE__RECONCILE_INTERVAL_SECS",
+          "env_aliases": [],
+          "env_file": "DAM_ENGINE__RECONCILE_INTERVAL_SECS_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "engine.reconcile_interval_secs",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "engine__reconcile_interval_secs",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*\\+?[0-9]+\\s*$",
+            "type": "string"
+          },
+          "text_form": "integer",
+          "ty": "u64",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "default": "30",
+          "default_value": 30,
+          "docs": "Seconds between silence syncs.",
+          "env": "DAM_ENGINE__SILENCE_SYNC_INTERVAL_SECS",
+          "env_aliases": [],
+          "env_file": "DAM_ENGINE__SILENCE_SYNC_INTERVAL_SECS_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "engine.silence_sync_interval_secs",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "engine__silence_sync_interval_secs",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*\\+?[0-9]+\\s*$",
+            "type": "string"
+          },
+          "text_form": "integer",
+          "ty": "u64",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "default": "15",
+          "default_value": 15,
+          "docs": "Seconds between escalation timer sweeps.",
+          "env": "DAM_ENGINE__ESCALATION_INTERVAL_SECS",
+          "env_aliases": [],
+          "env_file": "DAM_ENGINE__ESCALATION_INTERVAL_SECS_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "engine.escalation_interval_secs",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "engine__escalation_interval_secs",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*\\+?[0-9]+\\s*$",
+            "type": "string"
+          },
+          "text_form": "integer",
+          "ty": "u64",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "default": "3600",
+          "default_value": 3600,
+          "docs": "Seconds between retention sweeps.",
+          "env": "DAM_ENGINE__PRUNE_INTERVAL_SECS",
+          "env_aliases": [],
+          "env_file": "DAM_ENGINE__PRUNE_INTERVAL_SECS_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "engine.prune_interval_secs",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "engine__prune_interval_secs",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*\\+?[0-9]+\\s*$",
+            "type": "string"
+          },
+          "text_form": "integer",
+          "ty": "u64",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "default": "1800",
+          "default_value": 1800,
+          "docs": "Seconds of webhook silence that, combined with an unreachable Alertmanager, trips the\ndeadman.",
+          "env": "DAM_ENGINE__DEADMAN_WINDOW_SECS",
+          "env_aliases": [],
+          "env_file": "DAM_ENGINE__DEADMAN_WINDOW_SECS_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "engine.deadman_window_secs",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "engine__deadman_window_secs",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*\\+?[0-9]+\\s*$",
+            "type": "string"
+          },
+          "text_form": "integer",
+          "ty": "u64",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "default": "1800",
+          "default_value": 1800,
+          "docs": "Seconds a resolved card stays re-armable.\n\nAn alert that fires again inside the window, measured from when its card resolved, turns\nthat card back to firing, reopens its thread and counts a flap. Past the window a new card\nis posted carrying a link to the previous one, which keeps its history.",
+          "env": "DAM_ENGINE__REGROUP_WINDOW_SECS",
+          "env_aliases": [],
+          "env_file": "DAM_ENGINE__REGROUP_WINDOW_SECS_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "engine.regroup_window_secs",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "engine__regroup_window_secs",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*\\+?[0-9]+\\s*$",
+            "type": "string"
+          },
+          "text_form": "integer",
+          "ty": "u64",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "default": "[]",
+          "default_value": [],
+          "docs": "Labels that do not decide which card an alert is shown on.\n\nAlertmanager's fingerprint covers every label, so a label whose value churns gives one\ncondition a new fingerprint, and a new card, each time it changes. Naming such a label here\nputs every alert that differs only in it onto one card: the card follows whichever of them\nis firing and resolves when the last one does. `pod` and `instance` are the usual\ncandidates on Kubernetes, where a rollout replaces both. Per-alert routes only; a group\nroute is already keyed by Alertmanager's group.",
+          "env": "DAM_ENGINE__DEDUPE_IGNORE_LABELS",
+          "env_aliases": [],
+          "env_file": "DAM_ENGINE__DEDUPE_IGNORE_LABELS_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "engine.dedupe_ignore_labels",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "engine__dedupe_ignore_labels",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*[\\[\\{][\\s\\S]*[\\]\\}]\\s*$",
+            "type": "string"
+          },
+          "text_form": "structured",
+          "ty": "Vec<String>",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "boolean"
+          },
+          "default": "true",
+          "default_value": true,
+          "docs": "Record a row in `alert_events` for every state transition.\n\nTurning this off keeps the current `alerts` row and drops the history. The four reasons\nthe bot keeps its own alert table all rest on the current row, so nothing else changes.",
+          "env": "DAM_ENGINE__PERSIST_EVENTS",
+          "env_aliases": [],
+          "env_file": "DAM_ENGINE__PERSIST_EVENTS_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "engine.persist_events",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "engine__persist_events",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*(true|false)\\s*$",
+            "type": "string"
+          },
+          "text_form": "boolean",
+          "ty": "bool",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "maximum": 4294967295,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "default": "50",
+          "default_value": 50,
+          "docs": "Alerts on one route inside the window that trigger digest mode.",
+          "env": "DAM_ENGINE__STORM__THRESHOLD",
+          "env_aliases": [],
+          "env_file": "DAM_ENGINE__STORM__THRESHOLD_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "engine.storm.threshold",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "engine__storm__threshold",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*\\+?[0-9]+\\s*$",
+            "type": "string"
+          },
+          "text_form": "integer",
+          "ty": "u32",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "default": "60",
+          "default_value": 60,
+          "docs": "Length of the window, in seconds.",
+          "env": "DAM_ENGINE__STORM__WINDOW_SECS",
+          "env_aliases": [],
+          "env_file": "DAM_ENGINE__STORM__WINDOW_SECS_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "engine.storm.window_secs",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "engine__storm__window_secs",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*\\+?[0-9]+\\s*$",
+            "type": "string"
+          },
+          "text_form": "integer",
+          "ty": "u64",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "maximum": 4294967295,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "default": "20",
+          "default_value": 20,
+          "docs": "Threshold for forum routes, which is lower.\n\nCreating a forum post is heavier than sending a message and is rate-limited per channel,\nso a forum route reaches trouble sooner than a text one.",
+          "env": "DAM_ENGINE__STORM__FORUM_THRESHOLD",
+          "env_aliases": [],
+          "env_file": "DAM_ENGINE__STORM__FORUM_THRESHOLD_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "engine.storm.forum_threshold",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "engine__storm__forum_threshold",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*\\+?[0-9]+\\s*$",
+            "type": "string"
+          },
+          "text_form": "integer",
+          "ty": "u32",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "maximum": 4294967295,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "default": "30",
+          "default_value": 30,
+          "docs": "Days of `alert_events` history. This is the expensive table.",
+          "env": "DAM_ENGINE__RETENTION__EVENTS_DAYS",
+          "env_aliases": [],
+          "env_file": "DAM_ENGINE__RETENTION__EVENTS_DAYS_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "engine.retention.events_days",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "engine__retention__events_days",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*\\+?[0-9]+\\s*$",
+            "type": "string"
+          },
+          "text_form": "integer",
+          "ty": "u32",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "maximum": 4294967295,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "default": "30",
+          "default_value": 30,
+          "docs": "Days a resolved alert and its notification are kept.",
+          "env": "DAM_ENGINE__RETENTION__RESOLVED_DAYS",
+          "env_aliases": [],
+          "env_file": "DAM_ENGINE__RETENTION__RESOLVED_DAYS_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "engine.retention.resolved_days",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "engine__retention__resolved_days",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*\\+?[0-9]+\\s*$",
+            "type": "string"
+          },
+          "text_form": "integer",
+          "ty": "u32",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "maximum": 4294967295,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "default": "365",
+          "default_value": 365,
+          "docs": "Days of `audit_log`.\n\nKept far longer than the rest because it is small and it is the record of what people\ndecided. Check this horizon against what an incident review actually needs.",
+          "env": "DAM_ENGINE__RETENTION__AUDIT_DAYS",
+          "env_aliases": [],
+          "env_file": "DAM_ENGINE__RETENTION__AUDIT_DAYS_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "engine.retention.audit_days",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "engine__retention__audit_days",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*\\+?[0-9]+\\s*$",
+            "type": "string"
+          },
+          "text_form": "integer",
+          "ty": "u32",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "default": "3",
+          "default_value": 3,
+          "docs": "Seconds to coalesce edits to one card before sending them.\n\nEvery edit is also skipped when the newly computed render hash matches the stored one, so\na burst of updates that change nothing visible costs no API calls at all.",
+          "env": "DAM_RENDER__DEBOUNCE_SECS",
+          "env_aliases": [],
+          "env_file": "DAM_RENDER__DEBOUNCE_SECS_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "render.debounce_secs",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "render__debounce_secs",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*\\+?[0-9]+\\s*$",
+            "type": "string"
+          },
+          "text_form": "integer",
+          "ty": "u64",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "maximum": 4096,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "default": "1500",
+          "default_value": 1500,
+          "docs": "Characters of annotation text a card may carry before it is truncated.\n\nDiscord caps an embed at 6000 characters across every field, and a single alert can carry\na five-thousand-character annotation. The truncation marker links to `/alerts show`, which\nhas the full text.",
+          "env": "DAM_RENDER__DESCRIPTION_BUDGET",
+          "env_aliases": [],
+          "env_file": "DAM_RENDER__DESCRIPTION_BUDGET_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "render.description_budget",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "render__description_budget",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*\\+?[0-9]+\\s*$",
+            "type": "string"
+          },
+          "text_form": "integer",
+          "ty": "usize",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "default": "[namespace, instance, job]",
+          "default_value": [
+            "namespace",
+            "instance",
+            "job"
+          ],
+          "docs": "Labels promoted to their own inline field on the card, in order.\n\nEverything else stays in `/alerts show`. Three or four is the useful number; a card that\nlists sixty labels is a card nobody reads during an incident.",
+          "env": "DAM_RENDER__KEY_LABELS",
+          "env_aliases": [],
+          "env_file": "DAM_RENDER__KEY_LABELS_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "render.key_labels",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "render__key_labels",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*[\\[\\{][\\s\\S]*[\\]\\}]\\s*$",
+            "type": "string"
+          },
+          "text_form": "structured",
+          "ty": "Vec<String>",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "maximum": 10080,
+            "minimum": 60,
+            "type": "integer"
+          },
+          "default": "1440",
+          "default_value": 1440,
+          "docs": "Minutes of inactivity after which an alert thread archives.\n\nDiscord accepts only 60, 1440, 4320 and 10080. A firing alert holds 10080 regardless, so\nthat a week-long incident never archives underneath the people working it.",
+          "env": "DAM_RENDER__THREAD_ARCHIVE_AFTER_MINUTES",
+          "env_aliases": [],
+          "env_file": "DAM_RENDER__THREAD_ARCHIVE_AFTER_MINUTES_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "render.thread_archive_after_minutes",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "render__thread_archive_after_minutes",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*\\+?[0-9]+\\s*$",
+            "type": "string"
+          },
+          "text_form": "integer",
+          "ty": "u32",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "boolean"
+          },
+          "default": "true",
+          "default_value": true,
+          "docs": "Show a short fingerprint in the card footer.",
+          "env": "DAM_RENDER__SHOW_FINGERPRINT",
+          "env_aliases": [],
+          "env_file": "DAM_RENDER__SHOW_FINGERPRINT_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "render.show_fingerprint",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "render__show_fingerprint",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*(true|false)\\s*$",
+            "type": "string"
+          },
+          "text_form": "boolean",
+          "ty": "bool",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "string"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "Prometheus base URL, available to templates as `links.prometheus_base`.",
+          "env": "DAM_LINKS__PROMETHEUS_BASE",
+          "env_aliases": [],
+          "env_file": "DAM_LINKS__PROMETHEUS_BASE_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "links.prometheus_base",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "links__prometheus_base",
+          "secrets_file_aliases": [],
+          "text_form": "unknown",
+          "ty": "Url",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "string"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "Grafana base URL, available to templates as `links.grafana_base`.",
+          "env": "DAM_LINKS__GRAFANA_BASE",
+          "env_aliases": [],
+          "env_file": "DAM_LINKS__GRAFANA_BASE_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "links.grafana_base",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "links__grafana_base",
+          "secrets_file_aliases": [],
+          "text_form": "unknown",
+          "ty": "Url",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "default": "[]",
+          "default_value": [],
+          "docs": "Hosts a rendered button may point at.\n\nAn empty list rejects every button, which is the safe reading of \"nothing was configured\".\nThe scheme is checked separately and is always `http` or `https`.",
+          "env": "DAM_LINKS__ALLOWED_HOSTS",
+          "env_aliases": [],
+          "env_file": "DAM_LINKS__ALLOWED_HOSTS_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "links.allowed_hosts",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "links__allowed_hosts",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*[\\[\\{][\\s\\S]*[\\]\\}]\\s*$",
+            "type": "string"
+          },
+          "text_form": "structured",
+          "ty": "Vec<String>",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "default": "900",
+          "default_value": 900,
+          "docs": "Seconds of graph shown before the alert started.",
+          "env": "DAM_LINKS__WINDOW_LEAD_SECS",
+          "env_aliases": [],
+          "env_file": "DAM_LINKS__WINDOW_LEAD_SECS_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "links.window_lead_secs",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "links__window_lead_secs",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*\\+?[0-9]+\\s*$",
+            "type": "string"
+          },
+          "text_form": "integer",
+          "ty": "u64",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "default": "300",
+          "default_value": 300,
+          "docs": "Seconds of graph shown after the alert ended, or after now while it is firing.",
+          "env": "DAM_LINKS__WINDOW_TRAIL_SECS",
+          "env_aliases": [],
+          "env_file": "DAM_LINKS__WINDOW_TRAIL_SECS_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "links.window_trail_secs",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "links__window_trail_secs",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*\\+?[0-9]+\\s*$",
+            "type": "string"
+          },
+          "text_form": "integer",
+          "ty": "u64",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "label": {
+                  "description": "Text on the button. Discord truncates past 80 characters.",
+                  "type": "string"
+                },
+                "url": {
+                  "description": "URL template, rendered with `minijinja` against `alert`, `labels`, `annotations`, `links`\nand `window`.\n\nEvery substitution in a URL is percent-encoded. A template that interpolates a value\nwithout a filter is refused when the template is compiled, not when it is rendered, so the\nmistake surfaces at boot.",
+                  "type": "string"
+                },
+                "when": {
+                  "description": "Expression that has to be truthy for the button to appear.\n\nLeave it unset for a button that always appears. `annotations.runbook_url` is the common\ncase: no runbook annotation, no runbook button.",
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "default": "[]",
+          "default_value": [],
+          "docs": "The buttons themselves, rendered in order.",
+          "env": "DAM_LINKS__BUTTONS",
+          "env_aliases": [],
+          "env_file": "DAM_LINKS__BUTTONS_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "links.buttons",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "links__buttons",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*[\\[\\{][\\s\\S]*[\\]\\}]\\s*$",
+            "type": "string"
+          },
+          "text_form": "structured",
+          "ty": "Vec<LinkButton>",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "boolean"
+          },
+          "default": "true",
+          "default_value": true,
+          "docs": "Serve Prometheus metrics at `/metrics` on the ingest listener.",
+          "env": "DAM_OBSERVABILITY__METRICS_ENABLED",
+          "env_aliases": [],
+          "env_file": "DAM_OBSERVABILITY__METRICS_ENABLED_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "observability.metrics_enabled",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "observability__metrics_enabled",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*(true|false)\\s*$",
+            "type": "string"
+          },
+          "text_form": "boolean",
+          "ty": "bool",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "Channel the deadman and route-health notices post to.\n\nThe deadman fires when no webhook has arrived inside the deadman window *and*\nAlertmanager is unreachable. Pair it with a `Watchdog` alert in Prometheus, so that\nsilence on one side is always noise on the other.",
+          "env": "DAM_OBSERVABILITY__ADMIN_CHANNEL_ID",
+          "env_aliases": [],
+          "env_file": "DAM_OBSERVABILITY__ADMIN_CHANNEL_ID_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "observability.admin_channel_id",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "observability__admin_channel_id",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*\\+?[0-9]+\\s*$",
+            "type": "string"
+          },
+          "text_form": "integer",
+          "ty": "u64",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "string"
+          },
+          "default": "warn,discord_alertmanager=info,dam_=info",
+          "default_value": "warn,discord_alertmanager=info,dam_=info",
+          "docs": "Filter directives for the log stream, in `RUST_LOG` syntax.\n\nA comma-separated list of `target=level` directives with an optional bare level as the\ndefault, so `warn,dam_engine=debug` raises one crate and leaves the rest alone. A directive\nthat does not parse stops the process rather than being ignored: a filter that silently\nreverted to its default would be discovered while reading logs that should have been there.\n\nA bare word is a target name and not a level, so a misspelt `waarn` is read as a directive\nabout a crate that does not exist. It parses, it stops nothing, and it filters nothing —\ncheck a level change took effect rather than assuming it did.",
+          "env": "DAM_TELEMETRY__LOG_LEVEL",
+          "env_aliases": [],
+          "env_file": "DAM_TELEMETRY__LOG_LEVEL_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.log_level",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "telemetry__log_level",
+          "secrets_file_aliases": [],
+          "text_form": "text",
+          "ty": "String",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "enum": [
+              "plain",
+              "json"
+            ],
+            "type": "string"
+          },
+          "default": "plain",
+          "default_value": "plain",
+          "docs": "How each log line is written.",
+          "env": "DAM_TELEMETRY__LOG_FORMAT",
+          "env_aliases": [],
+          "env_file": "DAM_TELEMETRY__LOG_FORMAT_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.log_format",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "telemetry__log_format",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*(plain|json)\\s*$",
+            "type": "string"
+          },
+          "text_form": "choice",
+          "ty": "LogFormat",
+          "values": [
+            "plain",
+            "json"
+          ]
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "string"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "Project DSN. Reporting is off while this is unset.\n\nIt is a credential: anyone holding it can write events into the project. Supply it through\n`DAM_SENTRY__DSN_FILE` or the secrets directory rather than as a plain environment\nvariable.",
+          "env": "DAM_TELEMETRY__SENTRY__DSN",
+          "env_aliases": [],
+          "env_file": "DAM_TELEMETRY__SENTRY__DSN_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.sentry.dsn",
+          "required": false,
+          "reserved": false,
+          "secret": true,
+          "secrets_file": "telemetry__sentry__dsn",
+          "secrets_file_aliases": [],
+          "text_form": "text",
+          "ty": "SecretString",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "string"
+          },
+          "default": "production",
+          "default_value": "production",
+          "docs": "Deployment this process belongs to, which every event is tagged with.\n\nSet deliberately rather than left at the default. Sentry groups, alerts and retention are\nall keyed on it, and a staging replica reporting as `production` is worse than one that\nreports nothing.",
+          "env": "DAM_TELEMETRY__SENTRY__ENVIRONMENT",
+          "env_aliases": [],
+          "env_file": "DAM_TELEMETRY__SENTRY__ENVIRONMENT_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.sentry.environment",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "telemetry__sentry__environment",
+          "secrets_file_aliases": [],
+          "text_form": "text",
+          "ty": "String",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "string"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "Release every event is attributed to. Defaults to the bot's own version.\n\nOverride it only where the image carries a version this binary does not know, such as a\nbuild that appends a commit to the tag.",
+          "env": "DAM_TELEMETRY__SENTRY__RELEASE",
+          "env_aliases": [],
+          "env_file": "DAM_TELEMETRY__SENTRY__RELEASE_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.sentry.release",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "telemetry__sentry__release",
+          "secrets_file_aliases": [],
+          "text_form": "text",
+          "ty": "String",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "string"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "Host name reported with each event. Defaults to the machine's own.\n\nWorth setting where the machine name is an ephemeral pod hash, which groups nothing.",
+          "env": "DAM_TELEMETRY__SENTRY__SERVER_NAME",
+          "env_aliases": [],
+          "env_file": "DAM_TELEMETRY__SENTRY__SERVER_NAME_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.sentry.server_name",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "telemetry__sentry__server_name",
+          "secrets_file_aliases": [],
+          "text_form": "text",
+          "ty": "String",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "type": "number"
+          },
+          "default": "1",
+          "default_value": 1.0,
+          "docs": "Fraction of events that are sent, from `0.0` to `1.0`.\n\nA blunt instrument: it drops whole events at random, so an error that fires once is the one\nmost likely to be lost. Leave it at `1.0` and shed volume with `event_level` instead.",
+          "env": "DAM_TELEMETRY__SENTRY__SAMPLE_RATE",
+          "env_aliases": [],
+          "env_file": "DAM_TELEMETRY__SENTRY__SAMPLE_RATE_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.sentry.sample_rate",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "telemetry__sentry__sample_rate",
+          "secrets_file_aliases": [],
+          "text_form": "unknown",
+          "ty": "f32",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "type": "number"
+          },
+          "default": "0",
+          "default_value": 0.0,
+          "docs": "Fraction of traces that are sent, from `0.0` to `1.0`. Tracing is off at `0.0`.\n\nEvery webhook batch, every outbox item, every periodic pass and every slash command is one\ntrace, so the rate multiplies the busiest path in the process rather than the rarest. Start\nlow.",
+          "env": "DAM_TELEMETRY__SENTRY__TRACES_SAMPLE_RATE",
+          "env_aliases": [],
+          "env_file": "DAM_TELEMETRY__SENTRY__TRACES_SAMPLE_RATE_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.sentry.traces_sample_rate",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "telemetry__sentry__traces_sample_rate",
+          "secrets_file_aliases": [],
+          "text_form": "unknown",
+          "ty": "f32",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "enum": [
+              "off",
+              "error",
+              "warn",
+              "info",
+              "debug",
+              "trace"
+            ],
+            "type": "string"
+          },
+          "default": "error",
+          "default_value": "error",
+          "docs": "Level at or above which a log record is sent as an event of its own.",
+          "env": "DAM_TELEMETRY__SENTRY__EVENT_LEVEL",
+          "env_aliases": [],
+          "env_file": "DAM_TELEMETRY__SENTRY__EVENT_LEVEL_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.sentry.event_level",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "telemetry__sentry__event_level",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*(off|error|warn|info|debug|trace)\\s*$",
+            "type": "string"
+          },
+          "text_form": "choice",
+          "ty": "CaptureLevel",
+          "values": [
+            "off",
+            "error",
+            "warn",
+            "info",
+            "debug",
+            "trace"
+          ]
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "enum": [
+              "off",
+              "error",
+              "warn",
+              "info",
+              "debug",
+              "trace"
+            ],
+            "type": "string"
+          },
+          "default": "info",
+          "default_value": "info",
+          "docs": "Level at or above which a log record is kept as a breadcrumb behind the next event.\n\nBreadcrumbs never leave the process on their own. They are attached to the event that\nfollows them, which is what turns \"a dispatch failed\" into the sequence that led there.",
+          "env": "DAM_TELEMETRY__SENTRY__BREADCRUMB_LEVEL",
+          "env_aliases": [],
+          "env_file": "DAM_TELEMETRY__SENTRY__BREADCRUMB_LEVEL_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.sentry.breadcrumb_level",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "telemetry__sentry__breadcrumb_level",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*(off|error|warn|info|debug|trace)\\s*$",
+            "type": "string"
+          },
+          "text_form": "choice",
+          "ty": "CaptureLevel",
+          "values": [
+            "off",
+            "error",
+            "warn",
+            "info",
+            "debug",
+            "trace"
+          ]
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "enum": [
+              "off",
+              "error",
+              "warn",
+              "info",
+              "debug",
+              "trace"
+            ],
+            "type": "string"
+          },
+          "default": "info",
+          "default_value": "info",
+          "docs": "Level at or above which a span joins the trace.\n\nOnly this bot's own spans are traced, whatever this says, and there is no key to widen\nthat. A dependency instruments its internals for its own logs, and the fields it attaches\nare debug renderings of whatever the call was holding — not something to hand to a third\nparty, and enough of them to bury the trace they surround.",
+          "env": "DAM_TELEMETRY__SENTRY__SPAN_LEVEL",
+          "env_aliases": [],
+          "env_file": "DAM_TELEMETRY__SENTRY__SPAN_LEVEL_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.sentry.span_level",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "telemetry__sentry__span_level",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*(off|error|warn|info|debug|trace)\\s*$",
+            "type": "string"
+          },
+          "text_form": "choice",
+          "ty": "CaptureLevel",
+          "values": [
+            "off",
+            "error",
+            "warn",
+            "info",
+            "debug",
+            "trace"
+          ]
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "boolean"
+          },
+          "default": "false",
+          "default_value": false,
+          "docs": "Attach a stack trace to every event, not only to panics.\n\nUseful while a fault is being chased and expensive afterwards: it captures and symbolicates\na backtrace on every capture, including the ones that were only ever going to be counted.",
+          "env": "DAM_TELEMETRY__SENTRY__ATTACH_STACKTRACE",
+          "env_aliases": [],
+          "env_file": "DAM_TELEMETRY__SENTRY__ATTACH_STACKTRACE_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.sentry.attach_stacktrace",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "telemetry__sentry__attach_stacktrace",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*(true|false)\\s*$",
+            "type": "string"
+          },
+          "text_form": "boolean",
+          "ty": "bool",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "boolean"
+          },
+          "default": "false",
+          "default_value": false,
+          "docs": "Send the IP addresses, headers and user identifiers Sentry calls default PII.\n\nOff, and worth leaving off. The alerts this bot handles carry infrastructure labels, and\nthe Discord side carries user identifiers; neither needs to reach a third party for an\nerror report to be actionable.",
+          "env": "DAM_TELEMETRY__SENTRY__SEND_DEFAULT_PII",
+          "env_aliases": [],
+          "env_file": "DAM_TELEMETRY__SENTRY__SEND_DEFAULT_PII_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.sentry.send_default_pii",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "telemetry__sentry__send_default_pii",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*(true|false)\\s*$",
+            "type": "string"
+          },
+          "text_form": "boolean",
+          "ty": "bool",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "default": "100",
+          "default_value": 100,
+          "docs": "How many breadcrumbs are kept behind an event.",
+          "env": "DAM_TELEMETRY__SENTRY__MAX_BREADCRUMBS",
+          "env_aliases": [],
+          "env_file": "DAM_TELEMETRY__SENTRY__MAX_BREADCRUMBS_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.sentry.max_breadcrumbs",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "telemetry__sentry__max_breadcrumbs",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*\\+?[0-9]+\\s*$",
+            "type": "string"
+          },
+          "text_form": "integer",
+          "ty": "usize",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "default": "2",
+          "default_value": 2,
+          "docs": "Seconds to spend delivering whatever is still queued during shutdown.\n\nSpent on the way out, after the listener has stopped, so it lengthens a restart by at most\nthis much. Zero abandons the queue, which loses exactly the report explaining why the\nprocess is stopping.",
+          "env": "DAM_TELEMETRY__SENTRY__SHUTDOWN_TIMEOUT_SECS",
+          "env_aliases": [],
+          "env_file": "DAM_TELEMETRY__SENTRY__SHUTDOWN_TIMEOUT_SECS_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.sentry.shutdown_timeout_secs",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "telemetry__sentry__shutdown_timeout_secs",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*\\+?[0-9]+\\s*$",
+            "type": "string"
+          },
+          "text_form": "integer",
+          "ty": "u64",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "boolean"
+          },
+          "default": "false",
+          "default_value": false,
+          "docs": "Log what the Sentry client itself is doing.\n\nFor diagnosing reporting that is not arriving, and nothing else. It is noisy, and it prints\nthe DSN.",
+          "env": "DAM_TELEMETRY__SENTRY__DEBUG",
+          "env_aliases": [],
+          "env_file": "DAM_TELEMETRY__SENTRY__DEBUG_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.sentry.debug",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "telemetry__sentry__debug",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*(true|false)\\s*$",
+            "type": "string"
+          },
+          "text_form": "boolean",
+          "ty": "bool",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "continue_to_next": {
+                  "description": "Keep evaluating later routes after this one matches.\n\nThis is Alertmanager's own `continue`, spelled out because `continue` is a Rust keyword.",
+                  "type": "boolean"
+                },
+                "enabled": {
+                  "description": "Whether the route is live.\n\nA route removed from this file is disabled rather than deleted, so the notifications it\ncreated keep their foreign key and stay renderable.",
+                  "type": "boolean"
+                },
+                "escalation": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "after_secs": {
+                      "description": "Seconds a card may stay firing and unacknowledged before it escalates.\n\nUnset disables escalation on this route, which is the default: a route that escalates\nwithout anybody having asked for it is a second mention nobody expected.",
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "roles": {
+                      "description": "Role ids the escalation mentions. Falls back to `mentions.roles` when empty.",
+                      "items": {
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "type": "array"
+                    },
+                    "users": {
+                      "description": "User ids the escalation mentions. Falls back to `mentions.users` when empty.\n\nNaming a person here rather than a role is what makes an escalation reach somebody who is\nnot watching the channel it fires in.",
+                      "items": {
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "type": "object"
+                },
+                "group_strategy": {
+                  "description": "Whether one card covers one alert or one Alertmanager group.",
+                  "enum": [
+                    "per_alert",
+                    "per_group",
+                    "digest"
+                  ],
+                  "type": "string"
+                },
+                "guild_id": {
+                  "description": "Guild this route belongs to.",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "matchers": {
+                  "description": "Alertmanager matcher expression, such as `severity=critical, namespace=~prod-.*`.\n\nThe operators are Alertmanager's: `=`, `!=`, `=~` and `!~`. A regex is fully anchored and\nmatches the empty string when the label is absent, which is what Alertmanager does. A\npattern longer than 512 bytes is refused, and compiled patterns carry size limits, because\nthese also arrive from `/route add`.",
+                  "type": "string"
+                },
+                "mentions": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "min_severity": {
+                      "description": "Lowest severity that mentions anyone.",
+                      "enum": [
+                        "info",
+                        "warning",
+                        "critical"
+                      ],
+                      "type": "string"
+                    },
+                    "roles": {
+                      "description": "Role ids mentioned on a new firing alert.",
+                      "items": {
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "type": "array"
+                    },
+                    "users": {
+                      "description": "User ids mentioned on a new firing alert.",
+                      "items": {
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "type": "object"
+                },
+                "min_severity": {
+                  "description": "Lowest severity this route accepts. Every severity passes when unset.",
+                  "enum": [
+                    "info",
+                    "warning",
+                    "critical"
+                  ],
+                  "type": "string"
+                },
+                "name": {
+                  "description": "Name shown in `/route list` and in a card's footer. Unique within a guild.",
+                  "type": "string"
+                },
+                "priority": {
+                  "description": "Evaluation order. Lower runs first.",
+                  "maximum": 2147483647,
+                  "minimum": -2147483648,
+                  "type": "integer"
+                },
+                "target": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "description": "Snowflake of the channel, thread or user.",
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "kind": {
+                      "description": "What sort of channel `id` names.\n\n`/route test` checks the channel's actual type against this before the route is accepted,\nbecause posting a plain message to a forum channel fails at delivery time otherwise.",
+                      "enum": [
+                        "text",
+                        "forum",
+                        "thread",
+                        "dm"
+                      ],
+                      "type": "string"
+                    },
+                    "policy": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "archive_on_resolve": {
+                          "description": "Archive a forum post when its alert resolves.",
+                          "type": "boolean"
+                        },
+                        "auto_archive_minutes": {
+                          "description": "Minutes of inactivity before a resolved post or thread archives.\n\nDiscord accepts 60, 1440, 4320 and 10080. Unset takes\n`render.thread_archive_after_minutes`. A card that is still firing holds 10080 whatever\nthis says, so that a long incident never archives underneath the people working it.",
+                          "maximum": 10080,
+                          "minimum": 60,
+                          "type": "integer"
+                        },
+                        "bump_on_state_change": {
+                          "description": "Post a one-line thread note on every state change.\n\nEditing a message does not bump a forum's activity sort; only a new message does. Without\nthis, a state change that only edits the card leaves the post buried where it was. The\nnote also gives the post the readable timeline that an edited-in-place card deliberately\ndoes not keep.",
+                          "type": "boolean"
+                        },
+                        "default_tag": {
+                          "description": "Tag applied when nothing else resolves, for a channel with `REQUIRE_TAG` set.",
+                          "type": "string"
+                        },
+                        "label_tags": {
+                          "description": "Labels whose values become tags, at most three.\n\nUse low-cardinality labels only. A forum channel holds 20 tags and a post holds 5; the bot\nrefuses to create a new tag once the channel reaches 18, so an unbounded label exhausts\nthe budget in an afternoon and later posts lose their tags.",
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "lock_on_resolve": {
+                          "description": "Lock a forum post when its alert resolves.\n\nA locked thread needs `MANAGE_THREADS` to reopen, and a flap has to reopen one. Without\nthat permission the notification is marked orphaned and a fresh card is posted, so leave\nthis off unless the permission is held.",
+                          "type": "boolean"
+                        },
+                        "manage_tags": {
+                          "description": "Create missing forum tags, which needs `MANAGE_CHANNELS`.\n\nCreated tags are non-moderated on purpose: a moderated tag can only be applied by a member\nholding `MANAGE_THREADS`, while a non-moderated one can be set by the thread's owner,\nwhich the bot is. Without the permission the bot applies the tags that already resolve and\nreports the gap in `/route test`; a missing tag never fails a notification.",
+                          "type": "boolean"
+                        },
+                        "max_pinned": {
+                          "description": "Most posts pinned at once.",
+                          "maximum": 4294967295,
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "pin_min_severity": {
+                          "description": "Lowest severity that pins an unacknowledged post.\n\nPinned posts are a free \"needs attention\" tray at the top of the index. The pin is dropped\non acknowledgement or resolution, and a pin that fails is a warning that never blocks the\nnotification.",
+                          "enum": [
+                            "info",
+                            "warning",
+                            "critical"
+                          ],
+                          "type": "string"
+                        },
+                        "severity_tags": {
+                          "description": "Apply a tag named after the alert's severity.",
+                          "type": "boolean"
+                        },
+                        "state_tags": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "acked": {
+                              "description": "Tag for an alert somebody has taken.",
+                              "type": "string"
+                            },
+                            "firing": {
+                              "description": "Tag for an alert that is firing and unacknowledged.",
+                              "type": "string"
+                            },
+                            "resolved": {
+                              "description": "Tag for an alert that has resolved.",
+                              "type": "string"
+                            },
+                            "silenced": {
+                              "description": "Tag for an alert an Alertmanager silence is suppressing.",
+                              "type": "string"
+                            }
+                          },
+                          "type": "object"
+                        },
+                        "thread_kind": {
+                          "description": "Whether that thread is visible to the channel or only to invited members.\n\nA private thread is not anchored to the card, so the card has to carry a link to it and\nthe bot has to invite the mentioned roles' members. Choose it for routes whose labels are\nsensitive, and accept both costs.",
+                          "enum": [
+                            "public",
+                            "private"
+                          ],
+                          "type": "string"
+                        },
+                        "thread_when": {
+                          "description": "When a text-channel route opens a thread for a card.",
+                          "enum": [
+                            "never",
+                            "on_create",
+                            "on_ack",
+                            "on_first_reply"
+                          ],
+                          "type": "string"
+                        },
+                        "title_template": {
+                          "description": "Title template for a forum post, rendered with `minijinja`.\n\nA forum post title is mandatory and 1 to 100 characters, so this falls back to the alert\nname and then to the fingerprint. An empty title fails post creation outright.",
+                          "type": "string"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  },
+                  "type": "object"
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "default": "[]",
+          "default_value": [],
+          "docs": "Routes declared in the file, which cannot be edited or deleted from Discord.\n\nDeclaring a route here is what makes a deployment reproducible from its manifests. A route\nthat disappears from this list is disabled rather than deleted, so the notifications it\ncreated keep their history. `/route add` writes the other kind, which lives only in the\ndatabase.",
+          "env": "DAM_ROUTES",
+          "env_aliases": [],
+          "env_file": "DAM_ROUTES_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "routes",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "routes",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*[\\[\\{][\\s\\S]*[\\]\\}]\\s*$",
+            "type": "string"
+          },
+          "text_form": "structured",
+          "ty": "Vec<RouteConfig>",
+          "values": []
+        }
+      ],
+      "loader": [
+        {
+          "default": "config.toml",
+          "docs": "Names the TOML layer: a file, or a directory whose `*.toml` files are all merged in name order.",
+          "env": "DAM_CONFIG",
+          "role": "config"
+        },
+        {
+          "default": null,
+          "docs": "Names a directory of key-named files — a mounted Kubernetes `Secret` volume. Each file supplies the key its name spells.",
+          "env": "DAM_SECRETS_DIR",
+          "role": "secrets_dir"
+        }
+      ],
+      "schema_version": 2
+    },
+    "terrace_contract": 1
+  },
+  "source": {
+    "digest": "sha256:692a3d4752c0f02ae362a654c5943c9c15fe51031866198c689f38d6101c490a",
+    "fetched": "2026-10-25T03:43:01Z",
+    "image": "docker.io/timschoenle/discord-alertmanager",
+    "sha256": "55ce170244cc1ee70b3fce04dd8340910f78aeeab5376b6836e059c4ecd5cfcd"
   }
 }

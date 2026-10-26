@@ -5,14 +5,42 @@ on:
     branches:
       - main
 
+# A newer push to main supersedes the sweep for the previous one.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-auto-rebase
+  cancel-in-progress: true
+
 permissions: {}
 
 jobs:
   auto-rebase:
     name: Auto-Rebase
-    uses: TimSchoenle/actions/.github/workflows/maintenance-auto-rebase.yaml@7cf01346e7636298556c46cd8fc1a96b50006d59 # tag=workflows-maintenance-auto-rebase-v1.1.8
-    secrets:
-      app_id: ${{ secrets.ACTIONS_MAINTENANCE_APP_ID }}
-      private_key: ${{ secrets.ACTIONS_MAINTENANCE_PRIVATE_KEY }}
-    with:
-      label: 'auto-rebase'
+    runs-on: ubuntu-latest
+    # Every call is made with the app token minted below, so this job needs nothing from the
+    # ambient `GITHUB_TOKEN`.
+    permissions: {}
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+
+      # An app token rather than `github.token`: GitHub starts no workflows for a commit pushed with
+      # `github.token`, so the updated PRs would sit without CI. Scoped to what the action does;
+      # without a `permission-*` input the token would inherit the whole installation.
+      - name: Generate Token
+        id: token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          app-id: ${{ secrets.ACTIONS_MAINTENANCE_APP_ID }}
+          private-key: ${{ secrets.ACTIONS_MAINTENANCE_PRIVATE_KEY }}
+          permission-contents: write # To merge the base branch into the head branch
+          permission-pull-requests: write # To list the PRs and request the update
+
+      - name: Update Labelled PRs
+        uses: TimSchoenle/actions/actions/maintenance/auto-rebase@495fd50fd4a5ae3d9fb1496c96eada74c6f2529a # tag=actions-maintenance-auto-rebase-v3.0.0
+        with:
+          token: ${{ steps.token.outputs.token }}
+          label: 'auto-rebase'

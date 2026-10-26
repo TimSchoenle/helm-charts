@@ -1,701 +1,88 @@
 {
-  "source": {
-    "image": "docker.io/timmi6790/s3-bucket-perma-link",
-    "digest": "sha256:cdb1859fb590730509cf92381902640317911315839dc9d43fc01d8e4255cc41",
-    "sha256": "5b0b7348d421f16a7ff91fb9af3fcbcb6df32146399cf374597e647e7ae5b513",
-    "fetched": "2026-10-17T10:16:20Z"
-  },
   "contract": {
-    "terrace_contract": 1,
-    "producer": {
-      "name": "terrace-config",
-      "version": "0.15.1",
-      "loader": "figment"
-    },
     "app": {
       "name": "s3-bucket-perma-link",
-      "version": "v2.2.5",
-      "source": "https://github.com/TimSchoenle/s3-bucket-perma-link"
+      "source": "https://github.com/TimSchoenle/s3-bucket-perma-link",
+      "version": "v2.2.6"
     },
-    "schema": {
-      "schema_version": 2,
-      "dialect": {
-        "prefix": "S3_PERMA_LINK_",
-        "nesting_separator": "__",
-        "indirection_suffix": "_FILE"
-      },
-      "loader": [
+    "external": {
+      "env": [
         {
-          "env": "S3_PERMA_LINK_CONFIG",
-          "role": "config",
-          "docs": "Names the TOML layer: a file, or a directory whose `*.toml` files are all merged in name order.",
-          "default": "config.toml"
+          "constraint": {
+            "type": "string"
+          },
+          "docs": "Proxy for Sentry's transport. Read by `sentry::init`; `http_proxy` is also accepted.",
+          "name": "HTTP_PROXY",
+          "owner": "sentry",
+          "required": false,
+          "secret": false,
+          "text_form": "text",
+          "ty": "String",
+          "values": []
         },
         {
-          "env": "S3_PERMA_LINK_SECRETS_DIR",
-          "role": "secrets_dir",
-          "docs": "Names a directory of key-named files — a mounted Kubernetes `Secret` volume. Each file supplies the key its name spells.",
-          "default": null
+          "constraint": {
+            "type": "string"
+          },
+          "docs": "As `HTTP_PROXY`, for TLS. Falls back to `HTTP_PROXY`; `https_proxy` is also accepted.",
+          "name": "HTTPS_PROXY",
+          "owner": "sentry",
+          "required": false,
+          "secret": false,
+          "text_form": "text",
+          "ty": "String",
+          "values": []
+        },
+        {
+          "constraint": {
+            "type": "boolean"
+          },
+          "default": "true",
+          "docs": "Whether Sentry's transport validates certificates. `false` accepts invalid ones.",
+          "name": "SSL_VERIFY",
+          "owner": "sentry",
+          "required": false,
+          "secret": false,
+          "text_constraint": {
+            "pattern": "^\\s*(true|false)\\s*$",
+            "type": "string"
+          },
+          "text_form": "boolean",
+          "ty": "bool",
+          "values": []
+        },
+        {
+          "constraint": {
+            "type": "string"
+          },
+          "docs": "Lowercase spelling of `HTTP_PROXY`, read when the uppercase one is unset.",
+          "name": "http_proxy",
+          "owner": "sentry",
+          "required": false,
+          "secret": false,
+          "text_form": "text",
+          "ty": "String",
+          "values": []
+        },
+        {
+          "constraint": {
+            "type": "string"
+          },
+          "docs": "Lowercase spelling of `HTTPS_PROXY`, read when the uppercase one is unset.",
+          "name": "https_proxy",
+          "owner": "sentry",
+          "required": false,
+          "secret": false,
+          "text_form": "text",
+          "ty": "String",
+          "values": []
         }
       ],
-      "keys": [
-        {
-          "path": "server.host",
-          "env": "S3_PERMA_LINK_SERVER__HOST",
-          "env_file": "S3_PERMA_LINK_SERVER__HOST_FILE",
-          "secrets_file": "server__host",
-          "docs": "Address to listen on. `0.0.0.0` in a container, which is the deployment this ships as.",
-          "ty": "String",
-          "values": [],
-          "constraint": {
-            "type": "string"
-          },
-          "text_form": "text",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "0.0.0.0",
-          "default_value": "0.0.0.0",
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "server.port",
-          "env": "S3_PERMA_LINK_SERVER__PORT",
-          "env_file": "S3_PERMA_LINK_SERVER__PORT_FILE",
-          "secrets_file": "server__port",
-          "docs": "Port to listen on.",
-          "ty": "u16",
-          "values": [],
-          "constraint": {
-            "maximum": 65535,
-            "minimum": 0,
-            "type": "integer"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*\\+?[0-9]+\\s*$",
-            "type": "string"
-          },
-          "text_form": "integer",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "8080",
-          "default_value": 8080,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "s3.access_key",
-          "env": "S3_PERMA_LINK_S3__ACCESS_KEY",
-          "env_file": "S3_PERMA_LINK_S3__ACCESS_KEY_FILE",
-          "secrets_file": "s3__access_key",
-          "docs": "S3 access key. Mount it rather than setting it in a file that is committed.\n\nA [`SecretString`]: this struct is nested inside a [`Config`] that the reload supervisor\nlogs, and a credential must not be one `{:?}` away from the log stream. `SecretString`\nrefuses to implement [`Serialize`] for the same reason, which is why the field is skipped\non the way out — `#[config(secret)]` renders `<redacted>` in its place anyway.",
-          "ty": "SecretString",
-          "values": [],
-          "constraint": {
-            "type": "string"
-          },
-          "text_form": "text",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": true,
-          "secret": true,
-          "reserved": false
-        },
-        {
-          "path": "s3.secret_key",
-          "env": "S3_PERMA_LINK_S3__SECRET_KEY",
-          "env_file": "S3_PERMA_LINK_S3__SECRET_KEY_FILE",
-          "secrets_file": "s3__secret_key",
-          "docs": "S3 secret key. Mount it rather than setting it in a file that is committed.",
-          "ty": "SecretString",
-          "values": [],
-          "constraint": {
-            "type": "string"
-          },
-          "text_form": "text",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": true,
-          "secret": true,
-          "reserved": false
-        },
-        {
-          "path": "s3.host",
-          "env": "S3_PERMA_LINK_S3__HOST",
-          "env_file": "S3_PERMA_LINK_S3__HOST_FILE",
-          "secrets_file": "s3__host",
-          "docs": "The endpoint, e.g. `s3.eu-central-1.amazonaws.com`.",
-          "ty": "String",
-          "values": [],
-          "constraint": {
-            "type": "string"
-          },
-          "text_form": "text",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": true,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "s3.region",
-          "env": "S3_PERMA_LINK_S3__REGION",
-          "env_file": "S3_PERMA_LINK_S3__REGION_FILE",
-          "secrets_file": "s3__region",
-          "docs": "The region the endpoint serves, e.g. `eu-central-1`.",
-          "ty": "String",
-          "values": [],
-          "constraint": {
-            "type": "string"
-          },
-          "text_form": "text",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": true,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "bucket.entries",
-          "env": "S3_PERMA_LINK_BUCKET__ENTRIES",
-          "env_file": "S3_PERMA_LINK_BUCKET__ENTRIES_FILE",
-          "secrets_file": "bucket__entries",
-          "docs": "One `[bucket.entries.<request path>]` block per permanent link, each carrying a `bucket`\nand an `object`.\n\nStill one key rather than `#[config(nested)]`, because the key paths under it are the\noperator's route names and no type knows them ahead of time. `#[config(element)]` is the\nopt-in this crate takes up instead: it describes the shape one block takes — see\n[`BucketEntry`] for the two fields — without inventing a key for the route name, which\nstays undocumented on purpose. A table rather than the delimiter-separated string this\nused to be: the string existed only because an environment variable cannot carry a map,\nand the TOML layer can.",
-          "ty": "HashMap<String, BucketEntry>",
-          "values": [],
-          "constraint": {
-            "additionalProperties": {
-              "additionalProperties": false,
-              "properties": {
-                "bucket": {
-                  "description": "The bucket [`Self::object`] lives in.",
-                  "type": "string"
-                },
-                "object": {
-                  "description": "The object key inside [`Self::bucket`].\n\nNamed `object` rather than `file`, which the loader cannot express: `_FILE` is the\nsuffix marking file indirection, so `S3_PERMA_LINK_BUCKET__ENTRIES__DOCS__FILE` would be\nread as \"the value of this key is in the file named by this variable\".",
-                  "type": "string"
-                }
-              },
-              "required": [
-                "bucket",
-                "object"
-              ],
-              "type": "object"
-            },
-            "type": "object"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*[\\[\\{][\\s\\S]*[\\]\\}]\\s*$",
-            "type": "string"
-          },
-          "text_form": "structured",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": true,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.log_level",
-          "env": "S3_PERMA_LINK_TELEMETRY__LOG_LEVEL",
-          "env_file": "S3_PERMA_LINK_TELEMETRY__LOG_LEVEL_FILE",
-          "secrets_file": "telemetry__log_level",
-          "docs": "How much the service says: `trace`, `debug`, `info`, `warn` or `error`.\n\nThe console sink only. What Sentry takes is `telemetry.sentry.capture_level` and\n`telemetry.sentry.breadcrumb_level`, which are filtered independently.\n\nMatched without regard to case, so `INFO` is the same as `info`. A file may also carry\n`\"1\"` to `\"5\"`, which name the five levels counting up from `error`; an environment\nvariable may not, because its text is read as a number before this key sees it. Write\none of the five names and none of that applies.\n\nParsed by [`Self::level`], which is also where the schema's silence about this key is\nexplained.",
-          "ty": "String",
-          "values": [],
-          "constraint": {
-            "type": "string"
-          },
-          "text_form": "text",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "info",
-          "default_value": "info",
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.sentry.enabled",
-          "env": "S3_PERMA_LINK_TELEMETRY__SENTRY__ENABLED",
-          "env_file": "S3_PERMA_LINK_TELEMETRY__SENTRY__ENABLED_FILE",
-          "secrets_file": "telemetry__sentry__enabled",
-          "docs": "Initialise the Sentry client. `false` installs no client, no panic hook, no subscriber\nlayer and no HTTP middleware, so every other key in this block is inert.",
-          "ty": "bool",
-          "values": [],
-          "constraint": {
-            "type": "boolean"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*(true|false)\\s*$",
-            "type": "string"
-          },
-          "text_form": "boolean",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "false",
-          "default_value": false,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.sentry.dsn",
-          "env": "S3_PERMA_LINK_TELEMETRY__SENTRY__DSN",
-          "env_file": "S3_PERMA_LINK_TELEMETRY__SENTRY__DSN_FILE",
-          "secrets_file": "telemetry__sentry__dsn",
-          "docs": "Ingest URL, `https://<key>@<host>/<project>`.\n\nA [`SecretString`]: the embedded key is a bearer credential for the project it names, and\nthis struct is nested inside a [`Config`](super::Config) the reload supervisor logs with\n`{:?}`. Mount it like the S3 credentials rather than committing it — the same `_FILE`\nindirection and secrets-directory layers apply.\n\nAbsent while [`Self::enabled`] is set is a boot failure, not a silent no-op.",
-          "ty": "SecretString",
-          "values": [],
-          "constraint": {
-            "type": "string"
-          },
-          "text_form": "text",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": false,
-          "secret": true,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.sentry.environment",
-          "env": "S3_PERMA_LINK_TELEMETRY__SENTRY__ENVIRONMENT",
-          "env_file": "S3_PERMA_LINK_TELEMETRY__SENTRY__ENVIRONMENT_FILE",
-          "secrets_file": "telemetry__sentry__environment",
-          "docs": "Environment tag on every event, e.g. `production` or `staging`.\n\nUnset resolves to `production` for a release build and `development` for a debug one —\nthe same rule the SDK applies, but applied *here*, so that `SENTRY_ENVIRONMENT` is never\nconsulted. That variable is a second configuration channel that bypasses this loader and\nits shadow-key rejection, and a field the service always sets is one it cannot reach.",
-          "ty": "String",
-          "values": [],
-          "constraint": {
-            "type": "string"
-          },
-          "text_form": "text",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.sentry.release",
-          "env": "S3_PERMA_LINK_TELEMETRY__SENTRY__RELEASE",
-          "env_file": "S3_PERMA_LINK_TELEMETRY__SENTRY__RELEASE_FILE",
-          "secrets_file": "telemetry__sentry__release",
-          "docs": "Release tag on every event.\n\nUnset resolves to `s3-bucket-perma-link@<crate version>`, which is what makes a\nregression attributable to a deploy. It is also the name the Dockerfile's `sentry-cli\ndebug-files upload` symbolicates against, so overriding it here without matching that\nupload leaves events with no symbols.",
-          "ty": "String",
-          "values": [],
-          "constraint": {
-            "type": "string"
-          },
-          "text_form": "text",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.sentry.server_name",
-          "env": "S3_PERMA_LINK_TELEMETRY__SENTRY__SERVER_NAME",
-          "env_file": "S3_PERMA_LINK_TELEMETRY__SENTRY__SERVER_NAME_FILE",
-          "secrets_file": "telemetry__sentry__server_name",
-          "docs": "Host tag on every event. Unset reports none: the identity of one replica is\ninfrastructure detail, and in a container it is a pod name that is gone by the time\nanybody reads the issue.",
-          "ty": "String",
-          "values": [],
-          "constraint": {
-            "type": "string"
-          },
-          "text_form": "text",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.sentry.sample_rate",
-          "env": "S3_PERMA_LINK_TELEMETRY__SENTRY__SAMPLE_RATE",
-          "env_file": "S3_PERMA_LINK_TELEMETRY__SENTRY__SAMPLE_RATE_FILE",
-          "secrets_file": "telemetry__sentry__sample_rate",
-          "docs": "Fraction of captured events actually sent, `0.0`–`1.0`.\n\nA blunt volume cap: it drops whole issues rather than repetitions of one, so a rare\nerror is exactly what it loses. Leave it at `1.0` unless quota forces otherwise.",
-          "ty": "f32",
-          "values": [],
-          "constraint": {
-            "maximum": 1.0,
-            "minimum": 0.0,
-            "type": "number"
-          },
-          "text_form": "unknown",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "1",
-          "default_value": 1.0,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.sentry.traces_sample_rate",
-          "env": "S3_PERMA_LINK_TELEMETRY__SENTRY__TRACES_SAMPLE_RATE",
-          "env_file": "S3_PERMA_LINK_TELEMETRY__SENTRY__TRACES_SAMPLE_RATE_FILE",
-          "secrets_file": "telemetry__sentry__traces_sample_rate",
-          "docs": "Fraction of traces this service **starts** that are recorded, `0.0`–`1.0`.\n\n`0.0` — the default — means it starts none of its own, which is the sensible setting for\na service whose whole job is one redirect: performance data on it is a cost with no\nquestion behind it. It does not remove this service from a trace that reaches it already\nsampled: an inbound `sentry-trace` header is continued regardless, so a caller that does\ntrace still sees the hop.",
-          "ty": "f32",
-          "values": [],
-          "constraint": {
-            "maximum": 1.0,
-            "minimum": 0.0,
-            "type": "number"
-          },
-          "text_form": "unknown",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "0",
-          "default_value": 0.0,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.sentry.capture_level",
-          "env": "S3_PERMA_LINK_TELEMETRY__SENTRY__CAPTURE_LEVEL",
-          "env_file": "S3_PERMA_LINK_TELEMETRY__SENTRY__CAPTURE_LEVEL_FILE",
-          "secrets_file": "telemetry__sentry__capture_level",
-          "docs": "Least severe `tracing` level reported as a Sentry **issue**.",
-          "ty": "SentryLevel",
-          "values": [
-            "off",
-            "error",
-            "warn",
-            "info",
-            "debug",
-            "trace"
-          ],
-          "constraint": {
-            "enum": [
-              "off",
-              "error",
-              "warn",
-              "info",
-              "debug",
-              "trace"
-            ],
-            "type": "string"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*(off|error|warn|info|debug|trace)\\s*$",
-            "type": "string"
-          },
-          "text_form": "choice",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "error",
-          "default_value": "error",
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.sentry.breadcrumb_level",
-          "env": "S3_PERMA_LINK_TELEMETRY__SENTRY__BREADCRUMB_LEVEL",
-          "env_file": "S3_PERMA_LINK_TELEMETRY__SENTRY__BREADCRUMB_LEVEL_FILE",
-          "secrets_file": "telemetry__sentry__breadcrumb_level",
-          "docs": "Least severe `tracing` level kept as a **breadcrumb** — the trail attached to the next\nissue. Records at or above `capture_level` become issues instead.\n\nSpelled as a key rather than as a rustdoc link to [`Self::capture_level`]: this first\nparagraph is a cell in the generated README table, where an intra-doc link renders as\nits own source.\n\nIndependent of [`TelemetryConfig::log_level`](super::TelemetryConfig): the two sinks\ncarry their own filters, so tightening the console to `warn` does not silently empty\nevery breadcrumb trail. The cost is symmetric — asking for `debug` breadcrumbs makes the\nprocess evaluate `debug` records it does not print.",
-          "ty": "SentryLevel",
-          "values": [
-            "off",
-            "error",
-            "warn",
-            "info",
-            "debug",
-            "trace"
-          ],
-          "constraint": {
-            "enum": [
-              "off",
-              "error",
-              "warn",
-              "info",
-              "debug",
-              "trace"
-            ],
-            "type": "string"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*(off|error|warn|info|debug|trace)\\s*$",
-            "type": "string"
-          },
-          "text_form": "choice",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "info",
-          "default_value": "info",
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.sentry.max_breadcrumbs",
-          "env": "S3_PERMA_LINK_TELEMETRY__SENTRY__MAX_BREADCRUMBS",
-          "env_file": "S3_PERMA_LINK_TELEMETRY__SENTRY__MAX_BREADCRUMBS_FILE",
-          "secrets_file": "telemetry__sentry__max_breadcrumbs",
-          "docs": "How many breadcrumbs one event carries.",
-          "ty": "usize",
-          "values": [],
-          "constraint": {
-            "minimum": 0,
-            "type": "integer"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*\\+?[0-9]+\\s*$",
-            "type": "string"
-          },
-          "text_form": "integer",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "100",
-          "default_value": 100,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.sentry.attach_stacktrace",
-          "env": "S3_PERMA_LINK_TELEMETRY__SENTRY__ATTACH_STACKTRACE",
-          "env_file": "S3_PERMA_LINK_TELEMETRY__SENTRY__ATTACH_STACKTRACE_FILE",
-          "secrets_file": "telemetry__sentry__attach_stacktrace",
-          "docs": "Attach a stack trace to events that carry none of their own.",
-          "ty": "bool",
-          "values": [],
-          "constraint": {
-            "type": "boolean"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*(true|false)\\s*$",
-            "type": "string"
-          },
-          "text_form": "boolean",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "true",
-          "default_value": true,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.sentry.send_default_pii",
-          "env": "S3_PERMA_LINK_TELEMETRY__SENTRY__SEND_DEFAULT_PII",
-          "env_file": "S3_PERMA_LINK_TELEMETRY__SENTRY__SEND_DEFAULT_PII_FILE",
-          "secrets_file": "telemetry__sentry__send_default_pii",
-          "docs": "Send personally identifying data with every event: the client IP, the full request header\nset, and the request body where one was buffered.\n\n**Off, and worth leaving off.** This service serves public links; the IP address of\nwhoever followed one is not what makes a failed S3 fetch actionable, and Sentry is a\nthird party. On, it also widens what the HTTP middleware records, because the actix\nintegration reads this same flag to decide whether to redact sensitive headers.",
-          "ty": "bool",
-          "values": [],
-          "constraint": {
-            "type": "boolean"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*(true|false)\\s*$",
-            "type": "string"
-          },
-          "text_form": "boolean",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "false",
-          "default_value": false,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.sentry.http_transactions",
-          "env": "S3_PERMA_LINK_TELEMETRY__SENTRY__HTTP_TRANSACTIONS",
-          "env_file": "S3_PERMA_LINK_TELEMETRY__SENTRY__HTTP_TRANSACTIONS_FILE",
-          "secrets_file": "telemetry__sentry__http_transactions",
-          "docs": "Record one Sentry transaction per request, named by the matched route.\n\nWhether a started transaction is *kept* is [`Self::traces_sample_rate`]'s decision; this\nis the switch for a deployment that wants error reporting and no performance data at all.\nThe per-request hub is installed either way — without it, breadcrumbs from concurrently\nserved requests all land on the main hub and every issue arrives with a trail belonging\nto whoever else was in flight.",
-          "ty": "bool",
-          "values": [],
-          "constraint": {
-            "type": "boolean"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*(true|false)\\s*$",
-            "type": "string"
-          },
-          "text_form": "boolean",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "true",
-          "default_value": true,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.sentry.span_attributes",
-          "env": "S3_PERMA_LINK_TELEMETRY__SENTRY__SPAN_ATTRIBUTES",
-          "env_file": "S3_PERMA_LINK_TELEMETRY__SENTRY__SPAN_ATTRIBUTES_FILE",
-          "secrets_file": "telemetry__sentry__span_attributes",
-          "docs": "Copy `tracing` span fields onto the Sentry span as attributes.\n\nOff: the span fields here carry request paths and object keys, and a transaction is\nstored under a longer retention than a log line.",
-          "ty": "bool",
-          "values": [],
-          "constraint": {
-            "type": "boolean"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*(true|false)\\s*$",
-            "type": "string"
-          },
-          "text_form": "boolean",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "false",
-          "default_value": false,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.sentry.shutdown_timeout_secs",
-          "env": "S3_PERMA_LINK_TELEMETRY__SENTRY__SHUTDOWN_TIMEOUT_SECS",
-          "env_file": "S3_PERMA_LINK_TELEMETRY__SENTRY__SHUTDOWN_TIMEOUT_SECS_FILE",
-          "secrets_file": "telemetry__sentry__shutdown_timeout_secs",
-          "docs": "How long process exit waits for queued events to drain, in seconds.\n\nPaid on every shutdown, including the rolling ones a deploy produces, so it trades\nagainst how quickly a replica goes away. `0` discards whatever is still queued.",
-          "ty": "u64",
-          "values": [],
-          "constraint": {
-            "minimum": 0,
-            "type": "integer"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*\\+?[0-9]+\\s*$",
-            "type": "string"
-          },
-          "text_form": "integer",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "2",
-          "default_value": 2,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.sentry.debug",
-          "env": "S3_PERMA_LINK_TELEMETRY__SENTRY__DEBUG",
-          "env_file": "S3_PERMA_LINK_TELEMETRY__SENTRY__DEBUG_FILE",
-          "secrets_file": "telemetry__sentry__debug",
-          "docs": "Print the SDK's own diagnostics to stderr. For proving a DSN works, not for running.",
-          "ty": "bool",
-          "values": [],
-          "constraint": {
-            "type": "boolean"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*(true|false)\\s*$",
-            "type": "string"
-          },
-          "text_form": "boolean",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "false",
-          "default_value": false,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        }
-      ]
+      "ignore": [
+        "KUBERNETES_*",
+        "HOSTNAME"
+      ],
+      "unknown": "reject"
     },
     "json_schema": {
       "$schema": "http://json-schema.org/draft-07/schema#",
@@ -891,84 +278,697 @@
       "title": "s3-bucket-perma-link configuration",
       "type": "object"
     },
-    "external": {
-      "env": [
+    "producer": {
+      "loader": "figment",
+      "name": "terrace-config",
+      "version": "0.15.2"
+    },
+    "schema": {
+      "dialect": {
+        "indirection_suffix": "_FILE",
+        "nesting_separator": "__",
+        "prefix": "S3_PERMA_LINK_"
+      },
+      "keys": [
         {
-          "name": "HTTP_PROXY",
-          "owner": "sentry",
-          "docs": "Proxy for Sentry's transport. Read by `sentry::init`; `http_proxy` is also accepted.",
-          "ty": "String",
-          "values": [],
+          "aliases": [],
           "constraint": {
             "type": "string"
           },
-          "text_form": "text",
+          "default": "0.0.0.0",
+          "default_value": "0.0.0.0",
+          "docs": "Address to listen on. `0.0.0.0` in a container, which is the deployment this ships as.",
+          "env": "S3_PERMA_LINK_SERVER__HOST",
+          "env_aliases": [],
+          "env_file": "S3_PERMA_LINK_SERVER__HOST_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "server.host",
           "required": false,
-          "secret": false
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "server__host",
+          "secrets_file_aliases": [],
+          "text_form": "text",
+          "ty": "String",
+          "values": []
         },
         {
-          "name": "HTTPS_PROXY",
-          "owner": "sentry",
-          "docs": "As `HTTP_PROXY`, for TLS. Falls back to `HTTP_PROXY`; `https_proxy` is also accepted.",
-          "ty": "String",
-          "values": [],
+          "aliases": [],
+          "constraint": {
+            "maximum": 65535,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "default": "8080",
+          "default_value": 8080,
+          "docs": "Port to listen on.",
+          "env": "S3_PERMA_LINK_SERVER__PORT",
+          "env_aliases": [],
+          "env_file": "S3_PERMA_LINK_SERVER__PORT_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "server.port",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "server__port",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*\\+?[0-9]+\\s*$",
+            "type": "string"
+          },
+          "text_form": "integer",
+          "ty": "u16",
+          "values": []
+        },
+        {
+          "aliases": [],
           "constraint": {
             "type": "string"
           },
+          "default": null,
+          "default_value": null,
+          "docs": "S3 access key. Mount it rather than setting it in a file that is committed.\n\nA [`SecretString`]: this struct is nested inside a [`Config`] that the reload supervisor\nlogs, and a credential must not be one `{:?}` away from the log stream. `SecretString`\nrefuses to implement [`Serialize`] for the same reason, which is why the field is skipped\non the way out — `#[config(secret)]` renders `<redacted>` in its place anyway.",
+          "env": "S3_PERMA_LINK_S3__ACCESS_KEY",
+          "env_aliases": [],
+          "env_file": "S3_PERMA_LINK_S3__ACCESS_KEY_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "s3.access_key",
+          "required": true,
+          "reserved": false,
+          "secret": true,
+          "secrets_file": "s3__access_key",
+          "secrets_file_aliases": [],
           "text_form": "text",
-          "required": false,
-          "secret": false
+          "ty": "SecretString",
+          "values": []
         },
         {
-          "name": "SSL_VERIFY",
-          "owner": "sentry",
-          "docs": "Whether Sentry's transport validates certificates. `false` accepts invalid ones.",
-          "ty": "bool",
-          "values": [],
+          "aliases": [],
+          "constraint": {
+            "type": "string"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "S3 secret key. Mount it rather than setting it in a file that is committed.",
+          "env": "S3_PERMA_LINK_S3__SECRET_KEY",
+          "env_aliases": [],
+          "env_file": "S3_PERMA_LINK_S3__SECRET_KEY_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "s3.secret_key",
+          "required": true,
+          "reserved": false,
+          "secret": true,
+          "secrets_file": "s3__secret_key",
+          "secrets_file_aliases": [],
+          "text_form": "text",
+          "ty": "SecretString",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "string"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "The endpoint, e.g. `s3.eu-central-1.amazonaws.com`.",
+          "env": "S3_PERMA_LINK_S3__HOST",
+          "env_aliases": [],
+          "env_file": "S3_PERMA_LINK_S3__HOST_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "s3.host",
+          "required": true,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "s3__host",
+          "secrets_file_aliases": [],
+          "text_form": "text",
+          "ty": "String",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "string"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "The region the endpoint serves, e.g. `eu-central-1`.",
+          "env": "S3_PERMA_LINK_S3__REGION",
+          "env_aliases": [],
+          "env_file": "S3_PERMA_LINK_S3__REGION_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "s3.region",
+          "required": true,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "s3__region",
+          "secrets_file_aliases": [],
+          "text_form": "text",
+          "ty": "String",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "additionalProperties": {
+              "additionalProperties": false,
+              "properties": {
+                "bucket": {
+                  "description": "The bucket [`Self::object`] lives in.",
+                  "type": "string"
+                },
+                "object": {
+                  "description": "The object key inside [`Self::bucket`].\n\nNamed `object` rather than `file`, which the loader cannot express: `_FILE` is the\nsuffix marking file indirection, so `S3_PERMA_LINK_BUCKET__ENTRIES__DOCS__FILE` would be\nread as \"the value of this key is in the file named by this variable\".",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "bucket",
+                "object"
+              ],
+              "type": "object"
+            },
+            "type": "object"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "One `[bucket.entries.<request path>]` block per permanent link, each carrying a `bucket`\nand an `object`.\n\nStill one key rather than `#[config(nested)]`, because the key paths under it are the\noperator's route names and no type knows them ahead of time. `#[config(element)]` is the\nopt-in this crate takes up instead: it describes the shape one block takes — see\n[`BucketEntry`] for the two fields — without inventing a key for the route name, which\nstays undocumented on purpose. A table rather than the delimiter-separated string this\nused to be: the string existed only because an environment variable cannot carry a map,\nand the TOML layer can.",
+          "env": "S3_PERMA_LINK_BUCKET__ENTRIES",
+          "env_aliases": [],
+          "env_file": "S3_PERMA_LINK_BUCKET__ENTRIES_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "bucket.entries",
+          "required": true,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "bucket__entries",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*[\\[\\{][\\s\\S]*[\\]\\}]\\s*$",
+            "type": "string"
+          },
+          "text_form": "structured",
+          "ty": "HashMap<String, BucketEntry>",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "string"
+          },
+          "default": "info",
+          "default_value": "info",
+          "docs": "How much the service says: `trace`, `debug`, `info`, `warn` or `error`.\n\nThe console sink only. What Sentry takes is `telemetry.sentry.capture_level` and\n`telemetry.sentry.breadcrumb_level`, which are filtered independently.\n\nMatched without regard to case, so `INFO` is the same as `info`. A file may also carry\n`\"1\"` to `\"5\"`, which name the five levels counting up from `error`; an environment\nvariable may not, because its text is read as a number before this key sees it. Write\none of the five names and none of that applies.\n\nParsed by [`Self::level`], which is also where the schema's silence about this key is\nexplained.",
+          "env": "S3_PERMA_LINK_TELEMETRY__LOG_LEVEL",
+          "env_aliases": [],
+          "env_file": "S3_PERMA_LINK_TELEMETRY__LOG_LEVEL_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.log_level",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "telemetry__log_level",
+          "secrets_file_aliases": [],
+          "text_form": "text",
+          "ty": "String",
+          "values": []
+        },
+        {
+          "aliases": [],
           "constraint": {
             "type": "boolean"
           },
+          "default": "false",
+          "default_value": false,
+          "docs": "Initialise the Sentry client. `false` installs no client, no panic hook, no subscriber\nlayer and no HTTP middleware, so every other key in this block is inert.",
+          "env": "S3_PERMA_LINK_TELEMETRY__SENTRY__ENABLED",
+          "env_aliases": [],
+          "env_file": "S3_PERMA_LINK_TELEMETRY__SENTRY__ENABLED_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.sentry.enabled",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "telemetry__sentry__enabled",
+          "secrets_file_aliases": [],
           "text_constraint": {
             "pattern": "^\\s*(true|false)\\s*$",
             "type": "string"
           },
           "text_form": "boolean",
+          "ty": "bool",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "string"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "Ingest URL, `https://<key>@<host>/<project>`.\n\nA [`SecretString`]: the embedded key is a bearer credential for the project it names, and\nthis struct is nested inside a [`Config`](super::Config) the reload supervisor logs with\n`{:?}`. Mount it like the S3 credentials rather than committing it — the same `_FILE`\nindirection and secrets-directory layers apply.\n\nAbsent while [`Self::enabled`] is set is a boot failure, not a silent no-op.",
+          "env": "S3_PERMA_LINK_TELEMETRY__SENTRY__DSN",
+          "env_aliases": [],
+          "env_file": "S3_PERMA_LINK_TELEMETRY__SENTRY__DSN_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.sentry.dsn",
+          "required": false,
+          "reserved": false,
+          "secret": true,
+          "secrets_file": "telemetry__sentry__dsn",
+          "secrets_file_aliases": [],
+          "text_form": "text",
+          "ty": "SecretString",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "string"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "Environment tag on every event, e.g. `production` or `staging`.\n\nUnset resolves to `production` for a release build and `development` for a debug one —\nthe same rule the SDK applies, but applied *here*, so that `SENTRY_ENVIRONMENT` is never\nconsulted. That variable is a second configuration channel that bypasses this loader and\nits shadow-key rejection, and a field the service always sets is one it cannot reach.",
+          "env": "S3_PERMA_LINK_TELEMETRY__SENTRY__ENVIRONMENT",
+          "env_aliases": [],
+          "env_file": "S3_PERMA_LINK_TELEMETRY__SENTRY__ENVIRONMENT_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.sentry.environment",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "telemetry__sentry__environment",
+          "secrets_file_aliases": [],
+          "text_form": "text",
+          "ty": "String",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "string"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "Release tag on every event.\n\nUnset resolves to `s3-bucket-perma-link@<crate version>`, which is what makes a\nregression attributable to a deploy. It is also the name the Dockerfile's `sentry-cli\ndebug-files upload` symbolicates against, so overriding it here without matching that\nupload leaves events with no symbols.",
+          "env": "S3_PERMA_LINK_TELEMETRY__SENTRY__RELEASE",
+          "env_aliases": [],
+          "env_file": "S3_PERMA_LINK_TELEMETRY__SENTRY__RELEASE_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.sentry.release",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "telemetry__sentry__release",
+          "secrets_file_aliases": [],
+          "text_form": "text",
+          "ty": "String",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "string"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "Host tag on every event. Unset reports none: the identity of one replica is\ninfrastructure detail, and in a container it is a pod name that is gone by the time\nanybody reads the issue.",
+          "env": "S3_PERMA_LINK_TELEMETRY__SENTRY__SERVER_NAME",
+          "env_aliases": [],
+          "env_file": "S3_PERMA_LINK_TELEMETRY__SENTRY__SERVER_NAME_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.sentry.server_name",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "telemetry__sentry__server_name",
+          "secrets_file_aliases": [],
+          "text_form": "text",
+          "ty": "String",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "type": "number"
+          },
+          "default": "1",
+          "default_value": 1.0,
+          "docs": "Fraction of captured events actually sent, `0.0`–`1.0`.\n\nA blunt volume cap: it drops whole issues rather than repetitions of one, so a rare\nerror is exactly what it loses. Leave it at `1.0` unless quota forces otherwise.",
+          "env": "S3_PERMA_LINK_TELEMETRY__SENTRY__SAMPLE_RATE",
+          "env_aliases": [],
+          "env_file": "S3_PERMA_LINK_TELEMETRY__SENTRY__SAMPLE_RATE_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.sentry.sample_rate",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "telemetry__sentry__sample_rate",
+          "secrets_file_aliases": [],
+          "text_form": "unknown",
+          "ty": "f32",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "type": "number"
+          },
+          "default": "0",
+          "default_value": 0.0,
+          "docs": "Fraction of traces this service **starts** that are recorded, `0.0`–`1.0`.\n\n`0.0` — the default — means it starts none of its own, which is the sensible setting for\na service whose whole job is one redirect: performance data on it is a cost with no\nquestion behind it. It does not remove this service from a trace that reaches it already\nsampled: an inbound `sentry-trace` header is continued regardless, so a caller that does\ntrace still sees the hop.",
+          "env": "S3_PERMA_LINK_TELEMETRY__SENTRY__TRACES_SAMPLE_RATE",
+          "env_aliases": [],
+          "env_file": "S3_PERMA_LINK_TELEMETRY__SENTRY__TRACES_SAMPLE_RATE_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.sentry.traces_sample_rate",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "telemetry__sentry__traces_sample_rate",
+          "secrets_file_aliases": [],
+          "text_form": "unknown",
+          "ty": "f32",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "enum": [
+              "off",
+              "error",
+              "warn",
+              "info",
+              "debug",
+              "trace"
+            ],
+            "type": "string"
+          },
+          "default": "error",
+          "default_value": "error",
+          "docs": "Least severe `tracing` level reported as a Sentry **issue**.",
+          "env": "S3_PERMA_LINK_TELEMETRY__SENTRY__CAPTURE_LEVEL",
+          "env_aliases": [],
+          "env_file": "S3_PERMA_LINK_TELEMETRY__SENTRY__CAPTURE_LEVEL_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.sentry.capture_level",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "telemetry__sentry__capture_level",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*(off|error|warn|info|debug|trace)\\s*$",
+            "type": "string"
+          },
+          "text_form": "choice",
+          "ty": "SentryLevel",
+          "values": [
+            "off",
+            "error",
+            "warn",
+            "info",
+            "debug",
+            "trace"
+          ]
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "enum": [
+              "off",
+              "error",
+              "warn",
+              "info",
+              "debug",
+              "trace"
+            ],
+            "type": "string"
+          },
+          "default": "info",
+          "default_value": "info",
+          "docs": "Least severe `tracing` level kept as a **breadcrumb** — the trail attached to the next\nissue. Records at or above `capture_level` become issues instead.\n\nSpelled as a key rather than as a rustdoc link to [`Self::capture_level`]: this first\nparagraph is a cell in the generated README table, where an intra-doc link renders as\nits own source.\n\nIndependent of [`TelemetryConfig::log_level`](super::TelemetryConfig): the two sinks\ncarry their own filters, so tightening the console to `warn` does not silently empty\nevery breadcrumb trail. The cost is symmetric — asking for `debug` breadcrumbs makes the\nprocess evaluate `debug` records it does not print.",
+          "env": "S3_PERMA_LINK_TELEMETRY__SENTRY__BREADCRUMB_LEVEL",
+          "env_aliases": [],
+          "env_file": "S3_PERMA_LINK_TELEMETRY__SENTRY__BREADCRUMB_LEVEL_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.sentry.breadcrumb_level",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "telemetry__sentry__breadcrumb_level",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*(off|error|warn|info|debug|trace)\\s*$",
+            "type": "string"
+          },
+          "text_form": "choice",
+          "ty": "SentryLevel",
+          "values": [
+            "off",
+            "error",
+            "warn",
+            "info",
+            "debug",
+            "trace"
+          ]
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "default": "100",
+          "default_value": 100,
+          "docs": "How many breadcrumbs one event carries.",
+          "env": "S3_PERMA_LINK_TELEMETRY__SENTRY__MAX_BREADCRUMBS",
+          "env_aliases": [],
+          "env_file": "S3_PERMA_LINK_TELEMETRY__SENTRY__MAX_BREADCRUMBS_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.sentry.max_breadcrumbs",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "telemetry__sentry__max_breadcrumbs",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*\\+?[0-9]+\\s*$",
+            "type": "string"
+          },
+          "text_form": "integer",
+          "ty": "usize",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "boolean"
+          },
           "default": "true",
+          "default_value": true,
+          "docs": "Attach a stack trace to events that carry none of their own.",
+          "env": "S3_PERMA_LINK_TELEMETRY__SENTRY__ATTACH_STACKTRACE",
+          "env_aliases": [],
+          "env_file": "S3_PERMA_LINK_TELEMETRY__SENTRY__ATTACH_STACKTRACE_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.sentry.attach_stacktrace",
           "required": false,
-          "secret": false
-        },
-        {
-          "name": "http_proxy",
-          "owner": "sentry",
-          "docs": "Lowercase spelling of `HTTP_PROXY`, read when the uppercase one is unset.",
-          "ty": "String",
-          "values": [],
-          "constraint": {
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "telemetry__sentry__attach_stacktrace",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*(true|false)\\s*$",
             "type": "string"
           },
-          "text_form": "text",
-          "required": false,
-          "secret": false
+          "text_form": "boolean",
+          "ty": "bool",
+          "values": []
         },
         {
-          "name": "https_proxy",
-          "owner": "sentry",
-          "docs": "Lowercase spelling of `HTTPS_PROXY`, read when the uppercase one is unset.",
-          "ty": "String",
-          "values": [],
+          "aliases": [],
           "constraint": {
+            "type": "boolean"
+          },
+          "default": "false",
+          "default_value": false,
+          "docs": "Send personally identifying data with every event: the client IP, the full request header\nset, and the request body where one was buffered.\n\n**Off, and worth leaving off.** This service serves public links; the IP address of\nwhoever followed one is not what makes a failed S3 fetch actionable, and Sentry is a\nthird party. On, it also widens what the HTTP middleware records, because the actix\nintegration reads this same flag to decide whether to redact sensitive headers.",
+          "env": "S3_PERMA_LINK_TELEMETRY__SENTRY__SEND_DEFAULT_PII",
+          "env_aliases": [],
+          "env_file": "S3_PERMA_LINK_TELEMETRY__SENTRY__SEND_DEFAULT_PII_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.sentry.send_default_pii",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "telemetry__sentry__send_default_pii",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*(true|false)\\s*$",
             "type": "string"
           },
-          "text_form": "text",
+          "text_form": "boolean",
+          "ty": "bool",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "boolean"
+          },
+          "default": "true",
+          "default_value": true,
+          "docs": "Record one Sentry transaction per request, named by the matched route.\n\nWhether a started transaction is *kept* is [`Self::traces_sample_rate`]'s decision; this\nis the switch for a deployment that wants error reporting and no performance data at all.\nThe per-request hub is installed either way — without it, breadcrumbs from concurrently\nserved requests all land on the main hub and every issue arrives with a trail belonging\nto whoever else was in flight.",
+          "env": "S3_PERMA_LINK_TELEMETRY__SENTRY__HTTP_TRANSACTIONS",
+          "env_aliases": [],
+          "env_file": "S3_PERMA_LINK_TELEMETRY__SENTRY__HTTP_TRANSACTIONS_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.sentry.http_transactions",
           "required": false,
-          "secret": false
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "telemetry__sentry__http_transactions",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*(true|false)\\s*$",
+            "type": "string"
+          },
+          "text_form": "boolean",
+          "ty": "bool",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "boolean"
+          },
+          "default": "false",
+          "default_value": false,
+          "docs": "Copy `tracing` span fields onto the Sentry span as attributes.\n\nOff: the span fields here carry request paths and object keys, and a transaction is\nstored under a longer retention than a log line.",
+          "env": "S3_PERMA_LINK_TELEMETRY__SENTRY__SPAN_ATTRIBUTES",
+          "env_aliases": [],
+          "env_file": "S3_PERMA_LINK_TELEMETRY__SENTRY__SPAN_ATTRIBUTES_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.sentry.span_attributes",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "telemetry__sentry__span_attributes",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*(true|false)\\s*$",
+            "type": "string"
+          },
+          "text_form": "boolean",
+          "ty": "bool",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "default": "2",
+          "default_value": 2,
+          "docs": "How long process exit waits for queued events to drain, in seconds.\n\nPaid on every shutdown, including the rolling ones a deploy produces, so it trades\nagainst how quickly a replica goes away. `0` discards whatever is still queued.",
+          "env": "S3_PERMA_LINK_TELEMETRY__SENTRY__SHUTDOWN_TIMEOUT_SECS",
+          "env_aliases": [],
+          "env_file": "S3_PERMA_LINK_TELEMETRY__SENTRY__SHUTDOWN_TIMEOUT_SECS_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.sentry.shutdown_timeout_secs",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "telemetry__sentry__shutdown_timeout_secs",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*\\+?[0-9]+\\s*$",
+            "type": "string"
+          },
+          "text_form": "integer",
+          "ty": "u64",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "boolean"
+          },
+          "default": "false",
+          "default_value": false,
+          "docs": "Print the SDK's own diagnostics to stderr. For proving a DSN works, not for running.",
+          "env": "S3_PERMA_LINK_TELEMETRY__SENTRY__DEBUG",
+          "env_aliases": [],
+          "env_file": "S3_PERMA_LINK_TELEMETRY__SENTRY__DEBUG_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.sentry.debug",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "telemetry__sentry__debug",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*(true|false)\\s*$",
+            "type": "string"
+          },
+          "text_form": "boolean",
+          "ty": "bool",
+          "values": []
         }
       ],
-      "ignore": [
-        "KUBERNETES_*",
-        "HOSTNAME"
+      "loader": [
+        {
+          "default": "config.toml",
+          "docs": "Names the TOML layer: a file, or a directory whose `*.toml` files are all merged in name order.",
+          "env": "S3_PERMA_LINK_CONFIG",
+          "role": "config"
+        },
+        {
+          "default": null,
+          "docs": "Names a directory of key-named files — a mounted Kubernetes `Secret` volume. Each file supplies the key its name spells.",
+          "env": "S3_PERMA_LINK_SECRETS_DIR",
+          "role": "secrets_dir"
+        }
       ],
-      "unknown": "reject"
-    }
+      "schema_version": 2
+    },
+    "terrace_contract": 1
+  },
+  "source": {
+    "digest": "sha256:7fdac2bdc97776e190ad795fb758d3253dc24f3d5081839c85c398f2e05147d0",
+    "fetched": "2026-10-25T15:41:30Z",
+    "image": "docker.io/timmi6790/s3-bucket-perma-link",
+    "sha256": "9cdc32d2ecf13867fa648f6a3ed2ba3d35be89291a3861e58ae8e284158f9492"
   }
 }

@@ -1,551 +1,17 @@
 {
-  "source": {
-    "image": "docker.io/timmi6790/netcup-offer-bot",
-    "digest": "sha256:59a96d158e550e9449bcd9f64e82418e5ba4135869d2b508234b1733dc8a1b3b",
-    "sha256": "c64ff514afc9bd7bf3c56055bf198eb398d647e8cfb11998f8cb02bfa7b4a44a",
-    "fetched": "2026-10-17T06:41:52Z"
-  },
   "contract": {
-    "terrace_contract": 1,
-    "producer": {
-      "name": "terrace-config",
-      "version": "0.15.1",
-      "loader": "figment"
-    },
     "app": {
       "name": "netcup-offer-bot",
-      "version": "v3.3.5",
-      "source": "https://github.com/TimSchoenle/netcup-offer-bot"
+      "source": "https://github.com/TimSchoenle/netcup-offer-bot",
+      "version": "v3.3.6"
     },
-    "schema": {
-      "schema_version": 2,
-      "dialect": {
-        "prefix": "NETCUP_OFFER_BOT_",
-        "nesting_separator": "__",
-        "indirection_suffix": "_FILE"
-      },
-      "loader": [
-        {
-          "env": "NETCUP_OFFER_BOT_CONFIG",
-          "role": "config",
-          "docs": "Names the TOML layer: a file, or a directory whose `*.toml` files are all merged in name order.",
-          "default": "config.toml"
-        },
-        {
-          "env": "NETCUP_OFFER_BOT_SECRETS_DIR",
-          "role": "secrets_dir",
-          "docs": "Names a directory of key-named files — a mounted Kubernetes `Secret` volume. Each file supplies the key its name spells.",
-          "default": null
-        }
+    "external": {
+      "env": [],
+      "ignore": [
+        "KUBERNETES_*",
+        "HOSTNAME"
       ],
-      "keys": [
-        {
-          "path": "discord.webhook_url",
-          "env": "NETCUP_OFFER_BOT_DISCORD__WEBHOOK_URL",
-          "env_file": "NETCUP_OFFER_BOT_DISCORD__WEBHOOK_URL_FILE",
-          "secrets_file": "discord__webhook_url",
-          "docs": "Discord webhook the offers are posted to.\n\nA bearer credential: anyone holding it can post to the channel. It stays wrapped from the\nlayer that read it to the request that uses it, so nothing between the two can print it.\nOnly an `https` URL loads; any other scheme fails the boot.",
-          "ty": "SecretString",
-          "values": [],
-          "constraint": {
-            "type": "string"
-          },
-          "text_form": "text",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": true,
-          "secret": true,
-          "reserved": false
-        },
-        {
-          "path": "feed.check_interval_secs",
-          "env": "NETCUP_OFFER_BOT_FEED__CHECK_INTERVAL_SECS",
-          "env_file": "NETCUP_OFFER_BOT_FEED__CHECK_INTERVAL_SECS_FILE",
-          "secrets_file": "feed__check_interval_secs",
-          "docs": "Seconds between two RSS feed checks.\n\nSpelled in seconds rather than as a [`Duration`] so the TOML and the environment layer\nagree on one representation.",
-          "ty": "u64",
-          "values": [],
-          "constraint": {
-            "minimum": 1,
-            "type": "integer"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*\\+?[0-9]+\\s*$",
-            "type": "string"
-          },
-          "text_form": "integer",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": true,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "metrics.ip",
-          "env": "NETCUP_OFFER_BOT_METRICS__IP",
-          "env_file": "NETCUP_OFFER_BOT_METRICS__IP_FILE",
-          "secrets_file": "metrics__ip",
-          "docs": "Address the Prometheus exporter binds. `0.0.0.0` to reach it from outside the container.",
-          "ty": "IpAddr",
-          "values": [],
-          "constraint": {
-            "type": "string"
-          },
-          "text_form": "unknown",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "127.0.0.1",
-          "default_value": "127.0.0.1",
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "metrics.port",
-          "env": "NETCUP_OFFER_BOT_METRICS__PORT",
-          "env_file": "NETCUP_OFFER_BOT_METRICS__PORT_FILE",
-          "secrets_file": "metrics__port",
-          "docs": "Port the Prometheus exporter listens on.",
-          "ty": "u16",
-          "values": [],
-          "constraint": {
-            "maximum": 65535,
-            "minimum": 0,
-            "type": "integer"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*\\+?[0-9]+\\s*$",
-            "type": "string"
-          },
-          "text_form": "integer",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "9184",
-          "default_value": 9184,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.log_level",
-          "env": "NETCUP_OFFER_BOT_TELEMETRY__LOG_LEVEL",
-          "env_file": "NETCUP_OFFER_BOT_TELEMETRY__LOG_LEVEL_FILE",
-          "secrets_file": "telemetry__log_level",
-          "docs": "The maximum verbosity that reaches stdout: `error`, `warn`, `info`, `debug` or `trace`.\n\nRead at boot, so a spelling this is not fails the load rather than the first log line.\n`debug` and `trace` additionally print which layer supplied each configuration key.",
-          "ty": "LogLevel",
-          "values": [
-            "error",
-            "warn",
-            "info",
-            "debug",
-            "trace"
-          ],
-          "constraint": {
-            "enum": [
-              "error",
-              "warn",
-              "info",
-              "debug",
-              "trace"
-            ],
-            "type": "string"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*(error|warn|info|debug|trace)\\s*$",
-            "type": "string"
-          },
-          "text_form": "choice",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "info",
-          "default_value": "info",
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.sentry.enabled",
-          "env": "NETCUP_OFFER_BOT_TELEMETRY__SENTRY__ENABLED",
-          "env_file": "NETCUP_OFFER_BOT_TELEMETRY__SENTRY__ENABLED_FILE",
-          "secrets_file": "telemetry__sentry__enabled",
-          "docs": "Initialise the Sentry client. `false` installs no client, no panic hook and no layer, so\nevery other key here is inert and nothing leaves the process.\n\nSet on a binary built with `--no-default-features` it fails the boot: that build carries\nno client to install, and starting anyway would be the silent no-op this key exists to\navoid.",
-          "ty": "bool",
-          "values": [],
-          "constraint": {
-            "type": "boolean"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*(true|false)\\s*$",
-            "type": "string"
-          },
-          "text_form": "boolean",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "false",
-          "default_value": false,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.sentry.dsn",
-          "env": "NETCUP_OFFER_BOT_TELEMETRY__SENTRY__DSN",
-          "env_file": "NETCUP_OFFER_BOT_TELEMETRY__SENTRY__DSN_FILE",
-          "secrets_file": "telemetry__sentry__dsn",
-          "docs": "Ingest URL, `https://<key>@<host>/<project>`. Required once `enabled` is set.\n\nA write credential for the project's event stream, wrapped for the reason\n[`DiscordConfig::webhook_url`](super::DiscordConfig::webhook_url) is. Empty is treated as\nabsent rather than as a malformed URL, because an unfilled chart value and a compose\npass-through both produce an empty string and neither is a typo in a DSN.",
-          "ty": "SecretString",
-          "values": [],
-          "constraint": {
-            "type": "string"
-          },
-          "text_form": "text",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": false,
-          "secret": true,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.sentry.environment",
-          "env": "NETCUP_OFFER_BOT_TELEMETRY__SENTRY__ENVIRONMENT",
-          "env_file": "NETCUP_OFFER_BOT_TELEMETRY__SENTRY__ENVIRONMENT_FILE",
-          "secrets_file": "telemetry__sentry__environment",
-          "docs": "Environment tag on every event. Defaults to `production`, or `development` for a debug\nbuild.\n\nAlways sent, never left for the SDK to fill in. `sentry::init` otherwise reads\n`SENTRY_ENVIRONMENT` from the process environment — a second configuration channel that\nbypasses the layered loader, its shadow-key rejection and the contract, whose external\nsurface says this image reads nothing outside the loader's namespace.",
-          "ty": "String",
-          "values": [],
-          "constraint": {
-            "type": "string"
-          },
-          "text_form": "text",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.sentry.release",
-          "env": "NETCUP_OFFER_BOT_TELEMETRY__SENTRY__RELEASE",
-          "env_file": "NETCUP_OFFER_BOT_TELEMETRY__SENTRY__RELEASE_FILE",
-          "secrets_file": "telemetry__sentry__release",
-          "docs": "Release tag on every event. Defaults to the version the binary was built from.\n\nSet explicitly for the same reason [`Self::environment`] is, and this is the field that\nmakes a regression attributable to a deploy. The default is what\n`sentry::release_name!` reads out of the build, which is what the image's debug-file\nupload names the symbols under.",
-          "ty": "String",
-          "values": [],
-          "constraint": {
-            "type": "string"
-          },
-          "text_form": "text",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.sentry.server_name",
-          "env": "NETCUP_OFFER_BOT_TELEMETRY__SENTRY__SERVER_NAME",
-          "env_file": "NETCUP_OFFER_BOT_TELEMETRY__SENTRY__SERVER_NAME_FILE",
-          "secrets_file": "telemetry__sentry__server_name",
-          "docs": "Host tag on every event. Unset, Sentry reports none.\n\nThe hostname of a replica is infrastructure detail, and a pod's is a generated string\nthat changes on every restart, so it is worth a tag only where a deployment has a\nstable name to give it.",
-          "ty": "String",
-          "values": [],
-          "constraint": {
-            "type": "string"
-          },
-          "text_form": "text",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": null,
-          "default_value": null,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.sentry.sample_rate",
-          "env": "NETCUP_OFFER_BOT_TELEMETRY__SENTRY__SAMPLE_RATE",
-          "env_file": "NETCUP_OFFER_BOT_TELEMETRY__SENTRY__SAMPLE_RATE_FILE",
-          "secrets_file": "telemetry__sentry__sample_rate",
-          "docs": "Fraction of captured events actually sent, `0.0`–`1.0`.\n\nA blunt volume cap: it drops whole issues rather than repetitions of one, so leave it at\n`1.0` unless a quota forces otherwise.",
-          "ty": "f32",
-          "values": [],
-          "constraint": {
-            "maximum": 1.0,
-            "minimum": 0.0,
-            "type": "number"
-          },
-          "text_form": "unknown",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "1",
-          "default_value": 1.0,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.sentry.traces_sample_rate",
-          "env": "NETCUP_OFFER_BOT_TELEMETRY__SENTRY__TRACES_SAMPLE_RATE",
-          "env_file": "NETCUP_OFFER_BOT_TELEMETRY__SENTRY__TRACES_SAMPLE_RATE_FILE",
-          "secrets_file": "telemetry__sentry__traces_sample_rate",
-          "docs": "Fraction of traces that are recorded, `0.0`–`1.0`. `0.0` records none.\n\nThis process starts every trace it has — nothing hands it one — so at `0.0` no spans are\nbuilt at all rather than built and dropped by the sampler. `0.05`–`0.2` is an ordinary\nproduction figure; the previous hard-coded value was `0.2`.",
-          "ty": "f32",
-          "values": [],
-          "constraint": {
-            "maximum": 1.0,
-            "minimum": 0.0,
-            "type": "number"
-          },
-          "text_form": "unknown",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "0",
-          "default_value": 0.0,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.sentry.capture_level",
-          "env": "NETCUP_OFFER_BOT_TELEMETRY__SENTRY__CAPTURE_LEVEL",
-          "env_file": "NETCUP_OFFER_BOT_TELEMETRY__SENTRY__CAPTURE_LEVEL_FILE",
-          "secrets_file": "telemetry__sentry__capture_level",
-          "docs": "Least severe `tracing` level reported as a Sentry issue: `off`, `error`, `warn`, `info`,\n`debug` or `trace`.",
-          "ty": "SentryLevel",
-          "values": [
-            "off",
-            "error",
-            "warn",
-            "info",
-            "debug",
-            "trace"
-          ],
-          "constraint": {
-            "enum": [
-              "off",
-              "error",
-              "warn",
-              "info",
-              "debug",
-              "trace"
-            ],
-            "type": "string"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*(off|error|warn|info|debug|trace)\\s*$",
-            "type": "string"
-          },
-          "text_form": "choice",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "error",
-          "default_value": "error",
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.sentry.breadcrumb_level",
-          "env": "NETCUP_OFFER_BOT_TELEMETRY__SENTRY__BREADCRUMB_LEVEL",
-          "env_file": "NETCUP_OFFER_BOT_TELEMETRY__SENTRY__BREADCRUMB_LEVEL_FILE",
-          "secrets_file": "telemetry__sentry__breadcrumb_level",
-          "docs": "Least severe `tracing` level kept as a breadcrumb — the trail attached to the next issue.\n\nRecords at or above [`Self::capture_level`] become issues instead. Independent of\n[`log_level`](super::TelemetryConfig::log_level) on purpose: the layer keeps collecting\nthe trail however quiet stdout is, so an issue raised from an `ERROR` still arrives with\nthe round that led to it attached.",
-          "ty": "SentryLevel",
-          "values": [
-            "off",
-            "error",
-            "warn",
-            "info",
-            "debug",
-            "trace"
-          ],
-          "constraint": {
-            "enum": [
-              "off",
-              "error",
-              "warn",
-              "info",
-              "debug",
-              "trace"
-            ],
-            "type": "string"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*(off|error|warn|info|debug|trace)\\s*$",
-            "type": "string"
-          },
-          "text_form": "choice",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "info",
-          "default_value": "info",
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.sentry.max_breadcrumbs",
-          "env": "NETCUP_OFFER_BOT_TELEMETRY__SENTRY__MAX_BREADCRUMBS",
-          "env_file": "NETCUP_OFFER_BOT_TELEMETRY__SENTRY__MAX_BREADCRUMBS_FILE",
-          "secrets_file": "telemetry__sentry__max_breadcrumbs",
-          "docs": "How many breadcrumbs one event carries.",
-          "ty": "usize",
-          "values": [],
-          "constraint": {
-            "minimum": 0,
-            "type": "integer"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*\\+?[0-9]+\\s*$",
-            "type": "string"
-          },
-          "text_form": "integer",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "100",
-          "default_value": 100,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.sentry.attach_stacktraces",
-          "env": "NETCUP_OFFER_BOT_TELEMETRY__SENTRY__ATTACH_STACKTRACES",
-          "env_file": "NETCUP_OFFER_BOT_TELEMETRY__SENTRY__ATTACH_STACKTRACES_FILE",
-          "secrets_file": "telemetry__sentry__attach_stacktraces",
-          "docs": "Attach a stack trace to events that carry none of their own.",
-          "ty": "bool",
-          "values": [],
-          "constraint": {
-            "type": "boolean"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*(true|false)\\s*$",
-            "type": "string"
-          },
-          "text_form": "boolean",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "true",
-          "default_value": true,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.sentry.shutdown_timeout_secs",
-          "env": "NETCUP_OFFER_BOT_TELEMETRY__SENTRY__SHUTDOWN_TIMEOUT_SECS",
-          "env_file": "NETCUP_OFFER_BOT_TELEMETRY__SENTRY__SHUTDOWN_TIMEOUT_SECS_FILE",
-          "secrets_file": "telemetry__sentry__shutdown_timeout_secs",
-          "docs": "How long process exit waits for queued events to drain.\n\nThe only flush this process performs, and it happens when the guard `main` holds is\ndropped. A container stopped with a short grace period loses whatever is still queued\npast this window.",
-          "ty": "u64",
-          "values": [],
-          "constraint": {
-            "minimum": 0,
-            "type": "integer"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*\\+?[0-9]+\\s*$",
-            "type": "string"
-          },
-          "text_form": "integer",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "2",
-          "default_value": 2,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        },
-        {
-          "path": "telemetry.sentry.debug",
-          "env": "NETCUP_OFFER_BOT_TELEMETRY__SENTRY__DEBUG",
-          "env_file": "NETCUP_OFFER_BOT_TELEMETRY__SENTRY__DEBUG_FILE",
-          "secrets_file": "telemetry__sentry__debug",
-          "docs": "Print the SDK's own diagnostics to stderr. For proving a DSN works, not for running.",
-          "ty": "bool",
-          "values": [],
-          "constraint": {
-            "type": "boolean"
-          },
-          "text_constraint": {
-            "pattern": "^\\s*(true|false)\\s*$",
-            "type": "string"
-          },
-          "text_form": "boolean",
-          "aliases": [],
-          "env_aliases": [],
-          "env_file_aliases": [],
-          "secrets_file_aliases": [],
-          "default": "false",
-          "default_value": false,
-          "note": null,
-          "required": false,
-          "secret": false,
-          "reserved": false
-        }
-      ]
+      "unknown": "reject"
     },
     "json_schema": {
       "$schema": "http://json-schema.org/draft-07/schema#",
@@ -703,13 +169,547 @@
       "title": "netcup-offer-bot configuration",
       "type": "object"
     },
-    "external": {
-      "env": [],
-      "ignore": [
-        "KUBERNETES_*",
-        "HOSTNAME"
+    "producer": {
+      "loader": "figment",
+      "name": "terrace-config",
+      "version": "0.15.2"
+    },
+    "schema": {
+      "dialect": {
+        "indirection_suffix": "_FILE",
+        "nesting_separator": "__",
+        "prefix": "NETCUP_OFFER_BOT_"
+      },
+      "keys": [
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "string"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "Discord webhook the offers are posted to.\n\nA bearer credential: anyone holding it can post to the channel. It stays wrapped from the\nlayer that read it to the request that uses it, so nothing between the two can print it.\nOnly an `https` URL loads; any other scheme fails the boot.",
+          "env": "NETCUP_OFFER_BOT_DISCORD__WEBHOOK_URL",
+          "env_aliases": [],
+          "env_file": "NETCUP_OFFER_BOT_DISCORD__WEBHOOK_URL_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "discord.webhook_url",
+          "required": true,
+          "reserved": false,
+          "secret": true,
+          "secrets_file": "discord__webhook_url",
+          "secrets_file_aliases": [],
+          "text_form": "text",
+          "ty": "SecretString",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "Seconds between two RSS feed checks.\n\nSpelled in seconds rather than as a [`Duration`] so the TOML and the environment layer\nagree on one representation.",
+          "env": "NETCUP_OFFER_BOT_FEED__CHECK_INTERVAL_SECS",
+          "env_aliases": [],
+          "env_file": "NETCUP_OFFER_BOT_FEED__CHECK_INTERVAL_SECS_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "feed.check_interval_secs",
+          "required": true,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "feed__check_interval_secs",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*\\+?[0-9]+\\s*$",
+            "type": "string"
+          },
+          "text_form": "integer",
+          "ty": "u64",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "string"
+          },
+          "default": "127.0.0.1",
+          "default_value": "127.0.0.1",
+          "docs": "Address the Prometheus exporter binds. `0.0.0.0` to reach it from outside the container.",
+          "env": "NETCUP_OFFER_BOT_METRICS__IP",
+          "env_aliases": [],
+          "env_file": "NETCUP_OFFER_BOT_METRICS__IP_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "metrics.ip",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "metrics__ip",
+          "secrets_file_aliases": [],
+          "text_form": "unknown",
+          "ty": "IpAddr",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "maximum": 65535,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "default": "9184",
+          "default_value": 9184,
+          "docs": "Port the Prometheus exporter listens on.",
+          "env": "NETCUP_OFFER_BOT_METRICS__PORT",
+          "env_aliases": [],
+          "env_file": "NETCUP_OFFER_BOT_METRICS__PORT_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "metrics.port",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "metrics__port",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*\\+?[0-9]+\\s*$",
+            "type": "string"
+          },
+          "text_form": "integer",
+          "ty": "u16",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "enum": [
+              "error",
+              "warn",
+              "info",
+              "debug",
+              "trace"
+            ],
+            "type": "string"
+          },
+          "default": "info",
+          "default_value": "info",
+          "docs": "The maximum verbosity that reaches stdout: `error`, `warn`, `info`, `debug` or `trace`.\n\nRead at boot, so a spelling this is not fails the load rather than the first log line.\n`debug` and `trace` additionally print which layer supplied each configuration key.",
+          "env": "NETCUP_OFFER_BOT_TELEMETRY__LOG_LEVEL",
+          "env_aliases": [],
+          "env_file": "NETCUP_OFFER_BOT_TELEMETRY__LOG_LEVEL_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.log_level",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "telemetry__log_level",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*(error|warn|info|debug|trace)\\s*$",
+            "type": "string"
+          },
+          "text_form": "choice",
+          "ty": "LogLevel",
+          "values": [
+            "error",
+            "warn",
+            "info",
+            "debug",
+            "trace"
+          ]
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "boolean"
+          },
+          "default": "false",
+          "default_value": false,
+          "docs": "Initialise the Sentry client. `false` installs no client, no panic hook and no layer, so\nevery other key here is inert and nothing leaves the process.\n\nSet on a binary built with `--no-default-features` it fails the boot: that build carries\nno client to install, and starting anyway would be the silent no-op this key exists to\navoid.",
+          "env": "NETCUP_OFFER_BOT_TELEMETRY__SENTRY__ENABLED",
+          "env_aliases": [],
+          "env_file": "NETCUP_OFFER_BOT_TELEMETRY__SENTRY__ENABLED_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.sentry.enabled",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "telemetry__sentry__enabled",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*(true|false)\\s*$",
+            "type": "string"
+          },
+          "text_form": "boolean",
+          "ty": "bool",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "string"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "Ingest URL, `https://<key>@<host>/<project>`. Required once `enabled` is set.\n\nA write credential for the project's event stream, wrapped for the reason\n[`DiscordConfig::webhook_url`](super::DiscordConfig::webhook_url) is. Empty is treated as\nabsent rather than as a malformed URL, because an unfilled chart value and a compose\npass-through both produce an empty string and neither is a typo in a DSN.",
+          "env": "NETCUP_OFFER_BOT_TELEMETRY__SENTRY__DSN",
+          "env_aliases": [],
+          "env_file": "NETCUP_OFFER_BOT_TELEMETRY__SENTRY__DSN_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.sentry.dsn",
+          "required": false,
+          "reserved": false,
+          "secret": true,
+          "secrets_file": "telemetry__sentry__dsn",
+          "secrets_file_aliases": [],
+          "text_form": "text",
+          "ty": "SecretString",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "string"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "Environment tag on every event. Defaults to `production`, or `development` for a debug\nbuild.\n\nAlways sent, never left for the SDK to fill in. `sentry::init` otherwise reads\n`SENTRY_ENVIRONMENT` from the process environment — a second configuration channel that\nbypasses the layered loader, its shadow-key rejection and the contract, whose external\nsurface says this image reads nothing outside the loader's namespace.",
+          "env": "NETCUP_OFFER_BOT_TELEMETRY__SENTRY__ENVIRONMENT",
+          "env_aliases": [],
+          "env_file": "NETCUP_OFFER_BOT_TELEMETRY__SENTRY__ENVIRONMENT_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.sentry.environment",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "telemetry__sentry__environment",
+          "secrets_file_aliases": [],
+          "text_form": "text",
+          "ty": "String",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "string"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "Release tag on every event. Defaults to the version the binary was built from.\n\nSet explicitly for the same reason [`Self::environment`] is, and this is the field that\nmakes a regression attributable to a deploy. The default is what\n`sentry::release_name!` reads out of the build, which is what the image's debug-file\nupload names the symbols under.",
+          "env": "NETCUP_OFFER_BOT_TELEMETRY__SENTRY__RELEASE",
+          "env_aliases": [],
+          "env_file": "NETCUP_OFFER_BOT_TELEMETRY__SENTRY__RELEASE_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.sentry.release",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "telemetry__sentry__release",
+          "secrets_file_aliases": [],
+          "text_form": "text",
+          "ty": "String",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "string"
+          },
+          "default": null,
+          "default_value": null,
+          "docs": "Host tag on every event. Unset, Sentry reports none.\n\nThe hostname of a replica is infrastructure detail, and a pod's is a generated string\nthat changes on every restart, so it is worth a tag only where a deployment has a\nstable name to give it.",
+          "env": "NETCUP_OFFER_BOT_TELEMETRY__SENTRY__SERVER_NAME",
+          "env_aliases": [],
+          "env_file": "NETCUP_OFFER_BOT_TELEMETRY__SENTRY__SERVER_NAME_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.sentry.server_name",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "telemetry__sentry__server_name",
+          "secrets_file_aliases": [],
+          "text_form": "text",
+          "ty": "String",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "type": "number"
+          },
+          "default": "1",
+          "default_value": 1.0,
+          "docs": "Fraction of captured events actually sent, `0.0`–`1.0`.\n\nA blunt volume cap: it drops whole issues rather than repetitions of one, so leave it at\n`1.0` unless a quota forces otherwise.",
+          "env": "NETCUP_OFFER_BOT_TELEMETRY__SENTRY__SAMPLE_RATE",
+          "env_aliases": [],
+          "env_file": "NETCUP_OFFER_BOT_TELEMETRY__SENTRY__SAMPLE_RATE_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.sentry.sample_rate",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "telemetry__sentry__sample_rate",
+          "secrets_file_aliases": [],
+          "text_form": "unknown",
+          "ty": "f32",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "type": "number"
+          },
+          "default": "0",
+          "default_value": 0.0,
+          "docs": "Fraction of traces that are recorded, `0.0`–`1.0`. `0.0` records none.\n\nThis process starts every trace it has — nothing hands it one — so at `0.0` no spans are\nbuilt at all rather than built and dropped by the sampler. `0.05`–`0.2` is an ordinary\nproduction figure; the previous hard-coded value was `0.2`.",
+          "env": "NETCUP_OFFER_BOT_TELEMETRY__SENTRY__TRACES_SAMPLE_RATE",
+          "env_aliases": [],
+          "env_file": "NETCUP_OFFER_BOT_TELEMETRY__SENTRY__TRACES_SAMPLE_RATE_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.sentry.traces_sample_rate",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "telemetry__sentry__traces_sample_rate",
+          "secrets_file_aliases": [],
+          "text_form": "unknown",
+          "ty": "f32",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "enum": [
+              "off",
+              "error",
+              "warn",
+              "info",
+              "debug",
+              "trace"
+            ],
+            "type": "string"
+          },
+          "default": "error",
+          "default_value": "error",
+          "docs": "Least severe `tracing` level reported as a Sentry issue: `off`, `error`, `warn`, `info`,\n`debug` or `trace`.",
+          "env": "NETCUP_OFFER_BOT_TELEMETRY__SENTRY__CAPTURE_LEVEL",
+          "env_aliases": [],
+          "env_file": "NETCUP_OFFER_BOT_TELEMETRY__SENTRY__CAPTURE_LEVEL_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.sentry.capture_level",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "telemetry__sentry__capture_level",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*(off|error|warn|info|debug|trace)\\s*$",
+            "type": "string"
+          },
+          "text_form": "choice",
+          "ty": "SentryLevel",
+          "values": [
+            "off",
+            "error",
+            "warn",
+            "info",
+            "debug",
+            "trace"
+          ]
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "enum": [
+              "off",
+              "error",
+              "warn",
+              "info",
+              "debug",
+              "trace"
+            ],
+            "type": "string"
+          },
+          "default": "info",
+          "default_value": "info",
+          "docs": "Least severe `tracing` level kept as a breadcrumb — the trail attached to the next issue.\n\nRecords at or above [`Self::capture_level`] become issues instead. Independent of\n[`log_level`](super::TelemetryConfig::log_level) on purpose: the layer keeps collecting\nthe trail however quiet stdout is, so an issue raised from an `ERROR` still arrives with\nthe round that led to it attached.",
+          "env": "NETCUP_OFFER_BOT_TELEMETRY__SENTRY__BREADCRUMB_LEVEL",
+          "env_aliases": [],
+          "env_file": "NETCUP_OFFER_BOT_TELEMETRY__SENTRY__BREADCRUMB_LEVEL_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.sentry.breadcrumb_level",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "telemetry__sentry__breadcrumb_level",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*(off|error|warn|info|debug|trace)\\s*$",
+            "type": "string"
+          },
+          "text_form": "choice",
+          "ty": "SentryLevel",
+          "values": [
+            "off",
+            "error",
+            "warn",
+            "info",
+            "debug",
+            "trace"
+          ]
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "default": "100",
+          "default_value": 100,
+          "docs": "How many breadcrumbs one event carries.",
+          "env": "NETCUP_OFFER_BOT_TELEMETRY__SENTRY__MAX_BREADCRUMBS",
+          "env_aliases": [],
+          "env_file": "NETCUP_OFFER_BOT_TELEMETRY__SENTRY__MAX_BREADCRUMBS_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.sentry.max_breadcrumbs",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "telemetry__sentry__max_breadcrumbs",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*\\+?[0-9]+\\s*$",
+            "type": "string"
+          },
+          "text_form": "integer",
+          "ty": "usize",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "boolean"
+          },
+          "default": "true",
+          "default_value": true,
+          "docs": "Attach a stack trace to events that carry none of their own.",
+          "env": "NETCUP_OFFER_BOT_TELEMETRY__SENTRY__ATTACH_STACKTRACES",
+          "env_aliases": [],
+          "env_file": "NETCUP_OFFER_BOT_TELEMETRY__SENTRY__ATTACH_STACKTRACES_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.sentry.attach_stacktraces",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "telemetry__sentry__attach_stacktraces",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*(true|false)\\s*$",
+            "type": "string"
+          },
+          "text_form": "boolean",
+          "ty": "bool",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "default": "2",
+          "default_value": 2,
+          "docs": "How long process exit waits for queued events to drain.\n\nThe only flush this process performs, and it happens when the guard `main` holds is\ndropped. A container stopped with a short grace period loses whatever is still queued\npast this window.",
+          "env": "NETCUP_OFFER_BOT_TELEMETRY__SENTRY__SHUTDOWN_TIMEOUT_SECS",
+          "env_aliases": [],
+          "env_file": "NETCUP_OFFER_BOT_TELEMETRY__SENTRY__SHUTDOWN_TIMEOUT_SECS_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.sentry.shutdown_timeout_secs",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "telemetry__sentry__shutdown_timeout_secs",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*\\+?[0-9]+\\s*$",
+            "type": "string"
+          },
+          "text_form": "integer",
+          "ty": "u64",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
+            "type": "boolean"
+          },
+          "default": "false",
+          "default_value": false,
+          "docs": "Print the SDK's own diagnostics to stderr. For proving a DSN works, not for running.",
+          "env": "NETCUP_OFFER_BOT_TELEMETRY__SENTRY__DEBUG",
+          "env_aliases": [],
+          "env_file": "NETCUP_OFFER_BOT_TELEMETRY__SENTRY__DEBUG_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "telemetry.sentry.debug",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "telemetry__sentry__debug",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*(true|false)\\s*$",
+            "type": "string"
+          },
+          "text_form": "boolean",
+          "ty": "bool",
+          "values": []
+        }
       ],
-      "unknown": "reject"
-    }
+      "loader": [
+        {
+          "default": "config.toml",
+          "docs": "Names the TOML layer: a file, or a directory whose `*.toml` files are all merged in name order.",
+          "env": "NETCUP_OFFER_BOT_CONFIG",
+          "role": "config"
+        },
+        {
+          "default": null,
+          "docs": "Names a directory of key-named files — a mounted Kubernetes `Secret` volume. Each file supplies the key its name spells.",
+          "env": "NETCUP_OFFER_BOT_SECRETS_DIR",
+          "role": "secrets_dir"
+        }
+      ],
+      "schema_version": 2
+    },
+    "terrace_contract": 1
+  },
+  "source": {
+    "digest": "sha256:dfae5baf070f48b78e0866be1798efcffe8810993c5ceaadfcff342b8e1fbdad",
+    "fetched": "2026-10-26T02:09:32Z",
+    "image": "docker.io/timmi6790/netcup-offer-bot",
+    "sha256": "6c1a3060e0713d2c9f42f265917c6ec10ee396945e4107c32f9274bf6c92d325"
   }
 }

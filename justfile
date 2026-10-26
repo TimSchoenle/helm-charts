@@ -102,7 +102,7 @@ helm_docker_cache := ".cache/helm-docker"
 # turn a pull request red for something its author did not write, and the fix would be a version
 # bump made under time pressure rather than a considered one.
 # renovate: datasource=github-tags depName=astral-sh/ruff extractVersion=^v?(?<version>.*)$
-ruff_version := "0.17.1"
+ruff_version := "0.17.2"
 
 # --------------------------------------------------------------------------------------------
 # Defaults for the parameters CI overrides from a matrix

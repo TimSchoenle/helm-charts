@@ -1,6 +1,6 @@
 # discord-alertmanager
 
-![Version: 0.4.17](https://img.shields.io/badge/Version-0.4.17-informational?style=flat-square) ![AppVersion: v0.9.1](https://img.shields.io/badge/AppVersion-v0.9.1-informational?style=flat-square)
+![Version: 0.4.18](https://img.shields.io/badge/Version-0.4.18-informational?style=flat-square) ![AppVersion: v0.9.2](https://img.shields.io/badge/AppVersion-v0.9.2-informational?style=flat-square)
 
 This chart deploys discord-alertmanager, a Discord operator surface for Prometheus Alertmanager. It receives the version-4 webhook envelope, renders each alert as a live status card in a Discord channel, and lets an operator acknowledge, ignore, silence or investigate it without leaving the client — with file-backed configuration that reloads in place instead of restarting pods, SQLite or PostgreSQL storage, optional Prometheus metrics and alerting rules, and an optional AlertmanagerConfig that registers the receiver with the Prometheus Operator instead of leaving it to be wired by hand.
 
@@ -519,11 +519,11 @@ also why a pod that cannot reach Alertmanager never becomes ready — check the 
 | gateway.tls.enabled | bool | `false` | Add an HTTPS listener. |
 | gateway.tls.mode | string | `"Terminate"` | TLS mode. |
 | gateway.tls.options | object | `{}` | Implementation-specific TLS options. |
-| image | object | `{"pullPolicy":"","registry":"","repository":"timschoenle/discord-alertmanager","tag":"v0.9.1@sha256:6d9d9e1dde15ee6b4308894c6788386d10b7f26723d2d448018ac19e60f6a13d"}` | Container image the pod runs, composed as `registry/repository:tag`. |
+| image | object | `{"pullPolicy":"","registry":"","repository":"timschoenle/discord-alertmanager","tag":"v0.9.2@sha256:692a3d4752c0f02ae362a654c5943c9c15fe51031866198c689f38d6101c490a"}` | Container image the pod runs, composed as `registry/repository:tag`. |
 | image.pullPolicy | string | `""` | The image pull policy. Empty resolves automatically from the tag/digest. |
 | image.registry | string | `""` | Registry host. Empty means Docker Hub. |
 | image.repository | string | `"timschoenle/discord-alertmanager"` | The container image repository. |
-| image.tag | string | `"v0.9.1@sha256:6d9d9e1dde15ee6b4308894c6788386d10b7f26723d2d448018ac19e60f6a13d"` | The container image tag. Defaults to the chart's `appVersion` when empty. |
+| image.tag | string | `"v0.9.2@sha256:692a3d4752c0f02ae362a654c5943c9c15fe51031866198c689f38d6101c490a"` | The container image tag. Defaults to the chart's `appVersion` when empty. |
 | imagePullSecrets | list | `[]` | Optional image pull secrets for private registries |
 | ingest | object | `{"bind":"0.0.0.0:9099","bodyLimitBytes":1048576,"maxConcurrentRequests":64,"requestTimeoutSecs":10,"shutdownDrainSecs":10,"webhookPath":"/webhook","webhookToken":""}` | The listener Alertmanager posts to. `/healthz`, `/readyz` and `/metrics` are served on the same address, so `bind` decides the container port for all four and the chart takes it from here rather than from a value of its own. |
 | ingest.bind | string | `"0.0.0.0:9099"` | Address and port to listen on (`ingest.bind`). |

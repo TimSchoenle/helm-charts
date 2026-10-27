@@ -10,6 +10,12 @@ inputs:
       signal in any diff.
     required: false
     default: 'v3.21.3'
+  plugins:
+    description: >-
+      Whether to install the Helm plugins (helm-unittest, helm-schema). `false` for a job that
+      only packages charts, such as the release, so it does not download code it never runs.
+    required: false
+    default: 'true'
 runs:
   using: "composite"
   steps:
@@ -31,6 +37,7 @@ runs:
     # The plugin versions live in the justfile rather than here, so that a local shell and a
     # runner install the same ones and a bump is a single edit.
     - name: Install Helm plugins
+      if: inputs.plugins == 'true'
       shell: bash
       run: just plugins
 

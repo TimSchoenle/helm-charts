@@ -18,6 +18,14 @@ permissions: {}
 jobs:
   release:
     name: Release Charts
+    # The trigger is already `main` only; the guard keeps the job, and the release environment's
+    # secrets, unreachable from any other ref should a trigger ever be added above.
+    if: github.ref == 'refs/heads/main'
+    # The release App key and the chart-signing GPG key belong in this environment rather than at
+    # repository level, so no other workflow, and no job a pull request starts, can read them.
+    environment:
+      name: release
+      deployment: false
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -27,6 +35,31 @@ jobs:
         uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
         with:
           egress-policy: audit
+
+      # No token and no persisted credentials: chart-releaser does not use the checkout's. It reads
+      # tags and `gh-pages` anonymously from this public repository, and its push to `gh-pages`
+      # (`cr index --push`) builds its own authenticated URL from `CR_TOKEN`
+      # (`x-access-token:<CR_TOKEN>@` in front of `git remote get-url --push origin`).
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # Before any secret is in the job: the toolchain and the library dependency build are the
+      # only steps here that download and run something other than chart-releaser. The Helm
+      # plugins are skipped, since packaging uses neither of them.
+      - name: Setup toolchain
+        uses: $/.github/actions/setup-toolchain
+        with:
+          plugins: 'false'
+
+      # chart-releaser packages each chart with `helm package --dependency-update`, which copies
+      # `file://../common` as it stands and never builds that library's own dependencies. Without
+      # this step `charts/common/charts/` would not exist, and every chart released here would
+      # bundle a `common` missing `terrace-helm`.
+      - name: Build the library charts' dependencies
+        run: just deps-libraries
 
       # Scoped to what the token does here: chart-releaser creates a release per chart, uploads the
       # packaged chart to it and pushes `index.yaml` to gh-pages. The bot identity lookup reads a
@@ -39,13 +72,6 @@ jobs:
           app-id: ${{ secrets.RELEASE_BOT_APP_ID }}
           private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
           permission-contents: write
-
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          fetch-depth: 0
-          persist-credentials: true
-          token: ${{ steps.generate_token.outputs.token }}
 
       - name: Configure Git
         uses: TimSchoenle/actions/actions/common/setup-app-git-identity@8da2713994ba2b5f542e7e3334db287b1e22854a # tag=actions-common-setup-app-git-identity-v1.5.9
@@ -62,19 +88,13 @@ jobs:
       - name: Export GPG key to legacy format
         run: gpg --export-secret-keys > ~/.gnupg/pubring.gpg
 
-      - name: Setup toolchain
-        uses: $/.github/actions/setup-toolchain
-
-      # chart-releaser packages each chart with `helm package --dependency-update`, which copies
-      # `file://../common` as it stands and never builds that library's own dependencies. Without
-      # this step `charts/common/charts/` would not exist, and every chart released here would
-      # bundle a `common` missing `terrace-helm`.
-      - name: Build the library charts' dependencies
-        run: just deps-libraries
-
+      # `version` is stated rather than left to the action's default, so moving the action's pin
+      # cannot move the `cr` binary with it unnoticed. The action downloads that release over HTTPS
+      # without verifying a checksum; it offers no input for one.
       - name: Run chart-releaser
         uses: helm/chart-releaser-action@cae68fefc6b5f367a0275617c9f83181ba54714f # v1.7.0
         with:
+          version: v1.7.0
           config: ./.github/configs/cr.yaml
         env:
           CR_TOKEN: ${{ steps.generate_token.outputs.token }}

@@ -2,9 +2,10 @@ name: Docs
 
 # The drift gate for the root README, and only for it.
 #
-# Rendering happens in the Documentation job of `ci.yaml`, which commits the result back to the
-# pull request branch. That job cannot gate anything: it repairs the file rather than failing on
-# it, and it needs the App token, which a fork does not get. This workflow is the other half —
+# Rendering happens in the Documentation job of `ci.yaml`, and its Commit Documentation job commits
+# the result back to the pull request branch. Neither can gate anything: they repair the file rather
+# than failing on it, and the commit needs the App token, which a fork does not get, so a fork's
+# render is never committed. This workflow is the other half —
 # it renders with `check: true`, writes nothing, and fails when the committed README.md does not
 # match its template.
 #
@@ -26,9 +27,9 @@ permissions: {}
 jobs:
   verify:
     name: readme
-    # Same-repo pull requests are covered by the Documentation job, which fixes the file instead of
-    # reporting it. Running here as well would fail every pull request that legitimately edits the
-    # template, in the window before that job's commit lands.
+    # Same-repo pull requests are covered by the Documentation and Commit Documentation jobs, which
+    # fix the file instead of reporting it. Running here as well would fail every pull request that
+    # legitimately edits the template, in the window before that commit lands.
     if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 10

@@ -3,7 +3,7 @@
     "app": {
       "name": "portfolio",
       "source": "https://github.com/TimSchoenle/Portfolio",
-      "version": "v3.2.0"
+      "version": "v3.2.1"
     },
     "external": {
       "env": [
@@ -46,7 +46,7 @@
             "type": "string"
           },
           "default": "info",
-          "docs": "Verbosity, as `tracing` directives — `info`, `web=debug,info`.",
+          "docs": "Verbosity, as `tracing` directives — `info`, `portfolio_web=debug,info`.",
           "name": "RUST_LOG",
           "owner": "tracing",
           "required": false,
@@ -85,17 +85,17 @@
               "properties": {
                 "script_nonce": {
                   "default": true,
-                  "description": "Reserve a per-response nonce in `script-src` for the script Cloudflare injects at the edge.\n\nOn by default, because this site is delivered through a Cloudflare Tunnel with the bot\nproducts active; the `__cf_bm` and `cf_clearance` cookies they set are the observable\nhalf of the same feature. Those products inject an inline `<script>` into the HTML\n*after* it leaves this process, so no hash this server computes can cover it;\n`script-src` refuses it and the detection silently never runs.\nCloudflare's documented answer is to parse the `Content-Security-Policy` response header\nand copy the nonce onto what it injects, so nothing has to be stamped into the document.\n\nIt carries one obligation the server discharges (`Cache-Control: no-cache` on every\ndocument, so a nonce is never shared between readers) and one it cannot: **no Cloudflare\nCache Rule may cache the shell**. A \"Cache Everything\" rule overrides the origin's\n`Cache-Control`, satisfying the obligation here and violating it at the edge, and nothing\ninside this process can see that.",
+                  "description": "Whether `script-src` reserves a per-response nonce for the script Cloudflare injects at the\nedge.\n\nOn by default, because this site is delivered through a Cloudflare Tunnel with the bot\nproducts active; the `__cf_bm` and `cf_clearance` cookies are theirs. Those products inject\nan inline `<script>` after the HTML leaves this process, so no hash the server computes can\ncover it, and without the nonce the detection silently never runs. Cloudflare reads the\nnonce from the `Content-Security-Policy` response header and copies it onto what it\ninjects.\n\nThe server sends `Cache-Control: no-cache` on every document, so a cache must revalidate a\nstored copy with this origin before each reuse. A document carries no validator, so every\nreuse reaches the server, which mints a fresh nonce per response. **No Cloudflare Cache\nRule may cache the documents**: a \"Cache Everything\" rule overrides that header at the\nedge, and nothing inside this process can see it.",
                   "type": "boolean"
                 },
                 "turnstile": {
                   "default": false,
-                  "description": "Admit `https://challenges.cloudflare.com` in `script-src` and `frame-src`, for a Turnstile\nwidget.\n\nOff: this site has no form behind a challenge. A managed-challenge interstitial needs\nnothing here either — that is a Cloudflare-served document carrying its own policy.",
+                  "description": "Whether `script-src` and `frame-src` admit `https://challenges.cloudflare.com`, for a\nTurnstile widget.\n\nOff, because this site has no form behind a challenge. A managed-challenge interstitial\nneeds nothing here: it is a Cloudflare-served document carrying its own policy.",
                   "type": "boolean"
                 },
                 "web_analytics": {
                   "default": false,
-                  "description": "Admit the Cloudflare Web Analytics beacon and the endpoint it reports to.\n\nOff: this site measures nothing, which the privacy page states. Only for the *manual*\nsnippet — the automatic edge injection is an inline script and needs `script_nonce`\ninstead.",
+                  "description": "Whether the policy admits the Cloudflare Web Analytics beacon and the endpoint it reports\nto.\n\nOff, because this site measures nothing, which the privacy page states. It covers the\nmanual snippet only; the automatic edge injection is an inline script and needs\n`script_nonce`.",
                   "type": "boolean"
                 }
               },
@@ -103,7 +103,7 @@
             },
             "hash_inline_scripts": {
               "default": true,
-              "description": "Hash every inline `<script>` in the document being served instead of admitting all inline\nscript with `'unsafe-inline'`.\n\nOn — the default — the server hashes the response body it is about to send, so the only\ninline scripts that run are the ones it rendered itself. That is the whole point of the\nexercise: `'unsafe-inline'` admits an injected `<script>` just as readily as the Dioxus\nhydration bootstrap.\n\nOff is the escape hatch, and it exists because the failure mode is silent: an inline\nscript the scanner does not see is refused by the browser, and the evidence is a blank\npage and a console message nobody is watching. Turning it off restores `'unsafe-inline'`\nthrough an environment variable and a restart rather than a redeploy. Known cases: a\ndevelopment server that injects its own live-reload script downstream of this process,\nand any future renderer change that emits script this server never sees.\n\nThe two settings are mutually exclusive in the browser, not merely different: a policy\ncarrying any hash or nonce makes `'unsafe-inline'` inert, which is why there is one switch\nhere rather than two independent ones.",
+              "description": "Whether the server admits inline `<script>` by hash, in place of `'unsafe-inline'`.\n\nOn, the default, the server hashes the response body it is about to send, so the only\ninline scripts that run are the ones it rendered. `'unsafe-inline'` admits an injected\n`<script>` as readily as the Dioxus hydration bootstrap.\n\nOff restores `'unsafe-inline'` with a restart. Use it when the browser refuses an inline\nscript the scanner does not see, which shows as a blank page and a console message. Known\ncases are a development server that injects a live-reload script downstream of this\nprocess, and a renderer change that emits script this server never sees.\n\nA policy carrying any hash or nonce makes `'unsafe-inline'` inert, so turning this off also\nrequires `csp.cloudflare.script_nonce = false`. [`validate`](Self::validate) refuses the\nboot otherwise.",
               "type": "boolean"
             }
           },
@@ -114,18 +114,18 @@
           "properties": {
             "include_subdomains": {
               "default": true,
-              "description": "Apply the policy to every subdomain as well (`includeSubDomains`).",
+              "description": "Whether the policy covers every subdomain as well, as `includeSubDomains`.",
               "type": "boolean"
             },
             "max_age_secs": {
               "default": 31536000,
-              "description": "How long, in seconds, a browser keeps to HTTPS after seeing the header. Zero clears it.\n\nZero is the documented way to *withdraw* HSTS: browsers drop the host from their list on\nthe next response. It is refused together with `preload`, which that would contradict.",
+              "description": "How long, in seconds, a browser keeps to HTTPS after seeing the header. Zero clears it.\n\nZero is the documented way to withdraw HSTS: a browser drops a host it learned from this\nheader on the next response. A host already on the preload list stays there until its\nremoval reaches browsers in a release. Zero is refused together with `preload`, which it\nwould contradict.",
               "minimum": 0,
               "type": "integer"
             },
             "preload": {
               "default": true,
-              "description": "Ask to be included in the browsers' built-in HSTS preload list (`preload`).\n\nThe list's own requirements are enforced at boot: `include_subdomains` on and a\n`max_age_secs` of at least one year.",
+              "description": "Whether the header asks for the host to be included in the browsers' built-in HSTS preload\nlist, as `preload`.\n\nThe boot enforces the list's own requirements: `include_subdomains` on and a\n`max_age_secs` of at least one year.",
               "type": "boolean"
             }
           },
@@ -135,12 +135,12 @@
           "additionalProperties": false,
           "properties": {
             "cache_dir": {
-              "description": "Writable directory rendered HTML is cached into. Unset or empty disables ISR.\n\nKeep it *outside* the bundled `public/` asset tree so those content-hashed assets stay\nimmutable. The image points it at a sub-directory of `/tmp`, which the deployment already\nprovides as a writable mount even under a read-only root filesystem.\n\nDefault: ISR off; the image sets `/tmp/isr`.",
+              "description": "The writable directory rendered HTML is cached into. Unset or empty disables ISR.\n\nKeep it outside the bundled `public/` asset tree so those content-hashed assets stay\nimmutable. The image points it at a sub-directory of `/tmp`, which the deployment provides\nas a writable mount even under a read-only root filesystem.\n\nDefault: ISR off; the image sets `/tmp/isr`.",
               "type": "string"
             },
             "ttl_secs": {
               "default": 0,
-              "description": "Revalidation interval in seconds. Zero means a permanent cache.\n\nEvery page renders from compile-time data, so the only thing that changes the output is a\nnew build, which starts from an empty cache anyway. A positive value opts into a finite,\ntime-based TTL, which is useful only when a *persistent* cache volume is shared across\ndeploys.\n\nDefault: permanent.",
+              "description": "The revalidation interval in seconds. Zero means a permanent cache.\n\nA page changes only with a new build or a new `legal.*` configuration, and the server keeps\nwhatever the directory holds at boot. Permanent suits a directory that starts empty with\nevery pod. A container restart inside the same pod keeps the mount and its pages, so a\n`legal.*` change applied by a restart needs a positive value, a cleared directory or a new\npod. A cache volume that outlives a deploy needs a positive value for the same reason.\n\nDefault: permanent.",
               "minimum": 0,
               "type": "integer"
             }
@@ -204,12 +204,12 @@
           "properties": {
             "attach_stacktraces": {
               "default": true,
-              "description": "Attach a stack trace to events that carry none of their own.",
+              "description": "Whether events that carry no stack trace of their own get one attached.",
               "type": "boolean"
             },
             "breadcrumb_level": {
               "default": "info",
-              "description": "Least severe `tracing` level kept as a **breadcrumb**, the trail attached to the next\nissue.\n\nRecords at or above `sentry.capture_level` become issues instead, so the two thresholds\npartition the stream rather than overlapping on it.",
+              "description": "The least severe `tracing` level kept as a breadcrumb, the trail attached to the next\nissue.\n\nRecords at or above `sentry.capture_level` become issues instead, so the two thresholds\npartition the stream.",
               "enum": [
                 "off",
                 "error",
@@ -222,7 +222,7 @@
             },
             "capture_level": {
               "default": "error",
-              "description": "Least severe `tracing` level reported as a Sentry **issue**.",
+              "description": "The least severe `tracing` level reported as a Sentry issue.",
               "enum": [
                 "off",
                 "error",
@@ -235,62 +235,62 @@
             },
             "debug": {
               "default": false,
-              "description": "Print the SDK's own diagnostics to stderr. For proving a DSN works, not for running.",
+              "description": "Whether the SDK prints its own diagnostics to stderr, for proving a DSN works.",
               "type": "boolean"
             },
             "dsn": {
-              "description": "Ingest URL, `https://<key>@<host>/<project>`.\n\nThe embedded key is a bearer credential for the project's ingest endpoint, so it is held\nas a `SecretString` — this block is nested in a `ServerConfig` that is printed with `?` on\nthe refusal path. Supply it as `PORTFOLIO_SENTRY__DSN_FILE=/run/secrets/sentry_dsn`, or as\n`sentry__dsn` inside `$PORTFOLIO_SECRETS_DIR`, so it never enters the process\nenvironment — where `/proc/<pid>/environ`, a crash dump and `docker inspect` all carry\nit, and every child process inherits it.\n\nAbsent while `sentry.enabled` is set is a boot failure, not a silent no-op.",
+              "description": "The ingest URL, `https://<key>@<host>/<project>`.\n\nThe embedded key is a bearer credential for the project's ingest endpoint. Supply it as\n`PORTFOLIO_SENTRY__DSN_FILE=/run/secrets/sentry_dsn`, or as `sentry__dsn` inside\n`$PORTFOLIO_SECRETS_DIR`, so it never enters the process environment, where\n`/proc/<pid>/environ`, a crash dump and `docker inspect` all carry it and every child\nprocess inherits it.\n\nAbsent while `sentry.enabled` is set, it fails the boot.",
               "type": "string",
               "writeOnly": true
             },
             "enabled": {
               "default": false,
-              "description": "Initialize the Sentry client. `false` installs no client, no panic hook, no `tracing`\nlayer and no HTTP middleware, so every other key here is inert and nothing leaves the\nprocess.\n\nIt also decides who owns the log subscriber. Off — the default — the Dioxus toolchain\ninstalls its own, which is the behavior this server has always had. On, the server\ninstalls one first (still reading `RUST_LOG`, still formatting the same way) because a\nSentry layer has to be a layer *of* the subscriber, and the framework's is not\nextensible after the fact.",
+              "description": "Whether the server initializes the Sentry client. Off installs no client, panic hook,\n`tracing` layer or HTTP middleware, and nothing leaves the process.\n\nIt also decides who owns the log subscriber. Off, the Dioxus toolchain installs its own.\nOn, the server installs one first, still reading `RUST_LOG` and formatting the same way,\nbecause a Sentry layer has to be a layer of the subscriber.",
               "type": "boolean"
             },
             "environment": {
-              "description": "Environment tag on every event.\n\nUnset resolves to `production` for a release build and `development` otherwise, which is\nthe only distinction this workspace has: it ships one image, and the thing that separates\na developer's `dx serve` from the deployed container is the profile it was built with.\n\nDefault: `production` in a release build, `development` otherwise.",
+              "description": "The environment tag on every event.\n\nUnset resolves to `production` for a release build and `development` otherwise. The\nworkspace ships one image, so the build profile is what separates a developer's\n`dx serve` from the deployed container.\n\nDefault: `production` in a release build, `development` otherwise.",
               "type": "string"
             },
             "http_transactions": {
               "default": true,
-              "description": "Record one Sentry transaction per request, named by the *matched route* rather than by\nthe URI — so `/api/v1/legal/{slug}` does not become one transaction name per document.\n\nWhether a started transaction is *kept* is `sentry.traces_sample_rate`'s decision; this is\nthe switch for taking the middleware out entirely.",
+              "description": "Whether the server records one Sentry transaction per request, named by the matched route.\n\nNaming by route keeps `/api/v1/legal/{slug}` one transaction name for every document.\nWhether a started transaction is kept is `sentry.traces_sample_rate`'s decision. Off starts\nno transaction, but the HTTP middleware stays installed and still attaches the request to\nevents.",
               "type": "boolean"
             },
             "max_breadcrumbs": {
               "default": 100,
-              "description": "How many breadcrumbs one event carries.",
+              "description": "The most breadcrumbs one event carries.",
               "minimum": 0,
               "type": "integer"
             },
             "release": {
-              "description": "Release tag on every event.\n\nUnset resolves to `portfolio@<version>`, the workspace version the binary was built from\n— which is what makes a regression attributable to a deploy, since every deploy of this\nsite is a new image cut from a new version.\n\nDefault: `portfolio@` and the built version.",
+              "description": "The release tag on every event.\n\nUnset resolves to `portfolio@<version>`, the workspace version the binary was built from.\nEvery deploy is a new image cut from a new version, so the tag attributes a regression to\na deploy.\n\nDefault: `portfolio@` and the built version.",
               "type": "string"
             },
             "sample_rate": {
               "default": 1.0,
-              "description": "Fraction of captured events actually sent, `0.0`–`1.0`.\n\nA blunt volume cap: it drops whole issues rather than repetitions of one, so a rare bug\nis exactly as likely to be dropped as a noisy one. Leave it at `1.0` unless a quota\nforces otherwise.",
+              "description": "The fraction of captured events sent, from `0.0` to `1.0`.\n\nIt is a blunt volume cap: a rare bug is as likely to be dropped as a noisy one. Leave it\nat `1.0` unless a quota forces otherwise.",
               "maximum": 1.0,
               "minimum": 0.0,
               "type": "number"
             },
             "send_default_pii": {
               "default": false,
-              "description": "Send personally identifying data with every event: the client IP, the full request header\nset (`Cookie` included) and the resolved user.\n\n**Off, and worth leaving off.** A reader's IP address and cookies are exactly what a\ncrash report does not need in order to be actionable, and every event sent is personal\ndata handed to a third party, which the published privacy notice would then have to\nname. On, it also widens what the HTTP middleware records, because `sentry-tower` reads\nthis same flag to decide whether to redact sensitive request headers.",
+              "description": "Whether every event carries personally identifying data: the client IP, the full request\nheader set including `Cookie`, and the resolved user.\n\n**Off, and worth leaving off.** A crash report is actionable without a reader's IP address\nand cookies, and every event sent is personal data handed to a third party, which the\npublished privacy notice would then have to name. On, it also stops the HTTP middleware\nfrom redacting sensitive request headers.",
               "type": "boolean"
             },
             "server_name": {
-              "description": "Host tag on every event.\n\nLeft unset, Sentry reports none. The hostname of a replica is infrastructure detail that\n`sentry.send_default_pii` would otherwise be the gate for, and this site runs one image\nbehind a tunnel, so it identifies nothing an event does not already say.",
+              "description": "The host tag on every event. Unset reports none.\n\nThe hostname of a replica is infrastructure detail, and this site runs one image behind a\ntunnel, so it identifies nothing an event does not already say.",
               "type": "string"
             },
             "span_attributes": {
               "default": false,
-              "description": "Copy `tracing` span fields onto the Sentry span as attributes.\n\nOff. Span fields here routinely carry request paths and the negotiated locale, and a\ntransaction is stored under a longer retention than a log line.",
+              "description": "Whether `tracing` span fields are copied onto the Sentry span as attributes.\n\nOff, because span fields here carry request paths and the negotiated locale, and a\ntransaction is stored under a longer retention than a log line.",
               "type": "boolean"
             },
             "traces_sample_rate": {
               "default": 0.0,
-              "description": "Fraction of request traces recorded, `0.0`–`1.0`.\n\n`0.0` — the default — records none, which is what keeps switching Sentry on for crash\nreporting from also switching performance data on. `0.05`–`0.2` is an ordinary\nproduction figure.\n\nThis server starts every trace it has: it is the edge, and nothing upstream of it hands\nit a sampled trace to continue. That is the difference from a service tier, where the\nrate of whoever *starts* the trace decides whether it exists at all.",
+              "description": "The fraction of request traces recorded, from `0.0` to `1.0`.\n\nThe rate decides for a request that arrives without a sampling decision. A request whose\n`sentry-trace` header carries one keeps it, so a caller can have its request recorded even\nat the default, `0.0`. `sentry.http_transactions = false` starts no request transaction at\nall. The default keeps ordinary traffic from sending performance data when Sentry is on for\ncrash reporting. `0.05` to `0.2` is an ordinary production figure.",
               "maximum": 1.0,
               "minimum": 0.0,
               "type": "number"
@@ -305,7 +305,7 @@
     "producer": {
       "loader": "figment",
       "name": "terrace-config",
-      "version": "0.15.1"
+      "version": "0.17.0"
     },
     "schema": {
       "dialect": {
@@ -344,7 +344,7 @@
           },
           "default": "true",
           "default_value": true,
-          "docs": "Hash every inline `<script>` in the document being served instead of admitting all inline\nscript with `'unsafe-inline'`.\n\nOn — the default — the server hashes the response body it is about to send, so the only\ninline scripts that run are the ones it rendered itself. That is the whole point of the\nexercise: `'unsafe-inline'` admits an injected `<script>` just as readily as the Dioxus\nhydration bootstrap.\n\nOff is the escape hatch, and it exists because the failure mode is silent: an inline\nscript the scanner does not see is refused by the browser, and the evidence is a blank\npage and a console message nobody is watching. Turning it off restores `'unsafe-inline'`\nthrough an environment variable and a restart rather than a redeploy. Known cases: a\ndevelopment server that injects its own live-reload script downstream of this process,\nand any future renderer change that emits script this server never sees.\n\nThe two settings are mutually exclusive in the browser, not merely different: a policy\ncarrying any hash or nonce makes `'unsafe-inline'` inert, which is why there is one switch\nhere rather than two independent ones.",
+          "docs": "Whether the server admits inline `<script>` by hash, in place of `'unsafe-inline'`.\n\nOn, the default, the server hashes the response body it is about to send, so the only\ninline scripts that run are the ones it rendered. `'unsafe-inline'` admits an injected\n`<script>` as readily as the Dioxus hydration bootstrap.\n\nOff restores `'unsafe-inline'` with a restart. Use it when the browser refuses an inline\nscript the scanner does not see, which shows as a blank page and a console message. Known\ncases are a development server that injects a live-reload script downstream of this\nprocess, and a renderer change that emits script this server never sees.\n\nA policy carrying any hash or nonce makes `'unsafe-inline'` inert, so turning this off also\nrequires `csp.cloudflare.script_nonce = false`. [`validate`](Self::validate) refuses the\nboot otherwise.",
           "env": "PORTFOLIO_CSP__HASH_INLINE_SCRIPTS",
           "env_aliases": [],
           "env_file": "PORTFOLIO_CSP__HASH_INLINE_SCRIPTS_FILE",
@@ -371,7 +371,7 @@
           },
           "default": "true",
           "default_value": true,
-          "docs": "Reserve a per-response nonce in `script-src` for the script Cloudflare injects at the edge.\n\nOn by default, because this site is delivered through a Cloudflare Tunnel with the bot\nproducts active; the `__cf_bm` and `cf_clearance` cookies they set are the observable\nhalf of the same feature. Those products inject an inline `<script>` into the HTML\n*after* it leaves this process, so no hash this server computes can cover it;\n`script-src` refuses it and the detection silently never runs.\nCloudflare's documented answer is to parse the `Content-Security-Policy` response header\nand copy the nonce onto what it injects, so nothing has to be stamped into the document.\n\nIt carries one obligation the server discharges (`Cache-Control: no-cache` on every\ndocument, so a nonce is never shared between readers) and one it cannot: **no Cloudflare\nCache Rule may cache the shell**. A \"Cache Everything\" rule overrides the origin's\n`Cache-Control`, satisfying the obligation here and violating it at the edge, and nothing\ninside this process can see that.",
+          "docs": "Whether `script-src` reserves a per-response nonce for the script Cloudflare injects at the\nedge.\n\nOn by default, because this site is delivered through a Cloudflare Tunnel with the bot\nproducts active; the `__cf_bm` and `cf_clearance` cookies are theirs. Those products inject\nan inline `<script>` after the HTML leaves this process, so no hash the server computes can\ncover it, and without the nonce the detection silently never runs. Cloudflare reads the\nnonce from the `Content-Security-Policy` response header and copies it onto what it\ninjects.\n\nThe server sends `Cache-Control: no-cache` on every document, so a cache must revalidate a\nstored copy with this origin before each reuse. A document carries no validator, so every\nreuse reaches the server, which mints a fresh nonce per response. **No Cloudflare Cache\nRule may cache the documents**: a \"Cache Everything\" rule overrides that header at the\nedge, and nothing inside this process can see it.",
           "env": "PORTFOLIO_CSP__CLOUDFLARE__SCRIPT_NONCE",
           "env_aliases": [],
           "env_file": "PORTFOLIO_CSP__CLOUDFLARE__SCRIPT_NONCE_FILE",
@@ -398,7 +398,7 @@
           },
           "default": "false",
           "default_value": false,
-          "docs": "Admit `https://challenges.cloudflare.com` in `script-src` and `frame-src`, for a Turnstile\nwidget.\n\nOff: this site has no form behind a challenge. A managed-challenge interstitial needs\nnothing here either — that is a Cloudflare-served document carrying its own policy.",
+          "docs": "Whether `script-src` and `frame-src` admit `https://challenges.cloudflare.com`, for a\nTurnstile widget.\n\nOff, because this site has no form behind a challenge. A managed-challenge interstitial\nneeds nothing here: it is a Cloudflare-served document carrying its own policy.",
           "env": "PORTFOLIO_CSP__CLOUDFLARE__TURNSTILE",
           "env_aliases": [],
           "env_file": "PORTFOLIO_CSP__CLOUDFLARE__TURNSTILE_FILE",
@@ -425,7 +425,7 @@
           },
           "default": "false",
           "default_value": false,
-          "docs": "Admit the Cloudflare Web Analytics beacon and the endpoint it reports to.\n\nOff: this site measures nothing, which the privacy page states. Only for the *manual*\nsnippet — the automatic edge injection is an inline script and needs `script_nonce`\ninstead.",
+          "docs": "Whether the policy admits the Cloudflare Web Analytics beacon and the endpoint it reports\nto.\n\nOff, because this site measures nothing, which the privacy page states. It covers the\nmanual snippet only; the automatic edge injection is an inline script and needs\n`script_nonce`.",
           "env": "PORTFOLIO_CSP__CLOUDFLARE__WEB_ANALYTICS",
           "env_aliases": [],
           "env_file": "PORTFOLIO_CSP__CLOUDFLARE__WEB_ANALYTICS_FILE",
@@ -453,7 +453,7 @@
           },
           "default": "31536000",
           "default_value": 31536000,
-          "docs": "How long, in seconds, a browser keeps to HTTPS after seeing the header. Zero clears it.\n\nZero is the documented way to *withdraw* HSTS: browsers drop the host from their list on\nthe next response. It is refused together with `preload`, which that would contradict.",
+          "docs": "How long, in seconds, a browser keeps to HTTPS after seeing the header. Zero clears it.\n\nZero is the documented way to withdraw HSTS: a browser drops a host it learned from this\nheader on the next response. A host already on the preload list stays there until its\nremoval reaches browsers in a release. Zero is refused together with `preload`, which it\nwould contradict.",
           "env": "PORTFOLIO_HSTS__MAX_AGE_SECS",
           "env_aliases": [],
           "env_file": "PORTFOLIO_HSTS__MAX_AGE_SECS_FILE",
@@ -480,7 +480,7 @@
           },
           "default": "true",
           "default_value": true,
-          "docs": "Apply the policy to every subdomain as well (`includeSubDomains`).",
+          "docs": "Whether the policy covers every subdomain as well, as `includeSubDomains`.",
           "env": "PORTFOLIO_HSTS__INCLUDE_SUBDOMAINS",
           "env_aliases": [],
           "env_file": "PORTFOLIO_HSTS__INCLUDE_SUBDOMAINS_FILE",
@@ -507,7 +507,7 @@
           },
           "default": "true",
           "default_value": true,
-          "docs": "Ask to be included in the browsers' built-in HSTS preload list (`preload`).\n\nThe list's own requirements are enforced at boot: `include_subdomains` on and a\n`max_age_secs` of at least one year.",
+          "docs": "Whether the header asks for the host to be included in the browsers' built-in HSTS preload\nlist, as `preload`.\n\nThe boot enforces the list's own requirements: `include_subdomains` on and a\n`max_age_secs` of at least one year.",
           "env": "PORTFOLIO_HSTS__PRELOAD",
           "env_aliases": [],
           "env_file": "PORTFOLIO_HSTS__PRELOAD_FILE",
@@ -534,7 +534,7 @@
           },
           "default": null,
           "default_value": null,
-          "docs": "Writable directory rendered HTML is cached into. Unset or empty disables ISR.\n\nKeep it *outside* the bundled `public/` asset tree so those content-hashed assets stay\nimmutable. The image points it at a sub-directory of `/tmp`, which the deployment already\nprovides as a writable mount even under a read-only root filesystem.",
+          "docs": "The writable directory rendered HTML is cached into. Unset or empty disables ISR.\n\nKeep it outside the bundled `public/` asset tree so those content-hashed assets stay\nimmutable. The image points it at a sub-directory of `/tmp`, which the deployment provides\nas a writable mount even under a read-only root filesystem.",
           "env": "PORTFOLIO_ISR__CACHE_DIR",
           "env_aliases": [],
           "env_file": "PORTFOLIO_ISR__CACHE_DIR_FILE",
@@ -558,7 +558,7 @@
           },
           "default": "0",
           "default_value": 0,
-          "docs": "Revalidation interval in seconds. Zero means a permanent cache.\n\nEvery page renders from compile-time data, so the only thing that changes the output is a\nnew build, which starts from an empty cache anyway. A positive value opts into a finite,\ntime-based TTL, which is useful only when a *persistent* cache volume is shared across\ndeploys.",
+          "docs": "The revalidation interval in seconds. Zero means a permanent cache.\n\nA page changes only with a new build or a new `legal.*` configuration, and the server keeps\nwhatever the directory holds at boot. Permanent suits a directory that starts empty with\nevery pod. A container restart inside the same pod keeps the mount and its pages, so a\n`legal.*` change applied by a restart needs a positive value, a cleared directory or a new\npod. A cache volume that outlives a deploy needs a positive value for the same reason.",
           "env": "PORTFOLIO_ISR__TTL_SECS",
           "env_aliases": [],
           "env_file": "PORTFOLIO_ISR__TTL_SECS_FILE",
@@ -585,7 +585,7 @@
           },
           "default": "false",
           "default_value": false,
-          "docs": "Initialize the Sentry client. `false` installs no client, no panic hook, no `tracing`\nlayer and no HTTP middleware, so every other key here is inert and nothing leaves the\nprocess.\n\nIt also decides who owns the log subscriber. Off — the default — the Dioxus toolchain\ninstalls its own, which is the behavior this server has always had. On, the server\ninstalls one first (still reading `RUST_LOG`, still formatting the same way) because a\nSentry layer has to be a layer *of* the subscriber, and the framework's is not\nextensible after the fact.",
+          "docs": "Whether the server initializes the Sentry client. Off installs no client, panic hook,\n`tracing` layer or HTTP middleware, and nothing leaves the process.\n\nIt also decides who owns the log subscriber. Off, the Dioxus toolchain installs its own.\nOn, the server installs one first, still reading `RUST_LOG` and formatting the same way,\nbecause a Sentry layer has to be a layer of the subscriber.",
           "env": "PORTFOLIO_SENTRY__ENABLED",
           "env_aliases": [],
           "env_file": "PORTFOLIO_SENTRY__ENABLED_FILE",
@@ -612,7 +612,7 @@
           },
           "default": null,
           "default_value": null,
-          "docs": "Ingest URL, `https://<key>@<host>/<project>`.\n\nThe embedded key is a bearer credential for the project's ingest endpoint, so it is held\nas a `SecretString` — this block is nested in a `ServerConfig` that is printed with `?` on\nthe refusal path. Supply it as `PORTFOLIO_SENTRY__DSN_FILE=/run/secrets/sentry_dsn`, or as\n`sentry__dsn` inside `$PORTFOLIO_SECRETS_DIR`, so it never enters the process\nenvironment — where `/proc/<pid>/environ`, a crash dump and `docker inspect` all carry\nit, and every child process inherits it.\n\nAbsent while `sentry.enabled` is set is a boot failure, not a silent no-op.",
+          "docs": "The ingest URL, `https://<key>@<host>/<project>`.\n\nThe embedded key is a bearer credential for the project's ingest endpoint. Supply it as\n`PORTFOLIO_SENTRY__DSN_FILE=/run/secrets/sentry_dsn`, or as `sentry__dsn` inside\n`$PORTFOLIO_SECRETS_DIR`, so it never enters the process environment, where\n`/proc/<pid>/environ`, a crash dump and `docker inspect` all carry it and every child\nprocess inherits it.\n\nAbsent while `sentry.enabled` is set, it fails the boot.",
           "env": "PORTFOLIO_SENTRY__DSN",
           "env_aliases": [],
           "env_file": "PORTFOLIO_SENTRY__DSN_FILE",
@@ -635,7 +635,7 @@
           },
           "default": null,
           "default_value": null,
-          "docs": "Environment tag on every event.\n\nUnset resolves to `production` for a release build and `development` otherwise, which is\nthe only distinction this workspace has: it ships one image, and the thing that separates\na developer's `dx serve` from the deployed container is the profile it was built with.",
+          "docs": "The environment tag on every event.\n\nUnset resolves to `production` for a release build and `development` otherwise. The\nworkspace ships one image, so the build profile is what separates a developer's\n`dx serve` from the deployed container.",
           "env": "PORTFOLIO_SENTRY__ENVIRONMENT",
           "env_aliases": [],
           "env_file": "PORTFOLIO_SENTRY__ENVIRONMENT_FILE",
@@ -658,7 +658,7 @@
           },
           "default": null,
           "default_value": null,
-          "docs": "Release tag on every event.\n\nUnset resolves to `portfolio@<version>`, the workspace version the binary was built from\n— which is what makes a regression attributable to a deploy, since every deploy of this\nsite is a new image cut from a new version.",
+          "docs": "The release tag on every event.\n\nUnset resolves to `portfolio@<version>`, the workspace version the binary was built from.\nEvery deploy is a new image cut from a new version, so the tag attributes a regression to\na deploy.",
           "env": "PORTFOLIO_SENTRY__RELEASE",
           "env_aliases": [],
           "env_file": "PORTFOLIO_SENTRY__RELEASE_FILE",
@@ -681,7 +681,7 @@
           },
           "default": null,
           "default_value": null,
-          "docs": "Host tag on every event.\n\nLeft unset, Sentry reports none. The hostname of a replica is infrastructure detail that\n`sentry.send_default_pii` would otherwise be the gate for, and this site runs one image\nbehind a tunnel, so it identifies nothing an event does not already say.",
+          "docs": "The host tag on every event. Unset reports none.\n\nThe hostname of a replica is infrastructure detail, and this site runs one image behind a\ntunnel, so it identifies nothing an event does not already say.",
           "env": "PORTFOLIO_SENTRY__SERVER_NAME",
           "env_aliases": [],
           "env_file": "PORTFOLIO_SENTRY__SERVER_NAME_FILE",
@@ -706,7 +706,7 @@
           },
           "default": "1",
           "default_value": 1.0,
-          "docs": "Fraction of captured events actually sent, `0.0`–`1.0`.\n\nA blunt volume cap: it drops whole issues rather than repetitions of one, so a rare bug\nis exactly as likely to be dropped as a noisy one. Leave it at `1.0` unless a quota\nforces otherwise.",
+          "docs": "The fraction of captured events sent, from `0.0` to `1.0`.\n\nIt is a blunt volume cap: a rare bug is as likely to be dropped as a noisy one. Leave it\nat `1.0` unless a quota forces otherwise.",
           "env": "PORTFOLIO_SENTRY__SAMPLE_RATE",
           "env_aliases": [],
           "env_file": "PORTFOLIO_SENTRY__SAMPLE_RATE_FILE",
@@ -731,7 +731,7 @@
           },
           "default": "0",
           "default_value": 0.0,
-          "docs": "Fraction of request traces recorded, `0.0`–`1.0`.\n\n`0.0` — the default — records none, which is what keeps switching Sentry on for crash\nreporting from also switching performance data on. `0.05`–`0.2` is an ordinary\nproduction figure.\n\nThis server starts every trace it has: it is the edge, and nothing upstream of it hands\nit a sampled trace to continue. That is the difference from a service tier, where the\nrate of whoever *starts* the trace decides whether it exists at all.",
+          "docs": "The fraction of request traces recorded, from `0.0` to `1.0`.\n\nThe rate decides for a request that arrives without a sampling decision. A request whose\n`sentry-trace` header carries one keeps it, so a caller can have its request recorded even\nat the default, `0.0`. `sentry.http_transactions = false` starts no request transaction at\nall. The default keeps ordinary traffic from sending performance data when Sentry is on for\ncrash reporting. `0.05` to `0.2` is an ordinary production figure.",
           "env": "PORTFOLIO_SENTRY__TRACES_SAMPLE_RATE",
           "env_aliases": [],
           "env_file": "PORTFOLIO_SENTRY__TRACES_SAMPLE_RATE_FILE",
@@ -762,7 +762,7 @@
           },
           "default": "error",
           "default_value": "error",
-          "docs": "Least severe `tracing` level reported as a Sentry **issue**.",
+          "docs": "The least severe `tracing` level reported as a Sentry issue.",
           "env": "PORTFOLIO_SENTRY__CAPTURE_LEVEL",
           "env_aliases": [],
           "env_file": "PORTFOLIO_SENTRY__CAPTURE_LEVEL_FILE",
@@ -804,7 +804,7 @@
           },
           "default": "info",
           "default_value": "info",
-          "docs": "Least severe `tracing` level kept as a **breadcrumb**, the trail attached to the next\nissue.\n\nRecords at or above `sentry.capture_level` become issues instead, so the two thresholds\npartition the stream rather than overlapping on it.",
+          "docs": "The least severe `tracing` level kept as a breadcrumb, the trail attached to the next\nissue.\n\nRecords at or above `sentry.capture_level` become issues instead, so the two thresholds\npartition the stream.",
           "env": "PORTFOLIO_SENTRY__BREADCRUMB_LEVEL",
           "env_aliases": [],
           "env_file": "PORTFOLIO_SENTRY__BREADCRUMB_LEVEL_FILE",
@@ -839,7 +839,7 @@
           },
           "default": "100",
           "default_value": 100,
-          "docs": "How many breadcrumbs one event carries.",
+          "docs": "The most breadcrumbs one event carries.",
           "env": "PORTFOLIO_SENTRY__MAX_BREADCRUMBS",
           "env_aliases": [],
           "env_file": "PORTFOLIO_SENTRY__MAX_BREADCRUMBS_FILE",
@@ -866,7 +866,7 @@
           },
           "default": "true",
           "default_value": true,
-          "docs": "Attach a stack trace to events that carry none of their own.",
+          "docs": "Whether events that carry no stack trace of their own get one attached.",
           "env": "PORTFOLIO_SENTRY__ATTACH_STACKTRACES",
           "env_aliases": [],
           "env_file": "PORTFOLIO_SENTRY__ATTACH_STACKTRACES_FILE",
@@ -893,7 +893,7 @@
           },
           "default": "false",
           "default_value": false,
-          "docs": "Send personally identifying data with every event: the client IP, the full request header\nset (`Cookie` included) and the resolved user.\n\n**Off, and worth leaving off.** A reader's IP address and cookies are exactly what a\ncrash report does not need in order to be actionable, and every event sent is personal\ndata handed to a third party, which the published privacy notice would then have to\nname. On, it also widens what the HTTP middleware records, because `sentry-tower` reads\nthis same flag to decide whether to redact sensitive request headers.",
+          "docs": "Whether every event carries personally identifying data: the client IP, the full request\nheader set including `Cookie`, and the resolved user.\n\n**Off, and worth leaving off.** A crash report is actionable without a reader's IP address\nand cookies, and every event sent is personal data handed to a third party, which the\npublished privacy notice would then have to name. On, it also stops the HTTP middleware\nfrom redacting sensitive request headers.",
           "env": "PORTFOLIO_SENTRY__SEND_DEFAULT_PII",
           "env_aliases": [],
           "env_file": "PORTFOLIO_SENTRY__SEND_DEFAULT_PII_FILE",
@@ -920,7 +920,7 @@
           },
           "default": "true",
           "default_value": true,
-          "docs": "Record one Sentry transaction per request, named by the *matched route* rather than by\nthe URI — so `/api/v1/legal/{slug}` does not become one transaction name per document.\n\nWhether a started transaction is *kept* is `sentry.traces_sample_rate`'s decision; this is\nthe switch for taking the middleware out entirely.",
+          "docs": "Whether the server records one Sentry transaction per request, named by the matched route.\n\nNaming by route keeps `/api/v1/legal/{slug}` one transaction name for every document.\nWhether a started transaction is kept is `sentry.traces_sample_rate`'s decision. Off starts\nno transaction, but the HTTP middleware stays installed and still attaches the request to\nevents.",
           "env": "PORTFOLIO_SENTRY__HTTP_TRANSACTIONS",
           "env_aliases": [],
           "env_file": "PORTFOLIO_SENTRY__HTTP_TRANSACTIONS_FILE",
@@ -947,7 +947,7 @@
           },
           "default": "false",
           "default_value": false,
-          "docs": "Copy `tracing` span fields onto the Sentry span as attributes.\n\nOff. Span fields here routinely carry request paths and the negotiated locale, and a\ntransaction is stored under a longer retention than a log line.",
+          "docs": "Whether `tracing` span fields are copied onto the Sentry span as attributes.\n\nOff, because span fields here carry request paths and the negotiated locale, and a\ntransaction is stored under a longer retention than a log line.",
           "env": "PORTFOLIO_SENTRY__SPAN_ATTRIBUTES",
           "env_aliases": [],
           "env_file": "PORTFOLIO_SENTRY__SPAN_ATTRIBUTES_FILE",
@@ -974,7 +974,7 @@
           },
           "default": "false",
           "default_value": false,
-          "docs": "Print the SDK's own diagnostics to stderr. For proving a DSN works, not for running.",
+          "docs": "Whether the SDK prints its own diagnostics to stderr, for proving a DSN works.",
           "env": "PORTFOLIO_SENTRY__DEBUG",
           "env_aliases": [],
           "env_file": "PORTFOLIO_SENTRY__DEBUG_FILE",
@@ -1102,9 +1102,9 @@
     "terrace_contract": 1
   },
   "source": {
-    "digest": "sha256:10b98d3894b67e8dd155ab1481a982c427284979d7dce4c587654b8307a61dce",
-    "fetched": "2026-10-21T15:19:13Z",
+    "digest": "sha256:d9e5419c31c80753b77eb5e6f07fef3074599f7cdf5da02be7b150320a3697c1",
+    "fetched": "2026-10-28T16:02:14Z",
     "image": "docker.io/timschoenle/portfolio",
-    "sha256": "e47db0eb55158d09634e1d5e1d77ecb8796c39813898de1c170d1e3ca89c7b04"
+    "sha256": "d7ff3f038d52ad9702d125ff0d051355b998ddfc1c3393c7912c0068a3f95f4e"
   }
 }

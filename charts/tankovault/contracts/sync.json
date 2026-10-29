@@ -3,7 +3,7 @@
     "app": {
       "name": "tankovault-sync",
       "source": "https://github.com/TimSchoenle/TankoVault",
-      "version": "v11.1.1"
+      "version": "v11.1.2"
     },
     "external": {
       "env": [
@@ -11,7 +11,7 @@
           "constraint": {
             "type": "string"
           },
-          "docs": "Verbosity, as `tracing` directives — `info`, `tankovault_api=debug,info`. Read by `EnvFilter::try_from_default_env`, which is consulted *before* `telemetry.log_filter` and wins over it when set.",
+          "docs": "Verbosity, as `tracing` directives such as `info` or `tankovault_api=debug,info`. Read by `EnvFilter::try_from_default_env`, which is consulted *before* `telemetry.log_filter` and wins over it when set.",
           "name": "RUST_LOG",
           "owner": "tracing",
           "required": false,
@@ -71,7 +71,7 @@
               "type": "string"
             },
             "token_encryption_key": {
-              "description": "Base64 32-byte data-encryption key for tokens at rest — opens every user's stored\n`AniList` access and refresh token.",
+              "description": "Base64 32-byte data-encryption key for tokens at rest, which opens every user's stored\n`AniList` access and refresh token.",
               "type": "string",
               "writeOnly": true
             }
@@ -97,7 +97,7 @@
               "type": "integer"
             },
             "url": {
-              "description": "e.g. `postgres://user:pass@host:5432/tankovault`.\n\nA [`SecretString`]: the DSN carries the password, and this struct's `Debug` is nested\ninside state routinely logged with `?`.",
+              "description": "The connection URL, such as `postgres://user:pass@host:5432/tankovault`.",
               "type": "string",
               "writeOnly": true
             }
@@ -108,7 +108,7 @@
           "additionalProperties": false,
           "properties": {
             "refresh_secs": {
-              "description": "Seconds between refreshes of a service's cached flag snapshot — the propagation delay\nto *other* replicas (the one that served the change applies it immediately).",
+              "description": "Seconds between refreshes of a service's cached flag snapshot. It is how long a change\ntakes to reach the other replicas; the replica that served the change applies it at once.",
               "minimum": 0,
               "type": "integer"
             }
@@ -122,7 +122,7 @@
               "additionalProperties": false,
               "properties": {
                 "name": {
-                  "description": "The name peers know this service by; must match the key they list it under.",
+                  "description": "The name peers know this service by, matching the key they list it under.",
                   "type": "string"
                 },
                 "token": {
@@ -134,7 +134,7 @@
               "type": "object"
             },
             "identity": {
-              "description": "How callers are identified. See [`IdentityMode`].",
+              "description": "How callers are identified.",
               "enum": [
                 "off",
                 "token",
@@ -147,7 +147,7 @@
                 "additionalProperties": false,
                 "properties": {
                   "san": {
-                    "description": "The client-certificate subject alternative name this peer presents under\n`identity = \"mtls\"`, e.g. `api.tankovault.svc`.",
+                    "description": "The client-certificate subject alternative name this peer presents under\n`identity = \"mtls\"`, such as `api.tankovault.svc`.",
                     "type": "string"
                   },
                   "token": {
@@ -177,14 +177,14 @@
                   "type": "string"
                 },
                 "probe_listen": {
-                  "description": "Address the credential-free `/health` and `/ready` probes bind to, in **plaintext**, on\ntheir own listener (default `0.0.0.0:9091`). Read under `mtls` only.\n\nAn orchestrator probe presents no client certificate, so on the mTLS port its plain\n`GET` is answered with a TLS alert rather than a response and the replica is restarted\nas unhealthy. `null` drops the listener, which is right only where whatever does the\nprobing *can* present a certificate.",
+                  "description": "Address the credential-free `/health` and `/ready` probes bind to, in **plaintext**, on\ntheir own listener (default `0.0.0.0:9091`). Read under `mtls` only.\n\nAn orchestrator probe presents no client certificate, so on the mTLS port its plain `GET`\ngets a TLS alert and the replica is restarted as unhealthy. Set it to `null`, which drops\nthe listener, only where the prober can present a certificate.",
                   "type": "string"
                 }
               },
               "type": "object"
             },
             "token": {
-              "description": "The retired tier-wide shared secret. Present only so a deployment that still sets it is\ntold what to do instead; see [`InternalAuthConfig::resolve`].",
+              "description": "Refused at boot. [`InternalAuthConfig::resolve`] names the per-caller keys that replace it.",
               "type": "string",
               "writeOnly": true
             }
@@ -195,7 +195,7 @@
           "additionalProperties": false,
           "properties": {
             "auto_merge": {
-              "description": "At or above this score — **and** only when a primary identity rule fired — the\nduplicate sweep merges two existing series without an operator. A separate knob from\n[`Self::high`]: that files an incoming source, this deletes one that already exists.\nSee `tankovault_matcher::adjudicate` for the identity half of the bar.",
+              "description": "At or above this score, and only when a primary identity rule fired, the duplicate sweep\nmay merge two existing series without an operator. A corroborated alias is eligible from\n[`Self::low`] up, whatever this is set to, because its corroboration, not its score, is the\nevidence. Either way an edition conflict, or a numeric conflict with its guard enabled,\nreports the pair distinct, and an external-id or live-timing veto or any other enabled\nmerge guard holds it for review.\n[`Self::high`] files an incoming source; this deletes a series that already exists.\n`tankovault_matcher::adjudicate` defines the identity rules, vetoes and guards.",
               "type": "number"
             },
             "block_auto_merge_on_author_conflict": {
@@ -203,7 +203,7 @@
               "type": "boolean"
             },
             "block_auto_merge_on_numeric_conflict": {
-              "description": "Titles carrying different numbers (`Overlord` against `Overlord 2`) are reported as\ndistinct works rather than queued. Switching this off makes a sequel merge-eligible on\ntitle similarity alone, which is the single most expensive mistake this scorer can make —\nthere is no other rule that distinguishes a sequel from its predecessor.",
+              "description": "Titles carrying different numbers (`Overlord` against `Overlord 2`) are reported as\ndistinct works. Switching this off makes a sequel merge-eligible on title similarity\nalone, and no other rule tells a sequel from its predecessor.",
               "type": "boolean"
             },
             "block_auto_merge_on_type_conflict": {
@@ -211,11 +211,11 @@
               "type": "boolean"
             },
             "block_auto_merge_on_year_conflict": {
-              "description": "Release years three or more years apart. Catches re-serialisations and remakes that share\nan exact title. The year never moves a score, so this guard is the only way it can hold a\npair back.",
+              "description": "Release years three or more years apart, as with re-serialisations and remakes that share\nan exact title. The year never moves a score, so this guard is the only way it holds a\npair back.",
               "type": "boolean"
             },
             "candidate_limit": {
-              "description": "How many trigram candidates to score per query title; more only costs a wider index scan.",
+              "description": "How many trigram candidates to score per query title. A higher value widens the index scan.",
               "type": "integer"
             },
             "high": {
@@ -223,7 +223,7 @@
               "type": "number"
             },
             "low": {
-              "description": "At or above this score, and not attached, create the series but flag the pair for\noperator review.",
+              "description": "At or above this score, a title that did not attach creates the series and flags the pair\nfor operator review.",
               "type": "number"
             }
           },
@@ -344,7 +344,7 @@
                   "type": "array"
                 },
                 "use_defaults": {
-                  "description": "Whether the shipped [`tankovault_domain::DEFAULT_BLOCKED_TERMS`] apply.\n\nAn escape hatch for a deployment whose catalogue genuinely uses one of them as a genre.\nTurning it off does not remove what is already stored — nothing in the normal path\nretracts a tag or a credit — but stops it being refused from the next scan onwards.",
+                  "description": "Whether the shipped [`tankovault_domain::DEFAULT_BLOCKED_TERMS`] apply.\n\nTurn it off for a catalogue that uses one of them as a genre. Turning it off stops the\nrefusal from the next scan on and leaves stored tags and credits as they are.",
                   "type": "boolean"
                 }
               },
@@ -361,11 +361,11 @@
               "type": "boolean"
             },
             "http_requests": {
-              "description": "Also record per-request HTTP metrics. Separate from [`Self::enabled`]: the request\nhistogram is the expensive, high-cardinality part.",
+              "description": "Also record per-request HTTP metrics. The request histogram is the expensive,\nhigh-cardinality part, so it has its own switch.",
               "type": "boolean"
             },
             "listen": {
-              "description": "Address the scrape endpoint binds to on its **own** listener (default `0.0.0.0:9090`),\nisolated from the service's public port. `None` merges it onto the primary port.",
+              "description": "Address the scrape endpoint binds on its **own** listener, apart from the service's\npublic port (default `0.0.0.0:9090`). `null` serves it on the primary port.",
               "type": "string"
             },
             "route": {
@@ -382,13 +382,13 @@
               "additionalProperties": false,
               "properties": {
                 "burst": {
-                  "description": "Bucket depth: the most requests a client may spend back-to-back.",
+                  "description": "The most requests a client may spend back-to-back.",
                   "maximum": 4294967295,
                   "minimum": 0,
                   "type": "integer"
                 },
                 "per_minute": {
-                  "description": "Sustained requests allowed per minute per client key; the bucket's refill rate.",
+                  "description": "Sustained requests allowed per minute per client key, which is the bucket's refill rate.",
                   "maximum": 4294967295,
                   "minimum": 0,
                   "type": "integer"
@@ -397,7 +397,7 @@
               "type": "object"
             },
             "backend": {
-              "description": "Counter store. See [`RateLimitBackend`].",
+              "description": "Where the counters live.",
               "enum": [
                 "memory",
                 "redis"
@@ -405,20 +405,20 @@
               "type": "string"
             },
             "enabled": {
-              "description": "Enforce limits. When `false` the layer is not mounted at all (no per-request cost).",
+              "description": "Enforce limits. When `false` the layer is not mounted and costs nothing per request.",
               "type": "boolean"
             },
             "expensive": {
               "additionalProperties": false,
               "properties": {
                 "burst": {
-                  "description": "Bucket depth: the most requests a client may spend back-to-back.",
+                  "description": "The most requests a client may spend back-to-back.",
                   "maximum": 4294967295,
                   "minimum": 0,
                   "type": "integer"
                 },
                 "per_minute": {
-                  "description": "Sustained requests allowed per minute per client key; the bucket's refill rate.",
+                  "description": "Sustained requests allowed per minute per client key, which is the bucket's refill rate.",
                   "maximum": 4294967295,
                   "minimum": 0,
                   "type": "integer"
@@ -430,13 +430,13 @@
               "additionalProperties": false,
               "properties": {
                 "burst": {
-                  "description": "Bucket depth: the most requests a client may spend back-to-back.",
+                  "description": "The most requests a client may spend back-to-back.",
                   "maximum": 4294967295,
                   "minimum": 0,
                   "type": "integer"
                 },
                 "per_minute": {
-                  "description": "Sustained requests allowed per minute per client key; the bucket's refill rate.",
+                  "description": "Sustained requests allowed per minute per client key, which is the bucket's refill rate.",
                   "maximum": 4294967295,
                   "minimum": 0,
                   "type": "integer"
@@ -445,7 +445,7 @@
               "type": "object"
             },
             "trust_forwarded_for": {
-              "description": "Trust `X-Forwarded-For`/`X-Real-IP` for the client key. **Only behind a reverse proxy\nthat overwrites these** — otherwise any client can forge a fresh identity and bypass\nthe limiter.",
+              "description": "Take the client key from `X-Forwarded-For` or `X-Real-IP`. Enable it **only behind a\nreverse proxy that overwrites both**; otherwise any client forges a fresh key and bypasses\nthe limiter.",
               "type": "boolean"
             }
           },
@@ -463,18 +463,18 @@
               "additionalProperties": false,
               "properties": {
                 "allow_credentials": {
-                  "description": "Allow credentialed cross-origin requests (cookies, `Authorization`). Cannot combine\nwith a wildcard origin.",
+                  "description": "Allow credentialed cross-origin requests, carrying cookies or `Authorization`. Cannot be\ncombined with a wildcard origin.",
                   "type": "boolean"
                 },
                 "allowed_origins": {
-                  "description": "Exact origins allowed, e.g. `https://app.example.com`. Empty disables CORS entirely.",
+                  "description": "Exact origins allowed, such as `https://app.example.com`. Empty disables CORS.",
                   "items": {
                     "type": "string"
                   },
                   "type": "array"
                 },
                 "max_age_secs": {
-                  "description": "`Access-Control-Max-Age`, seconds.",
+                  "description": "`Access-Control-Max-Age`, in seconds.",
                   "minimum": 0,
                   "type": "integer"
                 }
@@ -482,15 +482,15 @@
               "type": "object"
             },
             "expose_api_docs": {
-              "description": "Serve the browsable API docs (`/scalar`) and the `OpenAPI` document.\n\nDefaults off in production, on elsewhere (hence a function, not a literal): left on,\nit hands an attacker the whole admin surface — every `/v1/admin/*` path, the\npermission vocabulary, exact request bodies — with no failed probe.",
+              "description": "Serve the browsable API docs (`/scalar`) and the `OpenAPI` document.\n\nOff by default in production and on elsewhere. Left on in production, it gives an\nattacker every `/v1/admin/*` path, the permission vocabulary and the exact request bodies\nwithout a failed probe.",
               "type": "boolean"
             },
             "hsts": {
-              "description": "Emit `Strict-Transport-Security`; meaningless without TLS (browsers ignore it over\nplain HTTP).",
+              "description": "Emit `Strict-Transport-Security`. Browsers ignore it over plain HTTP.",
               "type": "boolean"
             },
             "hsts_max_age_secs": {
-              "description": "`max-age` for the HSTS header, seconds (default: two years, the preload minimum).",
+              "description": "`max-age` for the HSTS header, in seconds. The default is two years, the preload minimum.",
               "minimum": 0,
               "type": "integer"
             },
@@ -509,7 +509,7 @@
               "type": "boolean"
             },
             "trust_request_id": {
-              "description": "Accept an inbound `X-Request-Id` instead of minting one. Requires a trusted proxy —\na client-supplied id could otherwise poison log correlation.",
+              "description": "Accept an inbound `X-Request-Id` instead of minting one. Enable it only behind a trusted\nproxy, since a client-supplied id can poison log correlation.",
               "type": "boolean"
             }
           },
@@ -519,11 +519,11 @@
           "additionalProperties": false,
           "properties": {
             "json_logs": {
-              "description": "Emit structured JSON logs (production) vs. pretty logs (dev).",
+              "description": "Emit structured JSON logs, for production, in place of the human-readable format.",
               "type": "boolean"
             },
             "log_filter": {
-              "description": "**`TANKOVAULT_TELEMETRY__OTLP_ENDPOINT` is removed** (it silently did nothing); setting\nit is now a hard config error. Re-add only with a real `OpenTelemetryLayer`.\n\n`RUST_LOG`-style filter (e.g. `info,tankovault=debug`).",
+              "description": "`tracing` filter directives, such as `info,tankovault=debug`. `RUST_LOG` wins when set.",
               "type": "string"
             },
             "sentry": {
@@ -534,7 +534,7 @@
                   "type": "boolean"
                 },
                 "breadcrumb_level": {
-                  "description": "Least severe `tracing` level kept as a **breadcrumb** — the trail attached to the next\nissue. Records at or above [`Self::capture_level`] become issues instead.",
+                  "description": "Least severe `tracing` level kept as a **breadcrumb**, the trail attached to the next\nissue. Records at or above [`Self::capture_level`] become issues instead.",
                   "enum": [
                     "off",
                     "error",
@@ -558,11 +558,11 @@
                   "type": "string"
                 },
                 "debug": {
-                  "description": "Print the SDK's own diagnostics to stderr. For proving a DSN works, not for running.",
+                  "description": "Print the SDK's own diagnostics to stderr, to prove a DSN works.",
                   "type": "boolean"
                 },
                 "dsn": {
-                  "description": "Ingest URL, `https://<key>@<host>/<project>`.\n\nA [`SecretString`]: the embedded key is a bearer credential for the project's ingest\nendpoint, and this struct is nested in a `TelemetryConfig` that is logged with `?`.\nAbsent while [`Self::enabled`] is set is a boot failure, not a silent no-op.",
+                  "description": "Ingest URL, `https://<key>@<host>/<project>`.\n\nRequired while [`Self::enabled`] is set.",
                   "type": "string",
                   "writeOnly": true
                 },
@@ -575,7 +575,7 @@
                   "type": "string"
                 },
                 "http_transactions": {
-                  "description": "Record request spans through the shared HTTP stack: one Sentry transaction per\nrequest, named by the *matched route* rather than the URI, so an id in the path does\nnot become its own transaction name.\n\nWhether a started transaction is *kept* is [`Self::traces_sample_rate`]'s decision.\nThis is the switch for a service that should stay out of traces entirely.",
+                  "description": "Record one Sentry transaction per request through the shared HTTP stack, named by the\nmatched route, so an id in the path does not become a transaction name.\n\n[`Self::traces_sample_rate`] decides whether a transaction is kept. Off, the HTTP layer\nstarts no transactions; a broker delivery still starts one through the `tracing` layer.",
                   "type": "boolean"
                 },
                 "max_breadcrumbs": {
@@ -584,21 +584,21 @@
                   "type": "integer"
                 },
                 "release": {
-                  "description": "Release tag on every event; defaults to the workspace version the binary was built\nfrom, which is what makes a regression attributable to a deploy.",
+                  "description": "Release tag on every event. Unset, it is the workspace version the binary was built\nfrom, which ties an issue to a deploy.",
                   "type": "string"
                 },
                 "sample_rate": {
-                  "description": "Fraction of captured events actually sent, `0.0`-`1.0`. A blunt volume cap — it drops\nwhole issues, not repetitions of one — so leave it at `1.0` unless quota forces it.",
+                  "description": "Fraction of captured events sent, `0.0`-`1.0`, decided at random per event. A lower rate\nundercounts every issue and can miss a rare one entirely, so leave it at `1.0` unless\nquota forces it lower.",
                   "maximum": 1.0,
                   "minimum": 0.0,
                   "type": "number"
                 },
                 "send_default_pii": {
-                  "description": "Send personally identifying data with every event: the client IP, the full request\nheader set (`Authorization` and `Cookie` included) and the resolved user.\n\n**Off, and worth leaving off.** A reader's IP address and session cookie are exactly\nwhat a crash report does not need in order to be actionable, and Sentry is a third\nparty for the purposes of the data policy this deployment publishes. On, it also\nwidens what the HTTP middleware records, because `sentry-tower` reads this same flag\nto decide whether to redact sensitive headers.",
+                  "description": "Send personally identifying data with every event: the client IP, the full request\nheader set (`Authorization` and `Cookie` included) and the resolved user.\n\n**Off, and worth leaving off.** A crash report does not need a reader's IP address or\nsession cookie, and Sentry is a third party under the deployment's data policy. On, it\nalso stops `sentry-tower` redacting sensitive headers in the HTTP middleware.",
                   "type": "boolean"
                 },
                 "server_name": {
-                  "description": "Host tag on every event. Left unset, Sentry reports none: the hostname of a replica is\ninfrastructure detail that [`Self::send_default_pii`] would otherwise gate.",
+                  "description": "Host tag on every event. Unset, Sentry reports none.",
                   "type": "string"
                 },
                 "shutdown_timeout_secs": {
@@ -607,11 +607,11 @@
                   "type": "integer"
                 },
                 "span_attributes": {
-                  "description": "Copy `tracing` span fields onto the Sentry span as attributes. Off: span fields in\nthis workspace routinely carry ids and user-supplied titles, and a transaction is\nstored under a longer retention than a log line.",
+                  "description": "Copy `tracing` span fields onto the Sentry span as attributes. Off by default, because span\nfields carry ids and user-supplied titles and a transaction is kept longer than a log line.",
                   "type": "boolean"
                 },
                 "traces_sample_rate": {
-                  "description": "Fraction of traces this service **starts** that are recorded, `0.0`-`1.0`.\n\n`0.0` (the default) means it starts none of its own. It does **not** mean this service\nis absent from a trace: a request or a broker message arriving with a trace already\nsampled is continued regardless, which is what keeps one reader action readable across\nthe whole tier rather than ending at the first service configured differently. Set it\nuniformly anyway — `0.05`-`0.2` is an ordinary production figure — since the service\nthat *starts* a trace is the one whose rate decides whether it exists at all.",
+                  "description": "Fraction of traces this service **starts** that are recorded, `0.0`-`1.0`.\n\n`0.0`, the default, starts none. The service still continues a trace that arrives already\nsampled on a request or a broker message. Set the same rate on every service, since the\nservice that starts a trace decides whether it exists; `0.05`-`0.2` is an ordinary\nproduction figure.",
                   "maximum": 1.0,
                   "minimum": 0.0,
                   "type": "number"
@@ -620,7 +620,7 @@
               "type": "object"
             },
             "service_name": {
-              "description": "Logical service name reported in traces/metrics.",
+              "description": "Service name reported in traces and metrics.",
               "type": "string"
             }
           },
@@ -633,7 +633,7 @@
     "producer": {
       "loader": "figment",
       "name": "terrace-config",
-      "version": "0.15.1"
+      "version": "0.17.0"
     },
     "schema": {
       "dialect": {
@@ -649,7 +649,7 @@
           },
           "default": null,
           "default_value": null,
-          "docs": "e.g. `postgres://user:pass@host:5432/tankovault`.\n\nA [`SecretString`]: the DSN carries the password, and this struct's `Debug` is nested\ninside state routinely logged with `?`.",
+          "docs": "The connection URL, such as `postgres://user:pass@host:5432/tankovault`.",
           "env": "TANKOVAULT_DATABASE__URL",
           "env_aliases": [],
           "env_file": "TANKOVAULT_DATABASE__URL_FILE",
@@ -729,7 +729,7 @@
           },
           "default": null,
           "default_value": null,
-          "docs": "Logical service name reported in traces/metrics.",
+          "docs": "Service name reported in traces and metrics.",
           "env": "TANKOVAULT_TELEMETRY__SERVICE_NAME",
           "env_aliases": [],
           "env_file": "TANKOVAULT_TELEMETRY__SERVICE_NAME_FILE",
@@ -752,7 +752,7 @@
           },
           "default": null,
           "default_value": null,
-          "docs": "**`TANKOVAULT_TELEMETRY__OTLP_ENDPOINT` is removed** (it silently did nothing); setting\nit is now a hard config error. Re-add only with a real `OpenTelemetryLayer`.\n\n`RUST_LOG`-style filter (e.g. `info,tankovault=debug`).",
+          "docs": "`tracing` filter directives, such as `info,tankovault=debug`. `RUST_LOG` wins when set.",
           "env": "TANKOVAULT_TELEMETRY__LOG_FILTER",
           "env_aliases": [],
           "env_file": "TANKOVAULT_TELEMETRY__LOG_FILTER_FILE",
@@ -775,7 +775,7 @@
           },
           "default": null,
           "default_value": null,
-          "docs": "Emit structured JSON logs (production) vs. pretty logs (dev).",
+          "docs": "Emit structured JSON logs, for production, in place of the human-readable format.",
           "env": "TANKOVAULT_TELEMETRY__JSON_LOGS",
           "env_aliases": [],
           "env_file": "TANKOVAULT_TELEMETRY__JSON_LOGS_FILE",
@@ -829,7 +829,7 @@
           },
           "default": null,
           "default_value": null,
-          "docs": "Ingest URL, `https://<key>@<host>/<project>`.\n\nA [`SecretString`]: the embedded key is a bearer credential for the project's ingest\nendpoint, and this struct is nested in a `TelemetryConfig` that is logged with `?`.\nAbsent while [`Self::enabled`] is set is a boot failure, not a silent no-op.",
+          "docs": "Ingest URL, `https://<key>@<host>/<project>`.\n\nRequired while [`Self::enabled`] is set.",
           "env": "TANKOVAULT_TELEMETRY__SENTRY__DSN",
           "env_aliases": [],
           "env_file": "TANKOVAULT_TELEMETRY__SENTRY__DSN_FILE",
@@ -875,7 +875,7 @@
           },
           "default": null,
           "default_value": null,
-          "docs": "Release tag on every event; defaults to the workspace version the binary was built\nfrom, which is what makes a regression attributable to a deploy.",
+          "docs": "Release tag on every event. Unset, it is the workspace version the binary was built\nfrom, which ties an issue to a deploy.",
           "env": "TANKOVAULT_TELEMETRY__SENTRY__RELEASE",
           "env_aliases": [],
           "env_file": "TANKOVAULT_TELEMETRY__SENTRY__RELEASE_FILE",
@@ -898,7 +898,7 @@
           },
           "default": null,
           "default_value": null,
-          "docs": "Host tag on every event. Left unset, Sentry reports none: the hostname of a replica is\ninfrastructure detail that [`Self::send_default_pii`] would otherwise gate.",
+          "docs": "Host tag on every event. Unset, Sentry reports none.",
           "env": "TANKOVAULT_TELEMETRY__SENTRY__SERVER_NAME",
           "env_aliases": [],
           "env_file": "TANKOVAULT_TELEMETRY__SENTRY__SERVER_NAME_FILE",
@@ -923,7 +923,7 @@
           },
           "default": null,
           "default_value": null,
-          "docs": "Fraction of captured events actually sent, `0.0`-`1.0`. A blunt volume cap — it drops\nwhole issues, not repetitions of one — so leave it at `1.0` unless quota forces it.",
+          "docs": "Fraction of captured events sent, `0.0`-`1.0`, decided at random per event. A lower rate\nundercounts every issue and can miss a rare one entirely, so leave it at `1.0` unless\nquota forces it lower.",
           "env": "TANKOVAULT_TELEMETRY__SENTRY__SAMPLE_RATE",
           "env_aliases": [],
           "env_file": "TANKOVAULT_TELEMETRY__SENTRY__SAMPLE_RATE_FILE",
@@ -948,7 +948,7 @@
           },
           "default": null,
           "default_value": null,
-          "docs": "Fraction of traces this service **starts** that are recorded, `0.0`-`1.0`.\n\n`0.0` (the default) means it starts none of its own. It does **not** mean this service\nis absent from a trace: a request or a broker message arriving with a trace already\nsampled is continued regardless, which is what keeps one reader action readable across\nthe whole tier rather than ending at the first service configured differently. Set it\nuniformly anyway — `0.05`-`0.2` is an ordinary production figure — since the service\nthat *starts* a trace is the one whose rate decides whether it exists at all.",
+          "docs": "Fraction of traces this service **starts** that are recorded, `0.0`-`1.0`.\n\n`0.0`, the default, starts none. The service still continues a trace that arrives already\nsampled on a request or a broker message. Set the same rate on every service, since the\nservice that starts a trace decides whether it exists; `0.05`-`0.2` is an ordinary\nproduction figure.",
           "env": "TANKOVAULT_TELEMETRY__SENTRY__TRACES_SAMPLE_RATE",
           "env_aliases": [],
           "env_file": "TANKOVAULT_TELEMETRY__SENTRY__TRACES_SAMPLE_RATE_FILE",
@@ -1021,7 +1021,7 @@
           },
           "default": null,
           "default_value": null,
-          "docs": "Least severe `tracing` level kept as a **breadcrumb** — the trail attached to the next\nissue. Records at or above [`Self::capture_level`] become issues instead.",
+          "docs": "Least severe `tracing` level kept as a **breadcrumb**, the trail attached to the next\nissue. Records at or above [`Self::capture_level`] become issues instead.",
           "env": "TANKOVAULT_TELEMETRY__SENTRY__BREADCRUMB_LEVEL",
           "env_aliases": [],
           "env_file": "TANKOVAULT_TELEMETRY__SENTRY__BREADCRUMB_LEVEL_FILE",
@@ -1110,7 +1110,7 @@
           },
           "default": null,
           "default_value": null,
-          "docs": "Send personally identifying data with every event: the client IP, the full request\nheader set (`Authorization` and `Cookie` included) and the resolved user.\n\n**Off, and worth leaving off.** A reader's IP address and session cookie are exactly\nwhat a crash report does not need in order to be actionable, and Sentry is a third\nparty for the purposes of the data policy this deployment publishes. On, it also\nwidens what the HTTP middleware records, because `sentry-tower` reads this same flag\nto decide whether to redact sensitive headers.",
+          "docs": "Send personally identifying data with every event: the client IP, the full request\nheader set (`Authorization` and `Cookie` included) and the resolved user.\n\n**Off, and worth leaving off.** A crash report does not need a reader's IP address or\nsession cookie, and Sentry is a third party under the deployment's data policy. On, it\nalso stops `sentry-tower` redacting sensitive headers in the HTTP middleware.",
           "env": "TANKOVAULT_TELEMETRY__SENTRY__SEND_DEFAULT_PII",
           "env_aliases": [],
           "env_file": "TANKOVAULT_TELEMETRY__SENTRY__SEND_DEFAULT_PII_FILE",
@@ -1137,7 +1137,7 @@
           },
           "default": null,
           "default_value": null,
-          "docs": "Record request spans through the shared HTTP stack: one Sentry transaction per\nrequest, named by the *matched route* rather than the URI, so an id in the path does\nnot become its own transaction name.\n\nWhether a started transaction is *kept* is [`Self::traces_sample_rate`]'s decision.\nThis is the switch for a service that should stay out of traces entirely.",
+          "docs": "Record one Sentry transaction per request through the shared HTTP stack, named by the\nmatched route, so an id in the path does not become a transaction name.\n\n[`Self::traces_sample_rate`] decides whether a transaction is kept. Off, the HTTP layer\nstarts no transactions; a broker delivery still starts one through the `tracing` layer.",
           "env": "TANKOVAULT_TELEMETRY__SENTRY__HTTP_TRANSACTIONS",
           "env_aliases": [],
           "env_file": "TANKOVAULT_TELEMETRY__SENTRY__HTTP_TRANSACTIONS_FILE",
@@ -1164,7 +1164,7 @@
           },
           "default": null,
           "default_value": null,
-          "docs": "Copy `tracing` span fields onto the Sentry span as attributes. Off: span fields in\nthis workspace routinely carry ids and user-supplied titles, and a transaction is\nstored under a longer retention than a log line.",
+          "docs": "Copy `tracing` span fields onto the Sentry span as attributes. Off by default, because span\nfields carry ids and user-supplied titles and a transaction is kept longer than a log line.",
           "env": "TANKOVAULT_TELEMETRY__SENTRY__SPAN_ATTRIBUTES",
           "env_aliases": [],
           "env_file": "TANKOVAULT_TELEMETRY__SENTRY__SPAN_ATTRIBUTES_FILE",
@@ -1219,7 +1219,7 @@
           },
           "default": null,
           "default_value": null,
-          "docs": "Print the SDK's own diagnostics to stderr. For proving a DSN works, not for running.",
+          "docs": "Print the SDK's own diagnostics to stderr, to prove a DSN works.",
           "env": "TANKOVAULT_TELEMETRY__SENTRY__DEBUG",
           "env_aliases": [],
           "env_file": "TANKOVAULT_TELEMETRY__SENTRY__DEBUG_FILE",
@@ -1315,7 +1315,7 @@
           },
           "default": null,
           "default_value": null,
-          "docs": "Base64 32-byte data-encryption key for tokens at rest — opens every user's stored\n`AniList` access and refresh token.",
+          "docs": "Base64 32-byte data-encryption key for tokens at rest, which opens every user's stored\n`AniList` access and refresh token.",
           "env": "TANKOVAULT_ANILIST__TOKEN_ENCRYPTION_KEY",
           "env_aliases": [],
           "env_file": "TANKOVAULT_ANILIST__TOKEN_ENCRYPTION_KEY_FILE",
@@ -1688,7 +1688,7 @@
           },
           "default": null,
           "default_value": null,
-          "docs": "Whether the shipped [`tankovault_domain::DEFAULT_BLOCKED_TERMS`] apply.\n\nAn escape hatch for a deployment whose catalogue genuinely uses one of them as a genre.\nTurning it off does not remove what is already stored — nothing in the normal path\nretracts a tag or a credit — but stops it being refused from the next scan onwards.",
+          "docs": "Whether the shipped [`tankovault_domain::DEFAULT_BLOCKED_TERMS`] apply.\n\nTurn it off for a catalogue that uses one of them as a genre. Turning it off stops the\nrefusal from the next scan on and leaves stored tags and credits as they are.",
           "env": "TANKOVAULT_METADATA__TAGS__USE_DEFAULTS",
           "env_aliases": [],
           "env_file": "TANKOVAULT_METADATA__TAGS__USE_DEFAULTS_FILE",
@@ -1909,7 +1909,7 @@
           },
           "default": null,
           "default_value": null,
-          "docs": "Exact origins allowed, e.g. `https://app.example.com`. Empty disables CORS entirely.",
+          "docs": "Exact origins allowed, such as `https://app.example.com`. Empty disables CORS.",
           "env": "TANKOVAULT_SECURITY__CORS__ALLOWED_ORIGINS",
           "env_aliases": [],
           "env_file": "TANKOVAULT_SECURITY__CORS__ALLOWED_ORIGINS_FILE",
@@ -1936,7 +1936,7 @@
           },
           "default": null,
           "default_value": null,
-          "docs": "Allow credentialed cross-origin requests (cookies, `Authorization`). Cannot combine\nwith a wildcard origin.",
+          "docs": "Allow credentialed cross-origin requests, carrying cookies or `Authorization`. Cannot be\ncombined with a wildcard origin.",
           "env": "TANKOVAULT_SECURITY__CORS__ALLOW_CREDENTIALS",
           "env_aliases": [],
           "env_file": "TANKOVAULT_SECURITY__CORS__ALLOW_CREDENTIALS_FILE",
@@ -1964,7 +1964,7 @@
           },
           "default": null,
           "default_value": null,
-          "docs": "`Access-Control-Max-Age`, seconds.",
+          "docs": "`Access-Control-Max-Age`, in seconds.",
           "env": "TANKOVAULT_SECURITY__CORS__MAX_AGE_SECS",
           "env_aliases": [],
           "env_file": "TANKOVAULT_SECURITY__CORS__MAX_AGE_SECS_FILE",
@@ -2047,7 +2047,7 @@
           },
           "default": null,
           "default_value": null,
-          "docs": "Emit `Strict-Transport-Security`; meaningless without TLS (browsers ignore it over\nplain HTTP).",
+          "docs": "Emit `Strict-Transport-Security`. Browsers ignore it over plain HTTP.",
           "env": "TANKOVAULT_SECURITY__HSTS",
           "env_aliases": [],
           "env_file": "TANKOVAULT_SECURITY__HSTS_FILE",
@@ -2075,7 +2075,7 @@
           },
           "default": null,
           "default_value": null,
-          "docs": "`max-age` for the HSTS header, seconds (default: two years, the preload minimum).",
+          "docs": "`max-age` for the HSTS header, in seconds. The default is two years, the preload minimum.",
           "env": "TANKOVAULT_SECURITY__HSTS_MAX_AGE_SECS",
           "env_aliases": [],
           "env_file": "TANKOVAULT_SECURITY__HSTS_MAX_AGE_SECS_FILE",
@@ -2129,7 +2129,7 @@
           },
           "default": null,
           "default_value": null,
-          "docs": "Accept an inbound `X-Request-Id` instead of minting one. Requires a trusted proxy —\na client-supplied id could otherwise poison log correlation.",
+          "docs": "Accept an inbound `X-Request-Id` instead of minting one. Enable it only behind a trusted\nproxy, since a client-supplied id can poison log correlation.",
           "env": "TANKOVAULT_SECURITY__TRUST_REQUEST_ID",
           "env_aliases": [],
           "env_file": "TANKOVAULT_SECURITY__TRUST_REQUEST_ID_FILE",
@@ -2156,7 +2156,7 @@
           },
           "default": null,
           "default_value": null,
-          "docs": "Serve the browsable API docs (`/scalar`) and the `OpenAPI` document.\n\nDefaults off in production, on elsewhere (hence a function, not a literal): left on,\nit hands an attacker the whole admin surface — every `/v1/admin/*` path, the\npermission vocabulary, exact request bodies — with no failed probe.",
+          "docs": "Serve the browsable API docs (`/scalar`) and the `OpenAPI` document.\n\nOff by default in production and on elsewhere. Left on in production, it gives an\nattacker every `/v1/admin/*` path, the permission vocabulary and the exact request bodies\nwithout a failed probe.",
           "env": "TANKOVAULT_SECURITY__EXPOSE_API_DOCS",
           "env_aliases": [],
           "env_file": "TANKOVAULT_SECURITY__EXPOSE_API_DOCS_FILE",
@@ -2183,7 +2183,7 @@
           },
           "default": null,
           "default_value": null,
-          "docs": "Enforce limits. When `false` the layer is not mounted at all (no per-request cost).",
+          "docs": "Enforce limits. When `false` the layer is not mounted and costs nothing per request.",
           "env": "TANKOVAULT_RATE_LIMIT__ENABLED",
           "env_aliases": [],
           "env_file": "TANKOVAULT_RATE_LIMIT__ENABLED_FILE",
@@ -2214,7 +2214,7 @@
           },
           "default": null,
           "default_value": null,
-          "docs": "Counter store. See [`RateLimitBackend`].",
+          "docs": "Where the counters live.",
           "env": "TANKOVAULT_RATE_LIMIT__BACKEND",
           "env_aliases": [],
           "env_file": "TANKOVAULT_RATE_LIMIT__BACKEND_FILE",
@@ -2246,7 +2246,7 @@
           },
           "default": null,
           "default_value": null,
-          "docs": "Sustained requests allowed per minute per client key; the bucket's refill rate.",
+          "docs": "Sustained requests allowed per minute per client key, which is the bucket's refill rate.",
           "env": "TANKOVAULT_RATE_LIMIT__GLOBAL__PER_MINUTE",
           "env_aliases": [],
           "env_file": "TANKOVAULT_RATE_LIMIT__GLOBAL__PER_MINUTE_FILE",
@@ -2275,7 +2275,7 @@
           },
           "default": null,
           "default_value": null,
-          "docs": "Bucket depth: the most requests a client may spend back-to-back.",
+          "docs": "The most requests a client may spend back-to-back.",
           "env": "TANKOVAULT_RATE_LIMIT__GLOBAL__BURST",
           "env_aliases": [],
           "env_file": "TANKOVAULT_RATE_LIMIT__GLOBAL__BURST_FILE",
@@ -2304,7 +2304,7 @@
           },
           "default": null,
           "default_value": null,
-          "docs": "Sustained requests allowed per minute per client key; the bucket's refill rate.",
+          "docs": "Sustained requests allowed per minute per client key, which is the bucket's refill rate.",
           "env": "TANKOVAULT_RATE_LIMIT__AUTH__PER_MINUTE",
           "env_aliases": [],
           "env_file": "TANKOVAULT_RATE_LIMIT__AUTH__PER_MINUTE_FILE",
@@ -2333,7 +2333,7 @@
           },
           "default": null,
           "default_value": null,
-          "docs": "Bucket depth: the most requests a client may spend back-to-back.",
+          "docs": "The most requests a client may spend back-to-back.",
           "env": "TANKOVAULT_RATE_LIMIT__AUTH__BURST",
           "env_aliases": [],
           "env_file": "TANKOVAULT_RATE_LIMIT__AUTH__BURST_FILE",
@@ -2362,7 +2362,7 @@
           },
           "default": null,
           "default_value": null,
-          "docs": "Sustained requests allowed per minute per client key; the bucket's refill rate.",
+          "docs": "Sustained requests allowed per minute per client key, which is the bucket's refill rate.",
           "env": "TANKOVAULT_RATE_LIMIT__EXPENSIVE__PER_MINUTE",
           "env_aliases": [],
           "env_file": "TANKOVAULT_RATE_LIMIT__EXPENSIVE__PER_MINUTE_FILE",
@@ -2391,7 +2391,7 @@
           },
           "default": null,
           "default_value": null,
-          "docs": "Bucket depth: the most requests a client may spend back-to-back.",
+          "docs": "The most requests a client may spend back-to-back.",
           "env": "TANKOVAULT_RATE_LIMIT__EXPENSIVE__BURST",
           "env_aliases": [],
           "env_file": "TANKOVAULT_RATE_LIMIT__EXPENSIVE__BURST_FILE",
@@ -2418,7 +2418,7 @@
           },
           "default": null,
           "default_value": null,
-          "docs": "Trust `X-Forwarded-For`/`X-Real-IP` for the client key. **Only behind a reverse proxy\nthat overwrites these** — otherwise any client can forge a fresh identity and bypass\nthe limiter.",
+          "docs": "Take the client key from `X-Forwarded-For` or `X-Real-IP`. Enable it **only behind a\nreverse proxy that overwrites both**; otherwise any client forges a fresh key and bypasses\nthe limiter.",
           "env": "TANKOVAULT_RATE_LIMIT__TRUST_FORWARDED_FOR",
           "env_aliases": [],
           "env_file": "TANKOVAULT_RATE_LIMIT__TRUST_FORWARDED_FOR_FILE",
@@ -2495,7 +2495,7 @@
           },
           "default": null,
           "default_value": null,
-          "docs": "Address the scrape endpoint binds to on its **own** listener (default `0.0.0.0:9090`),\nisolated from the service's public port. `None` merges it onto the primary port.",
+          "docs": "Address the scrape endpoint binds on its **own** listener, apart from the service's\npublic port (default `0.0.0.0:9090`). `null` serves it on the primary port.",
           "env": "TANKOVAULT_METRICS__LISTEN",
           "env_aliases": [],
           "env_file": "TANKOVAULT_METRICS__LISTEN_FILE",
@@ -2518,7 +2518,7 @@
           },
           "default": null,
           "default_value": null,
-          "docs": "Also record per-request HTTP metrics. Separate from [`Self::enabled`]: the request\nhistogram is the expensive, high-cardinality part.",
+          "docs": "Also record per-request HTTP metrics. The request histogram is the expensive,\nhigh-cardinality part, so it has its own switch.",
           "env": "TANKOVAULT_METRICS__HTTP_REQUESTS",
           "env_aliases": [],
           "env_file": "TANKOVAULT_METRICS__HTTP_REQUESTS_FILE",
@@ -2546,7 +2546,7 @@
           },
           "default": null,
           "default_value": null,
-          "docs": "Seconds between refreshes of a service's cached flag snapshot — the propagation delay\nto *other* replicas (the one that served the change applies it immediately).",
+          "docs": "Seconds between refreshes of a service's cached flag snapshot. It is how long a change\ntakes to reach the other replicas; the replica that served the change applies it at once.",
           "env": "TANKOVAULT_FEATURES__REFRESH_SECS",
           "env_aliases": [],
           "env_file": "TANKOVAULT_FEATURES__REFRESH_SECS_FILE",
@@ -2578,7 +2578,7 @@
           },
           "default": null,
           "default_value": null,
-          "docs": "How callers are identified. See [`IdentityMode`].",
+          "docs": "How callers are identified.",
           "env": "TANKOVAULT_INTERNAL__IDENTITY",
           "env_aliases": [],
           "env_file": "TANKOVAULT_INTERNAL__IDENTITY_FILE",
@@ -2609,7 +2609,7 @@
           },
           "default": null,
           "default_value": null,
-          "docs": "The name peers know this service by; must match the key they list it under.",
+          "docs": "The name peers know this service by, matching the key they list it under.",
           "env": "TANKOVAULT_INTERNAL__CALLER__NAME",
           "env_aliases": [],
           "env_file": "TANKOVAULT_INTERNAL__CALLER__NAME_FILE",
@@ -2655,7 +2655,7 @@
               "additionalProperties": false,
               "properties": {
                 "san": {
-                  "description": "The client-certificate subject alternative name this peer presents under\n`identity = \"mtls\"`, e.g. `api.tankovault.svc`.",
+                  "description": "The client-certificate subject alternative name this peer presents under\n`identity = \"mtls\"`, such as `api.tankovault.svc`.",
                   "type": "string"
                 },
                 "token": {
@@ -2766,7 +2766,7 @@
           },
           "default": null,
           "default_value": null,
-          "docs": "Address the credential-free `/health` and `/ready` probes bind to, in **plaintext**, on\ntheir own listener (default `0.0.0.0:9091`). Read under `mtls` only.\n\nAn orchestrator probe presents no client certificate, so on the mTLS port its plain\n`GET` is answered with a TLS alert rather than a response and the replica is restarted\nas unhealthy. `null` drops the listener, which is right only where whatever does the\nprobing *can* present a certificate.",
+          "docs": "Address the credential-free `/health` and `/ready` probes bind to, in **plaintext**, on\ntheir own listener (default `0.0.0.0:9091`). Read under `mtls` only.\n\nAn orchestrator probe presents no client certificate, so on the mTLS port its plain `GET`\ngets a TLS alert and the replica is restarted as unhealthy. Set it to `null`, which drops\nthe listener, only where the prober can present a certificate.",
           "env": "TANKOVAULT_INTERNAL__TLS__PROBE_LISTEN",
           "env_aliases": [],
           "env_file": "TANKOVAULT_INTERNAL__TLS__PROBE_LISTEN_FILE",
@@ -2789,7 +2789,7 @@
           },
           "default": null,
           "default_value": null,
-          "docs": "The retired tier-wide shared secret. Present only so a deployment that still sets it is\ntold what to do instead; see [`InternalAuthConfig::resolve`].",
+          "docs": "Refused at boot. [`InternalAuthConfig::resolve`] names the per-caller keys that replace it.",
           "env": "TANKOVAULT_INTERNAL__TOKEN",
           "env_aliases": [],
           "env_file": "TANKOVAULT_INTERNAL__TOKEN_FILE",
@@ -2835,7 +2835,7 @@
           },
           "default": null,
           "default_value": null,
-          "docs": "At or above this score, and not attached, create the series but flag the pair for\noperator review.",
+          "docs": "At or above this score, a title that did not attach creates the series and flags the pair\nfor operator review.",
           "env": "TANKOVAULT_MATCHING__LOW",
           "env_aliases": [],
           "env_file": "TANKOVAULT_MATCHING__LOW_FILE",
@@ -2858,7 +2858,7 @@
           },
           "default": null,
           "default_value": null,
-          "docs": "At or above this score — **and** only when a primary identity rule fired — the\nduplicate sweep merges two existing series without an operator. A separate knob from\n[`Self::high`]: that files an incoming source, this deletes one that already exists.\nSee `tankovault_matcher::adjudicate` for the identity half of the bar.",
+          "docs": "At or above this score, and only when a primary identity rule fired, the duplicate sweep\nmay merge two existing series without an operator. A corroborated alias is eligible from\n[`Self::low`] up, whatever this is set to, because its corroboration, not its score, is the\nevidence. Either way an edition conflict, or a numeric conflict with its guard enabled,\nreports the pair distinct, and an external-id or live-timing veto or any other enabled\nmerge guard holds it for review.\n[`Self::high`] files an incoming source; this deletes a series that already exists.\n`tankovault_matcher::adjudicate` defines the identity rules, vetoes and guards.",
           "env": "TANKOVAULT_MATCHING__AUTO_MERGE",
           "env_aliases": [],
           "env_file": "TANKOVAULT_MATCHING__AUTO_MERGE_FILE",
@@ -2881,7 +2881,7 @@
           },
           "default": null,
           "default_value": null,
-          "docs": "How many trigram candidates to score per query title; more only costs a wider index scan.",
+          "docs": "How many trigram candidates to score per query title. A higher value widens the index scan.",
           "env": "TANKOVAULT_MATCHING__CANDIDATE_LIMIT",
           "env_aliases": [],
           "env_file": "TANKOVAULT_MATCHING__CANDIDATE_LIMIT_FILE",
@@ -2908,7 +2908,7 @@
           },
           "default": null,
           "default_value": null,
-          "docs": "Titles carrying different numbers (`Overlord` against `Overlord 2`) are reported as\ndistinct works rather than queued. Switching this off makes a sequel merge-eligible on\ntitle similarity alone, which is the single most expensive mistake this scorer can make —\nthere is no other rule that distinguishes a sequel from its predecessor.",
+          "docs": "Titles carrying different numbers (`Overlord` against `Overlord 2`) are reported as\ndistinct works. Switching this off makes a sequel merge-eligible on title similarity\nalone, and no other rule tells a sequel from its predecessor.",
           "env": "TANKOVAULT_MATCHING__BLOCK_AUTO_MERGE_ON_NUMERIC_CONFLICT",
           "env_aliases": [],
           "env_file": "TANKOVAULT_MATCHING__BLOCK_AUTO_MERGE_ON_NUMERIC_CONFLICT_FILE",
@@ -2962,7 +2962,7 @@
           },
           "default": null,
           "default_value": null,
-          "docs": "Release years three or more years apart. Catches re-serialisations and remakes that share\nan exact title. The year never moves a score, so this guard is the only way it can hold a\npair back.",
+          "docs": "Release years three or more years apart, as with re-serialisations and remakes that share\nan exact title. The year never moves a score, so this guard is the only way it holds a\npair back.",
           "env": "TANKOVAULT_MATCHING__BLOCK_AUTO_MERGE_ON_YEAR_CONFLICT",
           "env_aliases": [],
           "env_file": "TANKOVAULT_MATCHING__BLOCK_AUTO_MERGE_ON_YEAR_CONFLICT_FILE",
@@ -3041,9 +3041,9 @@
     "terrace_contract": 1
   },
   "source": {
-    "digest": "sha256:86eeb5e466ca1c558bc44458468719fb6d27acd5320fa773b59d9ef98269a166",
-    "fetched": "2026-10-27T10:33:05Z",
+    "digest": "sha256:fa157b53880ddc9ffca424dbf5f4e960b4375b86e562ae0903481bad9ac4b8ef",
+    "fetched": "2026-10-29T10:55:07Z",
     "image": "docker.io/timschoenle/tankovault-sync",
-    "sha256": "a4b2342db595a005b17839b6543418b478e8f323fa610a5a4d7039e874b2103c"
+    "sha256": "d41f9da37bb9193eb10549e3ea2c17923ed355d1e5efd282467bd1307583e8ea"
   }
 }

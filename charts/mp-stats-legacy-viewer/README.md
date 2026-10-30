@@ -1,6 +1,6 @@
 # mp-stats-legacy-viewer
 
-![Version: 3.5.18](https://img.shields.io/badge/Version-3.5.18-informational?style=flat-square) ![AppVersion: v0.21.7](https://img.shields.io/badge/AppVersion-v0.21.7-informational?style=flat-square)
+![Version: 3.5.19](https://img.shields.io/badge/Version-3.5.19-informational?style=flat-square) ![AppVersion: v0.21.8](https://img.shields.io/badge/AppVersion-v0.21.8-informational?style=flat-square)
 
 This chart deploys mp-stats-legacy-viewer, which serves historical Minecraft server statistics as sharded binary chunks that a Dioxus client queries in the browser.
 
@@ -466,11 +466,11 @@ policy pointing at the wrong Gateway looks correct and blocks everything.
 | gateway.tls.enabled | bool | `false` | Add an HTTPS listener. |
 | gateway.tls.mode | string | `"Terminate"` | TLS mode. |
 | gateway.tls.options | object | `{}` | Implementation-specific TLS options. |
-| image | object | `{"pullPolicy":"","registry":"","repository":"timschoenle/mp-stats-legacy-viewer","tag":"v0.21.7@sha256:de71313c6c244ef16f5927672aa12c4d5534eb61abca213a60618a7384ac3ddc"}` | Container image the pod runs, composed as `registry/repository:tag`. |
+| image | object | `{"pullPolicy":"","registry":"","repository":"timschoenle/mp-stats-legacy-viewer","tag":"v0.21.8@sha256:c90cf0185d62a317c8e97a37e09e079397ba1fbc4f0886c4a28f827087716f6b"}` | Container image the pod runs, composed as `registry/repository:tag`. |
 | image.pullPolicy | string | `""` | The image pull policy. Empty resolves automatically from the tag/digest. |
 | image.registry | string | `""` | Registry host. Empty means Docker Hub. |
 | image.repository | string | `"timschoenle/mp-stats-legacy-viewer"` | The container image repository. |
-| image.tag | string | `"v0.21.7@sha256:de71313c6c244ef16f5927672aa12c4d5534eb61abca213a60618a7384ac3ddc"` | The container image tag, pinned by digest (`vX.Y.Z@sha256:...`). The digest pins the pull, while the tag stays on as the readable version marker. Defaults to the chart's `appVersion` when empty. |
+| image.tag | string | `"v0.21.8@sha256:c90cf0185d62a317c8e97a37e09e079397ba1fbc4f0886c4a28f827087716f6b"` | The container image tag, pinned by digest (`vX.Y.Z@sha256:...`). The digest pins the pull, while the tag stays on as the readable version marker. Defaults to the chart's `appVersion` when empty. |
 | imagePullSecrets | list | `[]` | Optional image pull secrets for private registries. |
 | ingress | object | `{"annotations":{},"enabled":false,"hosts":[],"ingressClassName":"nginx","tls":[]}` | The Ingress in front of the Service. Off by default; `gateway` is the Gateway API alternative and the two are independent switches. |
 | ingress.annotations | object | `{}` | Custom annotations for the Ingress resource. Useful for configuring ingress controllers (e.g., cert-manager, rate limits). |

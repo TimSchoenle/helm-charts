@@ -108,7 +108,6 @@ always-emitted `false` would silently override the same key written by hand in t
 {{- $spec := include "tankovault.spec" $service | fromYaml -}}
 {{- $external := include "tankovault.externalUrl" $ctx -}}
 {{- $redis := include "tankovault.redisUrl" $ctx -}}
-{{- $nats := include "tankovault.natsUrl" $ctx -}}
 bind_addr: {{ printf "0.0.0.0:%v" $spec.port | quote }}
 telemetry:
   service_name: {{ $spec.slug | quote }}
@@ -119,17 +118,12 @@ telemetry:
 metrics:
   enabled: {{ $ctx.Values.metrics.enabled }}
   listen: {{ printf "0.0.0.0:%v" $ctx.Values.metrics.port | quote }}
+{{- /* `nats.url` is a secret key, so it reaches the pod through the Secret: `tankovault.secretSources`. */ -}}
 {{- if $spec.needsNats }}
-{{- $natsUrl := and $nats (not $ctx.Values.externalNats.perServiceSecret) }}
 {{- $eventsMaxAge := $ctx.Values.nats.eventsMaxAgeSecs }}
-{{- if or $natsUrl (not (kindIs "invalid" $eventsMaxAge)) }}
+{{- if not (kindIs "invalid" $eventsMaxAge) }}
 nats:
-  {{- if $natsUrl }}
-  url: {{ $nats | quote }}
-  {{- end }}
-  {{- if not (kindIs "invalid" $eventsMaxAge) }}
   events_max_age_secs: {{ $eventsMaxAge }}
-  {{- end }}
 {{- end }}
 {{- end }}
 {{- with include "tankovault.internalConfig" (dict "ctx" $ctx "service" $service) }}

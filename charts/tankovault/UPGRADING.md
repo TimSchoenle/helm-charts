@@ -7,6 +7,7 @@ Some of them require a manual step that nothing will remind you about:
 
 | Version | Applies to | Step |
 |---|---|---|
+| [6.3.0](#630) | releases using `existingSecret` with the bundled NATS or `externalNats.url` | add `nats__url` to it |
 | [6.2.0](#620) | releases with `trawl.replicaCount` above 1 that rely on surge capacity during a rollout | set `trawl.strategy` back to a surging one, or accept one replica fewer while it rolls |
 | [6.2.0](#620) | releases that hand-write `trawl.affinity` to spread TRAWL | optionally replace it with `trawl.podAntiAffinity: hard` |
 | [6.0.0](#600) | releases that publish legal documents | move `content` to `body`; move `sources` texts into `body`; drop `legal.dir` |
@@ -24,6 +25,26 @@ Some of them require a manual step that nothing will remind you about:
 
 The values contract is enforced by `values.schema.json`, so a key a new major removed or
 renamed fails the render with the offending path named, rather than being silently ignored.
+
+## 6.3.0
+
+**The NATS URL moves from `config.toml` into the Secret.**
+
+The image declares `nats.url` a secret key, because a broker URL can carry a password, and
+terrace-contract 0.13 refuses to count a secret key that is written into the configuration
+document. The chart now writes the URL it derives from `nats` or `externalNats.url` into its
+Secret as `nats__url` and projects it into the four services that speak to NATS, as it already did
+for `database__url`. The URL itself does not change, so a release that lets the chart render its
+Secret needs nothing beyond `helm upgrade`.
+
+A release on **`existingSecret`** gets no chart-rendered Secret, so add the key to yours. It is
+the URL the chart used to write: `nats://<release>-tankovault-nats:4222` for the bundled NATS, or
+your `externalNats.url`. The pods mount the Secret with `optional: true`, so a missing key is not
+a mount failure: control-plane, worker and notifier refuse to boot naming `nats.url`, and the API
+starts without its live notification stream.
+
+`externalNats.perServiceSecret` is unchanged and still takes precedence: under it no `nats__url`
+is written or projected from the chart's Secret.
 
 ## 6.2.0
 

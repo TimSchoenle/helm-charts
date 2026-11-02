@@ -211,6 +211,9 @@ differently.
 {{- else if and $ctx.Values.externalDatabase.url (not $ctx.Values.externalDatabase.existingSecret) -}}
 {{- $_ := set $data "database__url" $ctx.Values.externalDatabase.url -}}
 {{- end -}}
+{{- if not $ctx.Values.externalNats.perServiceSecret -}}
+{{- with include "tankovault.natsUrl" $ctx }}{{- $_ := set $data "nats__url" . }}{{- end -}}
+{{- end -}}
 {{- toYaml $data -}}
 {{- end -}}
 
@@ -307,6 +310,15 @@ image's contract declares no `telemetry` key of any kind.
 */ -}}
 {{- if and $service (include "tankovault.sentry.enabled" $ctx) -}}
 {{- $keys = append $keys "telemetry__sentry__dsn" -}}
+{{- end -}}
+{{- /*
+The broker URL is a credential to the image (`nats.url` is a secret key: a URL can carry a
+password), so it is projected from the Secret rather than written into `config.toml`. Appended
+here for the Sentry DSN's reason: it follows `needsNats`, not a static key list. Left out under
+`externalNats.perServiceSecret`, which projects each service's own URL onto the same path below.
+*/ -}}
+{{- if and $spec.needsNats (not $ctx.Values.externalNats.perServiceSecret) -}}
+{{- $keys = append $keys "nats__url" -}}
 {{- end -}}
 {{- $dbExternal := and (has "database__url" $keys) $ctx.Values.externalDatabase.existingSecret -}}
 {{- $redisExternal := and (has "redis__url" $keys) $ctx.Values.externalRedis.existingSecret -}}

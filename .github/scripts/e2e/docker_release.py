@@ -25,10 +25,15 @@ What is translated, and how
                             refused rather than silently unreachable
   env / envFrom             resolved from the ConfigMaps and Secrets in the same render, with the
                             kubelet's `$(VAR)` expansion, which also applies to `command` and
-                            `args`. Handed to Docker in a private env file, never through argv,
-                            where a secret would show in a process listing, and never through the
-                            Docker client's own environment, where a rendered `PATH`, `HOME` or
-                            `DOCKER_HOST` would redirect the client itself
+                            `args`. The environment is handed to Docker in a private env file,
+                            not through argv, where a secret would show in a process listing, and
+                            never through the Docker client's own environment, where a rendered
+                            `PATH`, `HOME` or `DOCKER_HOST` would redirect the client itself.
+                            One exception, deliberately kept: a `$(VAR)` in `command` or `args`
+                            is expanded before Docker sees it, as the kubelet expands it into the
+                            container's command, so a Secret-backed variable referenced there
+                            does reach the `docker run` argv. Refusing it would refuse charts
+                            that do this legitimately
   securityContext           runAsUser/runAsGroup (a group alone keeps the image's user, as the
                             kubelet does), fsGroup and supplementalGroups as groups,
                             readOnlyRootFilesystem, capabilities, allowPrivilegeEscalation, and the

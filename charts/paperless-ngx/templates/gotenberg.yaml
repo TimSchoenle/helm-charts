@@ -22,6 +22,12 @@
   its references is a server-side request forgery primitive pointed at the cluster: tracking
   pixels resolve, and so does anything on a private address. `--chromium-disable-javascript` and
   an allow list confined to the request's own temporary directory are what keep the render local.
+
+  The allow list only confines anything when it is anchored. Gotenberg admits a URL if any
+  pattern matches anywhere in it, so an unanchored `file:///tmp/.*` also admits
+  `http://169.254.169.254/?x=file:///tmp/a`, and a document that references it is rendered with
+  whatever the metadata endpoint returns. The default therefore starts with `^`, and NOTES.txt
+  warns about any entry that does not.
 */}}
 {{- $probe := dict "enabled" true "httpGet" (dict "path" "/health" "port" "gotenberg") }}
 {{- $ctx := dict }}

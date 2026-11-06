@@ -164,7 +164,9 @@ tests:
           count: 0
 
   # An e-mail is untrusted input, and a headless browser that executes it is a request forgery
-  # primitive pointed at the cluster.
+  # primitive pointed at the cluster. Gotenberg admits a URL if an allow-list pattern matches
+  # anywhere in it, so the default is anchored: without the `^`, it also admits
+  # http://169.254.169.254/?x=file:///tmp/a.
   - it: renders e-mail with JavaScript disabled and no access beyond the request's own files
     set:
       tika.enabled: true
@@ -176,10 +178,34 @@ tests:
           value:
             - gotenberg
             - --chromium-disable-javascript=true
-            - --chromium-allow-list=file:///tmp/.*
+            - --chromium-allow-list=^file:///tmp/.*
       - equal:
           path: spec.template.spec.containers[0].livenessProbe.httpGet.path
           value: /health
+
+  - it: passes an overridden allow list to Gotenberg verbatim
+    set:
+      tika.enabled: true
+      tika.gotenberg.allowList: ^file:///tmp/.*,^https://assets\.example\.com/
+    template: gotenberg.yaml
+    documentIndex: 1
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --chromium-allow-list=^file:///tmp/.*,^https://assets\.example\.com/
+
+  - it: omits the allow-list flag when the value is empty
+    set:
+      tika.enabled: true
+      tika.gotenberg.allowList: ""
+    template: gotenberg.yaml
+    documentIndex: 1
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].args
+          value:
+            - gotenberg
+            - --chromium-disable-javascript=true
 
   # Chromium creates its crash-reporter database under $HOME before it opens a page, and a
   # read-only root filesystem leaves it nowhere to put it: the crashpad handler is then started

@@ -24,27 +24,34 @@ What is translated, and how
                             remap a port, so a Service whose port differs from its target port is
                             refused rather than silently unreachable
   env / envFrom             resolved from the ConfigMaps and Secrets in the same render, with the
-                            kubelet's `$(VAR)` expansion; passed through the environment rather
-                            than argv, so a secret never appears in a process listing
-  securityContext           runAsUser/runAsGroup, fsGroup and supplementalGroups as groups,
-                            readOnlyRootFilesystem, capabilities, allowPrivilegeEscalation, and
-                            the kubelet's refusal to start a runAsNonRoot container as root
+                            kubelet's `$(VAR)` expansion, which also applies to `command` and
+                            `args`. Handed to Docker in a private env file, never through argv,
+                            where a secret would show in a process listing, and never through the
+                            Docker client's own environment, where a rendered `PATH`, `HOME` or
+                            `DOCKER_HOST` would redirect the client itself
+  securityContext           runAsUser/runAsGroup (a group alone keeps the image's user, as the
+                            kubelet does), fsGroup and supplementalGroups as groups,
+                            readOnlyRootFilesystem, capabilities, allowPrivilegeEscalation, and the
+                            kubelet's refusal to start a runAsNonRoot container as root
   resources.limits          memory and cpu, so a limit too small for the workload fails here as it
                             would be OOM-killed there; requests have no Docker equivalent
   volumes                   persistentVolumeClaim and volumeClaimTemplates as named volumes shared
                             by claim name; emptyDir as a named volume per pod; configMap and secret
-                            as read-only bind mounts of their keys. All start empty
-                            (`volume-nocopy`), as a fresh volume does, and writable by the pod's
-                            fsGroup, as the kubelet leaves them
-  probes                    readiness, falling back to startup: httpGet and tcpSocket from the
-                            host through a loopback-published port, exec through `docker exec`
+                            as a read-only volume per pod holding their keys with `defaultMode` or
+                            per-item `mode`. All start empty (`volume-nocopy`) and are owned as the
+                            kubelet leaves them — see `_prepare_volumes` — and a `subPath` is
+                            created before the mount, as the kubelet creates it
+  probes                    a startup probe gates the readiness probe, as it does in Kubernetes:
+                            httpGet and tcpSocket from the host through a loopback-published port,
+                            exec through `docker exec`
 
 What is not
 -----------
 NetworkPolicy, scheduling, RBAC, and anything a controller reconciles. Those are covered by the
 render, policy and install gates; this module exists for the behaviour none of them can see.
-Anything the translation does not understand is refused with an error naming it, never skipped:
-a test that quietly ran something other than what the chart renders would be worse than none.
+Anything the translation does not understand is refused with an error naming it, never skipped
+and never approximated more permissively than Kubernetes: a test that quietly ran something other
+than what the chart renders, or passed where the cluster would fail, would be worse than none.
 """
 
 from __future__ import annotations
@@ -52,6 +59,7 @@ from __future__ import annotations
 import base64
 import os
 import re
+import shlex
 import shutil
 import socket
 import ssl
@@ -75,25 +83,29 @@ WORKLOAD_KINDS = ("Deployment", "StatefulSet")
 # trying forever; a test has to stop and say so.
 MAX_RESTARTS = 3
 
+# The kubelet's default for configMap and secret volume files when neither `defaultMode` nor an
+# item's `mode` says otherwise.
+DEFAULT_FILE_MODE = 0o644
+
 _QUANTITY = re.compile(r"^([0-9.]+)([A-Za-z]*)$")
 _BINARY_SUFFIXES = {"Ki": 2**10, "Mi": 2**20, "Gi": 2**30, "Ti": 2**40}
 _DECIMAL_SUFFIXES = {"": 1, "k": 10**3, "M": 10**6, "G": 10**9, "T": 10**12, "m": 10**-3}
 _ENV_REFERENCE = re.compile(r"\$\$|\$\(([A-Za-z_][A-Za-z0-9_]*)\)")
+_SUBPATH = re.compile(r"^(?!/)(?!.*(?:^|/)\.\.(?:/|$)).+$")
 
 
 class ReleaseError(RuntimeError):
     """The release could not be run, or the render asks for something this module cannot honour."""
 
 
-def docker(*args: str, env: dict[str, str] | None = None, timeout: float | None = None) -> str:
-    """Run a docker command and return its stdout, raising ReleaseError on a non-zero exit."""
+def docker(*args: str, timeout: float | None = None) -> str:
+    """Run a docker command and return its stdout, raising ReleaseError on a non-zero exit.
+
+    The client always runs with this process's own environment: nothing a chart renders reaches
+    it, so a rendered variable can never change which daemon, config or binary it uses.
+    """
     result = subprocess.run(
-        ["docker", *args],
-        capture_output=True,
-        text=True,
-        check=False,
-        env=env,
-        timeout=timeout,
+        ["docker", *args], capture_output=True, text=True, check=False, timeout=timeout
     )
     if result.returncode != 0:
         raise ReleaseError(
@@ -141,26 +153,43 @@ def expand_references(value: str, env: dict[str, str]) -> str:
 
 
 class Manifests:
-    """The documents one `helm template` produced, indexed for lookup."""
+    """The documents one `helm template` produced, indexed for lookup.
+
+    Every namespaced object has to be in the release namespace: a reference from a pod resolves
+    only within its own namespace, and resolving one across namespaces would start a pod the API
+    server never could.
+    """
 
     def __init__(self, documents: list[dict[str, Any]], namespace: str = "default") -> None:
         self.documents = [document for document in documents if document]
         self.namespace = namespace
+        for document in self.documents:
+            declared = (document.get("metadata") or {}).get("namespace")
+            if declared is not None and declared != namespace:
+                raise ReleaseError(
+                    f"{document.get('kind')} {document['metadata'].get('name')} is in namespace "
+                    f"{declared!r}, not the release namespace {namespace!r}; cross-namespace "
+                    "references cannot be modelled"
+                )
 
     @classmethod
     def from_yaml(cls, text: str, namespace: str = "default") -> Manifests:
+        """Parse a multi-document YAML stream as `helm template` prints it."""
         return cls(list(yaml.safe_load_all(text)), namespace)
 
     def of_kind(self, *kinds: str) -> list[dict[str, Any]]:
+        """Every document of one of the given kinds, in render order."""
         return [document for document in self.documents if document.get("kind") in kinds]
 
     def find(self, kind: str, name: str) -> dict[str, Any] | None:
+        """The document of this kind and name, or None."""
         for document in self.of_kind(kind):
             if document["metadata"]["name"] == name:
                 return document
         return None
 
     def config_map(self, name: str, optional: bool = False) -> dict[str, str]:
+        """A ConfigMap's `data`; an absent optional one is empty, an absent required one fails."""
         document = self.find("ConfigMap", name)
         if document is None:
             if optional:
@@ -169,6 +198,7 @@ class Manifests:
         return {key: str(value) for key, value in (document.get("data") or {}).items()}
 
     def secret(self, name: str, optional: bool = False) -> dict[str, str]:
+        """A Secret's decoded data, with `stringData` merged over `data` as the API server does."""
         document = self.find("Secret", name)
         if document is None:
             if optional:
@@ -181,7 +211,6 @@ class Manifests:
             key: base64.b64decode(value).decode("utf-8")
             for key, value in (document.get("data") or {}).items()
         }
-        # The API server merges `stringData` over `data` on write; so does this.
         data.update({key: str(value) for key, value in (document.get("stringData") or {}).items()})
         return data
 
@@ -193,6 +222,22 @@ class Container:
     name: str
     spec: dict[str, Any]
     docker_name: str
+
+
+@dataclass
+class Volume:
+    """A Docker named volume backing one pod volume.
+
+    `kind` is `claim` (a PersistentVolumeClaim, shared by claim name), `empty` (an emptyDir) or
+    `projected` (a configMap or secret, filled with its keys and mounted read-only).
+    """
+
+    name: str
+    kind: str
+    image: str
+    fs_group: int | None
+    definition: dict[str, Any] = field(default_factory=dict)
+    subpaths: set[str] = field(default_factory=set)
 
 
 @dataclass
@@ -214,6 +259,11 @@ class Pod:
         """The container that owns the pod's network namespace."""
         return self.containers[0]
 
+    @property
+    def fs_group(self) -> int | None:
+        value = (self.spec.get("securityContext") or {}).get("fsGroup")
+        return None if value is None else int(value)
+
     def container_port(self, port: int | str) -> int:
         """Resolve a numeric or named port against every container in the pod."""
         if isinstance(port, int) or str(port).isdigit():
@@ -224,12 +274,26 @@ class Pod:
                     return int(declared["containerPort"])
         raise ReleaseError(f"pod {self.name}: no container declares a port named {port!r}")
 
+    def published_ports(self) -> list[int]:
+        """Every port the host has to reach: those declared, and those any probe targets, which
+        a probe may name by number without the container declaring it."""
+        ports: dict[int, None] = {}
+        for container in self.containers:
+            for declared in container.spec.get("ports", []):
+                ports[int(declared["containerPort"])] = None
+            for kind in ("startupProbe", "readinessProbe", "livenessProbe"):
+                probe = container.spec.get(kind) or {}
+                action = probe.get("httpGet") or probe.get("tcpSocket")
+                if action is not None:
+                    ports[self.container_port(action["port"])] = None
+        return list(ports)
+
 
 class Release:
     """A rendered release running on the local Docker daemon.
 
     Use as a context manager: everything it creates — containers, volumes, the network and the
-    files it bind-mounts — is removed on exit, whether the run passed or not.
+    env files — is removed on exit, whether the run passed or not.
     """
 
     def __init__(self, manifests: Manifests, prefix: str | None = None) -> None:
@@ -237,9 +301,11 @@ class Release:
         self.prefix = prefix or f"e2e-{os.getpid()}"
         self.network = self.prefix
         self.pods = [self._pod(workload) for workload in manifests.of_kind(*WORKLOAD_KINDS)]
-        self._volumes: set[str] = set()
+        self._volumes: dict[str, Volume] = {}
         self._containers: list[str] = []
         self._files: Path | None = None
+        self._image_users: dict[str, str] = {}
+        self._image_volumes: dict[str, list[str]] = {}
         self._assign_aliases()
 
     # ---------------------------------------------------------------------------------------------
@@ -323,7 +389,11 @@ class Release:
             if "value" in variable:
                 env[name] = expand_references(str(variable["value"]), env)
                 continue
-            source = variable.get("valueFrom", {})
+            source = variable.get("valueFrom")
+            if not source:
+                # An entry with neither `value` nor `valueFrom` is legal and means "".
+                env[name] = ""
+                continue
             if "secretKeyRef" in source:
                 reference = source["secretKeyRef"]
                 data = self.manifests.secret(reference["name"], reference.get("optional", False))
@@ -340,15 +410,27 @@ class Release:
                 env[name] = fields[path]
                 continue
             else:
-                # An `env` entry with neither is legal and means an empty string.
-                env[name] = ""
-                continue
+                raise ReleaseError(f"pod {pod.name}: unsupported valueFrom for {name}: {source}")
             key = reference["key"]
             if key in data:
                 env[name] = data[key]
             elif not reference.get("optional", False):
                 raise ReleaseError(f"pod {pod.name}: {reference['name']} has no key {key!r}")
         return env
+
+    def _image_user(self, image: str) -> str:
+        """The user an image runs as when nothing overrides it; `0` when it declares none."""
+        if image not in self._image_users:
+            configured = docker("image", "inspect", "--format", "{{.Config.User}}", image)
+            self._image_users[image] = configured.strip().split(":", 1)[0] or "0"
+        return self._image_users[image]
+
+    def _image_volume_paths(self, image: str) -> list[str]:
+        """The paths an image declares with `VOLUME`."""
+        if image not in self._image_volumes:
+            declared = docker("image", "inspect", "--format", "{{json .Config.Volumes}}", image)
+            self._image_volumes[image] = sorted(yaml.safe_load(declared) or {})
+        return self._image_volumes[image]
 
     def _user_flags(self, pod: Pod, container: dict[str, Any], image: str) -> list[str]:
         pod_context = pod.spec.get("securityContext") or {}
@@ -359,19 +441,18 @@ class Release:
 
         flags: list[str] = []
         user, group = setting("runAsUser"), setting("runAsGroup")
-        if setting("runAsNonRoot"):
-            effective = user
-            if effective is None:
-                configured = docker("image", "inspect", "--format", "{{.Config.User}}", image)
-                effective = configured.strip().split(":", 1)[0] or "0"
-            # The kubelet only verifies a numeric user; a name it cannot resolve is refused too.
-            if str(effective) in ("0", "root") or not str(effective).isdigit():
+        if user is not None or group is not None or setting("runAsNonRoot"):
+            # A group without a user keeps the image's user with that primary group, which is
+            # what the kubelet does, rather than dropping the group.
+            effective = str(user) if user is not None else self._image_user(image)
+            if setting("runAsNonRoot") and (effective in ("0", "root") or not effective.isdigit()):
+                # The kubelet only verifies a numeric user; a name it cannot verify is refused.
                 raise ReleaseError(
                     f"pod {pod.name}: runAsNonRoot is set but the container would run as "
                     f"{effective!r}; the kubelet refuses to start it"
                 )
-        if user is not None:
-            flags += ["--user", f"{user}:{group}" if group is not None else str(user)]
+            if user is not None or group is not None:
+                flags += ["--user", effective if group is None else f"{effective}:{group}"]
         for extra in [pod_context.get("fsGroup"), *pod_context.get("supplementalGroups", [])]:
             if extra is not None:
                 flags += ["--group-add", str(extra)]
@@ -403,67 +484,90 @@ class Release:
             flags += ["--cpus", f"{parse_quantity(limits['cpu']):g}"]
         return flags
 
-    def _volume_source(self, pod: Pod, name: str) -> tuple[str, str]:
-        """Return (`volume` or `bind`, source) for one of the pod's volumes."""
-        for volume in pod.spec.get("volumes", []):
-            if volume["name"] != name:
-                continue
-            if "persistentVolumeClaim" in volume:
-                claim = volume["persistentVolumeClaim"]["claimName"]
-                return "volume", f"{self.prefix}-pvc-{claim}"
-            if "emptyDir" in volume:
-                if (volume["emptyDir"] or {}).get("medium") == "Memory":
-                    raise ReleaseError(f"pod {pod.name}: emptyDir medium Memory is not supported")
-                return "volume", f"{self.prefix}-{pod.name}-{name}"
-            if "configMap" in volume or "secret" in volume:
-                return "bind", str(self._materialise(pod, volume))
-            raise ReleaseError(f"pod {pod.name}: unsupported volume type in {volume}")
-        if name in pod.claim_templates:
-            return "volume", f"{self.prefix}-pvc-{name}-{pod.name}"
-        raise ReleaseError(f"pod {pod.name}: volumeMount names undeclared volume {name!r}")
-
-    def _materialise(self, pod: Pod, volume: dict[str, Any]) -> Path:
-        """Write a configMap or secret volume's keys to disk, for a read-only bind mount."""
-        assert self._files is not None
-        if "configMap" in volume:
-            source = volume["configMap"]
-            data = self.manifests.config_map(source["name"], source.get("optional", False))
+    def _volume(self, pod: Pod, name: str, image: str) -> Volume:
+        """The named volume backing one of the pod's volumes, registered on first use."""
+        definition: dict[str, Any] | None = None
+        for candidate in pod.spec.get("volumes", []):
+            if candidate["name"] == name:
+                definition = candidate
+                break
+        if definition is None:
+            if name not in pod.claim_templates:
+                raise ReleaseError(f"pod {pod.name}: volumeMount names undeclared volume {name!r}")
+            docker_name, kind = f"{self.prefix}-pvc-{name}-{pod.name}", "claim"
+        elif "persistentVolumeClaim" in definition:
+            claim = definition["persistentVolumeClaim"]["claimName"]
+            docker_name, kind = f"{self.prefix}-pvc-{claim}", "claim"
+        elif "emptyDir" in definition:
+            if (definition["emptyDir"] or {}).get("medium") == "Memory":
+                raise ReleaseError(f"pod {pod.name}: emptyDir medium Memory is not supported")
+            docker_name, kind = f"{self.prefix}-{pod.name}-{name}", "empty"
+        elif "configMap" in definition or "secret" in definition:
+            docker_name, kind = f"{self.prefix}-{pod.name}-{name}", "projected"
         else:
-            source = volume["secret"]
-            data = self.manifests.secret(source["secretName"], source.get("optional", False))
-        directory = self._files / pod.name / volume["name"]
-        directory.mkdir(parents=True, exist_ok=True)
-        items = source.get("items") or [{"key": key, "path": key} for key in data]
-        for item in items:
-            if item["key"] not in data:
-                raise ReleaseError(f"pod {pod.name}: volume {volume['name']} has no key {item}")
-            target = directory / item["path"]
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(data[item["key"]], encoding="utf-8")
-            target.chmod(0o644)
-        return directory
+            raise ReleaseError(f"pod {pod.name}: unsupported volume type in {definition}")
+
+        volume = self._volumes.get(docker_name)
+        if volume is None:
+            volume = Volume(docker_name, kind, image, pod.fs_group, definition or {})
+            self._volumes[docker_name] = volume
+        elif kind == "claim" and volume.fs_group != pod.fs_group:
+            raise ReleaseError(
+                f"claim volume {docker_name} is mounted by pods with different fsGroups "
+                f"({volume.fs_group} and {pod.fs_group}); the kubelet's ownership is ambiguous"
+            )
+        return volume
 
     def _mount_flags(self, pod: Pod, container: dict[str, Any]) -> list[str]:
+        image = image_reference(container["image"])
         flags: list[str] = []
         for mount in container.get("volumeMounts", []):
-            kind, source = self._volume_source(pod, mount["name"])
-            options = [f"destination={mount['mountPath']}"]
-            if kind == "volume":
-                options = [f"type=volume,source={source}", *options, "volume-nocopy=true"]
-                if mount.get("subPath"):
-                    options.append(f"volume-subpath={mount['subPath']}")
-            else:
-                path = Path(source) / mount["subPath"] if mount.get("subPath") else Path(source)
-                options = [f"type=bind,source={path}", *options]
-            if mount.get("readOnly") or kind == "bind":
+            volume = self._volume(pod, mount["name"], image)
+            options = [
+                f"type=volume,source={volume.name}",
+                f"destination={mount['mountPath']}",
+                "volume-nocopy=true",
+            ]
+            subpath = mount.get("subPath")
+            if subpath:
+                if not _SUBPATH.match(subpath):
+                    raise ReleaseError(f"pod {pod.name}: subPath {subpath!r} escapes its volume")
+                volume.subpaths.add(subpath)
+                options.append(f"volume-subpath={subpath}")
+            if mount.get("readOnly") or volume.kind == "projected":
                 options.append("readonly")
             flags += ["--mount", ",".join(options)]
+
+        # A path the image declares with `VOLUME` is an ordinary directory of the image to the
+        # kubelet, but Docker mounts a writable anonymous volume there. Under a read-only root
+        # filesystem that would let a container write where the cluster would refuse, so such a
+        # path is mounted read-only, with the image's content, as the cluster presents it.
+        mounts = container.get("volumeMounts", [])
+        mounted = [str(mount["mountPath"]).rstrip("/") for mount in mounts]
+        read_only = bool((container.get("securityContext") or {}).get("readOnlyRootFilesystem"))
+        for declared in self._image_volume_paths(image):
+            path = declared.rstrip("/")
+            if path in mounted:
+                continue
+            if any(path.startswith(f"{parent}/") for parent in mounted):
+                raise ReleaseError(
+                    f"pod {pod.name}: image VOLUME {path} lies inside a mounted volume, where "
+                    "Docker would shadow the mount's content and the kubelet would not"
+                )
+            if read_only:
+                flags += ["--mount", f"type=volume,destination={path},readonly"]
         return flags
 
-    def _run_flags(self, pod: Pod, container: Container, *, init: bool) -> list[str]:
+    def _run_flags(
+        self, pod: Pod, container: Container, env_file: Path, env: dict[str, str], *, init: bool
+    ) -> list[str]:
         spec = container.spec
         image = image_reference(spec["image"])
-        flags = ["--name", container.docker_name, "--label", f"{self.prefix}=1"]
+        flags = [
+            "--name", container.docker_name,
+            "--label", f"{self.prefix}=1",
+            "--env-file", str(env_file),
+        ]  # fmt: skip
         if init:
             flags += ["--network", self.network]
         elif container is pod.owner:
@@ -471,10 +575,10 @@ class Release:
             for alias in pod.aliases:
                 flags += ["--network-alias", alias]
             # Every port of every container in the pod lands on the owner's namespace, so this is
-            # the only container that can publish them. Loopback only: they exist for probes.
-            for member in pod.containers:
-                for port in member.spec.get("ports", []):
-                    flags += ["--publish", f"127.0.0.1::{port['containerPort']}"]
+            # the only container that can publish them. Loopback only: they exist for probes and
+            # for the driver.
+            for port in pod.published_ports():
+                flags += ["--publish", f"127.0.0.1::{port}"]
         else:
             flags += ["--network", f"container:{pod.owner.docker_name}"]
         flags += self._user_flags(pod, spec, image)
@@ -482,10 +586,33 @@ class Release:
         flags += self._mount_flags(pod, spec)
         if spec.get("workingDir"):
             flags += ["--workdir", spec["workingDir"]]
-        command = spec.get("command") or []
+        # The kubelet expands `$(VAR)` in both; Docker expands neither.
+        command = [expand_references(str(part), env) for part in spec.get("command") or []]
+        args = [expand_references(str(part), env) for part in spec.get("args") or []]
         if command:
             flags += ["--entrypoint", command[0]]
-        return [*flags, image, *command[1:], *[str(arg) for arg in spec.get("args", [])]]
+        return [*flags, image, *command[1:], *args]
+
+    def _env_file(self, container: Container, env: dict[str, str]) -> Path:
+        """Write a container's environment to an owner-only file in the private work directory.
+
+        Docker's env-file format has no quoting, so a value holding a line break cannot be
+        represented; it is refused rather than truncated.
+        """
+        assert self._files is not None
+        lines = []
+        for name, value in env.items():
+            if "\n" in value or "\r" in value or "\0" in value:
+                raise ReleaseError(
+                    f"{container.docker_name}: env {name} holds a line break, which Docker's "
+                    "env-file format cannot carry"
+                )
+            lines.append(f"{name}={value}\n")
+        path = self._files / f"{container.docker_name}.env"
+        descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            handle.writelines(lines)
+        return path
 
     # ---------------------------------------------------------------------------------------------
     # Lifecycle.
@@ -517,11 +644,15 @@ class Release:
         self._files = Path(tempfile.mkdtemp(prefix=f"{self.prefix}-"))
         docker("network", "create", self.network)
         try:
+            # Translating every container first registers every volume and subPath, and fails on
+            # anything unsupported before a single container has started.
+            plans = {pod.name: self._plan(pod) for pod in self.pods}
             self._prepare_volumes()
             # Pods start concurrently, as a scheduler starts them: an init container waiting on
             # another pod's Service must not deadlock behind it.
             with ThreadPoolExecutor(max_workers=max(1, len(self.pods))) as executor:
-                for future in [executor.submit(self._start, pod) for pod in self.pods]:
+                futures = [executor.submit(self._start, pod, plans[pod.name]) for pod in self.pods]
+                for future in futures:
                     future.result()
         except BaseException:
             self.__exit__(*sys.exc_info())
@@ -537,63 +668,123 @@ class Release:
         if self._files is not None:
             shutil.rmtree(self._files, ignore_errors=True)
 
+    def _plan(self, pod: Pod) -> list[tuple[Container, list[str], bool]]:
+        """Every container's `docker run` arguments, init containers first."""
+        plan = []
+        for container, init in [
+            *((c, True) for c in pod.init_containers),
+            *((c, False) for c in pod.containers),
+        ]:
+            env = self._environment(pod, container.spec)
+            env_file = self._env_file(container, env)
+            flags = self._run_flags(pod, container, env_file, env, init=init)
+            plan.append((container, flags, init))
+        return plan
+
+    def _projected_files(self, volume: Volume) -> list[tuple[str, str, int]]:
+        """(path, content, mode) for every file a configMap or secret volume projects."""
+        definition = volume.definition
+        if "configMap" in definition:
+            source = definition["configMap"]
+            data = self.manifests.config_map(source["name"], source.get("optional", False))
+        else:
+            source = definition["secret"]
+            data = self.manifests.secret(source["secretName"], source.get("optional", False))
+        default_mode = int(source.get("defaultMode", DEFAULT_FILE_MODE))
+        items = source.get("items") or [{"key": key, "path": key} for key in data]
+        files = []
+        for item in items:
+            if item["key"] not in data:
+                if source.get("optional", False):
+                    continue
+                raise ReleaseError(f"volume {volume.name} has no key {item['key']!r}")
+            if not _SUBPATH.match(item["path"]):
+                raise ReleaseError(f"volume {volume.name}: item path {item['path']!r} escapes it")
+            files.append((item["path"], data[item["key"]], int(item.get("mode", default_mode))))
+        return files
+
     def _prepare_volumes(self) -> None:
-        """Create every named volume and leave it as the kubelet leaves a fresh one: empty,
-        group-owned and group-writable by the pod's fsGroup with the setgid bit (2775), or
-        world-writable without one."""
-        prepared: set[str] = set()
-        for pod in self.pods:
-            fs_group = (pod.spec.get("securityContext") or {}).get("fsGroup")
-            for container in [*pod.init_containers, *pod.containers]:
-                for mount in container.spec.get("volumeMounts", []):
-                    kind, source = self._volume_source(pod, mount["name"])
-                    if kind != "volume" or source in prepared:
-                        continue
-                    prepared.add(source)
-                    docker("volume", "create", "--label", f"{self.prefix}=1", source)
-                    self._volumes.add(source)
-                    script = "chmod 0777 /volume"
-                    if fs_group is not None:
-                        script = f"chgrp {int(fs_group)} /volume && chmod 2775 /volume"
-                    # Any image in the pod will do, so long as it has a shell; none is pulled
-                    # that the release does not already need.
-                    docker(
-                        "run", "--rm", "--user", "0:0", "--network", "none",
-                        "--mount", f"type=volume,source={source},destination=/volume",
-                        "--entrypoint", "/bin/sh",
-                        image_reference(container.spec["image"]), "-c", script,
-                    )  # fmt: skip
+        """Create every named volume and leave it as the kubelet leaves a fresh one.
 
-    def _environ(self, pod: Pod, container: Container) -> tuple[list[str], dict[str, str]]:
-        env = self._environment(pod, container.spec)
-        flags = [flag for name in env for flag in ("--env", name)]
-        return flags, {**os.environ, **env}
+          emptyDir     0777; with an fsGroup, group-owned by it with the setgid bit (2777)
+          claim        root-owned 0755, as most storage presents a fresh volume; with an fsGroup,
+                       group-owned and group-writable with the setgid bit (2775). Deliberately not
+                       the 0777 some local provisioners hand out: a pod that can only write to its
+                       volume because the test was more permissive than the cluster is a false pass
+          projected    root-owned files with their `defaultMode` or item `mode`; with an fsGroup,
+                       group-owned by it and group-readable, as the kubelet adjusts them
 
-    def _start(self, pod: Pod) -> None:
-        for container in pod.init_containers:
-            env_flags, environ = self._environ(pod, container)
-            self._containers.append(container.docker_name)
-            try:
-                docker("run", *env_flags, *self._run_flags(pod, container, init=True), env=environ)
-            except ReleaseError as error:
-                raise ReleaseError(
-                    f"init container {container.name} of {pod.name} failed:\n"
-                    f"{self.logs(container.docker_name)}"
-                ) from error
-        for container in pod.containers:
-            env_flags, environ = self._environ(pod, container)
-            self._containers.append(container.docker_name)
+        A `subPath` is created beforehand with its volume's mode, as the kubelet creates it, so
+        Docker can mount it.
+        """
+        assert self._files is not None
+        for volume in self._volumes.values():
+            docker("volume", "create", "--label", f"{self.prefix}=1", volume.name)
+            group = volume.fs_group
+            if volume.kind == "empty":
+                mode = 0o2777 if group is not None else 0o777
+            elif volume.kind == "claim":
+                mode = 0o2775 if group is not None else 0o755
+            else:
+                mode = 0o755
+            owner = f"0:{group if group is not None else 0}"
+            # Recursive for a projected volume, whose staged files arrive owned by this host's user.
+            chown = "chown -R" if volume.kind == "projected" else "chown"
+            commands = [f"{chown} {owner} /volume", f"chmod {mode:o} /volume"]
+            for subpath in sorted(volume.subpaths):
+                target = shlex.quote(f"/volume/{subpath}")
+                commands += [f"mkdir -p {target}", f"chmod {mode:o} {target}"]
+
+            staging: Path | None = None
+            if volume.kind == "projected":
+                staging = self._files / "projected" / volume.name
+                staging.mkdir(parents=True)
+                for path, content, file_mode in self._projected_files(volume):
+                    (staging / path).parent.mkdir(parents=True, exist_ok=True)
+                    (staging / path).write_text(content, encoding="utf-8")
+                    if group is not None:
+                        file_mode |= 0o040
+                    target = shlex.quote(f"/volume/{path}")
+                    commands.append(f"chmod {file_mode:o} {target}")
+
+            # Any image the pod already needs will do, so long as it has a shell, chown and chmod.
+            helper = f"{volume.name}-prepare"
             docker(
-                "run", "--detach", "--restart", "on-failure",
-                *env_flags, *self._run_flags(pod, container, init=False),
-                env=environ,
+                "create", "--name", helper, "--user", "0:0", "--network", "none",
+                "--mount", f"type=volume,source={volume.name},destination=/volume",
+                "--entrypoint", "/bin/sh", volume.image, "-c", " && ".join(commands),
             )  # fmt: skip
+            try:
+                if staging is not None:
+                    docker("cp", f"{staging}/.", f"{helper}:/volume")
+                docker("start", "--attach", helper)
+            finally:
+                # `--volumes` also removes the anonymous volumes Docker made for the image's
+                # own `VOLUME` paths.
+                subprocess.run(
+                    ["docker", "rm", "--force", "--volumes", helper], capture_output=True
+                )
+
+    def _start(self, pod: Pod, plan: list[tuple[Container, list[str], bool]]) -> None:
+        for container, flags, init in plan:
+            self._containers.append(container.docker_name)
+            if init:
+                try:
+                    docker("run", *flags)
+                except ReleaseError as error:
+                    raise ReleaseError(
+                        f"init container {container.name} of {pod.name} failed:\n"
+                        f"{self.logs(container.docker_name)}"
+                    ) from error
+            else:
+                docker("run", "--detach", "--restart", "on-failure", *flags)
 
     # ---------------------------------------------------------------------------------------------
     # Readiness and access.
     # ---------------------------------------------------------------------------------------------
 
     def pod(self, workload: str) -> Pod:
+        """The pod a workload runs."""
         for pod in self.pods:
             if pod.workload == workload:
                 return pod
@@ -610,16 +801,8 @@ class Release:
         """A base URL on the host that reaches one of a pod's ports."""
         return f"{scheme}://127.0.0.1:{self.host_port(workload, port)}"
 
-    def exec(self, workload: str, *command: str, container: str | None = None) -> str:
-        pod = self.pod(workload)
-        target = next(
-            (c for c in pod.containers if container is None or c.name == container), None
-        )
-        if target is None:
-            raise ReleaseError(f"pod {pod.name} has no container {container!r}")
-        return docker("exec", target.docker_name, *command)
-
     def _probe(self, pod: Pod, container: Container, probe: dict[str, Any]) -> bool:
+        """Run one probe once, as the kubelet would; False on any failure to get a pass."""
         timeout = float(probe.get("timeoutSeconds", 1))
         try:
             if "httpGet" in probe:
@@ -653,43 +836,63 @@ class Release:
             return False
         raise ReleaseError(f"pod {pod.name}: unsupported probe {probe}")
 
-    def _state(self, container: Container) -> tuple[str, int]:
+    def _check_alive(self, pod: Pod, container: Container) -> str:
+        """Return the container's status, raising on one that exited or is crash-looping."""
         status, restarts = docker(
             "inspect", "--format", "{{.State.Status}} {{.RestartCount}}", container.docker_name
         ).split()
-        return status, int(restarts)
+        if status in ("exited", "dead") or int(restarts) > MAX_RESTARTS:
+            raise ReleaseError(
+                f"{pod.name}/{container.name} is {status} after {restarts} restart(s):\n"
+                f"{self.logs(container.docker_name)}"
+            )
+        return status
 
     def wait_ready(self, timeout: float = 600) -> None:
-        """Block until every container's readiness (or else startup) probe passes.
+        """Block until every container is ready: its startup probe has passed, if it has one,
+        and then its readiness probe passes, if it has one.
 
-        Fails early, with logs, on a container that exited or is crash-looping: either is a
-        verdict, and waiting out the timeout would only hide it behind a slower one.
+        Every container is re-inspected on every round, ready or not, and once more before
+        returning, so one that dies while another is still starting fails the wait. An exited or
+        crash-looping container fails it at once: either is a verdict, and waiting out the
+        timeout would only hide it behind a slower one. A release with no container at all is
+        refused rather than declared ready.
         """
+        members = [(pod, container) for pod in self.pods for container in pod.containers]
+        if not members:
+            raise ReleaseError("the render holds no Deployment or StatefulSet to wait for")
         deadline = time.monotonic() + timeout
-        pending = {(pod.name, c.name): (pod, c) for pod in self.pods for c in pod.containers}
-        while pending:
-            for key, (pod, container) in list(pending.items()):
-                status, restarts = self._state(container)
-                if status in ("exited", "dead") or restarts > MAX_RESTARTS:
-                    raise ReleaseError(
-                        f"{pod.name}/{container.name} is {status} after {restarts} restart(s):\n"
-                        f"{self.logs(container.docker_name)}"
-                    )
-                probe = container.spec.get("readinessProbe") or container.spec.get(
-                    "startupProbe"
-                )
-                if status == "running" and (probe is None or self._probe(pod, container, probe)):
+        started: set[str] = set()
+        ready: set[str] = set()
+        while True:
+            for pod, container in members:
+                status = self._check_alive(pod, container)
+                key = container.docker_name
+                if key in ready or status != "running":
+                    continue
+                startup = container.spec.get("startupProbe")
+                if startup is not None and key not in started:
+                    if not self._probe(pod, container, startup):
+                        continue
+                    started.add(key)
+                readiness = container.spec.get("readinessProbe")
+                if readiness is None or self._probe(pod, container, readiness):
                     print(f"   ready {pod.name}/{container.name}", flush=True)
-                    del pending[key]
-            if not pending:
+                    ready.add(key)
+            if len(ready) == len(members):
+                for pod, container in members:
+                    if self._check_alive(pod, container) != "running":
+                        raise ReleaseError(f"{pod.name}/{container.name} stopped running")
                 return
             if time.monotonic() > deadline:
-                names = ", ".join("/".join(key) for key in pending)
-                logs = "\n".join(self.logs(c.docker_name) for _, c in pending.values())
+                pending = [(p, c) for p, c in members if c.docker_name not in ready]
+                names = ", ".join(f"{p.name}/{c.name}" for p, c in pending)
+                logs = "\n".join(self.logs(c.docker_name) for _, c in pending)
                 raise ReleaseError(f"not ready after {timeout:.0f}s: {names}\n{logs}")
             time.sleep(2)
 
     def logs(self, docker_name: str, tail: int = 80) -> str:
+        """The last lines a container wrote, framed for a failure report."""
         result = subprocess.run(
             ["docker", "logs", "--tail", str(tail), docker_name],
             capture_output=True,
@@ -700,5 +903,6 @@ class Release:
         return f"--- logs: {docker_name} ---\n{body}\n--- end: {docker_name} ---"
 
     def all_logs(self, tail: int = 80) -> Iterator[str]:
+        """The logs of every container this release started."""
         for name in self._containers:
             yield self.logs(name, tail)

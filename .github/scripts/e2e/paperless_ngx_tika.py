@@ -316,6 +316,29 @@ def pdf_text(release: Release, workload: str, pdf: bytes) -> str:
     return normalise(result.stdout.decode("utf-8", "replace"))
 
 
+def pdf_image_count(release: Release, workload: str, pdf: bytes) -> int:
+    """How many images a PDF embeds, as listed by the pdfimages the paperless-ngx image ships.
+
+    pdfimages cannot read standard input, so the PDF is written to the container's own /tmp
+    first; the file name is fixed, and this runs one call at a time.
+    """
+    pod = release.pod(workload)
+    result = subprocess.run(
+        [
+            "docker", "exec", "-i", pod.owner.docker_name, "sh", "-c",
+            "cat > /tmp/e2e-archive.pdf && pdfimages -list /tmp/e2e-archive.pdf"
+            " && rm -f /tmp/e2e-archive.pdf",
+        ],
+        input=pdf,
+        capture_output=True,
+        check=False,
+    )  # fmt: skip
+    if result.returncode != 0:
+        raise ReleaseError(f"pdfimages failed: {result.stderr.decode(errors='replace')}")
+    # Two header lines, then one line per image.
+    return max(0, len(result.stdout.decode("utf-8", "replace").strip().splitlines()) - 2)
+
+
 def metadata_value(entries: list[dict[str, Any]], namespace: str, key: str) -> str | None:
     for entry in entries or []:
         if entry.get("namespace") == namespace and entry.get("key") == key:
@@ -324,11 +347,11 @@ def metadata_value(entries: list[dict[str, Any]], namespace: str, key: str) -> s
 
 
 def consume(checks: Checks, api: Paperless, release: Release, filename: str, content: bytes,
-            title: str) -> tuple[dict[str, Any], str] | None:  # fmt: skip
+            title: str) -> tuple[dict[str, Any], str, bytes] | None:  # fmt: skip
     """Upload one fixture and run the checks every converted document has to pass.
 
-    Returns the stored document and its archive's text, or None when consumption failed and
-    nothing further can be asserted.
+    Returns the stored document, its archive's text and the archive itself, or None when
+    consumption failed and nothing further can be asserted.
     """
     task = api.wait_for_task(api.upload(filename, content, title))
     if not checks.check(
@@ -364,7 +387,7 @@ def consume(checks: Checks, api: Paperless, release: Release, filename: str, con
     )
 
     text = pdf_text(release, RELEASE + "-paperless-ngx", archive)
-    return document, text
+    return document, text, archive
 
 
 # =================================================================================================
@@ -430,7 +453,7 @@ def main() -> int:
                 checks, api, release, "fixture.docx", build_docx(), "Fixture office document"
             )
             if result is not None:
-                document, text = result
+                document, text, _ = result
                 checks.check(
                     "Tika extracted the document's text",
                     DOCX_MARKER in normalise(document["content"]),
@@ -452,7 +475,7 @@ def main() -> int:
                 checks, api, release, "fixture.eml", build_eml(), "Fixture e-mail"
             )
             if result is not None:
-                document, text = result
+                document, text, archive = result
                 content = normalise(document["content"])
                 checks.check(
                     "the plain-text part reached the content", MAIL_TEXT_MARKER in content,
@@ -476,6 +499,12 @@ def main() -> int:
                     "the two renders were merged into one archive",
                     (document.get("page_count") or 0) >= 2,
                     f"page_count={document.get('page_count')!r}",
+                )
+                images = pdf_image_count(release, workload, archive)
+                checks.check(
+                    "the HTML part's inline image reached the archive",
+                    images >= 1,
+                    f"pdfimages listed {images} image(s)",
                 )
         except (ReleaseError, ApiError) as error:
             checks.check("the run completed", False, str(error))

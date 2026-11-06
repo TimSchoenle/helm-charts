@@ -5,12 +5,40 @@ Migration notes, newest first. Only the versions listed here need anything beyon
 
 | Version | Applies to | Step |
 |---|---|---|
+| [2.3.33](#2333) | releases that set `tika.gotenberg.allowList` | anchor every entry with `^` |
 | [2.0.0](#200) | releases that set any `resourcesPreset` | replace it with the `resources` block it stood for |
 | [2.0.0](#200) | releases that set `networkPolicy.{ingress,egress}.extraRules` | rename to `networkPolicy.{extraIngress,extraEgress}` |
 | [2.0.0](#200) | releases that set `networkPolicy.cilium.{toFQDNs,dnsMatchPatterns}` | move them under `networkPolicy.cilium.egress` |
 
 The values contract is enforced by `values.schema.json`, so a key a new major removed or renamed
 fails the render with the offending path named, rather than being silently ignored.
+
+## 2.3.33
+
+**Security fix: the Gotenberg allow list is anchored.** `tika.gotenberg.allowList` defaulted to
+`file:///tmp/.*`. Gotenberg admits a URL if an allow-list pattern matches anywhere in it, so that
+value also admitted `http://169.254.169.254/?x=file:///tmp/a` — and any other URL carrying the
+string — while Chromium rendered an untrusted `.eml`: the server-side request forgery the setting
+exists to prevent. The default is now `^file:///tmp/.*`. Releases on the default need nothing
+beyond `helm upgrade`; every file Gotenberg wrote for the request still matches.
+
+A release that sets `tika.gotenberg.allowList` keeps its own value, and the chart does not reject
+an unanchored one, since that would fail the upgrade of a release that is otherwise working.
+Instead the install notes print a warning naming each comma-separated entry that does not start
+with `^`, and Gotenberg 8.39.0 and later logs one at startup. Anchor every entry, and every
+top-level `|` branch, and end any host with `/`, `:` or `$`:
+
+```yaml
+# Before
+tika:
+  gotenberg:
+    allowList: "file:///tmp/.*"
+
+# After
+tika:
+  gotenberg:
+    allowList: "^file:///tmp/.*"
+```
 
 ## 2.3.4
 

@@ -1,0 +1,51 @@
+suite: install notes
+templates:
+  - NOTES.txt
+set:
+  paperless.secretKey: ci-secret-key
+  tika.enabled: true
+tests:
+  # Gotenberg admits a URL if any allow-list entry matches anywhere in it, so an unanchored entry
+  # lets Chromium fetch whatever URL an untrusted e-mail embeds it in. Gotenberg only logs this,
+  # and a schema pattern would break existing overrides on upgrade, so the notes say it instead.
+  - it: says nothing about the allow list while it is the anchored default
+    asserts:
+      - notMatchRegexRaw:
+          pattern: tika\.gotenberg\.allowList
+
+  - it: warns about an allow-list entry that is not anchored
+    set:
+      tika.gotenberg.allowList: file:///tmp/.*
+    asserts:
+      - matchRegexRaw:
+          pattern: "WARNING: tika\\.gotenberg\\.allowList has entries that do not start with `\\^`: file:///tmp/\\.\\*\\n"
+
+  - it: names only the unanchored entries of a comma-separated list
+    set:
+      tika.gotenberg.allowList: ^file:///tmp/.*, https://assets\.example\.com/
+    asserts:
+      - matchRegexRaw:
+          pattern: "do not start with `\\^`: https://assets\\\\\\.example\\\\\\.com/\\n"
+
+  - it: accepts an entry anchored after an inline-flags group, or with \A
+    set:
+      tika.gotenberg.allowList: (?i)^file:///tmp/.*,\Afile:///tmp/.*
+    asserts:
+      - notMatchRegexRaw:
+          pattern: tika\.gotenberg\.allowList
+
+  - it: says nothing when the flag is omitted
+    set:
+      tika.gotenberg.allowList: ""
+    asserts:
+      - notMatchRegexRaw:
+          pattern: tika\.gotenberg\.allowList
+
+  - it: says nothing when Gotenberg is not deployed
+    set:
+      tika.gotenberg.enabled: false
+      tika.gotenberg.endpoint: http://gotenberg.example:3000
+      tika.gotenberg.allowList: file:///tmp/.*
+    asserts:
+      - notMatchRegexRaw:
+          pattern: tika\.gotenberg\.allowList

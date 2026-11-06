@@ -146,6 +146,29 @@ note that switching is an export and re-import rather than a values change.
 
 NOTE: tika.enabled is set but no Tika server is reachable; office documents will fail to consume.
 {{- end }}
+{{- if include "paperless-ngx.componentEnabled" (dict "ctx" . "component" "gotenberg") }}
+{{- /*
+  Gotenberg splits the flag on commas and admits a URL if any entry matches anywhere in it, so an
+  entry without a leading anchor admits any URL that merely contains it. This mirrors the first
+  branch of Gotenberg's own startup audit: an optional inline-flags group, then `^` or `\A`. A
+  later unanchored `|` branch is left to Gotenberg's log, which a regex cannot parse reliably.
+*/}}
+{{- $unanchored := list }}
+{{- range splitList "," (.Values.tika.gotenberg.allowList | default "") }}
+{{- $entry := trim . }}
+{{- if and $entry (not (regexMatch `^(\(\?[imsUx-]+\))?(\^|\\A)` $entry)) }}
+{{- $unanchored = append $unanchored $entry }}
+{{- end }}
+{{- end }}
+{{- if $unanchored }}
+
+WARNING: tika.gotenberg.allowList has entries that do not start with `^`: {{ join ", " $unanchored }}
+Gotenberg matches each entry anywhere in the URL, so Chromium will fetch any URL that merely
+contains one — http://169.254.169.254/?x=file:///tmp/a passes `file:///tmp/.*` — while it
+renders an untrusted e-mail. Anchor every entry, and every top-level `|` branch, with `^`, as the
+chart default `^file:///tmp/.*` is.
+{{- end }}
+{{- end }}
 {{- if not .Values.tika.enabled }}
 
 NOTE: office and e-mail documents (.docx, .odt, .xlsx, .eml) are rejected at consumption. Set

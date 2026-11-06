@@ -233,17 +233,20 @@ test-rules chart='':
       echo "==> no chart ships Prometheus rules; nothing to evaluate"
     fi
 
-# Run a chart's end-to-end driver: the chart's own scripts, against the real application.
+# Run one end-to-end driver: a chart's own programs, or its release as a whole, against the real
+# application.
 #
-# Every other gate renders a chart and inspects the result. This one runs a chart's shell against
-# the image `values.yaml` pins, which is the only way to test the parts of a chart that are a
-# program rather than a manifest — and so it is per-chart by nature. A chart qualifies by having a
-# driver at `.github/scripts/e2e/<chart>.sh`; charts without one are covered by the render, lint,
-# unit-test and install gates and need nothing here.
-[doc("Run a chart's end-to-end driver: the chart's own scripts, against the real application")]
+# Every other gate renders a chart and inspects the result. This one runs what the chart renders
+# against the images `values.yaml` pins, which is the only way to test the parts of a chart that
+# are a program rather than a manifest, or the compatibility between images it pins side by side —
+# and so it is per-chart by nature. A driver lives at `.github/scripts/e2e/<driver>.sh`, named
+# after its chart, with a suffix when one chart has several (`paperless-ngx-tika`), so CI can run
+# each as its own job. Charts without one are covered by the render, lint, unit-test and install
+# gates and need nothing here.
+[doc("Run one end-to-end driver, e.g. `paperless-ngx` or `paperless-ngx-tika`, against the real application")]
 [group('test')]
-test-e2e chart:
-    bash {{ scripts }}/e2e/{{ chart }}.sh
+test-e2e driver:
+    bash {{ scripts }}/e2e/{{ driver }}.sh
 
 # chart-testing install & upgrade for one chart, or every chart that changed. Needs a Kubernetes
 # cluster.

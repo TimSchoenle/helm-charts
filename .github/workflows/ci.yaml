@@ -502,24 +502,32 @@ jobs:
       - name: Run rule and dashboard tests
         run: just test-rules
 
-  # Every other job in this workflow renders charts and inspects the result. This one runs a
-  # chart's own shell against the real application, which is the only way to test the parts of a
-  # chart that are a program rather than a manifest — and so it is per-chart by nature. The matrix
-  # is the list of charts that have such a program: `.github/scripts/e2e/<chart>.sh`. Charts
-  # without one are covered by the render, lint, unit-test and install jobs above and need nothing
-  # here.
+  # Every other job in this workflow renders charts and inspects the result. This one runs what a
+  # chart renders against the real application, which is the only way to test the parts of a
+  # chart that are a program rather than a manifest, or the compatibility between images it pins
+  # side by side — and so it is per-chart by nature. The matrix is the list of drivers,
+  # `.github/scripts/e2e/<driver>.sh`, one job each so a chart with two does not run them in
+  # series. Charts without one are covered by the render, lint, unit-test and install jobs above
+  # and need nothing here.
   #
-  # paperless-ngx qualifies because its backup CronJob and its import initContainer are scripts
+  # `paperless-ngx` qualifies because its backup CronJob and its import initContainer are scripts
   # wrapped around upstream management commands, and both defects this gate was written for lived
   # in upstream's behaviour rather than in the chart's YAML: `document_importer` finishes by
   # rebuilding a search index whose directory only the image's s6 init step creates, and its file
   # copy raises `FileExistsError` rather than overwriting, so an attempt killed part-way made every
   # later one fail on a file it had already written. A rendered manifest looks identical either way.
   #
+  # `paperless-ngx-tika` exists because nothing else ever ran the Tika and Gotenberg the chart
+  # bundles: the install job skips `ci/tika.yaml` for the size of the images, so a Gotenberg major
+  # that dropped a route or a flag passed every gate. It starts the rendered release as containers
+  # and consumes a `.docx` and an `.eml` through paperless-ngx's own API, so what is tested is the
+  # contract between the client libraries in the pinned paperless-ngx image and the converters
+  # pinned beside it — every route paperless-ngx calls, asserted on what it stored.
+  #
   # Not gated on `list-changed`: the drivers and fixtures live outside `charts/`, where `ct` would
   # not see them change.
   e2e:
-    name: End-to-End (${{ matrix.chart }})
+    name: End-to-End (${{ matrix.driver }})
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -527,7 +535,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        chart: [paperless-ngx]
+        driver: [paperless-ngx, paperless-ngx-tika]
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
@@ -547,10 +555,10 @@ jobs:
 
       # PyYAML ships with the runner image's system `python3`; `actions/setup-python` is
       # deliberately not used here, for the same reason as in the docs job.
-      - name: Run the ${{ matrix.chart }} end-to-end test
+      - name: Run the ${{ matrix.driver }} end-to-end test
         env:
-          CHART: ${{ matrix.chart }}
-        run: just test-e2e "${CHART}"
+          DRIVER: ${{ matrix.driver }}
+        run: just test-e2e "${DRIVER}"
 
 
   # The Python behind every gate in this repository, which until now nothing checked.

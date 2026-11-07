@@ -11,12 +11,12 @@ on:
     workflows: ['CI']
     types: [completed]
 
-# One commit run per pull request branch. A newer patch supersedes an older one, which
-# commit-patch would skip as branch_moved anyway. Keyed on the head repository too, so the skipped
-# run of a fork's same-named branch cancels nothing.
+# One queue per pull request branch, keyed on the head repository too. Runs wait rather than
+# cancel: an older run completing late (a re-run, say) must not drop the run for the current
+# head, and its own patch is skipped as branch_moved by commit-patch.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.workflow_run.head_repository.full_name }}:${{ github.event.workflow_run.head_branch }}
-  cancel-in-progress: true
+  queue: max
 
 permissions: {}
 
@@ -68,6 +68,10 @@ jobs:
             exit 0
           fi
           gh run download "${RUN_ID}" --repo "${REPOSITORY}" --name "${ARTIFACT}" --dir "${RUNNER_TEMP}/patch"
+          if [ ! -f "${RUNNER_TEMP}/patch/changes.patch" ]; then
+            echo "::error::The ${ARTIFACT} artifact holds no changes.patch; refusing to read it as empty."
+            exit 1
+          fi
           if [ -s "${RUNNER_TEMP}/patch/changes.patch" ]; then
             touched() {
               if grep -Eq "$1" "${RUNNER_TEMP}/patch/changes.patch"; then echo true; else echo false; fi

@@ -5,21 +5,28 @@ on:
     branches: ['main']
   pull_request:
     branches: ['**']
+  schedule:
+    # Weekly, so advisories published since the last change are reported. Off the hour, because
+    # GitHub's scheduling backlog is deepest on the hour.
+    - cron: '23 4 * * 1'
+  workflow_dispatch:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 permissions: {}
 
 jobs:
   # jactionlint keeps every actionlint check and has a rule for every zizmor audit. The shared action
-  # runs the pedantic profile offline (.github/jactionlint.yaml holds the repository's rule choices),
-  # annotates the findings and uploads the SARIF to code scanning under the category jactionlint.
+  # runs the pedantic profile online (.github/jactionlint.yaml holds the repository's rule choices),
+  # so it also asks GitHub about the actions in use (impostor commits, vulnerable versions, moved
+  # tags, archived repositories). It annotates the findings, uploads the SARIF to code scanning under
+  # the category jactionlint and, with strict-exit, fails on findings of every level.
   action-lint:
     name: Action Lint
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     permissions:
       contents: read # to fetch code
       security-events: write # to upload SARIF results
@@ -33,6 +40,9 @@ jobs:
             github.com:443
             objects.githubusercontent.com:443
             release-assets.githubusercontent.com:443
+            ghcr.io:443
+            auth.docker.io:443
+            registry-1.docker.io:443
 
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -41,3 +51,6 @@ jobs:
 
       - name: Run jactionlint
         uses: TimSchoenle/actions/actions/security/jactionlint@e2799424abd778c41e7f6d1547fd402386ef398e # tag=actions-security-jactionlint-v1.1.0
+        with:
+          online: 'true'
+          strict-exit: 'true'

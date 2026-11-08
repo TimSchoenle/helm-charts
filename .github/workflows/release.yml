@@ -118,9 +118,14 @@ jobs:
         run: |
           set -euo pipefail
           # Dearmoring reads only the first armor block, so the secret has to start with the private
-          # key and hold nothing else, such as the public key pasted alongside it.
+          # key and hold nothing else, such as the public key pasted alongside it. The check reads
+          # the armor lines only, so a Comment header may say anything.
           key="${GPG_PRIVATE_KEY#"${GPG_PRIVATE_KEY%%[![:space:]]*}"}"
-          if [[ "${key}" != '-----BEGIN PGP PRIVATE KEY BLOCK-----'* || "${key}" == *'PUBLIC KEY BLOCK'* ]]; then
+          key="${key%"${key##*[![:space:]]}"}"
+          armor_lines="$(grep -cE '^-----(BEGIN|END) PGP ' <<< "${key}" || true)"
+          if [[ "${key}" != '-----BEGIN PGP PRIVATE KEY BLOCK-----'* \
+            || "${key}" != *'-----END PGP PRIVATE KEY BLOCK-----' \
+            || "${armor_lines}" -ne 2 ]]; then
             echo "::error::GPG_PRIVATE_KEY must hold only an armored private key block (-----BEGIN PGP PRIVATE KEY BLOCK-----), without the public key."
             exit 1
           fi

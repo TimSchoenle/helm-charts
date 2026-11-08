@@ -26,9 +26,9 @@ jobs:
     environment:
       name: release
       deployment: false
-    # Pinned rather than ubuntu-latest: Helm signs through golang.org/x/crypto/openpgp, which reads
-    # only v4 keys with the classic secret-key protection. The export below was verified to produce
-    # that with this image's gnupg; check again before moving to a newer image.
+    # Helm signs through golang.org/x/crypto/openpgp, which reads only v4 keys with the classic
+    # secret-key protection, so GPG_PRIVATE_KEY must be exported in that form (gpg 2.4 does so for an
+    # RSA key). The runner image's gnupg only dearmors it.
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
@@ -84,8 +84,8 @@ jobs:
 
       # Helm asks for the signing key's passphrase on a terminal unless it is given a file, so the
       # file is written here, readable by this user only. `CR_PASSPHRASE_FILE` is how `cr` takes its
-      # `passphrase-file` option from the environment; the export below reads the same file, so the
-      # passphrase never appears on a command line.
+      # `passphrase-file` option from the environment, so the passphrase never appears on a command
+      # line.
       - name: Write the GPG passphrase file
         env:
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
@@ -96,31 +96,42 @@ jobs:
             echo "::error::GPG_PASSPHRASE is empty; the chart-signing key is expected to be passphrase-protected."
             exit 1
           fi
-          # gpg's --passphrase-file and Helm's passphrase file both read the first line only.
+          # Helm reads the passphrase file's first line only.
           if [[ "${GPG_PASSPHRASE}" == *$'\n'* ]]; then
-            echo "::error::GPG_PASSPHRASE spans several lines; gpg and Helm read only the first, so use a single-line passphrase."
+            echo "::error::GPG_PASSPHRASE spans several lines; Helm reads only the first, so use a single-line passphrase."
             exit 1
           fi
           umask 077
           printf '%s\n' "${GPG_PASSPHRASE}" > "${PASSPHRASE_FILE}"
           echo "CR_PASSPHRASE_FILE=${PASSPHRASE_FILE}" >> "${GITHUB_ENV}"
 
-      - name: Import GPG key
-        uses: crazy-max/ghaction-import-gpg@2dc316deee8e90f13e1a351ab510b4d5bc0c82cd # v7.0.0
-        with:
-          gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
-          passphrase: ${{ secrets.GPG_PASSPHRASE }}
-
       # chart-releaser signs through Helm's Go OpenPGP library, which reads neither gpg-agent nor the
       # keybox, only a legacy keyring file: `cr`'s default `--keyring`, `~/.gnupg/pubring.gpg`. The
-      # export stays encrypted with the same passphrase. Helm signs with the primary key, so the key
-      # must be one whose primary key can sign, not an offline primary with a signing subkey.
-      - name: Export GPG key to legacy format
+      # secret holds an armored secret key export, which is that file's content once dearmored, and
+      # it stays encrypted with the passphrase. It is not imported into gpg and exported again: the
+      # agent refuses passphrases longer than 255 characters ("Too much data for IPC layer"), while
+      # Helm has no such limit. Helm signs with the primary key, so the key must be one whose primary
+      # key can sign, not an offline primary with a signing subkey.
+      - name: Write the GPG keyring
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
         run: |
           set -euo pipefail
+          # Dearmoring reads only the first armor block, so the secret has to start with the private
+          # key and hold nothing else, such as the public key pasted alongside it. The check reads
+          # the armor lines only, so a Comment header may say anything.
+          key="${GPG_PRIVATE_KEY#"${GPG_PRIVATE_KEY%%[![:space:]]*}"}"
+          key="${key%"${key##*[![:space:]]}"}"
+          armor_lines="$(grep -cE '^-----(BEGIN|END) PGP ' <<< "${key}" || true)"
+          if [[ "${key}" != '-----BEGIN PGP PRIVATE KEY BLOCK-----'* \
+            || "${key}" != *'-----END PGP PRIVATE KEY BLOCK-----' \
+            || "${armor_lines}" -ne 2 ]]; then
+            echo "::error::GPG_PRIVATE_KEY must hold only an armored private key block (-----BEGIN PGP PRIVATE KEY BLOCK-----), without the public key."
+            exit 1
+          fi
           umask 077
-          gpg --batch --pinentry-mode loopback --passphrase-file "${CR_PASSPHRASE_FILE}" \
-            --export-secret-keys > ~/.gnupg/pubring.gpg
+          mkdir -p ~/.gnupg
+          printf '%s\n' "${key}" | gpg --batch --dearmor > ~/.gnupg/pubring.gpg
 
       # `version` is stated rather than left to the action's default, so moving the action's pin
       # cannot move the `cr` binary with it unnoticed. The action downloads that release over HTTPS
@@ -133,10 +144,9 @@ jobs:
         env:
           CR_TOKEN: ${{ steps.generate_token.outputs.token }}
 
-      # The import action's own post step removes the key from gpg's store, not these two files.
       # The path is spelled out rather than read from CR_PASSPHRASE_FILE, so the file is removed even
       # when the step that wrote it failed before exporting that variable.
-      - name: Remove the exported key and passphrase
+      - name: Remove the keyring and passphrase
         if: always()
         env:
           PASSPHRASE_FILE: ${{ runner.temp }}/gpg-passphrase

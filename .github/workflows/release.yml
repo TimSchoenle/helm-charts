@@ -26,7 +26,10 @@ jobs:
     environment:
       name: release
       deployment: false
-    runs-on: ubuntu-latest
+    # Pinned rather than ubuntu-latest: Helm signs through golang.org/x/crypto/openpgp, which reads
+    # only v4 keys with the classic secret-key protection. The export below was verified to produce
+    # that with this image's gnupg; check again before moving to a newer image.
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
       contents: write # to publish chart releases
@@ -79,14 +82,45 @@ jobs:
           app-slug: ${{ steps.generate_token.outputs.app-slug }}
           token: ${{ steps.generate_token.outputs.token }}
 
+      # Helm asks for the signing key's passphrase on a terminal unless it is given a file, so the
+      # file is written here, readable by this user only. `CR_PASSPHRASE_FILE` is how `cr` takes its
+      # `passphrase-file` option from the environment; the export below reads the same file, so the
+      # passphrase never appears on a command line.
+      - name: Write the GPG passphrase file
+        env:
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+          PASSPHRASE_FILE: ${{ runner.temp }}/gpg-passphrase
+        run: |
+          set -euo pipefail
+          if [ -z "${GPG_PASSPHRASE}" ]; then
+            echo "::error::GPG_PASSPHRASE is empty; the chart-signing key is expected to be passphrase-protected."
+            exit 1
+          fi
+          # gpg's --passphrase-file and Helm's passphrase file both read the first line only.
+          if [[ "${GPG_PASSPHRASE}" == *$'\n'* ]]; then
+            echo "::error::GPG_PASSPHRASE spans several lines; gpg and Helm read only the first, so use a single-line passphrase."
+            exit 1
+          fi
+          umask 077
+          printf '%s\n' "${GPG_PASSPHRASE}" > "${PASSPHRASE_FILE}"
+          echo "CR_PASSPHRASE_FILE=${PASSPHRASE_FILE}" >> "${GITHUB_ENV}"
+
       - name: Import GPG key
         uses: crazy-max/ghaction-import-gpg@2dc316deee8e90f13e1a351ab510b4d5bc0c82cd # v7.0.0
         with:
-          # We currently can't use a passphrase since this means we can't export the key to the legacy format
           gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
+          passphrase: ${{ secrets.GPG_PASSPHRASE }}
 
+      # chart-releaser signs through Helm's Go OpenPGP library, which reads neither gpg-agent nor the
+      # keybox, only a legacy keyring file: `cr`'s default `--keyring`, `~/.gnupg/pubring.gpg`. The
+      # export stays encrypted with the same passphrase. Helm signs with the primary key, so the key
+      # must be one whose primary key can sign, not an offline primary with a signing subkey.
       - name: Export GPG key to legacy format
-        run: gpg --export-secret-keys > ~/.gnupg/pubring.gpg
+        run: |
+          set -euo pipefail
+          umask 077
+          gpg --batch --pinentry-mode loopback --passphrase-file "${CR_PASSPHRASE_FILE}" \
+            --export-secret-keys > ~/.gnupg/pubring.gpg
 
       # `version` is stated rather than left to the action's default, so moving the action's pin
       # cannot move the `cr` binary with it unnoticed. The action downloads that release over HTTPS
@@ -98,3 +132,12 @@ jobs:
           config: ./.github/configs/cr.yaml
         env:
           CR_TOKEN: ${{ steps.generate_token.outputs.token }}
+
+      # The import action's own post step removes the key from gpg's store, not these two files.
+      # The path is spelled out rather than read from CR_PASSPHRASE_FILE, so the file is removed even
+      # when the step that wrote it failed before exporting that variable.
+      - name: Remove the exported key and passphrase
+        if: always()
+        env:
+          PASSPHRASE_FILE: ${{ runner.temp }}/gpg-passphrase
+        run: rm -f "${PASSPHRASE_FILE}" ~/.gnupg/pubring.gpg

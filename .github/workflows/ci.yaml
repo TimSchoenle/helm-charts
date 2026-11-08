@@ -34,19 +34,20 @@ jobs:
   # These two jobs regenerate them and commit the result back to the PR branch, so contributors
   # never have to run the toolchain locally. They also repin the Kubernetes schema references in
   # `values.yaml` itself, which is derived from `kube_version` in the same way even though it is
-  # hand-written. The other jobs deliberately do not gate on them:
-  # the follow-up push re-runs the whole workflow against the corrected tree anyway, and
-  # skipping them here would drop lint, unit tests and install on exactly the runs that
-  # change a chart's values.
+  # hand-written. The other jobs deliberately do not wait for them: the follow-up push re-runs the
+  # whole workflow against the corrected tree anyway, and skipping them here would drop lint, unit
+  # tests and install on exactly the runs that change a chart's values. Only the final `CI` gate
+  # reads `docs`, and fails while its patch is still to be committed.
   #
   # The work is split in two, and the split is the security boundary of this pair. This half runs
   # the pull request's own code — every `just` recipe, every script under `.github/scripts/`, the
   # composite toolchain action and `helm dependency update` — so it holds no secret, a read-only
-  # `GITHUB_TOKEN` and no persisted credentials, and hands on only a patch. `docs-commit` below
-  # holds the maintenance App's key and the token minted from it, and runs nothing from the
-  # checkout: it applies that patch through `common/commit-patch`, which refuses any path outside
-  # the files listed there. Were both halves one job, anything this half ran could read the key
-  # out of the runner or leave a process behind to collect the token once it was minted.
+  # `GITHUB_TOKEN` and no persisted credentials, and hands on only a patch. `docs-commit` in
+  # ci-commit.yaml (a workflow_run workflow the pull request cannot edit) holds the maintenance
+  # App's key and the token minted from it, and runs nothing from the checkout: it applies that
+  # patch through `common/commit-patch`, which refuses any path outside the files listed there. Were
+  # both halves one job, anything this half ran could read the key out of the runner or leave a
+  # process behind to collect the token once it was minted.
   #
   # A fork's pull request runs this half like any other and gets no commit: its branch is not in
   # this repository and it gets no secrets. `docs.yaml` gates the root README for it instead.
@@ -58,8 +59,6 @@ jobs:
       contents: read # to checkout code
     outputs:
       has_changes: ${{ steps.patch.outputs.has_changes }}
-      charts_changed: ${{ steps.changed.outputs.charts }}
-      readme_changed: ${{ steps.changed.outputs.readme }}
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
@@ -67,10 +66,10 @@ jobs:
           egress-policy: audit
 
       # The pull request's head commit, fetched from this repository, rather than its branch by
-      # name: a fork's branch does not exist here, and `docs-commit` applies the patch on top of
-      # exactly this commit (commit-patch's `expected_head_sha`), so the two cannot disagree when a
-      # push lands in between. The full history is for the merge-base the two bump steps below
-      # measure from.
+      # name: a fork's branch does not exist here, and `docs-commit` in ci-commit.yaml applies the
+      # patch on top of exactly this commit (commit-patch's `expected_head_sha`), so the two cannot
+      # disagree when a push lands in between. The full history is for the merge-base the two bump
+      # steps below measure from.
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -219,32 +218,13 @@ jobs:
           output: README.md
           variables: ${{ steps.variables.outputs.variables }}
 
-      # Which of the two outputs moved, for the one-sentence comment `docs-commit` posts. Plain
-      # `git status` over the same paths the patch below is scoped to: gitignored build output such
-      # as `charts/*/charts/` stays out of both.
-      - name: Record what changed
-        id: changed
-        if: ${{ !cancelled() && steps.sync.outcome != 'skipped' }}
-        run: |
-          set -euo pipefail
-          changed() {
-            if [ -n "$(git status --porcelain=v1 --untracked-files=all -- "$@")" ]; then
-              echo true
-            else
-              echo false
-            fi
-          }
-          {
-            echo "charts=$(changed charts .github/testdata/common-fixture/Chart.yaml)"
-            echo "readme=$(changed README.md)"
-          } >> "$GITHUB_OUTPUT"
-
-      # Everything the generators above wrote, as one patch for `docs-commit`. Scoped to the chart
-      # tree, the library fixture and the root README rather than narrowed to the generated files:
-      # a generator that wrote somewhere unexpected should fail that job's allowlist loudly rather
-      # than be dropped here without a word. `!cancelled()` and the sync check carry the
-      # `continue-on-error` chain above through to the commit: what the generators produced is
-      # handed on even when one of them failed, but nothing is when the job failed before them.
+      # Everything the generators above wrote, as one patch for `docs-commit` in ci-commit.yaml.
+      # Scoped to the chart tree, the library fixture and the root README rather than narrowed to
+      # the generated files: a generator that wrote somewhere unexpected should fail that job's
+      # allowlist loudly rather than be dropped here without a word. `!cancelled()` and the sync
+      # check carry the `continue-on-error` chain above through to the commit: what the generators
+      # produced is handed on even when one of them failed, but nothing is when the job failed
+      # before them.
       - name: Create Patch
         id: patch
         if: ${{ !cancelled() && steps.sync.outcome != 'skipped' }}
@@ -284,108 +264,6 @@ jobs:
           done
 
           exit "$failed"
-
-  # The half of the documentation pair that holds the App token. It runs nothing from the
-  # checkout, which is there only for git's objects: the patch is applied on top of the pull
-  # request's head commit by `common/commit-patch`, from git's object store, and refused whole if
-  # it touches any path outside `allowed_paths`.
-  #
-  # `!cancelled()` rather than the implicit `success()`: the documentation job fails when a
-  # generator failed, and what the others produced is still committed — the reason for the
-  # `continue-on-error` chain there. Same-repository pull requests only: a fork's branch is not in
-  # this repository and its run gets no secrets.
-  docs-commit:
-    name: Commit Documentation
-    needs: docs
-    if: >-
-      github.event_name == 'pull_request' &&
-      github.event.pull_request.head.repo.full_name == github.repository &&
-      needs.docs.outputs.has_changes == 'true' &&
-      !cancelled()
-    environment:
-      name: ci
-      deployment: false
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      contents: read # to fetch the commit the patch applies to
-    steps:
-      - name: Harden Runner
-        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
-        with:
-          egress-policy: block
-          allowed-endpoints: >
-            github.com:443
-            api.github.com:443
-            objects.githubusercontent.com:443
-            release-assets.githubusercontent.com:443
-            *.actions.githubusercontent.com:443
-            *.blob.core.windows.net:443
-
-      # Only git's objects are needed. Nothing in this checkout is executed.
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-          ref: ${{ github.event.pull_request.head.sha }}
-
-      - name: Generate Bot Token
-        id: generate_token
-        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
-        with:
-          client-id: ${{ secrets.ACTIONS_MAINTENANCE_APP_ID }}
-          private-key: ${{ secrets.ACTIONS_MAINTENANCE_PRIVATE_KEY }}
-          permission-contents: write # to commit the patch to the pull request's branch
-          permission-pull-requests: write # to comment on the pull request
-
-      # The artifact name is a literal, not the documentation job's output: that job ran the pull
-      # request's code. The allowlist is every file a generator there writes, and nothing else:
-      #
-      #   charts/*/Chart.yaml           both version bumps, the `kubeVersion` floor
-      #   charts/*/values.yaml          the schema repins, the contract `@schema` blocks, helm-schema's
-      #                                 schema reference
-      #   charts/*/values.schema.json   `just schema`, and the repins
-      #   charts/*/README.md            helm-docs
-      #   charts/*/README.md.gotmpl     the contract sync's credential reference
-      #   charts/*/contracts/*.json     the contract sync's refreshed contracts
-      #   .github/testdata/common-fixture/Chart.yaml  the library pin `bump-common-version` moves
-      #   README.md                     the chart index
-      #
-      # A generator that starts writing another file fails this step until the line is added here.
-      # If a push landed after the documentation job checked out, the patch is skipped with
-      # `outcome: branch_moved`; the new head starts a new run, which regenerates.
-      - name: Commit documentation changes
-        id: commit
-        uses: TimSchoenle/actions/actions/common/commit-patch@dc5b395636dc1954383f11af4062a08814e9b15a # tag=actions-common-commit-patch-v1.1.1
-        with:
-          token: ${{ steps.generate_token.outputs.token }}
-          artifact_name: chart-docs
-          allowed_paths: >-
-            charts/*/Chart.yaml
-            charts/*/values.yaml
-            charts/*/values.schema.json
-            charts/*/README.md
-            charts/*/README.md.gotmpl
-            charts/*/contracts/*.json
-            .github/testdata/common-fixture/Chart.yaml
-            README.md
-          commit_message: "docs: update Helm chart documentation and schemas"
-
-      # One sentence naming what the commit above carried. The lines are mutually exclusive — one
-      # per combination — because the comment is a single sentence joined with "and", which
-      # independent lines cannot assemble; at most one survives. Which half moved comes from the
-      # documentation job's `git status` and is only ever "true" or "false", so it selects a
-      # literal and never reaches the comment body itself.
-      - name: Comment on PR
-        if: steps.commit.outputs.changes_committed == 'true'
-        uses: TimSchoenle/actions/actions/common/upsert-pr-comment@9414b1c665d3676efe832978d4e1728cf53119fd # tag=actions-common-upsert-pr-comment-v1.3.0
-        with:
-          token: ${{ steps.generate_token.outputs.token }}
-          identifier: render-generated-files
-          body_lines: |
-            ${{ needs.docs.outputs.charts_changed == 'true' && needs.docs.outputs.readme_changed != 'true' && '📚 Automatically updated chart documentation and schemas.' || '' }}
-            ${{ needs.docs.outputs.charts_changed != 'true' && needs.docs.outputs.readme_changed == 'true' && '📚 Automatically updated the README chart index.' || '' }}
-            ${{ needs.docs.outputs.charts_changed == 'true' && needs.docs.outputs.readme_changed == 'true' && '📚 Automatically updated chart documentation and schemas and the README chart index.' || '' }}
 
   # One job, with no Helm matrix. This used to run once under Helm 3.21.3 and once under 4.2.3,
   # but helm-unittest does not render with the Helm that runs it: it renders with the SDK compiled
@@ -1159,7 +1037,6 @@ jobs:
     if: always()
     needs:
       - docs
-      - docs-commit
       - unit-test
       - helm-parity
       - rule-test
@@ -1183,10 +1060,9 @@ jobs:
         with:
           egress-policy: audit
 
-      # "skipped" passes deliberately: `install` and `contract-diff` both skip outright when
-      # there is nothing for them to do (no chart changed; not a pull_request event), and so does
-      # `docs-commit` when nothing was regenerated or the pull request comes from a fork. That is
-      # not a failure. Only "failure" and "cancelled" fail this job.
+      # "skipped" passes deliberately: `install` and `contract-diff` both skip outright when there
+      # is nothing for them to do (no chart changed; not a pull_request event). That is not a
+      # failure. Only "failure" and "cancelled" fail this job.
       - name: Check that every required job passed
         env:
           NEEDS: ${{ toJson(needs) }}
@@ -1198,3 +1074,16 @@ jobs:
             echo "One or more required jobs did not succeed."
             exit 1
           fi
+
+      # `docs` regenerates rather than fails, and ci-commit.yaml commits its patch only after this
+      # run has finished. This head is not the one to merge when that patch is non-empty: the run
+      # on the regenerated commit decides instead. Only a pull request from a branch of this
+      # repository is committed to, so only that run is held here.
+      - name: Fail while a docs commit is pending
+        if: >-
+          needs.docs.outputs.has_changes == 'true' &&
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.full_name == github.repository
+        run: |
+          echo "::error::The chart docs were regenerated; ci-commit.yaml commits them and the run on that commit decides. If no bot commit appears, run the docs job's just recipes locally and push."
+          exit 1

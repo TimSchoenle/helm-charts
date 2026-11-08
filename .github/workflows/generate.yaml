@@ -173,6 +173,7 @@ jobs:
       # not have it.
       - name: Collect chart metadata
         id: chart-index
+        continue-on-error: true
         run: |
           set -euo pipefail
           index="$(just chart-index)"
@@ -187,6 +188,9 @@ jobs:
       # docs.yaml, failing every merge for a reason absent from the diff.
       - name: Collect the README payload
         id: variables
+        # Never from a failed index: an empty one would render a README without its chart table.
+        if: steps.chart-index.outcome == 'success'
+        continue-on-error: true
         uses: TimSchoenle/actions/actions/common/readme-variables@dc5b395636dc1954383f11af4062a08814e9b15a # tag=actions-common-readme-variables-v2.1.1
         with:
           manifest: charts/common/Chart.yaml
@@ -196,6 +200,9 @@ jobs:
       # The same renderer, at the same pin, as the drift gate in docs.yaml, so the README this
       # writes is the one that gate accepts.
       - name: Render the root README
+        id: readme
+        if: steps.variables.outcome == 'success'
+        continue-on-error: true
         uses: TimSchoenle/actions/actions/common/render-template@dc5b395636dc1954383f11af4062a08814e9b15a # tag=actions-common-render-template-v3.0.1
         with:
           template: .github/templates/README.md.hbs
@@ -226,8 +233,8 @@ jobs:
       # Documentation Generators job below turns the output into a failure the verdict sees.
       #
       # Named steps rather than a wildcard: `steps` has no iteration in an expression, and listing
-      # the three makes a fourth generator added without a line here a visible omission rather than
-      # a silently ungated step.
+      # the generators makes one added without a line here a visible omission rather than a
+      # silently ungated step.
       - name: Report generator failures
         id: failures
         if: always()
@@ -235,11 +242,19 @@ jobs:
           SYNC: ${{ steps.sync.outcome }}
           SCHEMAS: ${{ steps.schemas.outcome }}
           HELM_DOCS: ${{ steps.helm-docs.outcome }}
+          CHART_INDEX: ${{ steps.chart-index.outcome }}
+          README_PAYLOAD: ${{ steps.variables.outcome }}
+          README: ${{ steps.readme.outcome }}
         run: |
           set -euo pipefail
 
           failed=''
-          for generator in "terrace/helm-sync:${SYNC}"                            "just schema:${SCHEMAS}"                            "helm-docs:${HELM_DOCS}"; do
+          for generator in "terrace/helm-sync:${SYNC}" \
+                           "just schema:${SCHEMAS}" \
+                           "helm-docs:${HELM_DOCS}" \
+                           "just chart-index:${CHART_INDEX}" \
+                           "readme-variables:${README_PAYLOAD}" \
+                           "root README render:${README}"; do
             if [ "${generator##*:}" = "failure" ]; then
               echo "::error::${generator%:*} failed; see its step above"
               failed="${failed:+${failed}, }${generator%:*}"

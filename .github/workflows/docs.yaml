@@ -1,17 +1,16 @@
 name: Docs
 
-# The drift gate for the root README, and only for it.
+# The drift gate for the root README on the default branch, and for a fork's pull request.
 #
-# Rendering happens in the Documentation job of `ci.yaml`, and its Commit Documentation job commits
-# the result back to the pull request branch. Neither can gate anything: they repair the file rather
-# than failing on it, and the commit needs the App token, which a fork does not get, so a fork's
-# render is never committed. This workflow is the other half —
-# it renders with `check: true`, writes nothing, and fails when the committed README.md does not
-# match its template.
+# Rendering happens in the Documentation job of `generate.yaml`, and `generate-commit.yaml` commits
+# the result back to a same-repository pull request branch. The Generated Files check holds every
+# pull request while that commit is pending, a fork's included; this workflow adds the check after
+# merge, and a fork's pull request gets a second, more specific failure naming the README. It
+# renders with `check: true`, writes nothing, and fails when the committed README.md does not match
+# its template.
 #
-# Kept out of `ci.yaml` because that workflow is pull-request-only by design and its other jobs
-# build kind clusters. Adding a `push: main` trigger there to reach this one check would run all
-# of them on every merge.
+# Kept out of `generate.yaml` because that workflow is pull-request-only by design. Adding a
+# `push: main` trigger there to reach this one check would run every generator on every merge.
 
 on:
   push:
@@ -27,7 +26,7 @@ permissions: {}
 jobs:
   verify:
     name: readme
-    # Same-repo pull requests are covered by the Documentation and Commit Documentation jobs, which
+    # Same-repo pull requests are covered by Generate and Generate Commit, which
     # fix the file instead of reporting it. Running here as well would fail every pull request that
     # legitimately edits the template, in the window before that commit lands.
     if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
@@ -49,7 +48,7 @@ jobs:
       - name: Setup toolchain
         uses: $/.github/actions/setup-toolchain
 
-      # The same two steps `ci.yaml` renders from, in the same order and with the same inputs. A
+      # The same two steps `generate.yaml` renders from, in the same order and with the same inputs. A
       # difference between them would make this gate fail on a README the render job just wrote.
       - name: Collect chart metadata
         id: chart-index

@@ -9,7 +9,7 @@
 # Chart:       tankovault
 # Declaration: charts/tankovault/config-contract.yaml (document `worker`)
 # Contract:    charts/tankovault/contracts/worker.json
-# Coverage:    64 of 89 contract keys carry a probe, 16 through the chart's own value
+# Coverage:    64 of 89 contract keys carry a probe, 43 through the chart's own value
 #
 # Regenerate with `just contract-tests`. `just check-contract-tests` fails a pull request whose
 # committed copy has drifted from the contract it was generated against.
@@ -438,7 +438,7 @@ tests:
           path: data["config.toml"]
           pattern: '(?m)^\[branding\.wordmark\]$\n(?:[^\[\n][^\n]*\n|\n)*^lead = "contract-probe-branding-wordmark-lead"$'
 
-  - it: delivers chapter_outliers.enabled into config.toml
+  - it: delivers chapter_outliers.enabled into config.toml from chapterOutliers.enabled
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="worker")].data["config.toml"]'
     set:
@@ -457,13 +457,13 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.worker.config.chapter_outliers.enabled: true
+      chapterOutliers.enabled: true
     asserts:
       - matchRegex:
           path: data["config.toml"]
           pattern: '(?m)^\[chapter_outliers\]$\n(?:[^\[\n][^\n]*\n|\n)*^enabled = true$'
 
-  - it: delivers chapter_outliers.min_body into config.toml
+  - it: delivers chapter_outliers.min_body into config.toml from chapterOutliers.minBody
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="worker")].data["config.toml"]'
     set:
@@ -482,13 +482,13 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.worker.config.chapter_outliers.min_body: 4242
+      chapterOutliers.minBody: 4242
     asserts:
       - matchRegex:
           path: data["config.toml"]
           pattern: '(?m)^\[chapter_outliers\]$\n(?:[^\[\n][^\n]*\n|\n)*^min_body = 4242$'
 
-  - it: delivers chapter_outliers.min_sample into config.toml
+  - it: delivers chapter_outliers.min_sample into config.toml from chapterOutliers.minSample
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="worker")].data["config.toml"]'
     set:
@@ -507,13 +507,13 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.worker.config.chapter_outliers.min_sample: 4242
+      chapterOutliers.minSample: 4242
     asserts:
       - matchRegex:
           path: data["config.toml"]
           pattern: '(?m)^\[chapter_outliers\]$\n(?:[^\[\n][^\n]*\n|\n)*^min_sample = 4242$'
 
-  - it: delivers database.acquire_timeout_secs into config.toml
+  - it: delivers database.acquire_timeout_secs into config.toml from database.acquireTimeoutSecs
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="worker")].data["config.toml"]'
     set:
@@ -532,13 +532,13 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.worker.config.database.acquire_timeout_secs: 4242
+      database.acquireTimeoutSecs: 4242
     asserts:
       - matchRegex:
           path: data["config.toml"]
           pattern: '(?m)^\[database\]$\n(?:[^\[\n][^\n]*\n|\n)*^acquire_timeout_secs = 4242$'
 
-  - it: delivers database.max_connections into config.toml
+  - it: delivers database.max_connections into config.toml from database.maxConnections
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="worker")].data["config.toml"]'
     set:
@@ -557,7 +557,7 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.worker.config.database.max_connections: 4242
+      database.maxConnections: 4242
     asserts:
       - matchRegex:
           path: data["config.toml"]
@@ -713,7 +713,7 @@ tests:
           path: data["config.toml"]
           pattern: '(?m)^\[internal\.tls\]$\n(?:[^\[\n][^\n]*\n|\n)*^probe_listen = "contract-probe-internal-tls-probe-listen"$'
 
-  - it: delivers matching.block_auto_merge_on_author_conflict into config.toml
+  - it: delivers matching.block_auto_merge_on_author_conflict into config.toml from matching.blockAutoMergeOnAuthorConflict
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="worker")].data["config.toml"]'
     set:
@@ -732,13 +732,13 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.worker.config.matching.block_auto_merge_on_author_conflict: true
+      matching.blockAutoMergeOnAuthorConflict: true
     asserts:
       - matchRegex:
           path: data["config.toml"]
           pattern: '(?m)^\[matching\]$\n(?:[^\[\n][^\n]*\n|\n)*^block_auto_merge_on_author_conflict = true$'
 
-  - it: delivers matching.block_auto_merge_on_numeric_conflict into config.toml
+  - it: delivers matching.block_auto_merge_on_numeric_conflict into config.toml from matching.blockAutoMergeOnNumericConflict
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="worker")].data["config.toml"]'
     set:
@@ -757,13 +757,13 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.worker.config.matching.block_auto_merge_on_numeric_conflict: true
+      matching.blockAutoMergeOnNumericConflict: true
     asserts:
       - matchRegex:
           path: data["config.toml"]
           pattern: '(?m)^\[matching\]$\n(?:[^\[\n][^\n]*\n|\n)*^block_auto_merge_on_numeric_conflict = true$'
 
-  - it: delivers matching.block_auto_merge_on_type_conflict into config.toml
+  - it: delivers matching.block_auto_merge_on_type_conflict into config.toml from matching.blockAutoMergeOnTypeConflict
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="worker")].data["config.toml"]'
     set:
@@ -782,13 +782,13 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.worker.config.matching.block_auto_merge_on_type_conflict: true
+      matching.blockAutoMergeOnTypeConflict: true
     asserts:
       - matchRegex:
           path: data["config.toml"]
           pattern: '(?m)^\[matching\]$\n(?:[^\[\n][^\n]*\n|\n)*^block_auto_merge_on_type_conflict = true$'
 
-  - it: delivers matching.block_auto_merge_on_year_conflict into config.toml
+  - it: delivers matching.block_auto_merge_on_year_conflict into config.toml from matching.blockAutoMergeOnYearConflict
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="worker")].data["config.toml"]'
     set:
@@ -807,13 +807,13 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.worker.config.matching.block_auto_merge_on_year_conflict: true
+      matching.blockAutoMergeOnYearConflict: true
     asserts:
       - matchRegex:
           path: data["config.toml"]
           pattern: '(?m)^\[matching\]$\n(?:[^\[\n][^\n]*\n|\n)*^block_auto_merge_on_year_conflict = true$'
 
-  - it: delivers matching.candidate_limit into config.toml
+  - it: delivers matching.candidate_limit into config.toml from matching.candidateLimit
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="worker")].data["config.toml"]'
     set:
@@ -832,13 +832,13 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.worker.config.matching.candidate_limit: 4242
+      matching.candidateLimit: 4242
     asserts:
       - matchRegex:
           path: data["config.toml"]
           pattern: '(?m)^\[matching\]$\n(?:[^\[\n][^\n]*\n|\n)*^candidate_limit = 4242$'
 
-  - it: delivers metadata.tags.use_defaults into config.toml
+  - it: delivers metadata.tags.use_defaults into config.toml from metadata.tags.useDefaults
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="worker")].data["config.toml"]'
     set:
@@ -857,7 +857,7 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.worker.config.metadata.tags.use_defaults: true
+      metadata.tags.useDefaults: true
     asserts:
       - matchRegex:
           path: data["config.toml"]
@@ -888,7 +888,7 @@ tests:
           path: data["config.toml"]
           pattern: '(?m)^\[metrics\]$\n(?:[^\[\n][^\n]*\n|\n)*^enabled = true$'
 
-  - it: delivers metrics.http_requests into config.toml
+  - it: delivers metrics.http_requests into config.toml from metrics.httpRequests
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="worker")].data["config.toml"]'
     set:
@@ -907,7 +907,7 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.worker.config.metrics.http_requests: true
+      metrics.httpRequests: true
     asserts:
       - matchRegex:
           path: data["config.toml"]
@@ -938,7 +938,7 @@ tests:
           path: data["config.toml"]
           pattern: '(?m)^\[metrics\]$\n(?:[^\[\n][^\n]*\n|\n)*^listen = "contract-probe-metrics-listen"$'
 
-  - it: delivers metrics.route into config.toml
+  - it: delivers metrics.route into config.toml from metrics.route
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="worker")].data["config.toml"]'
     set:
@@ -957,7 +957,7 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.worker.config.metrics.route: contract-probe-metrics-route
+      metrics.route: contract-probe-metrics-route
     asserts:
       - matchRegex:
           path: data["config.toml"]
@@ -988,7 +988,7 @@ tests:
           path: data["config.toml"]
           pattern: '(?m)^\[nats\]$\n(?:[^\[\n][^\n]*\n|\n)*^events_max_age_secs = 4242$'
 
-  - it: delivers security.cors.allow_credentials into config.toml
+  - it: delivers security.cors.allow_credentials into config.toml from security.cors.allowCredentials
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="worker")].data["config.toml"]'
     set:
@@ -1007,13 +1007,13 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.worker.config.security.cors.allow_credentials: true
+      security.cors.allowCredentials: true
     asserts:
       - matchRegex:
           path: data["config.toml"]
           pattern: '(?m)^\[security\.cors\]$\n(?:[^\[\n][^\n]*\n|\n)*^allow_credentials = true$'
 
-  - it: delivers security.cors.max_age_secs into config.toml
+  - it: delivers security.cors.max_age_secs into config.toml from security.cors.maxAgeSecs
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="worker")].data["config.toml"]'
     set:
@@ -1032,13 +1032,13 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.worker.config.security.cors.max_age_secs: 4242
+      security.cors.maxAgeSecs: 4242
     asserts:
       - matchRegex:
           path: data["config.toml"]
           pattern: '(?m)^\[security\.cors\]$\n(?:[^\[\n][^\n]*\n|\n)*^max_age_secs = 4242$'
 
-  - it: delivers security.expose_api_docs into config.toml
+  - it: delivers security.expose_api_docs into config.toml from security.exposeApiDocs
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="worker")].data["config.toml"]'
     set:
@@ -1057,13 +1057,13 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.worker.config.security.expose_api_docs: true
+      security.exposeApiDocs: true
     asserts:
       - matchRegex:
           path: data["config.toml"]
           pattern: '(?m)^\[security\]$\n(?:[^\[\n][^\n]*\n|\n)*^expose_api_docs = true$'
 
-  - it: delivers security.hsts into config.toml
+  - it: delivers security.hsts into config.toml from security.hsts
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="worker")].data["config.toml"]'
     set:
@@ -1082,13 +1082,13 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.worker.config.security.hsts: true
+      security.hsts: true
     asserts:
       - matchRegex:
           path: data["config.toml"]
           pattern: '(?m)^\[security\]$\n(?:[^\[\n][^\n]*\n|\n)*^hsts = true$'
 
-  - it: delivers security.hsts_max_age_secs into config.toml
+  - it: delivers security.hsts_max_age_secs into config.toml from security.hstsMaxAgeSecs
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="worker")].data["config.toml"]'
     set:
@@ -1107,13 +1107,13 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.worker.config.security.hsts_max_age_secs: 4242
+      security.hstsMaxAgeSecs: 4242
     asserts:
       - matchRegex:
           path: data["config.toml"]
           pattern: '(?m)^\[security\]$\n(?:[^\[\n][^\n]*\n|\n)*^hsts_max_age_secs = 4242$'
 
-  - it: delivers security.max_body_bytes into config.toml
+  - it: delivers security.max_body_bytes into config.toml from security.maxBodyBytes
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="worker")].data["config.toml"]'
     set:
@@ -1132,13 +1132,13 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.worker.config.security.max_body_bytes: 4242
+      security.maxBodyBytes: 4242
     asserts:
       - matchRegex:
           path: data["config.toml"]
           pattern: '(?m)^\[security\]$\n(?:[^\[\n][^\n]*\n|\n)*^max_body_bytes = 4242$'
 
-  - it: delivers security.request_timeout_secs into config.toml
+  - it: delivers security.request_timeout_secs into config.toml from security.requestTimeoutSecs
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="worker")].data["config.toml"]'
     set:
@@ -1157,13 +1157,13 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.worker.config.security.request_timeout_secs: 4242
+      security.requestTimeoutSecs: 4242
     asserts:
       - matchRegex:
           path: data["config.toml"]
           pattern: '(?m)^\[security\]$\n(?:[^\[\n][^\n]*\n|\n)*^request_timeout_secs = 4242$'
 
-  - it: delivers security.security_headers into config.toml
+  - it: delivers security.security_headers into config.toml from security.securityHeaders
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="worker")].data["config.toml"]'
     set:
@@ -1182,13 +1182,13 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.worker.config.security.security_headers: true
+      security.securityHeaders: true
     asserts:
       - matchRegex:
           path: data["config.toml"]
           pattern: '(?m)^\[security\]$\n(?:[^\[\n][^\n]*\n|\n)*^security_headers = true$'
 
-  - it: delivers security.trust_request_id into config.toml
+  - it: delivers security.trust_request_id into config.toml from security.trustRequestId
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="worker")].data["config.toml"]'
     set:
@@ -1207,13 +1207,13 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.worker.config.security.trust_request_id: true
+      security.trustRequestId: true
     asserts:
       - matchRegex:
           path: data["config.toml"]
           pattern: '(?m)^\[security\]$\n(?:[^\[\n][^\n]*\n|\n)*^trust_request_id = true$'
 
-  - it: delivers telemetry.json_logs into config.toml
+  - it: delivers telemetry.json_logs into config.toml from telemetry.jsonLogs
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="worker")].data["config.toml"]'
     set:
@@ -1232,13 +1232,13 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.worker.config.telemetry.json_logs: true
+      telemetry.jsonLogs: true
     asserts:
       - matchRegex:
           path: data["config.toml"]
           pattern: '(?m)^\[telemetry\]$\n(?:[^\[\n][^\n]*\n|\n)*^json_logs = true$'
 
-  - it: delivers telemetry.log_filter into config.toml
+  - it: delivers telemetry.log_filter into config.toml from telemetry.logFilter
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="worker")].data["config.toml"]'
     set:
@@ -1257,7 +1257,7 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.worker.config.telemetry.log_filter: contract-probe-telemetry-log-filter
+      telemetry.logFilter: contract-probe-telemetry-log-filter
     asserts:
       - matchRegex:
           path: data["config.toml"]
@@ -1650,7 +1650,7 @@ tests:
           path: data["config.toml"]
           pattern: '(?m)^\[worker\]$\n(?:[^\[\n][^\n]*\n|\n)*^challenge_solver_endpoint = "contract-probe-worker-challenge-solver-endpoint"$'
 
-  - it: delivers worker.max_catalog_pages into config.toml
+  - it: delivers worker.max_catalog_pages into config.toml from worker.maxCatalogPages
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="worker")].data["config.toml"]'
     set:
@@ -1669,13 +1669,13 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.worker.config.worker.max_catalog_pages: 4242
+      worker.maxCatalogPages: 4242
     asserts:
       - matchRegex:
           path: data["config.toml"]
           pattern: '(?m)^\[worker\]$\n(?:[^\[\n][^\n]*\n|\n)*^max_catalog_pages = 4242$'
 
-  - it: delivers worker.max_concurrent_providers into config.toml
+  - it: delivers worker.max_concurrent_providers into config.toml from worker.maxConcurrentProviders
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="worker")].data["config.toml"]'
     set:
@@ -1694,13 +1694,13 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.worker.config.worker.max_concurrent_providers: 4242
+      worker.maxConcurrentProviders: 4242
     asserts:
       - matchRegex:
           path: data["config.toml"]
           pattern: '(?m)^\[worker\]$\n(?:[^\[\n][^\n]*\n|\n)*^max_concurrent_providers = 4242$'
 
-  - it: delivers worker.provider_refresh_secs into config.toml
+  - it: delivers worker.provider_refresh_secs into config.toml from worker.providerRefreshSecs
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="worker")].data["config.toml"]'
     set:
@@ -1719,7 +1719,7 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.worker.config.worker.provider_refresh_secs: 4242
+      worker.providerRefreshSecs: 4242
     asserts:
       - matchRegex:
           path: data["config.toml"]

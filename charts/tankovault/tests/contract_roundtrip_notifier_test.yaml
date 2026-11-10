@@ -9,7 +9,7 @@
 # Chart:       tankovault
 # Declaration: charts/tankovault/config-contract.yaml (document `notifier`)
 # Contract:    charts/tankovault/contracts/notifier.json
-# Coverage:    49 of 63 contract keys carry a probe, 19 through the chart's own value
+# Coverage:    49 of 63 contract keys carry a probe, 38 through the chart's own value
 #
 # Regenerate with `just contract-tests`. `just check-contract-tests` fails a pull request whose
 # committed copy has drifted from the contract it was generated against.
@@ -139,7 +139,7 @@ tests:
           path: data["config.toml"]
           pattern: '(?m)\A(?:[^\[\n][^\n]*\n|\n)*^bind_addr = "contract-probe-bind-addr"$'
 
-  - it: delivers channels.timeout_secs into config.toml
+  - it: delivers channels.timeout_secs into config.toml from channels.timeoutSecs
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="notifier")].data["config.toml"]'
     set:
@@ -158,13 +158,13 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.notifier.config.channels.timeout_secs: 4242
+      channels.timeoutSecs: 4242
     asserts:
       - matchRegex:
           path: data["config.toml"]
           pattern: '(?m)^\[channels\]$\n(?:[^\[\n][^\n]*\n|\n)*^timeout_secs = 4242$'
 
-  - it: delivers database.acquire_timeout_secs into config.toml
+  - it: delivers database.acquire_timeout_secs into config.toml from database.acquireTimeoutSecs
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="notifier")].data["config.toml"]'
     set:
@@ -183,13 +183,13 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.notifier.config.database.acquire_timeout_secs: 4242
+      database.acquireTimeoutSecs: 4242
     asserts:
       - matchRegex:
           path: data["config.toml"]
           pattern: '(?m)^\[database\]$\n(?:[^\[\n][^\n]*\n|\n)*^acquire_timeout_secs = 4242$'
 
-  - it: delivers database.max_connections into config.toml
+  - it: delivers database.max_connections into config.toml from database.maxConnections
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="notifier")].data["config.toml"]'
     set:
@@ -208,7 +208,7 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.notifier.config.database.max_connections: 4242
+      database.maxConnections: 4242
     asserts:
       - matchRegex:
           path: data["config.toml"]
@@ -239,7 +239,7 @@ tests:
           path: data["config.toml"]
           pattern: '(?m)^\[email\]$\n(?:[^\[\n][^\n]*\n|\n)*^base_url = "contract-probe-email-base-url"$'
 
-  - it: delivers email.envelope_from into config.toml
+  - it: delivers email.envelope_from into config.toml from email.envelopeFrom
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="notifier")].data["config.toml"]'
     set:
@@ -258,7 +258,7 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.notifier.config.email.envelope_from: contract-probe-email-envelope-from
+      email.envelopeFrom: contract-probe-email-envelope-from
     asserts:
       - matchRegex:
           path: data["config.toml"]
@@ -364,7 +364,7 @@ tests:
           path: data["config.toml"]
           pattern: '(?m)^\[email\]$\n(?:[^\[\n][^\n]*\n|\n)*^security = "tls"$'
 
-  - it: delivers email.timeout_secs into config.toml
+  - it: delivers email.timeout_secs into config.toml from email.timeoutSecs
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="notifier")].data["config.toml"]'
     set:
@@ -383,7 +383,7 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.notifier.config.email.timeout_secs: 4242
+      email.timeoutSecs: 4242
     asserts:
       - matchRegex:
           path: data["config.toml"]
@@ -414,7 +414,7 @@ tests:
           path: data["config.toml"]
           pattern: '(?m)^\[email\]$\n(?:[^\[\n][^\n]*\n|\n)*^username = "contract-probe-email-username"$'
 
-  - it: delivers features.refresh_secs into config.toml
+  - it: delivers features.refresh_secs into config.toml from features.refreshSecs
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="notifier")].data["config.toml"]'
     set:
@@ -433,7 +433,7 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.notifier.config.features.refresh_secs: 4242
+      features.refreshSecs: 4242
     asserts:
       - matchRegex:
           path: data["config.toml"]
@@ -614,7 +614,7 @@ tests:
           path: data["config.toml"]
           pattern: '(?m)^\[metrics\]$\n(?:[^\[\n][^\n]*\n|\n)*^enabled = true$'
 
-  - it: delivers metrics.http_requests into config.toml
+  - it: delivers metrics.http_requests into config.toml from metrics.httpRequests
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="notifier")].data["config.toml"]'
     set:
@@ -633,7 +633,7 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.notifier.config.metrics.http_requests: true
+      metrics.httpRequests: true
     asserts:
       - matchRegex:
           path: data["config.toml"]
@@ -664,7 +664,7 @@ tests:
           path: data["config.toml"]
           pattern: '(?m)^\[metrics\]$\n(?:[^\[\n][^\n]*\n|\n)*^listen = "contract-probe-metrics-listen"$'
 
-  - it: delivers metrics.route into config.toml
+  - it: delivers metrics.route into config.toml from metrics.route
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="notifier")].data["config.toml"]'
     set:
@@ -683,7 +683,7 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.notifier.config.metrics.route: contract-probe-metrics-route
+      metrics.route: contract-probe-metrics-route
     asserts:
       - matchRegex:
           path: data["config.toml"]
@@ -714,7 +714,7 @@ tests:
           path: data["config.toml"]
           pattern: '(?m)^\[nats\]$\n(?:[^\[\n][^\n]*\n|\n)*^events_max_age_secs = 4242$'
 
-  - it: delivers security.cors.allow_credentials into config.toml
+  - it: delivers security.cors.allow_credentials into config.toml from security.cors.allowCredentials
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="notifier")].data["config.toml"]'
     set:
@@ -733,13 +733,13 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.notifier.config.security.cors.allow_credentials: true
+      security.cors.allowCredentials: true
     asserts:
       - matchRegex:
           path: data["config.toml"]
           pattern: '(?m)^\[security\.cors\]$\n(?:[^\[\n][^\n]*\n|\n)*^allow_credentials = true$'
 
-  - it: delivers security.cors.max_age_secs into config.toml
+  - it: delivers security.cors.max_age_secs into config.toml from security.cors.maxAgeSecs
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="notifier")].data["config.toml"]'
     set:
@@ -758,13 +758,13 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.notifier.config.security.cors.max_age_secs: 4242
+      security.cors.maxAgeSecs: 4242
     asserts:
       - matchRegex:
           path: data["config.toml"]
           pattern: '(?m)^\[security\.cors\]$\n(?:[^\[\n][^\n]*\n|\n)*^max_age_secs = 4242$'
 
-  - it: delivers security.expose_api_docs into config.toml
+  - it: delivers security.expose_api_docs into config.toml from security.exposeApiDocs
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="notifier")].data["config.toml"]'
     set:
@@ -783,13 +783,13 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.notifier.config.security.expose_api_docs: true
+      security.exposeApiDocs: true
     asserts:
       - matchRegex:
           path: data["config.toml"]
           pattern: '(?m)^\[security\]$\n(?:[^\[\n][^\n]*\n|\n)*^expose_api_docs = true$'
 
-  - it: delivers security.hsts into config.toml
+  - it: delivers security.hsts into config.toml from security.hsts
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="notifier")].data["config.toml"]'
     set:
@@ -808,13 +808,13 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.notifier.config.security.hsts: true
+      security.hsts: true
     asserts:
       - matchRegex:
           path: data["config.toml"]
           pattern: '(?m)^\[security\]$\n(?:[^\[\n][^\n]*\n|\n)*^hsts = true$'
 
-  - it: delivers security.hsts_max_age_secs into config.toml
+  - it: delivers security.hsts_max_age_secs into config.toml from security.hstsMaxAgeSecs
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="notifier")].data["config.toml"]'
     set:
@@ -833,13 +833,13 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.notifier.config.security.hsts_max_age_secs: 4242
+      security.hstsMaxAgeSecs: 4242
     asserts:
       - matchRegex:
           path: data["config.toml"]
           pattern: '(?m)^\[security\]$\n(?:[^\[\n][^\n]*\n|\n)*^hsts_max_age_secs = 4242$'
 
-  - it: delivers security.max_body_bytes into config.toml
+  - it: delivers security.max_body_bytes into config.toml from security.maxBodyBytes
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="notifier")].data["config.toml"]'
     set:
@@ -858,13 +858,13 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.notifier.config.security.max_body_bytes: 4242
+      security.maxBodyBytes: 4242
     asserts:
       - matchRegex:
           path: data["config.toml"]
           pattern: '(?m)^\[security\]$\n(?:[^\[\n][^\n]*\n|\n)*^max_body_bytes = 4242$'
 
-  - it: delivers security.request_timeout_secs into config.toml
+  - it: delivers security.request_timeout_secs into config.toml from security.requestTimeoutSecs
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="notifier")].data["config.toml"]'
     set:
@@ -883,13 +883,13 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.notifier.config.security.request_timeout_secs: 4242
+      security.requestTimeoutSecs: 4242
     asserts:
       - matchRegex:
           path: data["config.toml"]
           pattern: '(?m)^\[security\]$\n(?:[^\[\n][^\n]*\n|\n)*^request_timeout_secs = 4242$'
 
-  - it: delivers security.security_headers into config.toml
+  - it: delivers security.security_headers into config.toml from security.securityHeaders
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="notifier")].data["config.toml"]'
     set:
@@ -908,13 +908,13 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.notifier.config.security.security_headers: true
+      security.securityHeaders: true
     asserts:
       - matchRegex:
           path: data["config.toml"]
           pattern: '(?m)^\[security\]$\n(?:[^\[\n][^\n]*\n|\n)*^security_headers = true$'
 
-  - it: delivers security.trust_request_id into config.toml
+  - it: delivers security.trust_request_id into config.toml from security.trustRequestId
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="notifier")].data["config.toml"]'
     set:
@@ -933,13 +933,13 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.notifier.config.security.trust_request_id: true
+      security.trustRequestId: true
     asserts:
       - matchRegex:
           path: data["config.toml"]
           pattern: '(?m)^\[security\]$\n(?:[^\[\n][^\n]*\n|\n)*^trust_request_id = true$'
 
-  - it: delivers telemetry.json_logs into config.toml
+  - it: delivers telemetry.json_logs into config.toml from telemetry.jsonLogs
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="notifier")].data["config.toml"]'
     set:
@@ -958,13 +958,13 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.notifier.config.telemetry.json_logs: true
+      telemetry.jsonLogs: true
     asserts:
       - matchRegex:
           path: data["config.toml"]
           pattern: '(?m)^\[telemetry\]$\n(?:[^\[\n][^\n]*\n|\n)*^json_logs = true$'
 
-  - it: delivers telemetry.log_filter into config.toml
+  - it: delivers telemetry.log_filter into config.toml from telemetry.logFilter
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="notifier")].data["config.toml"]'
     set:
@@ -983,7 +983,7 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.notifier.config.telemetry.log_filter: contract-probe-telemetry-log-filter
+      telemetry.logFilter: contract-probe-telemetry-log-filter
     asserts:
       - matchRegex:
           path: data["config.toml"]

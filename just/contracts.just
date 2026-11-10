@@ -451,6 +451,14 @@ sync-config chart='' *flags: (contracts chart)
 # by hand, and held there by nothing. 178 are generated now, and the six that are not each say why
 # in a marker.
 #
+# It also owns one line per bound value, below the block: the helm-docs `# @default --` override
+# that ends the description of an `optional` value left at `null`, saying the key is left out and
+# naming the default the contract publishes, or that it publishes none. helm-docs renders it as the
+# README's Default column in place of a bare `null`; helm-schema drops it from the description it
+# copies into `values.schema.json`. The line follows the contract: a refresh that moves the default
+# rewrites it, and setting the value removes it. Needs `cli` 0.14.0 or later in terrace.yaml; an
+# older release leaves the line as it is.
+#
 # Run by `just schema`, before helm-schema, since it edits helm-schema's input. Deliberately *not*
 # run by `just contracts`: that recipe fetches the contract, and one command that both fetches a
 # document and rewrites the chart from it produces a commit in which nobody can see which caused

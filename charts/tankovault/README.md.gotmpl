@@ -182,7 +182,13 @@ config:
       per_minute: 10
 ```
 
-`services.<name>.config` overrides it for one service. The chart fills in the topology itself —
+`services.<name>.config` overrides it for one service. Apart from credentials and the topology keys
+below, every key a service's contract declares also has a first-class chart value —
+`rateLimit.auth.perMinute` for the key above — which is emitted only when set and, when set, takes
+precedence over the same key in `config`. Left null,
+the key in `config` (or the image's default) stands.
+
+The chart fills in the topology itself —
 each service's `bind_addr`, `telemetry.service_name`, the peer URLs, and the datastore
 endpoints — and derives `anilist.redirect_uri`, `email.base_url` and `auth.webauthn_origin` from
 the ingress, because all three are bound to the browser-visible origin and produce runtime-only

@@ -13,6 +13,9 @@ credential, and that arrives as a mounted file like every other one.
 {{- $_ := set $derived "seed_admin_username" $seed.username -}}
 {{- with $seed.email }}{{- $_ := set $derived "seed_admin_email" . }}{{- end -}}
 {{- end -}}
+{{- with include "tankovault.database.config" $ctx | fromYaml -}}
+{{- $_ := set $derived "database" . -}}
+{{- end -}}
 {{- include "tankovault.tomlMerged" (dict "maps" (list $ctx.Values.config $derived)) | trim -}}
 {{- end -}}
 

@@ -9,7 +9,7 @@
 # Chart:       tankovault
 # Declaration: charts/tankovault/config-contract.yaml (document `frontend`)
 # Contract:    charts/tankovault/contracts/frontend.json
-# Coverage:    41 of 44 contract keys carry a probe, 18 through the chart's own value
+# Coverage:    41 of 44 contract keys carry a probe, 27 through the chart's own value
 #
 # Regenerate with `just contract-tests`. `just check-contract-tests` fails a pull request whose
 # committed copy has drifted from the contract it was generated against.
@@ -516,7 +516,7 @@ tests:
           path: data["config.toml"]
           pattern: '(?m)^\[frontend\.cloudflare\]$\n(?:[^\[\n][^\n]*\n|\n)*^turnstile = true$'
 
-  - it: delivers frontend.connect_timeout_secs into config.toml
+  - it: delivers frontend.connect_timeout_secs into config.toml from frontend.connectTimeoutSecs
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="frontend")].data["config.toml"]'
     set:
@@ -535,13 +535,13 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.frontend.config.frontend.connect_timeout_secs: 4242
+      frontend.connectTimeoutSecs: 4242
     asserts:
       - matchRegex:
           path: data["config.toml"]
           pattern: '(?m)^\[frontend\]$\n(?:[^\[\n][^\n]*\n|\n)*^connect_timeout_secs = 4242$'
 
-  - it: delivers frontend.max_body_bytes into config.toml
+  - it: delivers frontend.max_body_bytes into config.toml from frontend.maxBodyBytes
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="frontend")].data["config.toml"]'
     set:
@@ -560,13 +560,13 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.frontend.config.frontend.max_body_bytes: 4242
+      frontend.maxBodyBytes: 4242
     asserts:
       - matchRegex:
           path: data["config.toml"]
           pattern: '(?m)^\[frontend\]$\n(?:[^\[\n][^\n]*\n|\n)*^max_body_bytes = 4242$'
 
-  - it: delivers frontend.notices_json_path into config.toml
+  - it: delivers frontend.notices_json_path into config.toml from frontend.noticesJsonPath
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="frontend")].data["config.toml"]'
     set:
@@ -585,13 +585,13 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.frontend.config.frontend.notices_json_path: contract-probe-frontend-notices-json-path
+      frontend.noticesJsonPath: contract-probe-frontend-notices-json-path
     asserts:
       - matchRegex:
           path: data["config.toml"]
           pattern: '(?m)^\[frontend\]$\n(?:[^\[\n][^\n]*\n|\n)*^notices_json_path = "contract-probe-frontend-notices-json-path"$'
 
-  - it: delivers frontend.notices_path into config.toml
+  - it: delivers frontend.notices_path into config.toml from frontend.noticesPath
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="frontend")].data["config.toml"]'
     set:
@@ -610,13 +610,13 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.frontend.config.frontend.notices_path: contract-probe-frontend-notices-path
+      frontend.noticesPath: contract-probe-frontend-notices-path
     asserts:
       - matchRegex:
           path: data["config.toml"]
           pattern: '(?m)^\[frontend\]$\n(?:[^\[\n][^\n]*\n|\n)*^notices_path = "contract-probe-frontend-notices-path"$'
 
-  - it: delivers frontend.static_dir into config.toml
+  - it: delivers frontend.static_dir into config.toml from frontend.staticDir
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="frontend")].data["config.toml"]'
     set:
@@ -635,7 +635,7 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.frontend.config.frontend.static_dir: contract-probe-frontend-static-dir
+      frontend.staticDir: contract-probe-frontend-static-dir
     asserts:
       - matchRegex:
           path: data["config.toml"]
@@ -666,7 +666,7 @@ tests:
           path: data["config.toml"]
           pattern: '(?m)^\[metrics\]$\n(?:[^\[\n][^\n]*\n|\n)*^enabled = true$'
 
-  - it: delivers metrics.http_requests into config.toml
+  - it: delivers metrics.http_requests into config.toml from metrics.httpRequests
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="frontend")].data["config.toml"]'
     set:
@@ -685,7 +685,7 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.frontend.config.metrics.http_requests: true
+      metrics.httpRequests: true
     asserts:
       - matchRegex:
           path: data["config.toml"]
@@ -716,7 +716,7 @@ tests:
           path: data["config.toml"]
           pattern: '(?m)^\[metrics\]$\n(?:[^\[\n][^\n]*\n|\n)*^listen = "contract-probe-metrics-listen"$'
 
-  - it: delivers metrics.route into config.toml
+  - it: delivers metrics.route into config.toml from metrics.route
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="frontend")].data["config.toml"]'
     set:
@@ -735,13 +735,13 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.frontend.config.metrics.route: contract-probe-metrics-route
+      metrics.route: contract-probe-metrics-route
     asserts:
       - matchRegex:
           path: data["config.toml"]
           pattern: '(?m)^\[metrics\]$\n(?:[^\[\n][^\n]*\n|\n)*^route = "contract-probe-metrics-route"$'
 
-  - it: delivers telemetry.json_logs into config.toml
+  - it: delivers telemetry.json_logs into config.toml from telemetry.jsonLogs
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="frontend")].data["config.toml"]'
     set:
@@ -760,13 +760,13 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.frontend.config.telemetry.json_logs: true
+      telemetry.jsonLogs: true
     asserts:
       - matchRegex:
           path: data["config.toml"]
           pattern: '(?m)^\[telemetry\]$\n(?:[^\[\n][^\n]*\n|\n)*^json_logs = true$'
 
-  - it: delivers telemetry.log_filter into config.toml
+  - it: delivers telemetry.log_filter into config.toml from telemetry.logFilter
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="frontend")].data["config.toml"]'
     set:
@@ -785,7 +785,7 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.frontend.config.telemetry.log_filter: contract-probe-telemetry-log-filter
+      telemetry.logFilter: contract-probe-telemetry-log-filter
     asserts:
       - matchRegex:
           path: data["config.toml"]

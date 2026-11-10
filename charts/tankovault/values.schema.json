@@ -27,6 +27,58 @@
           "title": "clientSecret",
           "type": "string"
         },
+        "defaultConflictPolicy": {
+          "anyOf": [
+            {
+              "required": [],
+              "type": "null"
+            },
+            {
+              "enum": [
+                "local_wins",
+                "remote_wins",
+                "newest_wins",
+                "ask_me"
+              ],
+              "required": []
+            }
+          ],
+          "default": "null",
+          "description": "Which side wins a two-sided change for a reader who has expressed no preference. Each\nreader may override it on their own link (`anilist.default_conflict_policy`).",
+          "required": [],
+          "title": "defaultConflictPolicy"
+        },
+        "graphqlUrl": {
+          "default": "null",
+          "description": "The `GraphQL` endpoint every read and write goes to. Overridable so a test can point it\nat a stub (`anilist.graphql_url`).",
+          "required": [],
+          "title": "graphqlUrl",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "minRequestIntervalMs": {
+          "default": "null",
+          "description": "Shortest gap between two requests to `AniList`, in milliseconds. It paces this\ndeployment's whole traffic, not one reader's: `AniList` rate-limits per application\n(`anilist.min_request_interval_ms`).",
+          "minimum": 0,
+          "required": [],
+          "title": "minRequestIntervalMs",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "oauthBase": {
+          "default": "null",
+          "description": "Base URL the `authorize` and `token` paths hang off (`anilist.oauth_base`).",
+          "required": [],
+          "title": "oauthBase",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "redirectUri": {
           "default": "",
           "description": "OAuth redirect URI. Left empty it is derived from the ingress as\n`\u003cexternal URL\u003e/account/anilist-callback`. It must point at the **frontend**, not the API:\nthe API callback would need the SPA's in-memory bearer token, which a browser redirect\ncannot carry.",
@@ -48,16 +100,107 @@
       "required": [],
       "title": "anilist"
     },
+    "audit": {
+      "additionalProperties": true,
+      "description": "Audit trail of security-relevant actions, read by `api`. Every key left null keeps the image's default.",
+      "properties": {
+        "enabled": {
+          "default": "null",
+          "description": "Write audit records. `false` installs a sink that discards them (`audit.enabled`).",
+          "required": [],
+          "title": "enabled",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "recordIp": {
+          "default": "null",
+          "description": "Record the client IP. Off by default, since an IP is personal data under GDPR Art. 4(1)\n(`audit.record_ip`).",
+          "required": [],
+          "title": "recordIp",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "recordUserAgent": {
+          "default": "null",
+          "description": "Record the client `User-Agent` alongside each event (`audit.record_user_agent`).",
+          "required": [],
+          "title": "recordUserAgent",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "retentionDays": {
+          "default": "null",
+          "description": "Days to retain audit records before the sweep deletes them. `0` disables the sweep, which\nGDPR Art. 5(1)(e), storage limitation, rarely allows (`audit.retention_days`).",
+          "maximum": 4294967295,
+          "minimum": 0,
+          "required": [],
+          "title": "retentionDays",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "sweepIntervalHours": {
+          "default": "null",
+          "description": "Hours between retention sweeps. Ignored when [`Self::retention_days`] is `0`\n(`audit.sweep_interval_hours`).",
+          "minimum": 0,
+          "required": [],
+          "title": "sweepIntervalHours",
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [],
+      "title": "audit"
+    },
     "auth": {
       "additionalProperties": true,
       "description": "The three long-lived secrets the API signs and seals with. Each is generated on a first\ninstall and kept across upgrades; the pepper and the MFA key can never change afterwards.",
       "properties": {
+        "accessTtlMinutes": {
+          "default": "null",
+          "description": "How long an access token stays valid. Short, because nothing revokes one before it\nexpires; the refresh token is the revocable half (`auth.access_ttl_minutes`).",
+          "required": [],
+          "title": "accessTtlMinutes",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "cookieSecure": {
+          "default": "null",
+          "description": "Marks the refresh cookie `Secure` (`auth.cookie_secure`).",
+          "required": [],
+          "title": "cookieSecure",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
         "jwtSecret": {
           "default": "",
           "description": "Token signing secret (`auth.jwt_secret`). Left empty the chart generates one and remembers\nit across upgrades, which is the recommended setting; set one explicitly (minimum 32\ncharacters, e.g. `openssl rand -hex 32`) only if it has to be known outside the release. The\nknown upstream placeholder is refused at boot in every profile, and rotating the value signs\nevery user out.",
           "required": [],
           "title": "jwtSecret",
           "type": "string"
+        },
+        "mfaChallengeTtlMinutes": {
+          "default": "null",
+          "description": "How long a half-finished sign-in (password accepted, second factor still owed) may sit\nbefore the user has to start again (`auth.mfa_challenge_ttl_minutes`).",
+          "required": [],
+          "title": "mfaChallengeTtlMinutes",
+          "type": [
+            "integer",
+            "null"
+          ]
         },
         "mfaEncryptionKey": {
           "default": "",
@@ -72,6 +215,66 @@
           "required": [],
           "title": "passwordPepper",
           "type": "string"
+        },
+        "refreshTtlDays": {
+          "default": "null",
+          "description": "How long a refresh token stays valid, and so how long a signed-out-of-sight session can\ncome back. Each use rotates the token and revokes its predecessor\n(`auth.refresh_ttl_days`).",
+          "required": [],
+          "title": "refreshTtlDays",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "stepUpMaxTtlMinutes": {
+          "default": "null",
+          "description": "The ceiling on that sliding: the longest an elevation is honoured after it was earned,\nhowever continuously it is used (`auth.step_up_max_ttl_minutes`).",
+          "required": [],
+          "title": "stepUpMaxTtlMinutes",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "stepUpTtlMinutes": {
+          "default": "null",
+          "description": "How long a step-up elevation survives **unused** before a sensitive action prompts again.\nEvery elevated request slides it forward (`auth.step_up_ttl_minutes`).",
+          "required": [],
+          "title": "stepUpTtlMinutes",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "totpIssuer": {
+          "default": "null",
+          "description": "The issuer name an authenticator app files the entry under. Defaults to\n[`Self::webauthn_rp_name`], then to the product name: one label for both prompts\n(`auth.totp_issuer`).",
+          "required": [],
+          "title": "totpIssuer",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "webauthnRpId": {
+          "default": "null",
+          "description": "Relying-party id: the registrable domain credentials are bound to. Defaults to\n[`Self::webauthn_origin`]'s host. Set to a parent domain only if the app moves between\nsubdomains and keys must survive the move (`auth.webauthn_rp_id`).",
+          "required": [],
+          "title": "webauthnRpId",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "webauthnRpName": {
+          "default": "null",
+          "description": "The name the authenticator shows in its prompt (\"Save a passkey for …\"); purely cosmetic\n(`auth.webauthn_rp_name`).",
+          "required": [],
+          "title": "webauthnRpName",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [],
@@ -389,6 +592,17 @@
             "null"
           ]
         },
+        "timeoutSecs": {
+          "default": "null",
+          "description": "Per-request timeout for channel deliveries (`channels.timeout_secs`).",
+          "minimum": 0,
+          "required": [],
+          "title": "timeoutSecs",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
         "webhookUrl": {
           "default": "",
           "description": "Generic outbound webhook URL. Empty disables the channel.",
@@ -399,6 +613,129 @@
       },
       "required": [],
       "title": "channels"
+    },
+    "chapterOutliers": {
+      "additionalProperties": true,
+      "description": "Rejection of chapter numbers that sit implausibly far from a series' sequence, read by `worker`.",
+      "properties": {
+        "enabled": {
+          "default": "null",
+          "description": "Whether a scan rejects anything at all (`chapter_outliers.enabled`).",
+          "required": [],
+          "title": "enabled",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "gapFactor": {
+          "default": "null",
+          "description": "Multiple of typical spacing past which a jump is suspicious\n(`chapter_outliers.gap_factor`).",
+          "exclusiveMinimum": 0,
+          "required": [],
+          "title": "gapFactor",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "maxRejectedFraction": {
+          "default": "null",
+          "description": "Ceiling on the fraction of one listing a scan may reject\n(`chapter_outliers.max_rejected_fraction`).",
+          "maximum": 1,
+          "minimum": 0,
+          "required": [],
+          "title": "maxRejectedFraction",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "minBody": {
+          "default": "null",
+          "description": "Chapters that must survive any single scan (`chapter_outliers.min_body`).",
+          "minimum": 0,
+          "required": [],
+          "title": "minBody",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "minGap": {
+          "default": "null",
+          "description": "Absolute floor on a suspicious jump, in chapter numbers (`chapter_outliers.min_gap`).",
+          "exclusiveMinimum": 0,
+          "required": [],
+          "title": "minGap",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "minSample": {
+          "default": "null",
+          "description": "Smallest listing worth judging (`chapter_outliers.min_sample`).",
+          "minimum": 0,
+          "required": [],
+          "title": "minSample",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "sparseFactor": {
+          "default": "null",
+          "description": "Multiple of typical spacing past which a trailing run is noise, not a continuation\n(`chapter_outliers.sparse_factor`).",
+          "exclusiveMinimum": 0,
+          "required": [],
+          "title": "sparseFactor",
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [],
+      "title": "chapterOutliers"
+    },
+    "client": {
+      "additionalProperties": true,
+      "description": "The native-client versions `api` accepts, and the repository it points clients at for releases.",
+      "properties": {
+        "maxVersion": {
+          "default": "null",
+          "description": "The newest client version this deployment supports. Unset means the running service's own\nversion, since client and server are released together at one version\n(`client.max_version`).",
+          "required": [],
+          "title": "maxVersion",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "minVersion": {
+          "default": "null",
+          "description": "The oldest client version this deployment supports. Unset means no floor\n(`client.min_version`).",
+          "required": [],
+          "title": "minVersion",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "releaseRepo": {
+          "default": "null",
+          "description": "The GitHub repository, as `owner/name`, that the native client reads its releases from\n(`client.release_repo`).",
+          "required": [],
+          "title": "releaseRepo",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [],
+      "title": "client"
     },
     "cloudflare": {
       "additionalProperties": true,
@@ -1791,6 +2128,37 @@
       "required": [],
       "title": "configReload"
     },
+    "database": {
+      "additionalProperties": true,
+      "description": "Connection-pool settings for every service that opens one, and for the `bootstrap` Job. The URL is a credential and travels through the Secret instead.",
+      "properties": {
+        "acquireTimeoutSecs": {
+          "default": "null",
+          "description": "How long a caller waits for a pooled connection before failing, in seconds\n(`database.acquire_timeout_secs`).",
+          "minimum": 0,
+          "required": [],
+          "title": "acquireTimeoutSecs",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "maxConnections": {
+          "default": "null",
+          "description": "Upper bound on the connection pool (`database.max_connections`).",
+          "maximum": 4294967295,
+          "minimum": 0,
+          "required": [],
+          "title": "maxConnections",
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [],
+      "title": "database"
+    },
     "defaults": {
       "additionalProperties": true,
       "description": "Settings shared by every TankoVault workload. Anything here can be overridden per service\nunder `services.\u003cname\u003e`, which is merged over this block.",
@@ -2139,6 +2507,16 @@
             "null"
           ]
         },
+        "envelopeFrom": {
+          "default": "null",
+          "description": "SMTP envelope sender (`MAIL FROM`), which can differ from the visible [`Self::from`]\nheader (`email.envelope_from`).",
+          "required": [],
+          "title": "envelopeFrom",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "from": {
           "default": "",
           "description": "`From` header, e.g. `TankoVault \u003cno-reply",
@@ -2185,6 +2563,17 @@
           ],
           "required": [],
           "title": "security"
+        },
+        "timeoutSecs": {
+          "default": "null",
+          "description": "Per-message send timeout, in seconds (`email.timeout_secs`).",
+          "minimum": 0,
+          "required": [],
+          "title": "timeoutSecs",
+          "type": [
+            "integer",
+            "null"
+          ]
         },
         "username": {
           "default": "",
@@ -2298,6 +2687,85 @@
       },
       "required": [],
       "title": "externalTrawl"
+    },
+    "features": {
+      "additionalProperties": true,
+      "description": "How often services re-read the feature flags.",
+      "properties": {
+        "refreshSecs": {
+          "default": "null",
+          "description": "Seconds between refreshes of a service's cached flag snapshot. It is how long a change\ntakes to reach the other replicas; the replica that served the change applies it at once\n(`features.refresh_secs`).",
+          "minimum": 0,
+          "required": [],
+          "title": "refreshSecs",
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [],
+      "title": "features"
+    },
+    "frontend": {
+      "additionalProperties": true,
+      "description": "Settings for the `frontend` service's own HTTP server and static assets.",
+      "properties": {
+        "connectTimeoutSecs": {
+          "default": "null",
+          "description": "Connection-establishment timeout for the upstream, not a whole-request timeout, since an\nSSE stream stays open indefinitely (`frontend.connect_timeout_secs`).",
+          "minimum": 0,
+          "required": [],
+          "title": "connectTimeoutSecs",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "maxBodyBytes": {
+          "default": "null",
+          "description": "Largest request body accepted on this hop (`frontend.max_body_bytes`).",
+          "minimum": 0,
+          "required": [],
+          "title": "maxBodyBytes",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "noticesJsonPath": {
+          "default": "null",
+          "description": "The same notices as the structured inventory the `/licenses` screen renders, served at\n`/third-party-notices.json` (`frontend.notices_json_path`).",
+          "required": [],
+          "title": "noticesJsonPath",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "noticesPath": {
+          "default": "null",
+          "description": "The generated third-party licence notices, served at `/third-party-notices`\n(`frontend.notices_path`).",
+          "required": [],
+          "title": "noticesPath",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "staticDir": {
+          "default": "null",
+          "description": "Directory the built SPA bundle is served from. Baked into the image at `/srv/www`\n(`frontend.static_dir`).",
+          "required": [],
+          "title": "staticDir",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [],
+      "title": "frontend"
     },
     "fullnameOverride": {
       "default": "",
@@ -3115,6 +3583,317 @@
       "required": [],
       "title": "legal"
     },
+    "matching": {
+      "additionalProperties": true,
+      "description": "Duplicate-series matching: the score thresholds and the conflicts that block an automatic merge.",
+      "properties": {
+        "autoMerge": {
+          "default": "null",
+          "description": "At or above this score, and only when a primary identity rule fired, the duplicate sweep\nmay merge two existing series without an operator. A corroborated alias is eligible from\n[`Self::low`] up, whatever this is set to, because its corroboration, not its score, is\nthe evidence. Either way an edition conflict, or a numeric conflict with its guard\nenabled, reports the pair distinct, and an external-id or live-timing veto or any other\nenabled merge guard holds it for review. [`Self::high`] files an incoming source; this\ndeletes a series that already exists. `tankovault_matcher::adjudicate` defines the\nidentity rules, vetoes and guards (`matching.auto_merge`).",
+          "required": [],
+          "title": "autoMerge",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "blockAutoMergeOnAuthorConflict": {
+          "default": "null",
+          "description": "Both series name authors and share none: a remake, a spin-off, or an unrelated work with\nthe same title. Off costs nothing on a catalogue whose providers rarely publish credits,\nbecause the signal cannot fire without credits on both sides\n(`matching.block_auto_merge_on_author_conflict`).",
+          "required": [],
+          "title": "blockAutoMergeOnAuthorConflict",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "blockAutoMergeOnNumericConflict": {
+          "default": "null",
+          "description": "Titles carrying different numbers (`Overlord` against `Overlord 2`) are reported as\ndistinct works. Switching this off makes a sequel merge-eligible on title similarity\nalone, and no other rule tells a sequel from its predecessor\n(`matching.block_auto_merge_on_numeric_conflict`).",
+          "required": [],
+          "title": "blockAutoMergeOnNumericConflict",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "blockAutoMergeOnTypeConflict": {
+          "default": "null",
+          "description": "Both series declare a medium and they disagree (manga against manhwa). Worth switching\noff on a deployment whose providers guess the medium from the site they scraped it from\n(`matching.block_auto_merge_on_type_conflict`).",
+          "required": [],
+          "title": "blockAutoMergeOnTypeConflict",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "blockAutoMergeOnYearConflict": {
+          "default": "null",
+          "description": "Release years three or more years apart, as with re-serialisations and remakes that share\nan exact title. The year never moves a score, so this guard is the only way it holds a\npair back (`matching.block_auto_merge_on_year_conflict`).",
+          "required": [],
+          "title": "blockAutoMergeOnYearConflict",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "candidateLimit": {
+          "default": "null",
+          "description": "How many trigram candidates to score per query title. A higher value widens the index\nscan (`matching.candidate_limit`).",
+          "required": [],
+          "title": "candidateLimit",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "high": {
+          "default": "null",
+          "description": "At or above this score, and only when the incoming title is the series' own title under\nan identity rule, the worker attaches to the existing series outright. External sync maps\na remote entry on the score alone (`matching.high`).",
+          "required": [],
+          "title": "high",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "low": {
+          "default": "null",
+          "description": "At or above this score, a title that did not attach creates the series and flags the pair\nfor operator review (`matching.low`).",
+          "required": [],
+          "title": "low",
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [],
+      "title": "matching"
+    },
+    "metadata": {
+      "additionalProperties": true,
+      "description": "Metadata enrichment (`sync`) and the per-field source priority and tag filtering (`sync`, `worker`, `api`).",
+      "properties": {
+        "enrichBatch": {
+          "default": "null",
+          "description": "Series fetched per DB page during a sweep (`metadata.enrich_batch`).",
+          "required": [],
+          "title": "enrichBatch",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "enrichEnabled": {
+          "default": "null",
+          "description": "Whether the background enrichment worker runs. On by default (`metadata.enrich_enabled`).",
+          "required": [],
+          "title": "enrichEnabled",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "enrichIntervalSecs": {
+          "default": "null",
+          "description": "Seconds between enrichment sweeps (`metadata.enrich_interval_secs`).",
+          "minimum": 0,
+          "required": [],
+          "title": "enrichIntervalSecs",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "enrichMaxSeries": {
+          "default": "null",
+          "description": "Upper bound on series processed per sweep (paces `AniList`'s rate limit)\n(`metadata.enrich_max_series`).",
+          "minimum": 0,
+          "required": [],
+          "title": "enrichMaxSeries",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "priority": {
+          "additionalProperties": true,
+          "description": "Source order per metadata field: the first source with a value wins.",
+          "properties": {
+            "contentType": {
+              "default": "null",
+              "description": "Priority order for the medium/origin classification (`metadata.priority.content_type`).",
+              "items": {
+                "enum": [
+                  "anilist",
+                  "adapter"
+                ],
+                "required": []
+              },
+              "required": [],
+              "title": "contentType",
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "cover": {
+              "default": "null",
+              "description": "Priority order for the cover image URL (`metadata.priority.cover`).",
+              "items": {
+                "enum": [
+                  "anilist",
+                  "adapter"
+                ],
+                "required": []
+              },
+              "required": [],
+              "title": "cover",
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "default": {
+              "default": "null",
+              "description": "Fallback order for any field whose list was explicitly emptied\n(`metadata.priority.default`).",
+              "items": {
+                "enum": [
+                  "anilist",
+                  "adapter"
+                ],
+                "required": []
+              },
+              "required": [],
+              "title": "default",
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "description": {
+              "default": "null",
+              "description": "Priority order for the long-form series description (`metadata.priority.description`).",
+              "items": {
+                "enum": [
+                  "anilist",
+                  "adapter"
+                ],
+                "required": []
+              },
+              "required": [],
+              "title": "description",
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "releaseYear": {
+              "default": "null",
+              "description": "Priority order for the year of first publication (`metadata.priority.release_year`).",
+              "items": {
+                "enum": [
+                  "anilist",
+                  "adapter"
+                ],
+                "required": []
+              },
+              "required": [],
+              "title": "releaseYear",
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "status": {
+              "default": "null",
+              "description": "Priority order for the publication status (`metadata.priority.status`).",
+              "items": {
+                "enum": [
+                  "anilist",
+                  "adapter"
+                ],
+                "required": []
+              },
+              "required": [],
+              "title": "status",
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "title": {
+              "default": "null",
+              "description": "Priority order for the canonical/display title (`metadata.priority.title`).",
+              "items": {
+                "enum": [
+                  "anilist",
+                  "adapter"
+                ],
+                "required": []
+              },
+              "required": [],
+              "title": "title",
+              "type": [
+                "array",
+                "null"
+              ]
+            }
+          },
+          "required": [],
+          "title": "priority"
+        },
+        "tags": {
+          "additionalProperties": true,
+          "description": "Which tags are kept, and which are treated as adult content.",
+          "properties": {
+            "adultTags": {
+              "default": "null",
+              "description": "Additional genre chips that classify a series as adult, matched on their slug\n(`metadata.tags.adult_tags`).",
+              "items": {
+                "required": [],
+                "type": "string"
+              },
+              "required": [],
+              "title": "adultTags",
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "blocklist": {
+              "default": "null",
+              "description": "Additional refused terms, matched on their slug: `N/A`, `n/a` and `n-a` are one entry\n(`metadata.tags.blocklist`).",
+              "items": {
+                "required": [],
+                "type": "string"
+              },
+              "required": [],
+              "title": "blocklist",
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "useDefaults": {
+              "default": "null",
+              "description": "Whether the shipped [`tankovault_domain::DEFAULT_BLOCKED_TERMS`] apply\n(`metadata.tags.use_defaults`).",
+              "required": [],
+              "title": "useDefaults",
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          },
+          "required": [],
+          "title": "tags"
+        }
+      },
+      "required": [],
+      "title": "metadata"
+    },
     "metrics": {
       "additionalProperties": true,
       "description": "Prometheus integration. Every service serves a scrape on an isolated port, outside the\nrequest-facing listener and outside its own HTTP metrics middleware.",
@@ -3232,6 +4011,16 @@
           "required": [],
           "title": "enabled",
           "type": "boolean"
+        },
+        "httpRequests": {
+          "default": "null",
+          "description": "Also record per-request HTTP metrics. The request histogram is the expensive,\nhigh-cardinality part, so it has its own switch (`metrics.http_requests`).",
+          "required": [],
+          "title": "httpRequests",
+          "type": [
+            "boolean",
+            "null"
+          ]
         },
         "natsExporter": {
           "additionalProperties": true,
@@ -4688,6 +5477,16 @@
           "required": [],
           "title": "prometheusRule"
         },
+        "route": {
+          "default": "null",
+          "description": "Path the scrape endpoint is mounted at (`metrics.route`).",
+          "required": [],
+          "title": "route",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "serviceMonitor": {
           "additionalProperties": true,
           "description": "Prometheus Operator scrape configuration, one ServiceMonitor per enabled service.",
@@ -5195,6 +5994,233 @@
       "required": [],
       "title": "profile"
     },
+    "rateLimit": {
+      "additionalProperties": true,
+      "description": "Request rate limiting. The backend is chosen by the chart: Redis when Valkey is configured, in-process otherwise.",
+      "properties": {
+        "auth": {
+          "additionalProperties": true,
+          "description": "Limits for the authentication endpoints.",
+          "properties": {
+            "burst": {
+              "default": "null",
+              "description": "The most requests a client may spend back-to-back (`rate_limit.auth.burst`).",
+              "maximum": 4294967295,
+              "minimum": 0,
+              "required": [],
+              "title": "burst",
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "perMinute": {
+              "default": "null",
+              "description": "Sustained requests allowed per minute per client key, which is the bucket's refill rate\n(`rate_limit.auth.per_minute`).",
+              "maximum": 4294967295,
+              "minimum": 0,
+              "required": [],
+              "title": "perMinute",
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          "required": [],
+          "title": "auth"
+        },
+        "enabled": {
+          "default": "null",
+          "description": "Enforce limits. When `false` the layer is not mounted and costs nothing per request\n(`rate_limit.enabled`).",
+          "required": [],
+          "title": "enabled",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "expensive": {
+          "additionalProperties": true,
+          "description": "Limits for endpoints that are costly to serve.",
+          "properties": {
+            "burst": {
+              "default": "null",
+              "description": "The most requests a client may spend back-to-back (`rate_limit.expensive.burst`).",
+              "maximum": 4294967295,
+              "minimum": 0,
+              "required": [],
+              "title": "burst",
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "perMinute": {
+              "default": "null",
+              "description": "Sustained requests allowed per minute per client key, which is the bucket's refill rate\n(`rate_limit.expensive.per_minute`).",
+              "maximum": 4294967295,
+              "minimum": 0,
+              "required": [],
+              "title": "perMinute",
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          "required": [],
+          "title": "expensive"
+        },
+        "global": {
+          "additionalProperties": true,
+          "description": "The per-client limit every request counts against.",
+          "properties": {
+            "burst": {
+              "default": "null",
+              "description": "The most requests a client may spend back-to-back (`rate_limit.global.burst`).",
+              "maximum": 4294967295,
+              "minimum": 0,
+              "required": [],
+              "title": "burst",
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "perMinute": {
+              "default": "null",
+              "description": "Sustained requests allowed per minute per client key, which is the bucket's refill rate\n(`rate_limit.global.per_minute`).",
+              "maximum": 4294967295,
+              "minimum": 0,
+              "required": [],
+              "title": "perMinute",
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          "required": [],
+          "title": "global"
+        },
+        "trustForwardedFor": {
+          "default": "null",
+          "description": "Take the client key from `X-Forwarded-For` or `X-Real-IP`. Enable it **only behind a\nreverse proxy that overwrites both**; otherwise any client forges a fresh key and\nbypasses the limiter (`rate_limit.trust_forwarded_for`).",
+          "required": [],
+          "title": "trustForwardedFor",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "required": [],
+      "title": "rateLimit"
+    },
+    "reconcileIntervalSecs": {
+      "default": "null",
+      "description": "Interval (seconds) between scheduled reconciliation ticks. `0` disables the loop\n(`reconcile_interval_secs`).",
+      "minimum": 0,
+      "required": [],
+      "title": "reconcileIntervalSecs",
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "render": {
+      "additionalProperties": true,
+      "description": "The headless browser the `render` service drives.",
+      "properties": {
+        "challengeWaitMs": {
+          "default": "null",
+          "description": "Extra settle time to let a bot-management challenge clear during `/v1/solve` (ms)\n(`render.challenge_wait_ms`).",
+          "minimum": 0,
+          "required": [],
+          "title": "challengeWaitMs",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "chromePath": {
+          "default": "null",
+          "description": "Explicit Chrome/Chromium executable path. When `None`, `chromiumoxide` auto-detects\n(`render.chrome_path`).",
+          "required": [],
+          "title": "chromePath",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "defaultWaitMs": {
+          "default": "null",
+          "description": "Extra settle delay applied after navigation on every `/v1/render` (ms)\n(`render.default_wait_ms`).",
+          "minimum": 0,
+          "required": [],
+          "title": "defaultWaitMs",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "headless": {
+          "default": "null",
+          "description": "Run the browser headless (the default; set `false` only for local debugging)\n(`render.headless`).",
+          "required": [],
+          "title": "headless",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "navTimeoutMs": {
+          "default": "null",
+          "description": "Per-navigation time budget handed to the CDP client (ms) (`render.nav_timeout_ms`).",
+          "minimum": 0,
+          "required": [],
+          "title": "navTimeoutMs",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "noSandbox": {
+          "default": "null",
+          "description": "Pass `--no-sandbox` (required to run Chromium as root inside the runtime container)\n(`render.no_sandbox`).",
+          "required": [],
+          "title": "noSandbox",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "sessionTtlSecs": {
+          "default": "null",
+          "description": "TTL attached to a solved session when acting as a `ChallengeSolver` back-end (s)\n(`render.session_ttl_secs`).",
+          "minimum": 0,
+          "required": [],
+          "title": "sessionTtlSecs",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "userAgent": {
+          "default": "null",
+          "description": "User-agent override, applied to the page and reported back so a solved `cf_clearance`\ncookie stays paired with a stable UA (`render.user_agent`).",
+          "required": [],
+          "title": "userAgent",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [],
+      "title": "render"
+    },
     "scheduler": {
       "additionalProperties": true,
       "description": "The `scheduler` settings.",
@@ -5205,6 +6231,165 @@
           "minimum": 0,
           "required": [],
           "title": "chapterRollupVerifyIntervalSecs",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "failureBackoffMaxSecs": {
+          "default": "null",
+          "description": "Ceiling on how long a provider whose runs keep failing is skipped by the sweeps. 0\ndisables the backoff entirely, restoring the unconditional sweep\n(`scheduler.failure_backoff_max_secs`).",
+          "minimum": 0,
+          "required": [],
+          "title": "failureBackoffMaxSecs",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "fastIntervalSecs": {
+          "default": "null",
+          "description": "Seconds between fast-scan sweeps of all active providers. 0 disables\n(`scheduler.fast_interval_secs`).",
+          "minimum": 0,
+          "required": [],
+          "title": "fastIntervalSecs",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "fullIntervalSecs": {
+          "default": "null",
+          "description": "Seconds between full-scan sweeps. 0 disables (full scans are usually on demand)\n(`scheduler.full_interval_secs`).",
+          "minimum": 0,
+          "required": [],
+          "title": "fullIntervalSecs",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "mergeSweepIntervalSecs": {
+          "default": "null",
+          "description": "Seconds between full duplicate-reconciliation sweeps. 0 disables\n(`scheduler.merge_sweep_interval_secs`).",
+          "minimum": 0,
+          "required": [],
+          "title": "mergeSweepIntervalSecs",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "mergeSweepMaxAutoMerges": {
+          "default": "null",
+          "description": "Automatic merges permitted in a single sweep: the only bound on a destructive background\naction. Without it, a bad threshold or normalization rule could collapse the whole\ncatalogue between two scheduler ticks (`scheduler.merge_sweep_max_auto_merges`).",
+          "required": [],
+          "title": "mergeSweepMaxAutoMerges",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "mergeSweepPairs": {
+          "default": "null",
+          "description": "Newly-blocked duplicate pairs shortlisted per sweep (`scheduler.merge_sweep_pairs`).",
+          "required": [],
+          "title": "mergeSweepPairs",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "mergeSweepRecheck": {
+          "default": "null",
+          "description": "Previously-distinct pairs reconsidered per sweep, least-recently-scored first\n(`scheduler.merge_sweep_recheck`).",
+          "required": [],
+          "title": "mergeSweepRecheck",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "mergeSweepRequeue": {
+          "default": "null",
+          "description": "Open queue rows re-scored per sweep, least-recently-scored first\n(`scheduler.merge_sweep_requeue`).",
+          "required": [],
+          "title": "mergeSweepRequeue",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "mergeSweepRotationIntervalSecs": {
+          "default": "null",
+          "description": "Seconds between rotation-only sweeps: the open queue and the recheck set, no discovery. 0\ndisables (`scheduler.merge_sweep_rotation_interval_secs`).",
+          "minimum": 0,
+          "required": [],
+          "title": "mergeSweepRotationIntervalSecs",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "reconcileIntervalSecs": {
+          "default": "null",
+          "description": "Seconds between passes that reconcile `JetStream` against `scan_tasks`. 0 disables\n(`scheduler.reconcile_interval_secs`).",
+          "minimum": 0,
+          "required": [],
+          "title": "reconcileIntervalSecs",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "recsysBatch": {
+          "default": "null",
+          "description": "Series per streamed batch in a model build (`scheduler.recsys_batch`).",
+          "required": [],
+          "title": "recsysBatch",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "recsysFullIntervalSecs": {
+          "default": "null",
+          "description": "Seconds between full recommendation-model rebuilds. 0 disables\n(`scheduler.recsys_full_interval_secs`).",
+          "minimum": 0,
+          "required": [],
+          "title": "recsysFullIntervalSecs",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "recsysIncrementalIntervalSecs": {
+          "default": "null",
+          "description": "Seconds between incremental recommendation-model builds. 0 disables\n(`scheduler.recsys_incremental_interval_secs`).",
+          "minimum": 0,
+          "required": [],
+          "title": "recsysIncrementalIntervalSecs",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "recsysIncrementalMax": {
+          "default": "null",
+          "description": "Ceiling on how many series one incremental build may touch\n(`scheduler.recsys_incremental_max`).",
+          "required": [],
+          "title": "recsysIncrementalMax",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "runStaleAfterSecs": {
+          "default": "null",
+          "description": "How long an unfinished run keeps suppressing new runs of the same provider and mode\n(`scheduler.run_stale_after_secs`).",
+          "minimum": 0,
+          "required": [],
+          "title": "runStaleAfterSecs",
           "type": [
             "integer",
             "null"
@@ -5280,6 +6465,130 @@
       },
       "required": [],
       "title": "scheduler"
+    },
+    "security": {
+      "additionalProperties": true,
+      "description": "HTTP hardening shared by every service that serves an API: CORS, HSTS, body and time limits, response headers.",
+      "properties": {
+        "cors": {
+          "additionalProperties": true,
+          "description": "Cross-origin access. Left unset, no cross-origin request is allowed.",
+          "properties": {
+            "allowCredentials": {
+              "default": "null",
+              "description": "Allow credentialed cross-origin requests, carrying cookies or `Authorization`. Cannot\nbe combined with a wildcard origin (`security.cors.allow_credentials`).",
+              "required": [],
+              "title": "allowCredentials",
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "allowedOrigins": {
+              "default": "null",
+              "description": "Exact origins allowed, such as `https://app.example.com`. Empty disables CORS\n(`security.cors.allowed_origins`).",
+              "items": {
+                "required": [],
+                "type": "string"
+              },
+              "required": [],
+              "title": "allowedOrigins",
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "maxAgeSecs": {
+              "default": "null",
+              "description": "`Access-Control-Max-Age`, in seconds (`security.cors.max_age_secs`).",
+              "minimum": 0,
+              "required": [],
+              "title": "maxAgeSecs",
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          "required": [],
+          "title": "cors"
+        },
+        "exposeApiDocs": {
+          "default": "null",
+          "description": "Serve the browsable API docs (`/scalar`) and the `OpenAPI` document\n(`security.expose_api_docs`).",
+          "required": [],
+          "title": "exposeApiDocs",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "hsts": {
+          "default": "null",
+          "description": "Emit `Strict-Transport-Security`. Browsers ignore it over plain HTTP (`security.hsts`).",
+          "required": [],
+          "title": "hsts",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "hstsMaxAgeSecs": {
+          "default": "null",
+          "description": "`max-age` for the HSTS header, in seconds. The default is two years, the preload minimum\n(`security.hsts_max_age_secs`).",
+          "minimum": 0,
+          "required": [],
+          "title": "hstsMaxAgeSecs",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "maxBodyBytes": {
+          "default": "null",
+          "description": "Reject request bodies larger than this, in bytes, before they are buffered\n(`security.max_body_bytes`).",
+          "minimum": 0,
+          "required": [],
+          "title": "maxBodyBytes",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "requestTimeoutSecs": {
+          "default": "null",
+          "description": "Abort a request that has not produced a response within this many seconds\n(`security.request_timeout_secs`).",
+          "minimum": 0,
+          "required": [],
+          "title": "requestTimeoutSecs",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "securityHeaders": {
+          "default": "null",
+          "description": "Send the baseline set of hardening headers (`X-Content-Type-Options`, `X-Frame-Options`,\n`Referrer-Policy`, `Cross-Origin-Resource-Policy`) (`security.security_headers`).",
+          "required": [],
+          "title": "securityHeaders",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "trustRequestId": {
+          "default": "null",
+          "description": "Accept an inbound `X-Request-Id` instead of minting one. Enable it only behind a trusted\nproxy, since a client-supplied id can poison log correlation\n(`security.trust_request_id`).",
+          "required": [],
+          "title": "trustRequestId",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "required": [],
+      "title": "security"
     },
     "serviceAccount": {
       "additionalProperties": true,
@@ -6979,6 +8288,46 @@
       "required": [],
       "title": "services"
     },
+    "solver": {
+      "additionalProperties": true,
+      "description": "The challenge-solver backend and its timeouts, read by `challengeSolver`.",
+      "properties": {
+        "backend": {
+          "default": "null",
+          "description": "Back-end selector; only `trawl` is wired today (`solver.backend`).",
+          "required": [],
+          "title": "backend",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "maxTimeoutMs": {
+          "default": "null",
+          "description": "Ceiling on one solve attempt, in milliseconds. A challenge still standing at the end of\nit is reported unsolved, which the caller treats as retryable (`solver.max_timeout_ms`).",
+          "minimum": 0,
+          "required": [],
+          "title": "maxTimeoutMs",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "sessionTtlSecs": {
+          "default": "null",
+          "description": "How long *this* deployment caches a solved session for. Independent of TRAWL's own\n`SESSION_TTL_SECONDS`, which governs the cookie jar it replays internally\n(`solver.session_ttl_secs`).",
+          "minimum": 0,
+          "required": [],
+          "title": "sessionTtlSecs",
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [],
+      "title": "solver"
+    },
     "statementTimeouts": {
       "additionalProperties": true,
       "description": "The `statement_timeouts` settings.",
@@ -7025,6 +8374,26 @@
       "additionalProperties": true,
       "description": "Process-level telemetry. Unlike almost everything under `config`, what is set here is\ninstalled once as a service boots rather than re-read from the mounted ConfigMap, so a change\ntakes effect on the next restart instead of within the kubelet's refresh interval.\n`configReload.rolloutOnChange` is what turns a change here into a rollout.",
       "properties": {
+        "jsonLogs": {
+          "default": "null",
+          "description": "Emit structured JSON logs, for production, in place of the human-readable format\n(`telemetry.json_logs`).",
+          "required": [],
+          "title": "jsonLogs",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "logFilter": {
+          "default": "null",
+          "description": "`tracing` filter directives, such as `info,tankovault=debug`. `RUST_LOG` wins when set\n(`telemetry.log_filter`).",
+          "required": [],
+          "title": "logFilter",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "sentry": {
           "additionalProperties": true,
           "description": "Sentry error reporting and distributed tracing. **Off**, and wholly inert while it is: no\nclient, no panic hook and no layer is installed, and nothing leaves the process.\n\nSwitched on, every enabled service is given the same block, and that is deliberate. One\nreader action is one trace across the whole tier — the id rides the proxy hop the frontend\nopens to the API, every call the API makes to `control-plane`, `sync` and `worker`, every\nNATS message the broker delivers, and every solve the worker sends to `challenge-solver` and\n`render`. A service set differently does not drop out of a trace someone else started, but it\nis the only place a trace of its own can begin, so the switch belongs to the release rather\nthan to each service. Where one genuinely has to differ, override it through\n`services.\u003cname\u003e.config.telemetry.sentry.\u003ckey\u003e`, which outranks everything here.\n\nTwo things this chart deliberately does not do for you. It never reads the DSN, so it cannot\nopen the NetworkPolicies for the ingest host: `frontend`, `control-plane` and\n`challenge-solver` are granted no egress beyond the cluster at all, and the other five are\ngranted only `networkPolicy.internetCidrs`. Name the ingest endpoint in\n`networkPolicy.extraEgress`, or in `networkPolicy.cilium.egress.toFQDNs` where a name can be\nexpressed, or events are lost without a word — an SDK that cannot reach its endpoint queues\nand discards rather than failing anything. And it configures nothing inside Sentry: the\nproject, its quota and its server-side data-scrubbing rules are yours.",
@@ -7598,6 +8967,48 @@
       },
       "required": [],
       "title": "valkey"
+    },
+    "worker": {
+      "additionalProperties": true,
+      "description": "Crawl limits and provider-refresh cadence for `worker`.",
+      "properties": {
+        "maxCatalogPages": {
+          "default": "null",
+          "description": "Catalogue pages one full scan may walk before it stops and warns. A backstop against a\npaginator that never reports a last page, not a tuning knob: real termination is the\nadapter's `has_next`, and the default sits well above any catalogue seen so far\n(`worker.max_catalog_pages`).",
+          "maximum": 4294967295,
+          "minimum": 0,
+          "required": [],
+          "title": "maxCatalogPages",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "maxConcurrentProviders": {
+          "default": "null",
+          "description": "How many providers this worker scans at once (`worker.max_concurrent_providers`).",
+          "minimum": 0,
+          "required": [],
+          "title": "maxConcurrentProviders",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "providerRefreshSecs": {
+          "default": "null",
+          "description": "How often the round-robin queue re-reads the provider list, in seconds\n(`worker.provider_refresh_secs`).",
+          "minimum": 0,
+          "required": [],
+          "title": "providerRefreshSecs",
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [],
+      "title": "worker"
     }
   },
   "required": [],

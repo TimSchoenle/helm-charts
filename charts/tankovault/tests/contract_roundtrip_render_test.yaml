@@ -9,7 +9,7 @@
 # Chart:       tankovault
 # Declaration: charts/tankovault/config-contract.yaml (document `render`)
 # Contract:    charts/tankovault/contracts/render.json
-# Coverage:    53 of 60 contract keys carry a probe, 14 through the chart's own value
+# Coverage:    53 of 60 contract keys carry a probe, 43 through the chart's own value
 #
 # Regenerate with `just contract-tests`. `just check-contract-tests` fails a pull request whose
 # committed copy has drifted from the contract it was generated against.
@@ -313,7 +313,7 @@ tests:
           path: data["config.toml"]
           pattern: '(?m)^\[metrics\]$\n(?:[^\[\n][^\n]*\n|\n)*^enabled = true$'
 
-  - it: delivers metrics.http_requests into config.toml
+  - it: delivers metrics.http_requests into config.toml from metrics.httpRequests
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="render")].data["config.toml"]'
     set:
@@ -332,7 +332,7 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.render.config.metrics.http_requests: true
+      metrics.httpRequests: true
     asserts:
       - matchRegex:
           path: data["config.toml"]
@@ -363,7 +363,7 @@ tests:
           path: data["config.toml"]
           pattern: '(?m)^\[metrics\]$\n(?:[^\[\n][^\n]*\n|\n)*^listen = "contract-probe-metrics-listen"$'
 
-  - it: delivers metrics.route into config.toml
+  - it: delivers metrics.route into config.toml from metrics.route
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="render")].data["config.toml"]'
     set:
@@ -382,13 +382,13 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.render.config.metrics.route: contract-probe-metrics-route
+      metrics.route: contract-probe-metrics-route
     asserts:
       - matchRegex:
           path: data["config.toml"]
           pattern: '(?m)^\[metrics\]$\n(?:[^\[\n][^\n]*\n|\n)*^route = "contract-probe-metrics-route"$'
 
-  - it: delivers rate_limit.auth.burst into config.toml
+  - it: delivers rate_limit.auth.burst into config.toml from rateLimit.auth.burst
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="render")].data["config.toml"]'
     set:
@@ -407,13 +407,13 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.render.config.rate_limit.auth.burst: 4242
+      rateLimit.auth.burst: 4242
     asserts:
       - matchRegex:
           path: data["config.toml"]
           pattern: '(?m)^\[rate_limit\.auth\]$\n(?:[^\[\n][^\n]*\n|\n)*^burst = 4242$'
 
-  - it: delivers rate_limit.auth.per_minute into config.toml
+  - it: delivers rate_limit.auth.per_minute into config.toml from rateLimit.auth.perMinute
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="render")].data["config.toml"]'
     set:
@@ -432,7 +432,7 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.render.config.rate_limit.auth.per_minute: 4242
+      rateLimit.auth.perMinute: 4242
     asserts:
       - matchRegex:
           path: data["config.toml"]
@@ -463,7 +463,7 @@ tests:
           path: data["config.toml"]
           pattern: '(?m)^\[rate_limit\]$\n(?:[^\[\n][^\n]*\n|\n)*^backend = "memory"$'
 
-  - it: delivers rate_limit.enabled into config.toml
+  - it: delivers rate_limit.enabled into config.toml from rateLimit.enabled
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="render")].data["config.toml"]'
     set:
@@ -482,13 +482,13 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.render.config.rate_limit.enabled: true
+      rateLimit.enabled: true
     asserts:
       - matchRegex:
           path: data["config.toml"]
           pattern: '(?m)^\[rate_limit\]$\n(?:[^\[\n][^\n]*\n|\n)*^enabled = true$'
 
-  - it: delivers rate_limit.expensive.burst into config.toml
+  - it: delivers rate_limit.expensive.burst into config.toml from rateLimit.expensive.burst
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="render")].data["config.toml"]'
     set:
@@ -507,13 +507,13 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.render.config.rate_limit.expensive.burst: 4242
+      rateLimit.expensive.burst: 4242
     asserts:
       - matchRegex:
           path: data["config.toml"]
           pattern: '(?m)^\[rate_limit\.expensive\]$\n(?:[^\[\n][^\n]*\n|\n)*^burst = 4242$'
 
-  - it: delivers rate_limit.expensive.per_minute into config.toml
+  - it: delivers rate_limit.expensive.per_minute into config.toml from rateLimit.expensive.perMinute
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="render")].data["config.toml"]'
     set:
@@ -532,13 +532,13 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.render.config.rate_limit.expensive.per_minute: 4242
+      rateLimit.expensive.perMinute: 4242
     asserts:
       - matchRegex:
           path: data["config.toml"]
           pattern: '(?m)^\[rate_limit\.expensive\]$\n(?:[^\[\n][^\n]*\n|\n)*^per_minute = 4242$'
 
-  - it: delivers rate_limit.global.burst into config.toml
+  - it: delivers rate_limit.global.burst into config.toml from rateLimit.global.burst
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="render")].data["config.toml"]'
     set:
@@ -557,13 +557,13 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.render.config.rate_limit.global.burst: 4242
+      rateLimit.global.burst: 4242
     asserts:
       - matchRegex:
           path: data["config.toml"]
           pattern: '(?m)^\[rate_limit\.global\]$\n(?:[^\[\n][^\n]*\n|\n)*^burst = 4242$'
 
-  - it: delivers rate_limit.global.per_minute into config.toml
+  - it: delivers rate_limit.global.per_minute into config.toml from rateLimit.global.perMinute
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="render")].data["config.toml"]'
     set:
@@ -582,13 +582,13 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.render.config.rate_limit.global.per_minute: 4242
+      rateLimit.global.perMinute: 4242
     asserts:
       - matchRegex:
           path: data["config.toml"]
           pattern: '(?m)^\[rate_limit\.global\]$\n(?:[^\[\n][^\n]*\n|\n)*^per_minute = 4242$'
 
-  - it: delivers rate_limit.trust_forwarded_for into config.toml
+  - it: delivers rate_limit.trust_forwarded_for into config.toml from rateLimit.trustForwardedFor
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="render")].data["config.toml"]'
     set:
@@ -607,13 +607,13 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.render.config.rate_limit.trust_forwarded_for: true
+      rateLimit.trustForwardedFor: true
     asserts:
       - matchRegex:
           path: data["config.toml"]
           pattern: '(?m)^\[rate_limit\]$\n(?:[^\[\n][^\n]*\n|\n)*^trust_forwarded_for = true$'
 
-  - it: delivers render.challenge_wait_ms into config.toml
+  - it: delivers render.challenge_wait_ms into config.toml from render.challengeWaitMs
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="render")].data["config.toml"]'
     set:
@@ -632,13 +632,13 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.render.config.render.challenge_wait_ms: 4242
+      render.challengeWaitMs: 4242
     asserts:
       - matchRegex:
           path: data["config.toml"]
           pattern: '(?m)^\[render\]$\n(?:[^\[\n][^\n]*\n|\n)*^challenge_wait_ms = 4242$'
 
-  - it: delivers render.chrome_path into config.toml
+  - it: delivers render.chrome_path into config.toml from render.chromePath
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="render")].data["config.toml"]'
     set:
@@ -657,13 +657,13 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.render.config.render.chrome_path: contract-probe-render-chrome-path
+      render.chromePath: contract-probe-render-chrome-path
     asserts:
       - matchRegex:
           path: data["config.toml"]
           pattern: '(?m)^\[render\]$\n(?:[^\[\n][^\n]*\n|\n)*^chrome_path = "contract-probe-render-chrome-path"$'
 
-  - it: delivers render.default_wait_ms into config.toml
+  - it: delivers render.default_wait_ms into config.toml from render.defaultWaitMs
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="render")].data["config.toml"]'
     set:
@@ -682,13 +682,13 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.render.config.render.default_wait_ms: 4242
+      render.defaultWaitMs: 4242
     asserts:
       - matchRegex:
           path: data["config.toml"]
           pattern: '(?m)^\[render\]$\n(?:[^\[\n][^\n]*\n|\n)*^default_wait_ms = 4242$'
 
-  - it: delivers render.headless into config.toml
+  - it: delivers render.headless into config.toml from render.headless
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="render")].data["config.toml"]'
     set:
@@ -707,13 +707,13 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.render.config.render.headless: true
+      render.headless: true
     asserts:
       - matchRegex:
           path: data["config.toml"]
           pattern: '(?m)^\[render\]$\n(?:[^\[\n][^\n]*\n|\n)*^headless = true$'
 
-  - it: delivers render.nav_timeout_ms into config.toml
+  - it: delivers render.nav_timeout_ms into config.toml from render.navTimeoutMs
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="render")].data["config.toml"]'
     set:
@@ -732,13 +732,13 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.render.config.render.nav_timeout_ms: 4242
+      render.navTimeoutMs: 4242
     asserts:
       - matchRegex:
           path: data["config.toml"]
           pattern: '(?m)^\[render\]$\n(?:[^\[\n][^\n]*\n|\n)*^nav_timeout_ms = 4242$'
 
-  - it: delivers render.no_sandbox into config.toml
+  - it: delivers render.no_sandbox into config.toml from render.noSandbox
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="render")].data["config.toml"]'
     set:
@@ -757,13 +757,13 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.render.config.render.no_sandbox: true
+      render.noSandbox: true
     asserts:
       - matchRegex:
           path: data["config.toml"]
           pattern: '(?m)^\[render\]$\n(?:[^\[\n][^\n]*\n|\n)*^no_sandbox = true$'
 
-  - it: delivers render.session_ttl_secs into config.toml
+  - it: delivers render.session_ttl_secs into config.toml from render.sessionTtlSecs
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="render")].data["config.toml"]'
     set:
@@ -782,13 +782,13 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.render.config.render.session_ttl_secs: 4242
+      render.sessionTtlSecs: 4242
     asserts:
       - matchRegex:
           path: data["config.toml"]
           pattern: '(?m)^\[render\]$\n(?:[^\[\n][^\n]*\n|\n)*^session_ttl_secs = 4242$'
 
-  - it: delivers render.user_agent into config.toml
+  - it: delivers render.user_agent into config.toml from render.userAgent
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="render")].data["config.toml"]'
     set:
@@ -807,13 +807,13 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.render.config.render.user_agent: contract-probe-render-user-agent
+      render.userAgent: contract-probe-render-user-agent
     asserts:
       - matchRegex:
           path: data["config.toml"]
           pattern: '(?m)^\[render\]$\n(?:[^\[\n][^\n]*\n|\n)*^user_agent = "contract-probe-render-user-agent"$'
 
-  - it: delivers security.cors.allow_credentials into config.toml
+  - it: delivers security.cors.allow_credentials into config.toml from security.cors.allowCredentials
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="render")].data["config.toml"]'
     set:
@@ -832,13 +832,13 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.render.config.security.cors.allow_credentials: true
+      security.cors.allowCredentials: true
     asserts:
       - matchRegex:
           path: data["config.toml"]
           pattern: '(?m)^\[security\.cors\]$\n(?:[^\[\n][^\n]*\n|\n)*^allow_credentials = true$'
 
-  - it: delivers security.cors.max_age_secs into config.toml
+  - it: delivers security.cors.max_age_secs into config.toml from security.cors.maxAgeSecs
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="render")].data["config.toml"]'
     set:
@@ -857,13 +857,13 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.render.config.security.cors.max_age_secs: 4242
+      security.cors.maxAgeSecs: 4242
     asserts:
       - matchRegex:
           path: data["config.toml"]
           pattern: '(?m)^\[security\.cors\]$\n(?:[^\[\n][^\n]*\n|\n)*^max_age_secs = 4242$'
 
-  - it: delivers security.expose_api_docs into config.toml
+  - it: delivers security.expose_api_docs into config.toml from security.exposeApiDocs
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="render")].data["config.toml"]'
     set:
@@ -882,13 +882,13 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.render.config.security.expose_api_docs: true
+      security.exposeApiDocs: true
     asserts:
       - matchRegex:
           path: data["config.toml"]
           pattern: '(?m)^\[security\]$\n(?:[^\[\n][^\n]*\n|\n)*^expose_api_docs = true$'
 
-  - it: delivers security.hsts into config.toml
+  - it: delivers security.hsts into config.toml from security.hsts
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="render")].data["config.toml"]'
     set:
@@ -907,13 +907,13 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.render.config.security.hsts: true
+      security.hsts: true
     asserts:
       - matchRegex:
           path: data["config.toml"]
           pattern: '(?m)^\[security\]$\n(?:[^\[\n][^\n]*\n|\n)*^hsts = true$'
 
-  - it: delivers security.hsts_max_age_secs into config.toml
+  - it: delivers security.hsts_max_age_secs into config.toml from security.hstsMaxAgeSecs
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="render")].data["config.toml"]'
     set:
@@ -932,13 +932,13 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.render.config.security.hsts_max_age_secs: 4242
+      security.hstsMaxAgeSecs: 4242
     asserts:
       - matchRegex:
           path: data["config.toml"]
           pattern: '(?m)^\[security\]$\n(?:[^\[\n][^\n]*\n|\n)*^hsts_max_age_secs = 4242$'
 
-  - it: delivers security.max_body_bytes into config.toml
+  - it: delivers security.max_body_bytes into config.toml from security.maxBodyBytes
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="render")].data["config.toml"]'
     set:
@@ -957,13 +957,13 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.render.config.security.max_body_bytes: 4242
+      security.maxBodyBytes: 4242
     asserts:
       - matchRegex:
           path: data["config.toml"]
           pattern: '(?m)^\[security\]$\n(?:[^\[\n][^\n]*\n|\n)*^max_body_bytes = 4242$'
 
-  - it: delivers security.request_timeout_secs into config.toml
+  - it: delivers security.request_timeout_secs into config.toml from security.requestTimeoutSecs
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="render")].data["config.toml"]'
     set:
@@ -982,13 +982,13 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.render.config.security.request_timeout_secs: 4242
+      security.requestTimeoutSecs: 4242
     asserts:
       - matchRegex:
           path: data["config.toml"]
           pattern: '(?m)^\[security\]$\n(?:[^\[\n][^\n]*\n|\n)*^request_timeout_secs = 4242$'
 
-  - it: delivers security.security_headers into config.toml
+  - it: delivers security.security_headers into config.toml from security.securityHeaders
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="render")].data["config.toml"]'
     set:
@@ -1007,13 +1007,13 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.render.config.security.security_headers: true
+      security.securityHeaders: true
     asserts:
       - matchRegex:
           path: data["config.toml"]
           pattern: '(?m)^\[security\]$\n(?:[^\[\n][^\n]*\n|\n)*^security_headers = true$'
 
-  - it: delivers security.trust_request_id into config.toml
+  - it: delivers security.trust_request_id into config.toml from security.trustRequestId
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="render")].data["config.toml"]'
     set:
@@ -1032,13 +1032,13 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.render.config.security.trust_request_id: true
+      security.trustRequestId: true
     asserts:
       - matchRegex:
           path: data["config.toml"]
           pattern: '(?m)^\[security\]$\n(?:[^\[\n][^\n]*\n|\n)*^trust_request_id = true$'
 
-  - it: delivers telemetry.json_logs into config.toml
+  - it: delivers telemetry.json_logs into config.toml from telemetry.jsonLogs
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="render")].data["config.toml"]'
     set:
@@ -1057,13 +1057,13 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.render.config.telemetry.json_logs: true
+      telemetry.jsonLogs: true
     asserts:
       - matchRegex:
           path: data["config.toml"]
           pattern: '(?m)^\[telemetry\]$\n(?:[^\[\n][^\n]*\n|\n)*^json_logs = true$'
 
-  - it: delivers telemetry.log_filter into config.toml
+  - it: delivers telemetry.log_filter into config.toml from telemetry.logFilter
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="render")].data["config.toml"]'
     set:
@@ -1082,7 +1082,7 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.render.config.telemetry.log_filter: contract-probe-telemetry-log-filter
+      telemetry.logFilter: contract-probe-telemetry-log-filter
     asserts:
       - matchRegex:
           path: data["config.toml"]

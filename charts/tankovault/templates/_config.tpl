@@ -111,6 +111,12 @@ always-emitted `false` would silently override the same key written by hand in t
 bind_addr: {{ printf "0.0.0.0:%v" $spec.port | quote }}
 telemetry:
   service_name: {{ $spec.slug | quote }}
+  {{- if not (kindIs "invalid" $ctx.Values.telemetry.jsonLogs) }}
+  json_logs: {{ $ctx.Values.telemetry.jsonLogs }}
+  {{- end }}
+  {{- with $ctx.Values.telemetry.logFilter }}
+  log_filter: {{ . | quote }}
+  {{- end }}
 {{- with include "tankovault.sentry.config" $ctx }}
   sentry:
     {{- . | nindent 4 }}
@@ -118,6 +124,12 @@ telemetry:
 metrics:
   enabled: {{ $ctx.Values.metrics.enabled }}
   listen: {{ printf "0.0.0.0:%v" $ctx.Values.metrics.port | quote }}
+  {{- if not (kindIs "invalid" $ctx.Values.metrics.httpRequests) }}
+  http_requests: {{ $ctx.Values.metrics.httpRequests }}
+  {{- end }}
+  {{- with $ctx.Values.metrics.route }}
+  route: {{ . | quote }}
+  {{- end }}
 {{- /* `nats.url` is a secret key, so it reaches the pod through the Secret: `tankovault.secretSources`. */ -}}
 {{- if $spec.needsNats }}
 {{- $eventsMaxAge := $ctx.Values.nats.eventsMaxAgeSecs }}
@@ -133,13 +145,49 @@ internal:
 {{- if and $spec.needsRedis $redis }}
 redis:
   url: {{ $redis | quote }}
+{{- end }}
+{{- if has $service (list "api" "challengeSolver" "controlPlane" "render" "sync") }}
+{{- $rateLimit := $ctx.Values.rateLimit }}
 rate_limit:
+  {{- if and $spec.needsRedis $redis }}
   backend: redis
+  {{- end }}
+  {{- if not (kindIs "invalid" $ctx.Values.rateLimit.enabled) }}
+  enabled: {{ $ctx.Values.rateLimit.enabled }}
+  {{- end }}
+  {{- if not (kindIs "invalid" $ctx.Values.rateLimit.trustForwardedFor) }}
+  trust_forwarded_for: {{ $ctx.Values.rateLimit.trustForwardedFor }}
+  {{- end }}
+  {{- range $tier := list "auth" "expensive" "global" }}
+  {{- $limits := index $rateLimit $tier }}
+  {{ $tier }}:
+    {{- if not (kindIs "invalid" $limits.burst) }}
+    burst: {{ $limits.burst }}
+    {{- end }}
+    {{- if not (kindIs "invalid" $limits.perMinute) }}
+    per_minute: {{ $limits.perMinute }}
+    {{- end }}
+  {{- end }}
 {{- end }}
 {{- if eq $service "frontend" }}
 {{- $cloudflare := $ctx.Values.cloudflare }}
 frontend:
   api_upstream: {{ include "tankovault.url" (dict "ctx" $ctx "service" "api") | quote }}
+  {{- if not (kindIs "invalid" $ctx.Values.frontend.connectTimeoutSecs) }}
+  connect_timeout_secs: {{ $ctx.Values.frontend.connectTimeoutSecs }}
+  {{- end }}
+  {{- if not (kindIs "invalid" $ctx.Values.frontend.maxBodyBytes) }}
+  max_body_bytes: {{ $ctx.Values.frontend.maxBodyBytes }}
+  {{- end }}
+  {{- with $ctx.Values.frontend.noticesJsonPath }}
+  notices_json_path: {{ . | quote }}
+  {{- end }}
+  {{- with $ctx.Values.frontend.noticesPath }}
+  notices_path: {{ . | quote }}
+  {{- end }}
+  {{- with $ctx.Values.frontend.staticDir }}
+  static_dir: {{ . | quote }}
+  {{- end }}
   {{- if or $cloudflare.scriptNonce $cloudflare.turnstile }}
   cloudflare:
     {{- if $cloudflare.scriptNonce }}
@@ -160,29 +208,87 @@ sync_url: {{ include "tankovault.internalUrl" (dict "ctx" $ctx "service" "sync")
 {{- if $ctx.Values.services.worker.enabled }}
 worker_url: {{ include "tankovault.internalUrl" (dict "ctx" $ctx "service" "worker") | quote }}
 {{- end }}
-{{- if $external }}
 auth:
-  webauthn_origin: {{ $external | quote }}
+  {{- with $external }}
+  webauthn_origin: {{ . | quote }}
+  {{- end }}
+  {{- if not (kindIs "invalid" $ctx.Values.auth.accessTtlMinutes) }}
+  access_ttl_minutes: {{ $ctx.Values.auth.accessTtlMinutes }}
+  {{- end }}
+  {{- if not (kindIs "invalid" $ctx.Values.auth.cookieSecure) }}
+  cookie_secure: {{ $ctx.Values.auth.cookieSecure }}
+  {{- end }}
+  {{- if not (kindIs "invalid" $ctx.Values.auth.mfaChallengeTtlMinutes) }}
+  mfa_challenge_ttl_minutes: {{ $ctx.Values.auth.mfaChallengeTtlMinutes }}
+  {{- end }}
+  {{- if not (kindIs "invalid" $ctx.Values.auth.refreshTtlDays) }}
+  refresh_ttl_days: {{ $ctx.Values.auth.refreshTtlDays }}
+  {{- end }}
+  {{- if not (kindIs "invalid" $ctx.Values.auth.stepUpMaxTtlMinutes) }}
+  step_up_max_ttl_minutes: {{ $ctx.Values.auth.stepUpMaxTtlMinutes }}
+  {{- end }}
+  {{- if not (kindIs "invalid" $ctx.Values.auth.stepUpTtlMinutes) }}
+  step_up_ttl_minutes: {{ $ctx.Values.auth.stepUpTtlMinutes }}
+  {{- end }}
+  {{- with $ctx.Values.auth.totpIssuer }}
+  totp_issuer: {{ . | quote }}
+  {{- end }}
+  {{- with $ctx.Values.auth.webauthnRpId }}
+  webauthn_rp_id: {{ . | quote }}
+  {{- end }}
+  {{- with $ctx.Values.auth.webauthnRpName }}
+  webauthn_rp_name: {{ . | quote }}
+  {{- end }}
 {{- end }}
-{{- end }}
-{{- if and (eq $service "worker") $ctx.Values.services.challengeSolver.enabled }}
+{{- if eq $service "worker" }}
 worker:
+  {{- if $ctx.Values.services.challengeSolver.enabled }}
   challenge_solver_endpoint: {{ include "tankovault.internalUrl" (dict "ctx" $ctx "service" "challengeSolver") | quote }}
+  {{- end }}
+  {{- if not (kindIs "invalid" $ctx.Values.worker.maxCatalogPages) }}
+  max_catalog_pages: {{ $ctx.Values.worker.maxCatalogPages }}
+  {{- end }}
+  {{- if not (kindIs "invalid" $ctx.Values.worker.maxConcurrentProviders) }}
+  max_concurrent_providers: {{ $ctx.Values.worker.maxConcurrentProviders }}
+  {{- end }}
+  {{- if not (kindIs "invalid" $ctx.Values.worker.providerRefreshSecs) }}
+  provider_refresh_secs: {{ $ctx.Values.worker.providerRefreshSecs }}
+  {{- end }}
 {{- end }}
 {{- if eq $service "challengeSolver" }}
-{{- with include "tankovault.trawlUrl" $ctx }}
 solver:
+  {{- with include "tankovault.trawlUrl" $ctx }}
   trawl_endpoint: {{ . | quote }}
-{{- end }}
+  {{- end }}
+  {{- with $ctx.Values.solver.backend }}
+  backend: {{ . | quote }}
+  {{- end }}
+  {{- if not (kindIs "invalid" $ctx.Values.solver.maxTimeoutMs) }}
+  max_timeout_ms: {{ $ctx.Values.solver.maxTimeoutMs }}
+  {{- end }}
+  {{- if not (kindIs "invalid" $ctx.Values.solver.sessionTtlSecs) }}
+  session_ttl_secs: {{ $ctx.Values.solver.sessionTtlSecs }}
+  {{- end }}
 {{- end }}
 {{- if eq $service "sync" }}
 anilist:
   redirect_uri: {{ default (printf "%s/account/anilist-callback" $external) $ctx.Values.anilist.redirectUri | quote }}
+  {{- with $ctx.Values.anilist.defaultConflictPolicy }}
+  default_conflict_policy: {{ . | quote }}
+  {{- end }}
+  {{- with $ctx.Values.anilist.graphqlUrl }}
+  graphql_url: {{ . | quote }}
+  {{- end }}
+  {{- if not (kindIs "invalid" $ctx.Values.anilist.minRequestIntervalMs) }}
+  min_request_interval_ms: {{ $ctx.Values.anilist.minRequestIntervalMs }}
+  {{- end }}
+  {{- with $ctx.Values.anilist.oauthBase }}
+  oauth_base: {{ . | quote }}
+  {{- end }}
 {{- end }}
 {{- if or (eq $service "api") (eq $service "notifier") }}
 {{- $email := $ctx.Values.email }}
 {{- $baseUrl := default $external $email.baseUrl }}
-{{- if or $email.host $baseUrl }}
 email:
   {{- with $email.host }}
   host: {{ . | quote }}
@@ -195,14 +301,90 @@ email:
   {{- with $baseUrl }}
   base_url: {{ . | quote }}
   {{- end }}
-{{- end }}
+  {{- with $ctx.Values.email.envelopeFrom }}
+  envelope_from: {{ . | quote }}
+  {{- end }}
+  {{- if not (kindIs "invalid" $ctx.Values.email.timeoutSecs) }}
+  timeout_secs: {{ $ctx.Values.email.timeoutSecs }}
+  {{- end }}
 {{- end }}
 {{- if eq $service "notifier" }}
-{{- with $ctx.Values.channels.emailTo }}
 channels:
+  {{- with $ctx.Values.channels.emailTo }}
   email_to:
     {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- if not (kindIs "invalid" $ctx.Values.channels.timeoutSecs) }}
+  timeout_secs: {{ $ctx.Values.channels.timeoutSecs }}
+  {{- end }}
 {{- end }}
+{{- if has $service (list "api" "controlPlane" "notifier" "sync" "worker") }}
+database:
+  {{- include "tankovault.database.config" $ctx | nindent 2 }}
+{{- end }}
+{{- if has $service (list "api" "sync" "worker") }}
+metadata:
+  {{- if eq $service "sync" }}
+  {{- if not (kindIs "invalid" $ctx.Values.metadata.enrichBatch) }}
+  enrich_batch: {{ $ctx.Values.metadata.enrichBatch }}
+  {{- end }}
+  {{- if not (kindIs "invalid" $ctx.Values.metadata.enrichEnabled) }}
+  enrich_enabled: {{ $ctx.Values.metadata.enrichEnabled }}
+  {{- end }}
+  {{- if not (kindIs "invalid" $ctx.Values.metadata.enrichIntervalSecs) }}
+  enrich_interval_secs: {{ $ctx.Values.metadata.enrichIntervalSecs }}
+  {{- end }}
+  {{- if not (kindIs "invalid" $ctx.Values.metadata.enrichMaxSeries) }}
+  enrich_max_series: {{ $ctx.Values.metadata.enrichMaxSeries }}
+  {{- end }}
+  {{- end }}
+  {{- if has $service (list "sync" "worker") }}
+  priority:
+    {{- with $ctx.Values.metadata.priority.contentType }}
+    content_type:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- with $ctx.Values.metadata.priority.cover }}
+    cover:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- with $ctx.Values.metadata.priority.default }}
+    default:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- with $ctx.Values.metadata.priority.description }}
+    description:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- with $ctx.Values.metadata.priority.releaseYear }}
+    release_year:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- with $ctx.Values.metadata.priority.status }}
+    status:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- with $ctx.Values.metadata.priority.title }}
+    title:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+  {{- end }}
+  tags:
+    {{- if has $service (list "api" "worker") }}
+    {{- with $ctx.Values.metadata.tags.adultTags }}
+    adult_tags:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- end }}
+    {{- if has $service (list "sync" "worker") }}
+    {{- with $ctx.Values.metadata.tags.blocklist }}
+    blocklist:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- if not (kindIs "invalid" $ctx.Values.metadata.tags.useDefaults) }}
+    use_defaults: {{ $ctx.Values.metadata.tags.useDefaults }}
+    {{- end }}
+    {{- end }}
 {{- end }}
 {{- with include "tankovault.branding.config" (dict "ctx" $ctx "service" $service) }}
 branding:
@@ -223,6 +405,160 @@ statement_timeouts:
 scheduler:
   {{- . | nindent 2 }}
 {{- end }}
+{{- end }}
+{{- if eq $service "api" }}
+audit:
+  {{- if not (kindIs "invalid" $ctx.Values.audit.enabled) }}
+  enabled: {{ $ctx.Values.audit.enabled }}
+  {{- end }}
+  {{- if not (kindIs "invalid" $ctx.Values.audit.recordIp) }}
+  record_ip: {{ $ctx.Values.audit.recordIp }}
+  {{- end }}
+  {{- if not (kindIs "invalid" $ctx.Values.audit.recordUserAgent) }}
+  record_user_agent: {{ $ctx.Values.audit.recordUserAgent }}
+  {{- end }}
+  {{- if not (kindIs "invalid" $ctx.Values.audit.retentionDays) }}
+  retention_days: {{ $ctx.Values.audit.retentionDays }}
+  {{- end }}
+  {{- if not (kindIs "invalid" $ctx.Values.audit.sweepIntervalHours) }}
+  sweep_interval_hours: {{ $ctx.Values.audit.sweepIntervalHours }}
+  {{- end }}
+{{- end }}
+{{- if eq $service "worker" }}
+chapter_outliers:
+  {{- if not (kindIs "invalid" $ctx.Values.chapterOutliers.enabled) }}
+  enabled: {{ $ctx.Values.chapterOutliers.enabled }}
+  {{- end }}
+  {{- if not (kindIs "invalid" $ctx.Values.chapterOutliers.gapFactor) }}
+  gap_factor: {{ $ctx.Values.chapterOutliers.gapFactor }}
+  {{- end }}
+  {{- if not (kindIs "invalid" $ctx.Values.chapterOutliers.maxRejectedFraction) }}
+  max_rejected_fraction: {{ $ctx.Values.chapterOutliers.maxRejectedFraction }}
+  {{- end }}
+  {{- if not (kindIs "invalid" $ctx.Values.chapterOutliers.minBody) }}
+  min_body: {{ $ctx.Values.chapterOutliers.minBody }}
+  {{- end }}
+  {{- if not (kindIs "invalid" $ctx.Values.chapterOutliers.minGap) }}
+  min_gap: {{ $ctx.Values.chapterOutliers.minGap }}
+  {{- end }}
+  {{- if not (kindIs "invalid" $ctx.Values.chapterOutliers.minSample) }}
+  min_sample: {{ $ctx.Values.chapterOutliers.minSample }}
+  {{- end }}
+  {{- if not (kindIs "invalid" $ctx.Values.chapterOutliers.sparseFactor) }}
+  sparse_factor: {{ $ctx.Values.chapterOutliers.sparseFactor }}
+  {{- end }}
+{{- end }}
+{{- if eq $service "api" }}
+client:
+  {{- with $ctx.Values.client.maxVersion }}
+  max_version: {{ . | quote }}
+  {{- end }}
+  {{- with $ctx.Values.client.minVersion }}
+  min_version: {{ . | quote }}
+  {{- end }}
+  {{- with $ctx.Values.client.releaseRepo }}
+  release_repo: {{ . | quote }}
+  {{- end }}
+{{- end }}
+{{- if or (eq $service "api") (eq $service "controlPlane") (eq $service "notifier") (eq $service "sync") }}
+features:
+  {{- if not (kindIs "invalid" $ctx.Values.features.refreshSecs) }}
+  refresh_secs: {{ $ctx.Values.features.refreshSecs }}
+  {{- end }}
+{{- end }}
+{{- if or (eq $service "controlPlane") (eq $service "sync") (eq $service "worker") }}
+matching:
+  {{- if not (kindIs "invalid" $ctx.Values.matching.autoMerge) }}
+  auto_merge: {{ $ctx.Values.matching.autoMerge }}
+  {{- end }}
+  {{- if not (kindIs "invalid" $ctx.Values.matching.blockAutoMergeOnAuthorConflict) }}
+  block_auto_merge_on_author_conflict: {{ $ctx.Values.matching.blockAutoMergeOnAuthorConflict }}
+  {{- end }}
+  {{- if not (kindIs "invalid" $ctx.Values.matching.blockAutoMergeOnNumericConflict) }}
+  block_auto_merge_on_numeric_conflict: {{ $ctx.Values.matching.blockAutoMergeOnNumericConflict }}
+  {{- end }}
+  {{- if not (kindIs "invalid" $ctx.Values.matching.blockAutoMergeOnTypeConflict) }}
+  block_auto_merge_on_type_conflict: {{ $ctx.Values.matching.blockAutoMergeOnTypeConflict }}
+  {{- end }}
+  {{- if not (kindIs "invalid" $ctx.Values.matching.blockAutoMergeOnYearConflict) }}
+  block_auto_merge_on_year_conflict: {{ $ctx.Values.matching.blockAutoMergeOnYearConflict }}
+  {{- end }}
+  {{- if not (kindIs "invalid" $ctx.Values.matching.candidateLimit) }}
+  candidate_limit: {{ $ctx.Values.matching.candidateLimit }}
+  {{- end }}
+  {{- if not (kindIs "invalid" $ctx.Values.matching.high) }}
+  high: {{ $ctx.Values.matching.high }}
+  {{- end }}
+  {{- if not (kindIs "invalid" $ctx.Values.matching.low) }}
+  low: {{ $ctx.Values.matching.low }}
+  {{- end }}
+{{- end }}
+{{- if eq $service "sync" }}
+{{- if not (kindIs "invalid" $ctx.Values.reconcileIntervalSecs) }}
+reconcile_interval_secs: {{ $ctx.Values.reconcileIntervalSecs }}
+{{- end }}
+{{- end }}
+{{- if eq $service "render" }}
+render:
+  {{- if not (kindIs "invalid" $ctx.Values.render.challengeWaitMs) }}
+  challenge_wait_ms: {{ $ctx.Values.render.challengeWaitMs }}
+  {{- end }}
+  {{- with $ctx.Values.render.chromePath }}
+  chrome_path: {{ . | quote }}
+  {{- end }}
+  {{- if not (kindIs "invalid" $ctx.Values.render.defaultWaitMs) }}
+  default_wait_ms: {{ $ctx.Values.render.defaultWaitMs }}
+  {{- end }}
+  {{- if not (kindIs "invalid" $ctx.Values.render.headless) }}
+  headless: {{ $ctx.Values.render.headless }}
+  {{- end }}
+  {{- if not (kindIs "invalid" $ctx.Values.render.navTimeoutMs) }}
+  nav_timeout_ms: {{ $ctx.Values.render.navTimeoutMs }}
+  {{- end }}
+  {{- if not (kindIs "invalid" $ctx.Values.render.noSandbox) }}
+  no_sandbox: {{ $ctx.Values.render.noSandbox }}
+  {{- end }}
+  {{- if not (kindIs "invalid" $ctx.Values.render.sessionTtlSecs) }}
+  session_ttl_secs: {{ $ctx.Values.render.sessionTtlSecs }}
+  {{- end }}
+  {{- with $ctx.Values.render.userAgent }}
+  user_agent: {{ . | quote }}
+  {{- end }}
+{{- end }}
+{{- if or (eq $service "api") (eq $service "challengeSolver") (eq $service "controlPlane") (eq $service "notifier") (eq $service "render") (eq $service "sync") (eq $service "worker") }}
+security:
+  cors:
+    {{- if not (kindIs "invalid" $ctx.Values.security.cors.allowCredentials) }}
+    allow_credentials: {{ $ctx.Values.security.cors.allowCredentials }}
+    {{- end }}
+    {{- with $ctx.Values.security.cors.allowedOrigins }}
+    allowed_origins:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- if not (kindIs "invalid" $ctx.Values.security.cors.maxAgeSecs) }}
+    max_age_secs: {{ $ctx.Values.security.cors.maxAgeSecs }}
+    {{- end }}
+  {{- if not (kindIs "invalid" $ctx.Values.security.exposeApiDocs) }}
+  expose_api_docs: {{ $ctx.Values.security.exposeApiDocs }}
+  {{- end }}
+  {{- if not (kindIs "invalid" $ctx.Values.security.hsts) }}
+  hsts: {{ $ctx.Values.security.hsts }}
+  {{- end }}
+  {{- if not (kindIs "invalid" $ctx.Values.security.hstsMaxAgeSecs) }}
+  hsts_max_age_secs: {{ $ctx.Values.security.hstsMaxAgeSecs }}
+  {{- end }}
+  {{- if not (kindIs "invalid" $ctx.Values.security.maxBodyBytes) }}
+  max_body_bytes: {{ $ctx.Values.security.maxBodyBytes }}
+  {{- end }}
+  {{- if not (kindIs "invalid" $ctx.Values.security.requestTimeoutSecs) }}
+  request_timeout_secs: {{ $ctx.Values.security.requestTimeoutSecs }}
+  {{- end }}
+  {{- if not (kindIs "invalid" $ctx.Values.security.securityHeaders) }}
+  security_headers: {{ $ctx.Values.security.securityHeaders }}
+  {{- end }}
+  {{- if not (kindIs "invalid" $ctx.Values.security.trustRequestId) }}
+  trust_request_id: {{ $ctx.Values.security.trustRequestId }}
+  {{- end }}
 {{- end }}
 {{- end -}}
 
@@ -250,17 +586,60 @@ interactive_secs: {{ $timeouts.interactiveSecs }}
 {{- end -}}
 
 {{/*
-The six newer `[scheduler]` keys, or empty when every one is left null.
+The `[scheduler]` block, or empty when every key is left null.
 
-Only `control-plane` reads them, for the same reason as `statementTimeouts` above: they are the
-keys `control-plane.json` declares and no other document does. The chart's older scheduler keys
-(`failure_backoff_max_secs` and the rest) still reach `[scheduler]` only through
-`services.controlPlane.config`, since nothing here has ever offered a first-class value for them.
+Only `control-plane` reads it, for the same reason as `statementTimeouts` above: these are the
+keys `control-plane.json` declares and no other document does.
 
 Args: ctx (root).
 */}}
 {{- define "tankovault.scheduler.config" -}}
 {{- $scheduler := .Values.scheduler -}}
+{{- if not (kindIs "invalid" $scheduler.failureBackoffMaxSecs) }}
+failure_backoff_max_secs: {{ $scheduler.failureBackoffMaxSecs }}
+{{- end }}
+{{- if not (kindIs "invalid" $scheduler.fastIntervalSecs) }}
+fast_interval_secs: {{ $scheduler.fastIntervalSecs }}
+{{- end }}
+{{- if not (kindIs "invalid" $scheduler.fullIntervalSecs) }}
+full_interval_secs: {{ $scheduler.fullIntervalSecs }}
+{{- end }}
+{{- if not (kindIs "invalid" $scheduler.mergeSweepIntervalSecs) }}
+merge_sweep_interval_secs: {{ $scheduler.mergeSweepIntervalSecs }}
+{{- end }}
+{{- if not (kindIs "invalid" $scheduler.mergeSweepMaxAutoMerges) }}
+merge_sweep_max_auto_merges: {{ $scheduler.mergeSweepMaxAutoMerges }}
+{{- end }}
+{{- if not (kindIs "invalid" $scheduler.mergeSweepPairs) }}
+merge_sweep_pairs: {{ $scheduler.mergeSweepPairs }}
+{{- end }}
+{{- if not (kindIs "invalid" $scheduler.mergeSweepRecheck) }}
+merge_sweep_recheck: {{ $scheduler.mergeSweepRecheck }}
+{{- end }}
+{{- if not (kindIs "invalid" $scheduler.mergeSweepRequeue) }}
+merge_sweep_requeue: {{ $scheduler.mergeSweepRequeue }}
+{{- end }}
+{{- if not (kindIs "invalid" $scheduler.mergeSweepRotationIntervalSecs) }}
+merge_sweep_rotation_interval_secs: {{ $scheduler.mergeSweepRotationIntervalSecs }}
+{{- end }}
+{{- if not (kindIs "invalid" $scheduler.reconcileIntervalSecs) }}
+reconcile_interval_secs: {{ $scheduler.reconcileIntervalSecs }}
+{{- end }}
+{{- if not (kindIs "invalid" $scheduler.recsysBatch) }}
+recsys_batch: {{ $scheduler.recsysBatch }}
+{{- end }}
+{{- if not (kindIs "invalid" $scheduler.recsysFullIntervalSecs) }}
+recsys_full_interval_secs: {{ $scheduler.recsysFullIntervalSecs }}
+{{- end }}
+{{- if not (kindIs "invalid" $scheduler.recsysIncrementalIntervalSecs) }}
+recsys_incremental_interval_secs: {{ $scheduler.recsysIncrementalIntervalSecs }}
+{{- end }}
+{{- if not (kindIs "invalid" $scheduler.recsysIncrementalMax) }}
+recsys_incremental_max: {{ $scheduler.recsysIncrementalMax }}
+{{- end }}
+{{- if not (kindIs "invalid" $scheduler.runStaleAfterSecs) }}
+run_stale_after_secs: {{ $scheduler.runStaleAfterSecs }}
+{{- end }}
 {{- if not (kindIs "invalid" $scheduler.chapterRollupVerifyIntervalSecs) }}
 chapter_rollup_verify_interval_secs: {{ $scheduler.chapterRollupVerifyIntervalSecs }}
 {{- end }}
@@ -558,6 +937,7 @@ Precedence, lowest to highest: `.Values.config`, chart-derived wiring,
 {{- $ctx := .ctx -}}
 {{- $service := .service -}}
 {{- $derived := include "tankovault.derivedConfig" (dict "ctx" $ctx "service" $service) | fromYaml -}}
+{{- $derived = include "tankovault.pruneEmpty" $derived | fromYaml -}}
 {{- $svc := (index $ctx.Values.services $service) | default dict -}}
 {{- include "tankovault.tomlMerged" (dict "maps" (list $ctx.Values.config $derived $svc.config)) | trim }}
 {{- with $ctx.Values.configExtraToml }}
@@ -727,4 +1107,48 @@ Args: ctx (root).
   readOnly: true
 {{- end }}
 {{- end }}
+{{- end -}}
+
+{{/*
+The `[database]` pool settings, or empty when both are left null.
+
+Shared by `derivedConfig` and `tankovault.bootstrapConfigToml`: every document that opens a pool
+declares these two keys, `bootstrap` included, and one define keeps the two renderings identical.
+
+Args: ctx (root).
+*/}}
+{{- define "tankovault.database.config" -}}
+{{- $database := .Values.database -}}
+{{- if not (kindIs "invalid" $database.acquireTimeoutSecs) }}
+acquire_timeout_secs: {{ $database.acquireTimeoutSecs }}
+{{- end }}
+{{- if not (kindIs "invalid" $database.maxConnections) }}
+max_connections: {{ $database.maxConnections }}
+{{- end }}
+{{- end -}}
+
+{{/*
+A derived map with every null and every empty table removed, as YAML.
+
+Each optional key in `derivedConfig` is emitted only when its value is set, so a table whose keys
+are all unset renders as a bare header — `security:` with nothing under it — and parses as null.
+Merged as it stands, that null would replace the operator's own `config.security` from the layer
+below, and an empty map would leave a bare `[security]` header in the document. Pruning before the
+merge makes an unset table mean "nothing to say", which is what it is.
+
+Args: a map.
+*/}}
+{{- define "tankovault.pruneEmpty" -}}
+{{- $out := dict -}}
+{{- range $key, $value := . -}}
+{{- if kindIs "map" $value -}}
+{{- $pruned := include "tankovault.pruneEmpty" $value | fromYaml -}}
+{{- if $pruned -}}
+{{- $_ := set $out $key $pruned -}}
+{{- end -}}
+{{- else if not (kindIs "invalid" $value) -}}
+{{- $_ := set $out $key $value -}}
+{{- end -}}
+{{- end -}}
+{{- toYaml $out -}}
 {{- end -}}

@@ -121,6 +121,89 @@ auth:
   # second factor, so unset leaves it only a hardware key.
   mfaEncryptionKey: ""
 
+  # @schema
+  # # @config projection auth.access_ttl_minutes optional
+  # type: [integer, 'null']
+  # @schema
+  # -- How long an access token stays valid. Short, because nothing revokes one before it
+  # expires; the refresh token is the revocable half (`auth.access_ttl_minutes`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  accessTtlMinutes: null
+
+  # @schema
+  # # @config projection auth.cookie_secure optional
+  # type: [boolean, 'null']
+  # @schema
+  # -- Marks the refresh cookie `Secure` (`auth.cookie_secure`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  cookieSecure: null
+
+  # @schema
+  # # @config projection auth.mfa_challenge_ttl_minutes optional
+  # type: [integer, 'null']
+  # @schema
+  # -- How long a half-finished sign-in (password accepted, second factor still owed) may sit
+  # before the user has to start again (`auth.mfa_challenge_ttl_minutes`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  mfaChallengeTtlMinutes: null
+
+  # @schema
+  # # @config projection auth.refresh_ttl_days optional
+  # type: [integer, 'null']
+  # @schema
+  # -- How long a refresh token stays valid, and so how long a signed-out-of-sight session can
+  # come back. Each use rotates the token and revokes its predecessor
+  # (`auth.refresh_ttl_days`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  refreshTtlDays: null
+
+  # @schema
+  # # @config projection auth.step_up_max_ttl_minutes optional
+  # type: [integer, 'null']
+  # @schema
+  # -- The ceiling on that sliding: the longest an elevation is honoured after it was earned,
+  # however continuously it is used (`auth.step_up_max_ttl_minutes`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  stepUpMaxTtlMinutes: null
+
+  # @schema
+  # # @config projection auth.step_up_ttl_minutes optional
+  # type: [integer, 'null']
+  # @schema
+  # -- How long a step-up elevation survives **unused** before a sensitive action prompts again.
+  # Every elevated request slides it forward (`auth.step_up_ttl_minutes`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  stepUpTtlMinutes: null
+
+  # @schema
+  # # @config projection auth.totp_issuer optional
+  # type: [string, 'null']
+  # @schema
+  # -- The issuer name an authenticator app files the entry under. Defaults to
+  # [`Self::webauthn_rp_name`], then to the product name: one label for both prompts
+  # (`auth.totp_issuer`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  totpIssuer: null
+
+  # @schema
+  # # @config projection auth.webauthn_rp_id optional
+  # type: [string, 'null']
+  # @schema
+  # -- Relying-party id: the registrable domain credentials are bound to. Defaults to
+  # [`Self::webauthn_origin`]'s host. Set to a parent domain only if the app moves between
+  # subdomains and keys must survive the move (`auth.webauthn_rp_id`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  webauthnRpId: null
+
+  # @schema
+  # # @config projection auth.webauthn_rp_name optional
+  # type: [string, 'null']
+  # @schema
+  # -- The name the authenticator shows in its prompt ("Save a passkey for …"); purely cosmetic
+  # (`auth.webauthn_rp_name`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  webauthnRpName: null
+
 # @schema
 # additionalProperties: true
 # @schema
@@ -443,6 +526,45 @@ anilist:
   # cannot carry.
   redirectUri: ""
 
+  # @config-shape-except anilist.defaultConflictPolicy enum helm-schema 0.18.1 drops a null enum member, so the null default would fail the schema; an empty string is the unset member instead
+
+  # @schema
+  # # @config projection anilist.default_conflict_policy optional
+  # enum: ["", "local_wins", "remote_wins", "newest_wins", "ask_me"]
+  # @schema
+  # -- Which side wins a two-sided change for a reader who has expressed no preference. Each
+  # reader may override it on their own link (`anilist.default_conflict_policy`). Empty keeps the
+  # image's default.
+  defaultConflictPolicy: ""
+
+  # @schema
+  # # @config projection anilist.graphql_url optional
+  # type: [string, 'null']
+  # @schema
+  # -- The `GraphQL` endpoint every read and write goes to. Overridable so a test can point it
+  # at a stub (`anilist.graphql_url`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  graphqlUrl: null
+
+  # @schema
+  # # @config projection anilist.min_request_interval_ms optional
+  # type: [integer, 'null']
+  # minimum: 0
+  # @schema
+  # -- Shortest gap between two requests to `AniList`, in milliseconds. It paces this
+  # deployment's whole traffic, not one reader's: `AniList` rate-limits per application
+  # (`anilist.min_request_interval_ms`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  minRequestIntervalMs: null
+
+  # @schema
+  # # @config projection anilist.oauth_base optional
+  # type: [string, 'null']
+  # @schema
+  # -- Base URL the `authorize` and `token` paths hang off (`anilist.oauth_base`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  oauthBase: null
+
 # @schema
 # additionalProperties: true
 # @schema
@@ -502,6 +624,24 @@ email:
   # ingress. Leaving it pointed at localhost produces unusable links in real emails.
   baseUrl: ""
 
+  # @schema
+  # # @config projection email.envelope_from optional
+  # type: [string, 'null']
+  # @schema
+  # -- SMTP envelope sender (`MAIL FROM`), which can differ from the visible [`Self::from`]
+  # header (`email.envelope_from`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  envelopeFrom: null
+
+  # @schema
+  # # @config projection email.timeout_secs optional
+  # type: [integer, 'null']
+  # minimum: 0
+  # @schema
+  # -- Per-message send timeout, in seconds (`email.timeout_secs`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  timeoutSecs: null
+
 # @schema
 # additionalProperties: true
 # @schema
@@ -515,6 +655,15 @@ channels:
   # @schema
   # -- Static recipient addresses for new-chapter notifications. Empty disables the channel.
   emailTo: []
+
+  # @schema
+  # # @config projection channels.timeout_secs optional
+  # type: [integer, 'null']
+  # minimum: 0
+  # @schema
+  # -- Per-request timeout for channel deliveries (`channels.timeout_secs`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  timeoutSecs: null
 
   # @schema
   # type: string
@@ -4036,6 +4185,24 @@ telemetry:
     # -- Print the SDK's own diagnostics to stderr. For proving a DSN works, not for running.
     debug: false
 
+  # @schema
+  # # @config projection telemetry.json_logs optional
+  # type: [boolean, 'null']
+  # @schema
+  # -- Emit structured JSON logs, for production, in place of the human-readable format
+  # (`telemetry.json_logs`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  jsonLogs: null
+
+  # @schema
+  # # @config projection telemetry.log_filter optional
+  # type: [string, 'null']
+  # @schema
+  # -- `tracing` filter directives, such as `info,tankovault=debug`. `RUST_LOG` wins when set
+  # (`telemetry.log_filter`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  logFilter: null
+
 # @schema
 # additionalProperties: true
 # @schema
@@ -4057,6 +4224,23 @@ metrics:
   # @schema
   # -- Port the Prometheus exposition is served on.
   port: 9090
+
+  # @schema
+  # # @config projection metrics.http_requests optional
+  # type: [boolean, 'null']
+  # @schema
+  # -- Also record per-request HTTP metrics. The request histogram is the expensive,
+  # high-cardinality part, so it has its own switch (`metrics.http_requests`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  httpRequests: null
+
+  # @schema
+  # # @config projection metrics.route optional
+  # type: [string, 'null']
+  # @schema
+  # -- Path the scrape endpoint is mounted at (`metrics.route`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  route: null
 
   # @schema
   # additionalProperties: true
@@ -4962,6 +5146,150 @@ scheduler:
   # (`scheduler.watchlist_import_resolve_interval_secs`).
   watchlistImportResolveIntervalSecs: 3600
 
+  # @schema
+  # # @config projection scheduler.failure_backoff_max_secs optional
+  # type: [integer, 'null']
+  # minimum: 0
+  # @schema
+  # -- Ceiling on how long a provider whose runs keep failing is skipped by the sweeps. 0
+  # disables the backoff entirely, restoring the unconditional sweep
+  # (`scheduler.failure_backoff_max_secs`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  failureBackoffMaxSecs: null
+
+  # @schema
+  # # @config projection scheduler.fast_interval_secs optional
+  # type: [integer, 'null']
+  # minimum: 0
+  # @schema
+  # -- Seconds between fast-scan sweeps of all active providers. 0 disables
+  # (`scheduler.fast_interval_secs`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  fastIntervalSecs: null
+
+  # @schema
+  # # @config projection scheduler.full_interval_secs optional
+  # type: [integer, 'null']
+  # minimum: 0
+  # @schema
+  # -- Seconds between full-scan sweeps. 0 disables (full scans are usually on demand)
+  # (`scheduler.full_interval_secs`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  fullIntervalSecs: null
+
+  # @schema
+  # # @config projection scheduler.merge_sweep_interval_secs optional
+  # type: [integer, 'null']
+  # minimum: 0
+  # @schema
+  # -- Seconds between full duplicate-reconciliation sweeps. 0 disables
+  # (`scheduler.merge_sweep_interval_secs`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  mergeSweepIntervalSecs: null
+
+  # @schema
+  # # @config projection scheduler.merge_sweep_max_auto_merges optional
+  # type: [integer, 'null']
+  # @schema
+  # -- Automatic merges permitted in a single sweep: the only bound on a destructive background
+  # action. Without it, a bad threshold or normalization rule could collapse the whole
+  # catalogue between two scheduler ticks (`scheduler.merge_sweep_max_auto_merges`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  mergeSweepMaxAutoMerges: null
+
+  # @schema
+  # # @config projection scheduler.merge_sweep_pairs optional
+  # type: [integer, 'null']
+  # @schema
+  # -- Newly-blocked duplicate pairs shortlisted per sweep (`scheduler.merge_sweep_pairs`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  mergeSweepPairs: null
+
+  # @schema
+  # # @config projection scheduler.merge_sweep_recheck optional
+  # type: [integer, 'null']
+  # @schema
+  # -- Previously-distinct pairs reconsidered per sweep, least-recently-scored first
+  # (`scheduler.merge_sweep_recheck`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  mergeSweepRecheck: null
+
+  # @schema
+  # # @config projection scheduler.merge_sweep_requeue optional
+  # type: [integer, 'null']
+  # @schema
+  # -- Open queue rows re-scored per sweep, least-recently-scored first
+  # (`scheduler.merge_sweep_requeue`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  mergeSweepRequeue: null
+
+  # @schema
+  # # @config projection scheduler.merge_sweep_rotation_interval_secs optional
+  # type: [integer, 'null']
+  # minimum: 0
+  # @schema
+  # -- Seconds between rotation-only sweeps: the open queue and the recheck set, no discovery. 0
+  # disables (`scheduler.merge_sweep_rotation_interval_secs`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  mergeSweepRotationIntervalSecs: null
+
+  # @schema
+  # # @config projection scheduler.reconcile_interval_secs optional
+  # type: [integer, 'null']
+  # minimum: 0
+  # @schema
+  # -- Seconds between passes that reconcile `JetStream` against `scan_tasks`. 0 disables
+  # (`scheduler.reconcile_interval_secs`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  reconcileIntervalSecs: null
+
+  # @schema
+  # # @config projection scheduler.recsys_batch optional
+  # type: [integer, 'null']
+  # @schema
+  # -- Series per streamed batch in a model build (`scheduler.recsys_batch`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  recsysBatch: null
+
+  # @schema
+  # # @config projection scheduler.recsys_full_interval_secs optional
+  # type: [integer, 'null']
+  # minimum: 0
+  # @schema
+  # -- Seconds between full recommendation-model rebuilds. 0 disables
+  # (`scheduler.recsys_full_interval_secs`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  recsysFullIntervalSecs: null
+
+  # @schema
+  # # @config projection scheduler.recsys_incremental_interval_secs optional
+  # type: [integer, 'null']
+  # minimum: 0
+  # @schema
+  # -- Seconds between incremental recommendation-model builds. 0 disables
+  # (`scheduler.recsys_incremental_interval_secs`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  recsysIncrementalIntervalSecs: null
+
+  # @schema
+  # # @config projection scheduler.recsys_incremental_max optional
+  # type: [integer, 'null']
+  # @schema
+  # -- Ceiling on how many series one incremental build may touch
+  # (`scheduler.recsys_incremental_max`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  recsysIncrementalMax: null
+
+  # @schema
+  # # @config projection scheduler.run_stale_after_secs optional
+  # type: [integer, 'null']
+  # minimum: 0
+  # @schema
+  # -- How long an unfinished run keeps suppressing new runs of the same provider and mode
+  # (`scheduler.run_stale_after_secs`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  runStaleAfterSecs: null
+
 # @schema
 # additionalProperties: true
 # @schema
@@ -5083,6 +5411,877 @@ legal:
   # </details>
   # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
   documents: null
+
+# @schema
+# additionalProperties: true
+# @schema
+# -- Audit trail of security-relevant actions, read by `api`. Every key left null keeps the image's default.
+audit:
+  # @schema
+  # # @config projection audit.enabled optional
+  # type: [boolean, 'null']
+  # @schema
+  # -- Write audit records. `false` installs a sink that discards them (`audit.enabled`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  enabled: null
+
+  # @schema
+  # # @config projection audit.record_ip optional
+  # type: [boolean, 'null']
+  # @schema
+  # -- Record the client IP. Off by default, since an IP is personal data under GDPR Art. 4(1)
+  # (`audit.record_ip`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  recordIp: null
+
+  # @schema
+  # # @config projection audit.record_user_agent optional
+  # type: [boolean, 'null']
+  # @schema
+  # -- Record the client `User-Agent` alongside each event (`audit.record_user_agent`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  recordUserAgent: null
+
+  # @schema
+  # # @config projection audit.retention_days optional
+  # type: [integer, 'null']
+  # minimum: 0
+  # maximum: 4294967295
+  # @schema
+  # -- Days to retain audit records before the sweep deletes them. `0` disables the sweep, which
+  # GDPR Art. 5(1)(e), storage limitation, rarely allows (`audit.retention_days`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  retentionDays: null
+
+  # @schema
+  # # @config projection audit.sweep_interval_hours optional
+  # type: [integer, 'null']
+  # minimum: 0
+  # @schema
+  # -- Hours between retention sweeps. Ignored when [`Self::retention_days`] is `0`
+  # (`audit.sweep_interval_hours`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  sweepIntervalHours: null
+
+# @schema
+# additionalProperties: true
+# @schema
+# -- Rejection of chapter numbers that sit implausibly far from a series' sequence, read by `worker`.
+chapterOutliers:
+  # @schema
+  # # @config projection chapter_outliers.enabled optional
+  # type: [boolean, 'null']
+  # @schema
+  # -- Whether a scan rejects anything at all (`chapter_outliers.enabled`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  enabled: null
+
+  # @schema
+  # # @config projection chapter_outliers.gap_factor optional
+  # type: [number, 'null']
+  # exclusiveMinimum: 0.0
+  # @schema
+  # -- Multiple of typical spacing past which a jump is suspicious
+  # (`chapter_outliers.gap_factor`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  gapFactor: null
+
+  # @schema
+  # # @config projection chapter_outliers.max_rejected_fraction optional
+  # type: [number, 'null']
+  # minimum: 0.0
+  # maximum: 1.0
+  # @schema
+  # -- Ceiling on the fraction of one listing a scan may reject
+  # (`chapter_outliers.max_rejected_fraction`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  maxRejectedFraction: null
+
+  # @schema
+  # # @config projection chapter_outliers.min_body optional
+  # type: [integer, 'null']
+  # minimum: 0
+  # @schema
+  # -- Chapters that must survive any single scan (`chapter_outliers.min_body`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  minBody: null
+
+  # @schema
+  # # @config projection chapter_outliers.min_gap optional
+  # type: [number, 'null']
+  # exclusiveMinimum: 0.0
+  # @schema
+  # -- Absolute floor on a suspicious jump, in chapter numbers (`chapter_outliers.min_gap`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  minGap: null
+
+  # @schema
+  # # @config projection chapter_outliers.min_sample optional
+  # type: [integer, 'null']
+  # minimum: 0
+  # @schema
+  # -- Smallest listing worth judging (`chapter_outliers.min_sample`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  minSample: null
+
+  # @schema
+  # # @config projection chapter_outliers.sparse_factor optional
+  # type: [number, 'null']
+  # exclusiveMinimum: 0.0
+  # @schema
+  # -- Multiple of typical spacing past which a trailing run is noise, not a continuation
+  # (`chapter_outliers.sparse_factor`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  sparseFactor: null
+
+# @schema
+# additionalProperties: true
+# @schema
+# -- The native-client versions `api` accepts, and the repository it points clients at for releases.
+client:
+  # @schema
+  # # @config projection client.max_version optional
+  # type: [string, 'null']
+  # @schema
+  # -- The newest client version this deployment supports. Unset means the running service's own
+  # version, since client and server are released together at one version
+  # (`client.max_version`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  maxVersion: null
+
+  # @schema
+  # # @config projection client.min_version optional
+  # type: [string, 'null']
+  # @schema
+  # -- The oldest client version this deployment supports. Unset means no floor
+  # (`client.min_version`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  minVersion: null
+
+  # @schema
+  # # @config projection client.release_repo optional
+  # type: [string, 'null']
+  # @schema
+  # -- The GitHub repository, as `owner/name`, that the native client reads its releases from
+  # (`client.release_repo`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  releaseRepo: null
+
+# @schema
+# additionalProperties: true
+# @schema
+# -- Connection-pool settings for every service that opens one, and for the `bootstrap` Job. The URL is a credential and travels through the Secret instead.
+database:
+  # @schema
+  # # @config projection database.acquire_timeout_secs optional
+  # type: [integer, 'null']
+  # minimum: 0
+  # @schema
+  # -- How long a caller waits for a pooled connection before failing, in seconds
+  # (`database.acquire_timeout_secs`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  acquireTimeoutSecs: null
+
+  # @schema
+  # # @config projection database.max_connections optional
+  # type: [integer, 'null']
+  # minimum: 0
+  # maximum: 4294967295
+  # @schema
+  # -- Upper bound on the connection pool (`database.max_connections`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  maxConnections: null
+
+# @schema
+# additionalProperties: true
+# @schema
+# -- How often services re-read the feature flags.
+features:
+  # @schema
+  # # @config projection features.refresh_secs optional
+  # type: [integer, 'null']
+  # minimum: 0
+  # @schema
+  # -- Seconds between refreshes of a service's cached flag snapshot. It is how long a change
+  # takes to reach the other replicas; the replica that served the change applies it at once
+  # (`features.refresh_secs`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  refreshSecs: null
+
+# @schema
+# additionalProperties: true
+# @schema
+# -- Settings for the `frontend` service's own HTTP server and static assets.
+frontend:
+  # @schema
+  # # @config projection frontend.connect_timeout_secs optional
+  # type: [integer, 'null']
+  # minimum: 0
+  # @schema
+  # -- Connection-establishment timeout for the upstream, not a whole-request timeout, since an
+  # SSE stream stays open indefinitely (`frontend.connect_timeout_secs`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  connectTimeoutSecs: null
+
+  # @schema
+  # # @config projection frontend.max_body_bytes optional
+  # type: [integer, 'null']
+  # minimum: 0
+  # @schema
+  # -- Largest request body accepted on this hop (`frontend.max_body_bytes`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  maxBodyBytes: null
+
+  # @schema
+  # # @config projection frontend.notices_json_path optional
+  # type: [string, 'null']
+  # @schema
+  # -- The same notices as the structured inventory the `/licenses` screen renders, served at
+  # `/third-party-notices.json` (`frontend.notices_json_path`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  noticesJsonPath: null
+
+  # @schema
+  # # @config projection frontend.notices_path optional
+  # type: [string, 'null']
+  # @schema
+  # -- The generated third-party licence notices, served at `/third-party-notices`
+  # (`frontend.notices_path`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  noticesPath: null
+
+  # @schema
+  # # @config projection frontend.static_dir optional
+  # type: [string, 'null']
+  # @schema
+  # -- Directory the built SPA bundle is served from. Baked into the image at `/srv/www`
+  # (`frontend.static_dir`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  staticDir: null
+
+# @schema
+# additionalProperties: true
+# @schema
+# -- Duplicate-series matching: the score thresholds and the conflicts that block an automatic merge.
+matching:
+  # @schema
+  # # @config projection matching.auto_merge optional
+  # type: [number, 'null']
+  # @schema
+  # -- At or above this score, and only when a primary identity rule fired, the duplicate sweep
+  # may merge two existing series without an operator. A corroborated alias is eligible from
+  # [`Self::low`] up, whatever this is set to, because its corroboration, not its score, is
+  # the evidence. Either way an edition conflict, or a numeric conflict with its guard
+  # enabled, reports the pair distinct, and an external-id or live-timing veto or any other
+  # enabled merge guard holds it for review. [`Self::high`] files an incoming source; this
+  # deletes a series that already exists. `tankovault_matcher::adjudicate` defines the
+  # identity rules, vetoes and guards (`matching.auto_merge`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  autoMerge: null
+
+  # @schema
+  # # @config projection matching.block_auto_merge_on_author_conflict optional
+  # type: [boolean, 'null']
+  # @schema
+  # -- Both series name authors and share none: a remake, a spin-off, or an unrelated work with
+  # the same title. Off costs nothing on a catalogue whose providers rarely publish credits,
+  # because the signal cannot fire without credits on both sides
+  # (`matching.block_auto_merge_on_author_conflict`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  blockAutoMergeOnAuthorConflict: null
+
+  # @schema
+  # # @config projection matching.block_auto_merge_on_numeric_conflict optional
+  # type: [boolean, 'null']
+  # @schema
+  # -- Titles carrying different numbers (`Overlord` against `Overlord 2`) are reported as
+  # distinct works. Switching this off makes a sequel merge-eligible on title similarity
+  # alone, and no other rule tells a sequel from its predecessor
+  # (`matching.block_auto_merge_on_numeric_conflict`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  blockAutoMergeOnNumericConflict: null
+
+  # @schema
+  # # @config projection matching.block_auto_merge_on_type_conflict optional
+  # type: [boolean, 'null']
+  # @schema
+  # -- Both series declare a medium and they disagree (manga against manhwa). Worth switching
+  # off on a deployment whose providers guess the medium from the site they scraped it from
+  # (`matching.block_auto_merge_on_type_conflict`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  blockAutoMergeOnTypeConflict: null
+
+  # @schema
+  # # @config projection matching.block_auto_merge_on_year_conflict optional
+  # type: [boolean, 'null']
+  # @schema
+  # -- Release years three or more years apart, as with re-serialisations and remakes that share
+  # an exact title. The year never moves a score, so this guard is the only way it holds a
+  # pair back (`matching.block_auto_merge_on_year_conflict`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  blockAutoMergeOnYearConflict: null
+
+  # @schema
+  # # @config projection matching.candidate_limit optional
+  # type: [integer, 'null']
+  # @schema
+  # -- How many trigram candidates to score per query title. A higher value widens the index
+  # scan (`matching.candidate_limit`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  candidateLimit: null
+
+  # @schema
+  # # @config projection matching.high optional
+  # type: [number, 'null']
+  # @schema
+  # -- At or above this score, and only when the incoming title is the series' own title under
+  # an identity rule, the worker attaches to the existing series outright. External sync maps
+  # a remote entry on the score alone (`matching.high`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  high: null
+
+  # @schema
+  # # @config projection matching.low optional
+  # type: [number, 'null']
+  # @schema
+  # -- At or above this score, a title that did not attach creates the series and flags the pair
+  # for operator review (`matching.low`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  low: null
+
+# @schema
+# additionalProperties: true
+# @schema
+# -- Metadata enrichment (`sync`) and the per-field source priority and tag filtering (`sync`, `worker`, `api`).
+metadata:
+  # @schema
+  # # @config projection metadata.enrich_batch optional
+  # type: [integer, 'null']
+  # @schema
+  # -- Series fetched per DB page during a sweep (`metadata.enrich_batch`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  enrichBatch: null
+
+  # @schema
+  # # @config projection metadata.enrich_enabled optional
+  # type: [boolean, 'null']
+  # @schema
+  # -- Whether the background enrichment worker runs. On by default (`metadata.enrich_enabled`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  enrichEnabled: null
+
+  # @schema
+  # # @config projection metadata.enrich_interval_secs optional
+  # type: [integer, 'null']
+  # minimum: 0
+  # @schema
+  # -- Seconds between enrichment sweeps (`metadata.enrich_interval_secs`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  enrichIntervalSecs: null
+
+  # @schema
+  # # @config projection metadata.enrich_max_series optional
+  # type: [integer, 'null']
+  # minimum: 0
+  # @schema
+  # -- Upper bound on series processed per sweep (paces `AniList`'s rate limit)
+  # (`metadata.enrich_max_series`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  enrichMaxSeries: null
+
+  # @schema
+  # additionalProperties: true
+  # @schema
+  # -- Source order per metadata field: the first source with a value wins.
+  priority:
+    # @config-shape-except metadata.priority.contentType items helm-schema 0.18.1 exits fatally on an enum beside a type, and terrace-contract settles that pair at the top level only, not inside items
+
+    # @schema
+    # # @config structured metadata.priority.content_type optional
+    # type: [array, 'null']
+    # items:
+    #   enum: ["anilist", "adapter"]
+    # @schema
+    # -- Priority order for the medium/origin classification (`metadata.priority.content_type`).
+    # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+    contentType: null
+
+    # @config-shape-except metadata.priority.cover items helm-schema 0.18.1 exits fatally on an enum beside a type, and terrace-contract settles that pair at the top level only, not inside items
+
+    # @schema
+    # # @config structured metadata.priority.cover optional
+    # type: [array, 'null']
+    # items:
+    #   enum: ["anilist", "adapter"]
+    # @schema
+    # -- Priority order for the cover image URL (`metadata.priority.cover`).
+    # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+    cover: null
+
+    # @config-shape-except metadata.priority.default items helm-schema 0.18.1 exits fatally on an enum beside a type, and terrace-contract settles that pair at the top level only, not inside items
+
+    # @schema
+    # # @config structured metadata.priority.default optional
+    # type: [array, 'null']
+    # items:
+    #   enum: ["anilist", "adapter"]
+    # @schema
+    # -- Fallback order for any field whose list was explicitly emptied
+    # (`metadata.priority.default`).
+    # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+    default: null
+
+    # @config-shape-except metadata.priority.description items helm-schema 0.18.1 exits fatally on an enum beside a type, and terrace-contract settles that pair at the top level only, not inside items
+
+    # @schema
+    # # @config structured metadata.priority.description optional
+    # type: [array, 'null']
+    # items:
+    #   enum: ["anilist", "adapter"]
+    # @schema
+    # -- Priority order for the long-form series description (`metadata.priority.description`).
+    # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+    description: null
+
+    # @config-shape-except metadata.priority.releaseYear items helm-schema 0.18.1 exits fatally on an enum beside a type, and terrace-contract settles that pair at the top level only, not inside items
+
+    # @schema
+    # # @config structured metadata.priority.release_year optional
+    # type: [array, 'null']
+    # items:
+    #   enum: ["anilist", "adapter"]
+    # @schema
+    # -- Priority order for the year of first publication (`metadata.priority.release_year`).
+    # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+    releaseYear: null
+
+    # @config-shape-except metadata.priority.status items helm-schema 0.18.1 exits fatally on an enum beside a type, and terrace-contract settles that pair at the top level only, not inside items
+
+    # @schema
+    # # @config structured metadata.priority.status optional
+    # type: [array, 'null']
+    # items:
+    #   enum: ["anilist", "adapter"]
+    # @schema
+    # -- Priority order for the publication status (`metadata.priority.status`).
+    # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+    status: null
+
+    # @config-shape-except metadata.priority.title items helm-schema 0.18.1 exits fatally on an enum beside a type, and terrace-contract settles that pair at the top level only, not inside items
+
+    # @schema
+    # # @config structured metadata.priority.title optional
+    # type: [array, 'null']
+    # items:
+    #   enum: ["anilist", "adapter"]
+    # @schema
+    # -- Priority order for the canonical/display title (`metadata.priority.title`).
+    # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+    title: null
+
+  # @schema
+  # additionalProperties: true
+  # @schema
+  # -- Which tags are kept, and which are treated as adult content.
+  tags:
+    # @schema
+    # # @config structured metadata.tags.adult_tags optional
+    # type: [array, 'null']
+    # items:
+    #   type: string
+    # @schema
+    # -- Additional genre chips that classify a series as adult, matched on their slug
+    # (`metadata.tags.adult_tags`).
+    # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+    adultTags: null
+
+    # @schema
+    # # @config structured metadata.tags.blocklist optional
+    # type: [array, 'null']
+    # items:
+    #   type: string
+    # @schema
+    # -- Additional refused terms, matched on their slug: `N/A`, `n/a` and `n-a` are one entry
+    # (`metadata.tags.blocklist`).
+    # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+    blocklist: null
+
+    # @schema
+    # # @config projection metadata.tags.use_defaults optional
+    # type: [boolean, 'null']
+    # @schema
+    # -- Whether the shipped [`tankovault_domain::DEFAULT_BLOCKED_TERMS`] apply
+    # (`metadata.tags.use_defaults`).
+    # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+    useDefaults: null
+
+# @schema
+# additionalProperties: true
+# @schema
+# -- Request rate limiting. The backend is chosen by the chart: Redis when Valkey is configured, in-process otherwise.
+rateLimit:
+  # @schema
+  # additionalProperties: true
+  # @schema
+  # -- Limits for the authentication endpoints.
+  auth:
+    # @schema
+    # # @config projection rate_limit.auth.burst optional
+    # type: [integer, 'null']
+    # minimum: 0
+    # maximum: 4294967295
+    # @schema
+    # -- The most requests a client may spend back-to-back (`rate_limit.auth.burst`).
+    # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+    burst: null
+
+    # @schema
+    # # @config projection rate_limit.auth.per_minute optional
+    # type: [integer, 'null']
+    # minimum: 0
+    # maximum: 4294967295
+    # @schema
+    # -- Sustained requests allowed per minute per client key, which is the bucket's refill rate
+    # (`rate_limit.auth.per_minute`).
+    # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+    perMinute: null
+
+  # @schema
+  # # @config projection rate_limit.enabled optional
+  # type: [boolean, 'null']
+  # @schema
+  # -- Enforce limits. When `false` the layer is not mounted and costs nothing per request
+  # (`rate_limit.enabled`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  enabled: null
+
+  # @schema
+  # additionalProperties: true
+  # @schema
+  # -- Limits for endpoints that are costly to serve.
+  expensive:
+    # @schema
+    # # @config projection rate_limit.expensive.burst optional
+    # type: [integer, 'null']
+    # minimum: 0
+    # maximum: 4294967295
+    # @schema
+    # -- The most requests a client may spend back-to-back (`rate_limit.expensive.burst`).
+    # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+    burst: null
+
+    # @schema
+    # # @config projection rate_limit.expensive.per_minute optional
+    # type: [integer, 'null']
+    # minimum: 0
+    # maximum: 4294967295
+    # @schema
+    # -- Sustained requests allowed per minute per client key, which is the bucket's refill rate
+    # (`rate_limit.expensive.per_minute`).
+    # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+    perMinute: null
+
+  # @schema
+  # additionalProperties: true
+  # @schema
+  # -- The per-client limit every request counts against.
+  global:
+    # @schema
+    # # @config projection rate_limit.global.burst optional
+    # type: [integer, 'null']
+    # minimum: 0
+    # maximum: 4294967295
+    # @schema
+    # -- The most requests a client may spend back-to-back (`rate_limit.global.burst`).
+    # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+    burst: null
+
+    # @schema
+    # # @config projection rate_limit.global.per_minute optional
+    # type: [integer, 'null']
+    # minimum: 0
+    # maximum: 4294967295
+    # @schema
+    # -- Sustained requests allowed per minute per client key, which is the bucket's refill rate
+    # (`rate_limit.global.per_minute`).
+    # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+    perMinute: null
+
+  # @schema
+  # # @config projection rate_limit.trust_forwarded_for optional
+  # type: [boolean, 'null']
+  # @schema
+  # -- Take the client key from `X-Forwarded-For` or `X-Real-IP`. Enable it **only behind a
+  # reverse proxy that overwrites both**; otherwise any client forges a fresh key and
+  # bypasses the limiter (`rate_limit.trust_forwarded_for`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  trustForwardedFor: null
+
+# @schema
+# # @config projection reconcile_interval_secs optional
+# type: [integer, 'null']
+# minimum: 0
+# @schema
+# -- Interval (seconds) between scheduled reconciliation ticks. `0` disables the loop
+# (`reconcile_interval_secs`).
+# @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+reconcileIntervalSecs: null
+
+# @schema
+# additionalProperties: true
+# @schema
+# -- The headless browser the `render` service drives.
+render:
+  # @schema
+  # # @config projection render.challenge_wait_ms optional
+  # type: [integer, 'null']
+  # minimum: 0
+  # @schema
+  # -- Extra settle time to let a bot-management challenge clear during `/v1/solve` (ms)
+  # (`render.challenge_wait_ms`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  challengeWaitMs: null
+
+  # @schema
+  # # @config projection render.chrome_path optional
+  # type: [string, 'null']
+  # @schema
+  # -- Explicit Chrome/Chromium executable path. When `None`, `chromiumoxide` auto-detects
+  # (`render.chrome_path`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  chromePath: null
+
+  # @schema
+  # # @config projection render.default_wait_ms optional
+  # type: [integer, 'null']
+  # minimum: 0
+  # @schema
+  # -- Extra settle delay applied after navigation on every `/v1/render` (ms)
+  # (`render.default_wait_ms`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  defaultWaitMs: null
+
+  # @schema
+  # # @config projection render.headless optional
+  # type: [boolean, 'null']
+  # @schema
+  # -- Run the browser headless (the default; set `false` only for local debugging)
+  # (`render.headless`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  headless: null
+
+  # @schema
+  # # @config projection render.nav_timeout_ms optional
+  # type: [integer, 'null']
+  # minimum: 0
+  # @schema
+  # -- Per-navigation time budget handed to the CDP client (ms) (`render.nav_timeout_ms`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  navTimeoutMs: null
+
+  # @schema
+  # # @config projection render.no_sandbox optional
+  # type: [boolean, 'null']
+  # @schema
+  # -- Pass `--no-sandbox` (required to run Chromium as root inside the runtime container)
+  # (`render.no_sandbox`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  noSandbox: null
+
+  # @schema
+  # # @config projection render.session_ttl_secs optional
+  # type: [integer, 'null']
+  # minimum: 0
+  # @schema
+  # -- TTL attached to a solved session when acting as a `ChallengeSolver` back-end (s)
+  # (`render.session_ttl_secs`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  sessionTtlSecs: null
+
+  # @schema
+  # # @config projection render.user_agent optional
+  # type: [string, 'null']
+  # @schema
+  # -- User-agent override, applied to the page and reported back so a solved `cf_clearance`
+  # cookie stays paired with a stable UA (`render.user_agent`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  userAgent: null
+
+# @schema
+# additionalProperties: true
+# @schema
+# -- HTTP hardening shared by every service that serves an API: CORS, HSTS, body and time limits, response headers.
+security:
+  # @schema
+  # additionalProperties: true
+  # @schema
+  # -- Cross-origin access. Left unset, no cross-origin request is allowed.
+  cors:
+    # @schema
+    # # @config projection security.cors.allow_credentials optional
+    # type: [boolean, 'null']
+    # @schema
+    # -- Allow credentialed cross-origin requests, carrying cookies or `Authorization`. Cannot
+    # be combined with a wildcard origin (`security.cors.allow_credentials`).
+    # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+    allowCredentials: null
+
+    # @schema
+    # # @config structured security.cors.allowed_origins optional
+    # type: [array, 'null']
+    # items:
+    #   type: string
+    # @schema
+    # -- Exact origins allowed, such as `https://app.example.com`. Empty disables CORS
+    # (`security.cors.allowed_origins`).
+    # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+    allowedOrigins: null
+
+    # @schema
+    # # @config projection security.cors.max_age_secs optional
+    # type: [integer, 'null']
+    # minimum: 0
+    # @schema
+    # -- `Access-Control-Max-Age`, in seconds (`security.cors.max_age_secs`).
+    # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+    maxAgeSecs: null
+
+  # @schema
+  # # @config projection security.expose_api_docs optional
+  # type: [boolean, 'null']
+  # @schema
+  # -- Serve the browsable API docs (`/scalar`) and the `OpenAPI` document
+  # (`security.expose_api_docs`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  exposeApiDocs: null
+
+  # @schema
+  # # @config projection security.hsts optional
+  # type: [boolean, 'null']
+  # @schema
+  # -- Emit `Strict-Transport-Security`. Browsers ignore it over plain HTTP (`security.hsts`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  hsts: null
+
+  # @schema
+  # # @config projection security.hsts_max_age_secs optional
+  # type: [integer, 'null']
+  # minimum: 0
+  # @schema
+  # -- `max-age` for the HSTS header, in seconds. The default is two years, the preload minimum
+  # (`security.hsts_max_age_secs`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  hstsMaxAgeSecs: null
+
+  # @schema
+  # # @config projection security.max_body_bytes optional
+  # type: [integer, 'null']
+  # minimum: 0
+  # @schema
+  # -- Reject request bodies larger than this, in bytes, before they are buffered
+  # (`security.max_body_bytes`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  maxBodyBytes: null
+
+  # @schema
+  # # @config projection security.request_timeout_secs optional
+  # type: [integer, 'null']
+  # minimum: 0
+  # @schema
+  # -- Abort a request that has not produced a response within this many seconds
+  # (`security.request_timeout_secs`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  requestTimeoutSecs: null
+
+  # @schema
+  # # @config projection security.security_headers optional
+  # type: [boolean, 'null']
+  # @schema
+  # -- Send the baseline set of hardening headers (`X-Content-Type-Options`, `X-Frame-Options`,
+  # `Referrer-Policy`, `Cross-Origin-Resource-Policy`) (`security.security_headers`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  securityHeaders: null
+
+  # @schema
+  # # @config projection security.trust_request_id optional
+  # type: [boolean, 'null']
+  # @schema
+  # -- Accept an inbound `X-Request-Id` instead of minting one. Enable it only behind a trusted
+  # proxy, since a client-supplied id can poison log correlation
+  # (`security.trust_request_id`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  trustRequestId: null
+
+# @schema
+# additionalProperties: true
+# @schema
+# -- The challenge-solver backend and its timeouts, read by `challengeSolver`.
+solver:
+  # @schema
+  # # @config projection solver.backend optional
+  # type: [string, 'null']
+  # @schema
+  # -- Back-end selector; only `trawl` is wired today (`solver.backend`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  backend: null
+
+  # @schema
+  # # @config projection solver.max_timeout_ms optional
+  # type: [integer, 'null']
+  # minimum: 0
+  # @schema
+  # -- Ceiling on one solve attempt, in milliseconds. A challenge still standing at the end of
+  # it is reported unsolved, which the caller treats as retryable (`solver.max_timeout_ms`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  maxTimeoutMs: null
+
+  # @schema
+  # # @config projection solver.session_ttl_secs optional
+  # type: [integer, 'null']
+  # minimum: 0
+  # @schema
+  # -- How long *this* deployment caches a solved session for. Independent of TRAWL's own
+  # `SESSION_TTL_SECONDS`, which governs the cookie jar it replays internally
+  # (`solver.session_ttl_secs`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  sessionTtlSecs: null
+
+# @schema
+# additionalProperties: true
+# @schema
+# -- Crawl limits and provider-refresh cadence for `worker`.
+worker:
+  # @schema
+  # # @config projection worker.max_catalog_pages optional
+  # type: [integer, 'null']
+  # minimum: 0
+  # maximum: 4294967295
+  # @schema
+  # -- Catalogue pages one full scan may walk before it stops and warns. A backstop against a
+  # paginator that never reports a last page, not a tuning knob: real termination is the
+  # adapter's `has_next`, and the default sits well above any catalogue seen so far
+  # (`worker.max_catalog_pages`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  maxCatalogPages: null
+
+  # @schema
+  # # @config projection worker.max_concurrent_providers optional
+  # type: [integer, 'null']
+  # minimum: 0
+  # @schema
+  # -- How many providers this worker scans at once (`worker.max_concurrent_providers`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  maxConcurrentProviders: null
+
+  # @schema
+  # # @config projection worker.provider_refresh_secs optional
+  # type: [integer, 'null']
+  # minimum: 0
+  # @schema
+  # -- How often the round-robin queue re-reads the provider list, in seconds
+  # (`worker.provider_refresh_secs`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  providerRefreshSecs: null
 
 # @schema
 # additionalProperties: true

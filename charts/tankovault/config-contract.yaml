@@ -121,12 +121,12 @@ tests: true
 # one by one — there is no pattern form — so a key the next release adds turns
 # `just check-config-bindings` red until someone decides which group it belongs in.
 #
-# Four groups, and the difference between them is what a reader needs: eleven keys the chart
-# derives from the topology it just built, sixteen delivered as files in the secrets directory,
-# the `branding.*` keys that *are* surfaced but are deliberately not sent to every service that
-# declares them, and the rest — settings the image reads and this chart offers no value for.
+# Three kinds of write-off, and the difference between them is what a reader needs: eleven keys
+# the chart derives from the topology it just built, sixteen delivered as files in the secrets
+# directory, and the `branding.*` keys that *are* surfaced but are deliberately not sent to every
+# service that declares them. Every other key has a chart value carrying its `# @config` marker.
 #
-# `documents:` appears on the third group only, which is the shape it exists for.
+# `documents:` appears on the `branding.*` groups only, which is the shape it exists for.
 unbound:
   - keys:
       - bind_addr
@@ -213,127 +213,6 @@ unbound:
       description from the name and tagline alone, and `worker` reads the crawler user-agent and
       nothing else. Emitting the whole block to all three would give each of them keys it never
       opens. The marker on the value names the documents that do receive it.
-
-  - keys:
-      - anilist.default_conflict_policy
-      - anilist.graphql_url
-      - anilist.min_request_interval_ms
-      - anilist.oauth_base
-      - audit.enabled
-      - audit.record_ip
-      - audit.record_user_agent
-      - audit.retention_days
-      - audit.sweep_interval_hours
-      - auth.access_ttl_minutes
-      - auth.cookie_secure
-      - auth.mfa_challenge_ttl_minutes
-      - auth.refresh_ttl_days
-      - auth.step_up_max_ttl_minutes
-      - auth.step_up_ttl_minutes
-      - auth.totp_issuer
-      - auth.webauthn_rp_id
-      - auth.webauthn_rp_name
-      - channels.timeout_secs
-      - chapter_outliers.enabled
-      - chapter_outliers.gap_factor
-      - chapter_outliers.max_rejected_fraction
-      - chapter_outliers.min_body
-      - chapter_outliers.min_gap
-      - chapter_outliers.min_sample
-      - chapter_outliers.sparse_factor
-      - client.max_version
-      - client.min_version
-      - client.release_repo
-      - database.acquire_timeout_secs
-      - database.max_connections
-      - email.envelope_from
-      - email.timeout_secs
-      - features.refresh_secs
-      - frontend.connect_timeout_secs
-      - frontend.max_body_bytes
-      - frontend.notices_json_path
-      - frontend.notices_path
-      - frontend.static_dir
-      - matching.auto_merge
-      - matching.block_auto_merge_on_author_conflict
-      - matching.block_auto_merge_on_numeric_conflict
-      - matching.block_auto_merge_on_type_conflict
-      - matching.block_auto_merge_on_year_conflict
-      - matching.candidate_limit
-      - matching.high
-      - matching.low
-      - metadata.enrich_batch
-      - metadata.enrich_enabled
-      - metadata.enrich_interval_secs
-      - metadata.enrich_max_series
-      - metadata.priority.content_type
-      - metadata.priority.cover
-      - metadata.priority.default
-      - metadata.priority.description
-      - metadata.priority.release_year
-      - metadata.priority.status
-      - metadata.priority.title
-      - metadata.tags.adult_tags
-      - metadata.tags.blocklist
-      - metadata.tags.use_defaults
-      - metrics.http_requests
-      - metrics.route
-      - rate_limit.auth.burst
-      - rate_limit.auth.per_minute
-      - rate_limit.enabled
-      - rate_limit.expensive.burst
-      - rate_limit.expensive.per_minute
-      - rate_limit.global.burst
-      - rate_limit.global.per_minute
-      - rate_limit.trust_forwarded_for
-      - reconcile_interval_secs
-      - render.challenge_wait_ms
-      - render.chrome_path
-      - render.default_wait_ms
-      - render.headless
-      - render.nav_timeout_ms
-      - render.no_sandbox
-      - render.session_ttl_secs
-      - render.user_agent
-      - scheduler.failure_backoff_max_secs
-      - scheduler.fast_interval_secs
-      - scheduler.full_interval_secs
-      - scheduler.merge_sweep_interval_secs
-      - scheduler.merge_sweep_max_auto_merges
-      - scheduler.merge_sweep_pairs
-      - scheduler.merge_sweep_recheck
-      - scheduler.merge_sweep_requeue
-      - scheduler.merge_sweep_rotation_interval_secs
-      - scheduler.reconcile_interval_secs
-      - scheduler.recsys_batch
-      - scheduler.recsys_full_interval_secs
-      - scheduler.recsys_incremental_interval_secs
-      - scheduler.recsys_incremental_max
-      - scheduler.run_stale_after_secs
-      - security.cors.allow_credentials
-      - security.cors.allowed_origins
-      - security.cors.max_age_secs
-      - security.expose_api_docs
-      - security.hsts
-      - security.hsts_max_age_secs
-      - security.max_body_bytes
-      - security.request_timeout_secs
-      - security.security_headers
-      - security.trust_request_id
-      - solver.backend
-      - solver.max_timeout_ms
-      - solver.session_ttl_secs
-      - telemetry.json_logs
-      - telemetry.log_filter
-      - worker.max_catalog_pages
-      - worker.max_concurrent_providers
-      - worker.provider_refresh_secs
-    reason: >-
-      Read by the image and not surfaced as a chart value: the application's own default stands, and
-      an operator who needs to move one writes it into the raw `config` tree or
-      `services.<name>.config`, which `just check-config` then validates against this same contract.
-      Listed key by key rather than written off as a family, so that a key the next release adds
-      turns this gate red until somebody decides which of the three it is.
 
 documents:
   - name: frontend

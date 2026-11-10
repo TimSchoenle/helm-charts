@@ -9,7 +9,7 @@
 # Chart:       tankovault
 # Declaration: charts/tankovault/config-contract.yaml (document `bootstrap`)
 # Contract:    charts/tankovault/contracts/bootstrap.json
-# Coverage:    4 of 7 contract keys carry a probe, 2 through the chart's own value
+# Coverage:    4 of 7 contract keys carry a probe, 4 through the chart's own value
 #
 # Regenerate with `just contract-tests`. `just check-contract-tests` fails a pull request whose
 # committed copy has drifted from the contract it was generated against.
@@ -103,7 +103,7 @@ tests:
           path: metadata.labels["app.kubernetes.io/component"]
           value: bootstrap
 
-  - it: delivers database.acquire_timeout_secs into config.toml
+  - it: delivers database.acquire_timeout_secs into config.toml from database.acquireTimeoutSecs
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="bootstrap")].data["config.toml"]'
     set:
@@ -122,13 +122,13 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      config.database.acquire_timeout_secs: 4242
+      database.acquireTimeoutSecs: 4242
     asserts:
       - matchRegex:
           path: data["config.toml"]
           pattern: '(?m)^\[database\]$\n(?:[^\[\n][^\n]*\n|\n)*^acquire_timeout_secs = 4242$'
 
-  - it: delivers database.max_connections into config.toml
+  - it: delivers database.max_connections into config.toml from database.maxConnections
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="bootstrap")].data["config.toml"]'
     set:
@@ -147,7 +147,7 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      config.database.max_connections: 4242
+      database.maxConnections: 4242
     asserts:
       - matchRegex:
           path: data["config.toml"]

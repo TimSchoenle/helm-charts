@@ -526,16 +526,16 @@ anilist:
   # cannot carry.
   redirectUri: ""
 
-  # @config-shape-except anilist.defaultConflictPolicy enum helm-schema 0.18.1 drops a null enum member, so the null default would fail the schema; an empty string is the unset member instead
-
   # @schema
   # # @config projection anilist.default_conflict_policy optional
-  # enum: ["", "local_wins", "remote_wins", "newest_wins", "ask_me"]
+  # anyOf:
+  #   - type: 'null'
+  #   - enum: ["local_wins", "remote_wins", "newest_wins", "ask_me"]
   # @schema
   # -- Which side wins a two-sided change for a reader who has expressed no preference. Each
-  # reader may override it on their own link (`anilist.default_conflict_policy`). Empty keeps the
-  # image's default.
-  defaultConflictPolicy: ""
+  # reader may override it on their own link (`anilist.default_conflict_policy`).
+  # @default -- `null` (unset): the key is left out and the image decides; its contract publishes no default.
+  defaultConflictPolicy: null
 
   # @schema
   # # @config projection anilist.graphql_url optional

@@ -1,6 +1,6 @@
 # tankovault
 
-![Version: 6.4.0](https://img.shields.io/badge/Version-6.4.0-informational?style=flat-square) ![AppVersion: 11.1.4](https://img.shields.io/badge/AppVersion-11.1.4-informational?style=flat-square)
+![Version: 6.4.1](https://img.shields.io/badge/Version-6.4.1-informational?style=flat-square) ![AppVersion: 11.1.4](https://img.shields.io/badge/AppVersion-11.1.4-informational?style=flat-square)
 
 This chart deploys the full TankoVault manga aggregator stack — frontend, api, control-plane, worker, notifier, sync, challenge-solver and render — hardened to the restricted Pod Security Standard, with file-backed configuration that reloads in place instead of restarting pods, optional bundled PostgreSQL, Valkey, NATS JetStream and TRAWL, and optional Prometheus metrics, alerting rules and Grafana dashboards.
 
@@ -1441,10 +1441,10 @@ lookup; the chart fails the render if FQDN destinations are named with the DNS r
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | allowUnsafeExposure | bool | `false` | Permit `control-plane`, `sync`, `render` and `challenge-solver` to use a Service type other than `ClusterIP`. Off by default and validated, because those four expose privileged contracts: upstream publishes none of them even on a single host, and reaching them directly bypasses both the frontend proxy and the rate limiter. |
-| anilist | object | `{"clientId":"","clientSecret":"","defaultConflictPolicy":"","graphqlUrl":null,"minRequestIntervalMs":null,"oauthBase":null,"redirectUri":"","tokenEncryptionKey":""}` | The AniList OAuth application accounts are linked through, read by `services.sync`. |
+| anilist | object | `{"clientId":"","clientSecret":"","defaultConflictPolicy":null,"graphqlUrl":null,"minRequestIntervalMs":null,"oauthBase":null,"redirectUri":"","tokenEncryptionKey":""}` | The AniList OAuth application accounts are linked through, read by `services.sync`. |
 | anilist.clientId | string | `""` | AniList OAuth application client ID. Register at <https://anilist.co/settings/developer>. |
 | anilist.clientSecret | string | `""` | AniList OAuth application client secret. |
-| anilist.defaultConflictPolicy | string | `""` | Which side wins a two-sided change for a reader who has expressed no preference. Each reader may override it on their own link (`anilist.default_conflict_policy`). Empty keeps the image's default. |
+| anilist.defaultConflictPolicy | string | `null` (unset): the key is left out and the image decides; its contract publishes no default. | Which side wins a two-sided change for a reader who has expressed no preference. Each reader may override it on their own link (`anilist.default_conflict_policy`). |
 | anilist.graphqlUrl | string | `null` (unset): the key is left out and the image decides; its contract publishes no default. | The `GraphQL` endpoint every read and write goes to. Overridable so a test can point it at a stub (`anilist.graphql_url`). |
 | anilist.minRequestIntervalMs | string | `null` (unset): the key is left out and the image decides; its contract publishes no default. | Shortest gap between two requests to `AniList`, in milliseconds. It paces this deployment's whole traffic, not one reader's: `AniList` rate-limits per application (`anilist.min_request_interval_ms`). |
 | anilist.oauthBase | string | `null` (unset): the key is left out and the image decides; its contract publishes no default. | Base URL the `authorize` and `token` paths hang off (`anilist.oauth_base`). |

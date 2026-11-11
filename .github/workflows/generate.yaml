@@ -1,11 +1,12 @@
 name: Generate
 
 # Every file in this repository that a tool writes rather than a person: chart schemas and READMEs,
-# the vendored configuration contracts, the version bumps and pins derived from them, and the root
-# README's chart index. The Documentation job regenerates them on the pull request's head and
-# uploads a patch; the Generated Files job is the required check, and fails while that patch is not
-# committed yet or a generator failed. generate-commit.yaml, a workflow_run workflow the pull request
-# cannot edit, commits the patch to the branch, and the run on that commit decides.
+# the vendored configuration contracts and the round-trip suites generated from them, the version
+# bumps and pins derived from them, and the root README's chart index. The Documentation job
+# regenerates them on the pull request's head and uploads a patch; the Generated Files job is the
+# required check, and fails while that patch is not committed yet or a generator failed.
+# generate-commit.yaml, a workflow_run workflow the pull request cannot edit, commits the patch to
+# the branch, and the run on that commit decides.
 #
 # The split is the security boundary. Documentation runs the pull request's own code — every
 # `just` recipe, every script under `.github/scripts/`, the composite toolchain action and
@@ -136,6 +137,28 @@ jobs:
         continue-on-error: true
         uses: TimSchoenle/actions/actions/terrace/helm-sync@6a49261c7bbd756b4ceca9b1c168dfc7dc095e64 # tag=actions-terrace-helm-sync-v1.1.2
 
+      # The generated round-trip suites, `charts/*/tests/contract_roundtrip_*_test.yaml`, rewritten
+      # from the contracts the sync above just refreshed. `terrace-contract sync` writes the
+      # contracts, the `@schema` blocks and the README reference but not the suites: those it only
+      # checks, under `--check`. So without this step an image bump that moves a default lands with
+      # its suites still probing the old one, and Configuration Contracts fails on the `tests`
+      # gate. TankoVault 11.2.0 did exactly that: it started publishing its compiled-in defaults,
+      # and 76 probes had to flip (#839).
+      #
+      # Placed directly after the sync because the suites are derived from the contracts and from
+      # the `@config` markers it rewrote, and nothing after it reads the suites. Every chart, not
+      # only the ones the change touched: the generator is offline and idempotent, so a chart
+      # already in step comes out byte-for-byte the same. It uses the terrace-contract binary the
+      # sync action installed on PATH, so a sync that failed before installing it fails this step
+      # too, and the step is reported below.
+      #
+      # The suites still reach a reviewer: the regenerated cases arrive as their own commit on the
+      # pull request, beside the contract diff that caused them, and Unit Tests runs them.
+      - name: Regenerate contract test suites
+        id: contract-tests
+        continue-on-error: true
+        run: just contract-tests
+
       # Every generator from the sync above to the patch runs even when the one before it failed,
       # and the job is failed at the end instead — see "Report generator failures".
       #
@@ -240,6 +263,7 @@ jobs:
         if: always()
         env:
           SYNC: ${{ steps.sync.outcome }}
+          CONTRACT_TESTS: ${{ steps.contract-tests.outcome }}
           SCHEMAS: ${{ steps.schemas.outcome }}
           HELM_DOCS: ${{ steps.helm-docs.outcome }}
           CHART_INDEX: ${{ steps.chart-index.outcome }}
@@ -250,6 +274,7 @@ jobs:
 
           failed=''
           for generator in "terrace/helm-sync:${SYNC}" \
+                           "just contract-tests:${CONTRACT_TESTS}" \
                            "just schema:${SCHEMAS}" \
                            "helm-docs:${HELM_DOCS}" \
                            "just chart-index:${CHART_INDEX}" \

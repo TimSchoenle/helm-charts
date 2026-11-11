@@ -3,7 +3,7 @@
     "app": {
       "name": "tankovault-render",
       "source": "https://github.com/TimSchoenle/TankoVault",
-      "version": "v11.1.4"
+      "version": "v11.2.0"
     },
     "external": {
       "env": [
@@ -32,6 +32,7 @@
       "additionalProperties": false,
       "properties": {
         "bind_addr": {
+          "default": "0.0.0.0:8084",
           "description": "Listen address for `/v1/render`, `/v1/solve` and the probes. Internal-tier only.",
           "type": "string"
         },
@@ -54,6 +55,7 @@
               "type": "object"
             },
             "identity": {
+              "default": "token",
               "description": "How callers are identified.",
               "enum": [
                 "off",
@@ -78,6 +80,7 @@
                 },
                 "type": "object"
               },
+              "default": {},
               "description": "Which services may call this one, keyed by caller name.",
               "type": "object"
             },
@@ -97,6 +100,7 @@
                   "type": "string"
                 },
                 "probe_listen": {
+                  "default": "0.0.0.0:9091",
                   "description": "Address the credential-free `/health` and `/ready` probes bind to, in **plaintext**, on\ntheir own listener (default `0.0.0.0:9091`). Read under `mtls` only.\n\nAn orchestrator probe presents no client certificate, so on the mTLS port its plain `GET`\ngets a TLS alert and the replica is restarted as unhealthy. Set it to `null`, which drops\nthe listener, only where the prober can present a certificate.",
                   "type": "string"
                 }
@@ -115,18 +119,22 @@
           "additionalProperties": false,
           "properties": {
             "enabled": {
+              "default": true,
               "description": "Install the Prometheus recorder and serve the scrape endpoint. When `false` the\nscrape route answers `404` and no measurements are retained.",
               "type": "boolean"
             },
             "http_requests": {
+              "default": true,
               "description": "Also record per-request HTTP metrics. The request histogram is the expensive,\nhigh-cardinality part, so it has its own switch.",
               "type": "boolean"
             },
             "listen": {
+              "default": "0.0.0.0:9090",
               "description": "Address the scrape endpoint binds on its **own** listener, apart from the service's\npublic port (default `0.0.0.0:9090`). `null` serves it on the primary port.",
               "type": "string"
             },
             "route": {
+              "default": "/metrics",
               "description": "Path the scrape endpoint is mounted at.",
               "type": "string"
             }
@@ -140,12 +148,14 @@
               "additionalProperties": false,
               "properties": {
                 "burst": {
+                  "default": 5,
                   "description": "The most requests a client may spend back-to-back.",
                   "maximum": 4294967295,
                   "minimum": 0,
                   "type": "integer"
                 },
                 "per_minute": {
+                  "default": 10,
                   "description": "Sustained requests allowed per minute per client key, which is the bucket's refill rate.",
                   "maximum": 4294967295,
                   "minimum": 0,
@@ -155,6 +165,7 @@
               "type": "object"
             },
             "backend": {
+              "default": "memory",
               "description": "Where the counters live.",
               "enum": [
                 "memory",
@@ -163,6 +174,7 @@
               "type": "string"
             },
             "enabled": {
+              "default": true,
               "description": "Enforce limits. When `false` the layer is not mounted and costs nothing per request.",
               "type": "boolean"
             },
@@ -170,12 +182,14 @@
               "additionalProperties": false,
               "properties": {
                 "burst": {
+                  "default": 10,
                   "description": "The most requests a client may spend back-to-back.",
                   "maximum": 4294967295,
                   "minimum": 0,
                   "type": "integer"
                 },
                 "per_minute": {
+                  "default": 30,
                   "description": "Sustained requests allowed per minute per client key, which is the bucket's refill rate.",
                   "maximum": 4294967295,
                   "minimum": 0,
@@ -188,12 +202,14 @@
               "additionalProperties": false,
               "properties": {
                 "burst": {
+                  "default": 60,
                   "description": "The most requests a client may spend back-to-back.",
                   "maximum": 4294967295,
                   "minimum": 0,
                   "type": "integer"
                 },
                 "per_minute": {
+                  "default": 300,
                   "description": "Sustained requests allowed per minute per client key, which is the bucket's refill rate.",
                   "maximum": 4294967295,
                   "minimum": 0,
@@ -203,6 +219,7 @@
               "type": "object"
             },
             "trust_forwarded_for": {
+              "default": false,
               "description": "Take the client key from `X-Forwarded-For` or `X-Real-IP`. Enable it **only behind a\nreverse proxy that overwrites both**; otherwise any client forges a fresh key and bypasses\nthe limiter.",
               "type": "boolean"
             }
@@ -213,6 +230,7 @@
           "additionalProperties": false,
           "properties": {
             "challenge_wait_ms": {
+              "default": 5000,
               "description": "Extra settle time to let a bot-management challenge clear during `/v1/solve` (ms).",
               "minimum": 0,
               "type": "integer"
@@ -222,24 +240,29 @@
               "type": "string"
             },
             "default_wait_ms": {
+              "default": 0,
               "description": "Extra settle delay applied after navigation on every `/v1/render` (ms).",
               "minimum": 0,
               "type": "integer"
             },
             "headless": {
+              "default": true,
               "description": "Run the browser headless (the default; set `false` only for local debugging).",
               "type": "boolean"
             },
             "nav_timeout_ms": {
+              "default": 30000,
               "description": "Per-navigation time budget handed to the CDP client (ms).",
               "minimum": 0,
               "type": "integer"
             },
             "no_sandbox": {
+              "default": true,
               "description": "Pass `--no-sandbox` (required to run Chromium as root inside the runtime container).",
               "type": "boolean"
             },
             "session_ttl_secs": {
+              "default": 900,
               "description": "TTL attached to a solved session when acting as a `ChallengeSolver` back-end (s).",
               "minimum": 0,
               "type": "integer"
@@ -258,10 +281,12 @@
               "additionalProperties": false,
               "properties": {
                 "allow_credentials": {
+                  "default": false,
                   "description": "Allow credentialed cross-origin requests, carrying cookies or `Authorization`. Cannot be\ncombined with a wildcard origin.",
                   "type": "boolean"
                 },
                 "allowed_origins": {
+                  "default": [],
                   "description": "Exact origins allowed, such as `https://app.example.com`. Empty disables CORS.",
                   "items": {
                     "type": "string"
@@ -269,6 +294,7 @@
                   "type": "array"
                 },
                 "max_age_secs": {
+                  "default": 0,
                   "description": "`Access-Control-Max-Age`, in seconds.",
                   "minimum": 0,
                   "type": "integer"
@@ -277,33 +303,40 @@
               "type": "object"
             },
             "expose_api_docs": {
+              "default": true,
               "description": "Serve the browsable API docs (`/scalar`) and the `OpenAPI` document.\n\nOff by default in production and on elsewhere. Left on in production, it gives an\nattacker every `/v1/admin/*` path, the permission vocabulary and the exact request bodies\nwithout a failed probe.",
               "type": "boolean"
             },
             "hsts": {
+              "default": false,
               "description": "Emit `Strict-Transport-Security`. Browsers ignore it over plain HTTP.",
               "type": "boolean"
             },
             "hsts_max_age_secs": {
+              "default": 63072000,
               "description": "`max-age` for the HSTS header, in seconds. The default is two years, the preload minimum.",
               "minimum": 0,
               "type": "integer"
             },
             "max_body_bytes": {
+              "default": 1048576,
               "description": "Reject request bodies larger than this, in bytes, before they are buffered.",
               "minimum": 0,
               "type": "integer"
             },
             "request_timeout_secs": {
+              "default": 30,
               "description": "Abort a request that has not produced a response within this many seconds.",
               "minimum": 0,
               "type": "integer"
             },
             "security_headers": {
+              "default": true,
               "description": "Send the baseline set of hardening headers (`X-Content-Type-Options`,\n`X-Frame-Options`, `Referrer-Policy`, `Cross-Origin-Resource-Policy`).",
               "type": "boolean"
             },
             "trust_request_id": {
+              "default": false,
               "description": "Accept an inbound `X-Request-Id` instead of minting one. Enable it only behind a trusted\nproxy, since a client-supplied id can poison log correlation.",
               "type": "boolean"
             }
@@ -314,10 +347,12 @@
           "additionalProperties": false,
           "properties": {
             "json_logs": {
+              "default": false,
               "description": "Emit structured JSON logs, for production, in place of the human-readable format.",
               "type": "boolean"
             },
             "log_filter": {
+              "default": "info",
               "description": "`tracing` filter directives, such as `info,tankovault=debug`. `RUST_LOG` wins when set.",
               "type": "string"
             },
@@ -325,10 +360,12 @@
               "additionalProperties": false,
               "properties": {
                 "attach_stacktraces": {
+                  "default": true,
                   "description": "Attach a stack trace to events that carry none of their own.",
                   "type": "boolean"
                 },
                 "breadcrumb_level": {
+                  "default": "info",
                   "description": "Least severe `tracing` level kept as a **breadcrumb**, the trail attached to the next\nissue. Records at or above [`Self::capture_level`] become issues instead.",
                   "enum": [
                     "off",
@@ -341,6 +378,7 @@
                   "type": "string"
                 },
                 "capture_level": {
+                  "default": "error",
                   "description": "Least severe `tracing` level reported as a Sentry **issue**.",
                   "enum": [
                     "off",
@@ -353,6 +391,7 @@
                   "type": "string"
                 },
                 "debug": {
+                  "default": false,
                   "description": "Print the SDK's own diagnostics to stderr, to prove a DSN works.",
                   "type": "boolean"
                 },
@@ -362,6 +401,7 @@
                   "writeOnly": true
                 },
                 "enabled": {
+                  "default": false,
                   "description": "Initialise the Sentry client. `false` installs no client, no panic hook and no layer,\nso every other key here is inert and nothing is sent anywhere.",
                   "type": "boolean"
                 },
@@ -370,10 +410,12 @@
                   "type": "string"
                 },
                 "http_transactions": {
+                  "default": true,
                   "description": "Record one Sentry transaction per request through the shared HTTP stack, named by the\nmatched route, so an id in the path does not become a transaction name.\n\n[`Self::traces_sample_rate`] decides whether a transaction is kept. Off, the HTTP layer\nstarts no transactions; a broker delivery still starts one through the `tracing` layer.",
                   "type": "boolean"
                 },
                 "max_breadcrumbs": {
+                  "default": 100,
                   "description": "How many breadcrumbs one event carries.",
                   "minimum": 0,
                   "type": "integer"
@@ -383,12 +425,14 @@
                   "type": "string"
                 },
                 "sample_rate": {
+                  "default": 1.0,
                   "description": "Fraction of captured events sent, `0.0`-`1.0`, decided at random per event. A lower rate\nundercounts every issue and can miss a rare one entirely, so leave it at `1.0` unless\nquota forces it lower.",
                   "maximum": 1.0,
                   "minimum": 0.0,
                   "type": "number"
                 },
                 "send_default_pii": {
+                  "default": false,
                   "description": "Send personally identifying data with every event: the client IP, the full request\nheader set (`Authorization` and `Cookie` included) and the resolved user.\n\n**Off, and worth leaving off.** A crash report does not need a reader's IP address or\nsession cookie, and Sentry is a third party under the deployment's data policy. On, it\nalso stops `sentry-tower` redacting sensitive headers in the HTTP middleware.",
                   "type": "boolean"
                 },
@@ -397,15 +441,18 @@
                   "type": "string"
                 },
                 "shutdown_timeout_secs": {
+                  "default": 2,
                   "description": "How long process exit waits for queued events to drain.",
                   "minimum": 0,
                   "type": "integer"
                 },
                 "span_attributes": {
+                  "default": false,
                   "description": "Copy `tracing` span fields onto the Sentry span as attributes. Off by default, because span\nfields carry ids and user-supplied titles and a transaction is kept longer than a log line.",
                   "type": "boolean"
                 },
                 "traces_sample_rate": {
+                  "default": 0.0,
                   "description": "Fraction of traces this service **starts** that are recorded, `0.0`-`1.0`.\n\n`0.0`, the default, starts none. The service still continues a trace that arrives already\nsampled on a request or a broker message. Set the same rate on every service, since the\nservice that starts a trace decides whether it exists; `0.05`-`0.2` is an ordinary\nproduction figure.",
                   "maximum": 1.0,
                   "minimum": 0.0,
@@ -442,8 +489,8 @@
           "constraint": {
             "type": "string"
           },
-          "default": null,
-          "default_value": null,
+          "default": "0.0.0.0:8084",
+          "default_value": "0.0.0.0:8084",
           "docs": "Listen address for `/v1/render`, `/v1/solve` and the probes. Internal-tier only.",
           "env": "TANKOVAULT_BIND_ADDR",
           "env_aliases": [],
@@ -488,8 +535,8 @@
           "constraint": {
             "type": "string"
           },
-          "default": null,
-          "default_value": null,
+          "default": "info",
+          "default_value": "info",
           "docs": "`tracing` filter directives, such as `info,tankovault=debug`. `RUST_LOG` wins when set.",
           "env": "TANKOVAULT_TELEMETRY__LOG_FILTER",
           "env_aliases": [],
@@ -511,8 +558,8 @@
           "constraint": {
             "type": "boolean"
           },
-          "default": null,
-          "default_value": null,
+          "default": "false",
+          "default_value": false,
           "docs": "Emit structured JSON logs, for production, in place of the human-readable format.",
           "env": "TANKOVAULT_TELEMETRY__JSON_LOGS",
           "env_aliases": [],
@@ -538,8 +585,8 @@
           "constraint": {
             "type": "boolean"
           },
-          "default": null,
-          "default_value": null,
+          "default": "false",
+          "default_value": false,
           "docs": "Initialise the Sentry client. `false` installs no client, no panic hook and no layer,\nso every other key here is inert and nothing is sent anywhere.",
           "env": "TANKOVAULT_TELEMETRY__SENTRY__ENABLED",
           "env_aliases": [],
@@ -659,8 +706,8 @@
             "minimum": 0.0,
             "type": "number"
           },
-          "default": null,
-          "default_value": null,
+          "default": "1",
+          "default_value": 1.0,
           "docs": "Fraction of captured events sent, `0.0`-`1.0`, decided at random per event. A lower rate\nundercounts every issue and can miss a rare one entirely, so leave it at `1.0` unless\nquota forces it lower.",
           "env": "TANKOVAULT_TELEMETRY__SENTRY__SAMPLE_RATE",
           "env_aliases": [],
@@ -684,8 +731,8 @@
             "minimum": 0.0,
             "type": "number"
           },
-          "default": null,
-          "default_value": null,
+          "default": "0",
+          "default_value": 0.0,
           "docs": "Fraction of traces this service **starts** that are recorded, `0.0`-`1.0`.\n\n`0.0`, the default, starts none. The service still continues a trace that arrives already\nsampled on a request or a broker message. Set the same rate on every service, since the\nservice that starts a trace decides whether it exists; `0.05`-`0.2` is an ordinary\nproduction figure.",
           "env": "TANKOVAULT_TELEMETRY__SENTRY__TRACES_SAMPLE_RATE",
           "env_aliases": [],
@@ -715,8 +762,8 @@
             ],
             "type": "string"
           },
-          "default": null,
-          "default_value": null,
+          "default": "error",
+          "default_value": "error",
           "docs": "Least severe `tracing` level reported as a Sentry **issue**.",
           "env": "TANKOVAULT_TELEMETRY__SENTRY__CAPTURE_LEVEL",
           "env_aliases": [],
@@ -757,8 +804,8 @@
             ],
             "type": "string"
           },
-          "default": null,
-          "default_value": null,
+          "default": "info",
+          "default_value": "info",
           "docs": "Least severe `tracing` level kept as a **breadcrumb**, the trail attached to the next\nissue. Records at or above [`Self::capture_level`] become issues instead.",
           "env": "TANKOVAULT_TELEMETRY__SENTRY__BREADCRUMB_LEVEL",
           "env_aliases": [],
@@ -792,8 +839,8 @@
             "minimum": 0,
             "type": "integer"
           },
-          "default": null,
-          "default_value": null,
+          "default": "100",
+          "default_value": 100,
           "docs": "How many breadcrumbs one event carries.",
           "env": "TANKOVAULT_TELEMETRY__SENTRY__MAX_BREADCRUMBS",
           "env_aliases": [],
@@ -819,8 +866,8 @@
           "constraint": {
             "type": "boolean"
           },
-          "default": null,
-          "default_value": null,
+          "default": "true",
+          "default_value": true,
           "docs": "Attach a stack trace to events that carry none of their own.",
           "env": "TANKOVAULT_TELEMETRY__SENTRY__ATTACH_STACKTRACES",
           "env_aliases": [],
@@ -846,8 +893,8 @@
           "constraint": {
             "type": "boolean"
           },
-          "default": null,
-          "default_value": null,
+          "default": "false",
+          "default_value": false,
           "docs": "Send personally identifying data with every event: the client IP, the full request\nheader set (`Authorization` and `Cookie` included) and the resolved user.\n\n**Off, and worth leaving off.** A crash report does not need a reader's IP address or\nsession cookie, and Sentry is a third party under the deployment's data policy. On, it\nalso stops `sentry-tower` redacting sensitive headers in the HTTP middleware.",
           "env": "TANKOVAULT_TELEMETRY__SENTRY__SEND_DEFAULT_PII",
           "env_aliases": [],
@@ -873,8 +920,8 @@
           "constraint": {
             "type": "boolean"
           },
-          "default": null,
-          "default_value": null,
+          "default": "true",
+          "default_value": true,
           "docs": "Record one Sentry transaction per request through the shared HTTP stack, named by the\nmatched route, so an id in the path does not become a transaction name.\n\n[`Self::traces_sample_rate`] decides whether a transaction is kept. Off, the HTTP layer\nstarts no transactions; a broker delivery still starts one through the `tracing` layer.",
           "env": "TANKOVAULT_TELEMETRY__SENTRY__HTTP_TRANSACTIONS",
           "env_aliases": [],
@@ -900,8 +947,8 @@
           "constraint": {
             "type": "boolean"
           },
-          "default": null,
-          "default_value": null,
+          "default": "false",
+          "default_value": false,
           "docs": "Copy `tracing` span fields onto the Sentry span as attributes. Off by default, because span\nfields carry ids and user-supplied titles and a transaction is kept longer than a log line.",
           "env": "TANKOVAULT_TELEMETRY__SENTRY__SPAN_ATTRIBUTES",
           "env_aliases": [],
@@ -928,8 +975,8 @@
             "minimum": 0,
             "type": "integer"
           },
-          "default": null,
-          "default_value": null,
+          "default": "2",
+          "default_value": 2,
           "docs": "How long process exit waits for queued events to drain.",
           "env": "TANKOVAULT_TELEMETRY__SENTRY__SHUTDOWN_TIMEOUT_SECS",
           "env_aliases": [],
@@ -955,8 +1002,8 @@
           "constraint": {
             "type": "boolean"
           },
-          "default": null,
-          "default_value": null,
+          "default": "false",
+          "default_value": false,
           "docs": "Print the SDK's own diagnostics to stderr, to prove a DSN works.",
           "env": "TANKOVAULT_TELEMETRY__SENTRY__DEBUG",
           "env_aliases": [],
@@ -1005,8 +1052,8 @@
           "constraint": {
             "type": "boolean"
           },
-          "default": null,
-          "default_value": null,
+          "default": "true",
+          "default_value": true,
           "docs": "Run the browser headless (the default; set `false` only for local debugging).",
           "env": "TANKOVAULT_RENDER__HEADLESS",
           "env_aliases": [],
@@ -1032,8 +1079,8 @@
           "constraint": {
             "type": "boolean"
           },
-          "default": null,
-          "default_value": null,
+          "default": "true",
+          "default_value": true,
           "docs": "Pass `--no-sandbox` (required to run Chromium as root inside the runtime container).",
           "env": "TANKOVAULT_RENDER__NO_SANDBOX",
           "env_aliases": [],
@@ -1060,8 +1107,8 @@
             "minimum": 0,
             "type": "integer"
           },
-          "default": null,
-          "default_value": null,
+          "default": "30000",
+          "default_value": 30000,
           "docs": "Per-navigation time budget handed to the CDP client (ms).",
           "env": "TANKOVAULT_RENDER__NAV_TIMEOUT_MS",
           "env_aliases": [],
@@ -1088,8 +1135,8 @@
             "minimum": 0,
             "type": "integer"
           },
-          "default": null,
-          "default_value": null,
+          "default": "0",
+          "default_value": 0,
           "docs": "Extra settle delay applied after navigation on every `/v1/render` (ms).",
           "env": "TANKOVAULT_RENDER__DEFAULT_WAIT_MS",
           "env_aliases": [],
@@ -1139,8 +1186,8 @@
             "minimum": 0,
             "type": "integer"
           },
-          "default": null,
-          "default_value": null,
+          "default": "900",
+          "default_value": 900,
           "docs": "TTL attached to a solved session when acting as a `ChallengeSolver` back-end (s).",
           "env": "TANKOVAULT_RENDER__SESSION_TTL_SECS",
           "env_aliases": [],
@@ -1167,8 +1214,8 @@
             "minimum": 0,
             "type": "integer"
           },
-          "default": null,
-          "default_value": null,
+          "default": "5000",
+          "default_value": 5000,
           "docs": "Extra settle time to let a bot-management challenge clear during `/v1/solve` (ms).",
           "env": "TANKOVAULT_RENDER__CHALLENGE_WAIT_MS",
           "env_aliases": [],
@@ -1197,8 +1244,8 @@
             },
             "type": "array"
           },
-          "default": null,
-          "default_value": null,
+          "default": "[]",
+          "default_value": [],
           "docs": "Exact origins allowed, such as `https://app.example.com`. Empty disables CORS.",
           "env": "TANKOVAULT_SECURITY__CORS__ALLOWED_ORIGINS",
           "env_aliases": [],
@@ -1224,8 +1271,8 @@
           "constraint": {
             "type": "boolean"
           },
-          "default": null,
-          "default_value": null,
+          "default": "false",
+          "default_value": false,
           "docs": "Allow credentialed cross-origin requests, carrying cookies or `Authorization`. Cannot be\ncombined with a wildcard origin.",
           "env": "TANKOVAULT_SECURITY__CORS__ALLOW_CREDENTIALS",
           "env_aliases": [],
@@ -1252,8 +1299,8 @@
             "minimum": 0,
             "type": "integer"
           },
-          "default": null,
-          "default_value": null,
+          "default": "0",
+          "default_value": 0,
           "docs": "`Access-Control-Max-Age`, in seconds.",
           "env": "TANKOVAULT_SECURITY__CORS__MAX_AGE_SECS",
           "env_aliases": [],
@@ -1280,8 +1327,8 @@
             "minimum": 0,
             "type": "integer"
           },
-          "default": null,
-          "default_value": null,
+          "default": "1048576",
+          "default_value": 1048576,
           "docs": "Reject request bodies larger than this, in bytes, before they are buffered.",
           "env": "TANKOVAULT_SECURITY__MAX_BODY_BYTES",
           "env_aliases": [],
@@ -1308,8 +1355,8 @@
             "minimum": 0,
             "type": "integer"
           },
-          "default": null,
-          "default_value": null,
+          "default": "30",
+          "default_value": 30,
           "docs": "Abort a request that has not produced a response within this many seconds.",
           "env": "TANKOVAULT_SECURITY__REQUEST_TIMEOUT_SECS",
           "env_aliases": [],
@@ -1335,8 +1382,8 @@
           "constraint": {
             "type": "boolean"
           },
-          "default": null,
-          "default_value": null,
+          "default": "false",
+          "default_value": false,
           "docs": "Emit `Strict-Transport-Security`. Browsers ignore it over plain HTTP.",
           "env": "TANKOVAULT_SECURITY__HSTS",
           "env_aliases": [],
@@ -1363,8 +1410,8 @@
             "minimum": 0,
             "type": "integer"
           },
-          "default": null,
-          "default_value": null,
+          "default": "63072000",
+          "default_value": 63072000,
           "docs": "`max-age` for the HSTS header, in seconds. The default is two years, the preload minimum.",
           "env": "TANKOVAULT_SECURITY__HSTS_MAX_AGE_SECS",
           "env_aliases": [],
@@ -1390,8 +1437,8 @@
           "constraint": {
             "type": "boolean"
           },
-          "default": null,
-          "default_value": null,
+          "default": "true",
+          "default_value": true,
           "docs": "Send the baseline set of hardening headers (`X-Content-Type-Options`,\n`X-Frame-Options`, `Referrer-Policy`, `Cross-Origin-Resource-Policy`).",
           "env": "TANKOVAULT_SECURITY__SECURITY_HEADERS",
           "env_aliases": [],
@@ -1417,8 +1464,8 @@
           "constraint": {
             "type": "boolean"
           },
-          "default": null,
-          "default_value": null,
+          "default": "false",
+          "default_value": false,
           "docs": "Accept an inbound `X-Request-Id` instead of minting one. Enable it only behind a trusted\nproxy, since a client-supplied id can poison log correlation.",
           "env": "TANKOVAULT_SECURITY__TRUST_REQUEST_ID",
           "env_aliases": [],
@@ -1444,8 +1491,8 @@
           "constraint": {
             "type": "boolean"
           },
-          "default": null,
-          "default_value": null,
+          "default": "true",
+          "default_value": true,
           "docs": "Serve the browsable API docs (`/scalar`) and the `OpenAPI` document.\n\nOff by default in production and on elsewhere. Left on in production, it gives an\nattacker every `/v1/admin/*` path, the permission vocabulary and the exact request bodies\nwithout a failed probe.",
           "env": "TANKOVAULT_SECURITY__EXPOSE_API_DOCS",
           "env_aliases": [],
@@ -1471,8 +1518,8 @@
           "constraint": {
             "type": "boolean"
           },
-          "default": null,
-          "default_value": null,
+          "default": "true",
+          "default_value": true,
           "docs": "Enforce limits. When `false` the layer is not mounted and costs nothing per request.",
           "env": "TANKOVAULT_RATE_LIMIT__ENABLED",
           "env_aliases": [],
@@ -1502,8 +1549,8 @@
             ],
             "type": "string"
           },
-          "default": null,
-          "default_value": null,
+          "default": "memory",
+          "default_value": "memory",
           "docs": "Where the counters live.",
           "env": "TANKOVAULT_RATE_LIMIT__BACKEND",
           "env_aliases": [],
@@ -1534,8 +1581,8 @@
             "minimum": 0,
             "type": "integer"
           },
-          "default": null,
-          "default_value": null,
+          "default": "300",
+          "default_value": 300,
           "docs": "Sustained requests allowed per minute per client key, which is the bucket's refill rate.",
           "env": "TANKOVAULT_RATE_LIMIT__GLOBAL__PER_MINUTE",
           "env_aliases": [],
@@ -1563,8 +1610,8 @@
             "minimum": 0,
             "type": "integer"
           },
-          "default": null,
-          "default_value": null,
+          "default": "60",
+          "default_value": 60,
           "docs": "The most requests a client may spend back-to-back.",
           "env": "TANKOVAULT_RATE_LIMIT__GLOBAL__BURST",
           "env_aliases": [],
@@ -1592,8 +1639,8 @@
             "minimum": 0,
             "type": "integer"
           },
-          "default": null,
-          "default_value": null,
+          "default": "10",
+          "default_value": 10,
           "docs": "Sustained requests allowed per minute per client key, which is the bucket's refill rate.",
           "env": "TANKOVAULT_RATE_LIMIT__AUTH__PER_MINUTE",
           "env_aliases": [],
@@ -1621,8 +1668,8 @@
             "minimum": 0,
             "type": "integer"
           },
-          "default": null,
-          "default_value": null,
+          "default": "5",
+          "default_value": 5,
           "docs": "The most requests a client may spend back-to-back.",
           "env": "TANKOVAULT_RATE_LIMIT__AUTH__BURST",
           "env_aliases": [],
@@ -1650,8 +1697,8 @@
             "minimum": 0,
             "type": "integer"
           },
-          "default": null,
-          "default_value": null,
+          "default": "30",
+          "default_value": 30,
           "docs": "Sustained requests allowed per minute per client key, which is the bucket's refill rate.",
           "env": "TANKOVAULT_RATE_LIMIT__EXPENSIVE__PER_MINUTE",
           "env_aliases": [],
@@ -1679,8 +1726,8 @@
             "minimum": 0,
             "type": "integer"
           },
-          "default": null,
-          "default_value": null,
+          "default": "10",
+          "default_value": 10,
           "docs": "The most requests a client may spend back-to-back.",
           "env": "TANKOVAULT_RATE_LIMIT__EXPENSIVE__BURST",
           "env_aliases": [],
@@ -1706,8 +1753,8 @@
           "constraint": {
             "type": "boolean"
           },
-          "default": null,
-          "default_value": null,
+          "default": "false",
+          "default_value": false,
           "docs": "Take the client key from `X-Forwarded-For` or `X-Real-IP`. Enable it **only behind a\nreverse proxy that overwrites both**; otherwise any client forges a fresh key and bypasses\nthe limiter.",
           "env": "TANKOVAULT_RATE_LIMIT__TRUST_FORWARDED_FOR",
           "env_aliases": [],
@@ -1733,8 +1780,8 @@
           "constraint": {
             "type": "boolean"
           },
-          "default": null,
-          "default_value": null,
+          "default": "true",
+          "default_value": true,
           "docs": "Install the Prometheus recorder and serve the scrape endpoint. When `false` the\nscrape route answers `404` and no measurements are retained.",
           "env": "TANKOVAULT_METRICS__ENABLED",
           "env_aliases": [],
@@ -1760,8 +1807,8 @@
           "constraint": {
             "type": "string"
           },
-          "default": null,
-          "default_value": null,
+          "default": "/metrics",
+          "default_value": "/metrics",
           "docs": "Path the scrape endpoint is mounted at.",
           "env": "TANKOVAULT_METRICS__ROUTE",
           "env_aliases": [],
@@ -1783,8 +1830,8 @@
           "constraint": {
             "type": "string"
           },
-          "default": null,
-          "default_value": null,
+          "default": "0.0.0.0:9090",
+          "default_value": "0.0.0.0:9090",
           "docs": "Address the scrape endpoint binds on its **own** listener, apart from the service's\npublic port (default `0.0.0.0:9090`). `null` serves it on the primary port.",
           "env": "TANKOVAULT_METRICS__LISTEN",
           "env_aliases": [],
@@ -1806,8 +1853,8 @@
           "constraint": {
             "type": "boolean"
           },
-          "default": null,
-          "default_value": null,
+          "default": "true",
+          "default_value": true,
           "docs": "Also record per-request HTTP metrics. The request histogram is the expensive,\nhigh-cardinality part, so it has its own switch.",
           "env": "TANKOVAULT_METRICS__HTTP_REQUESTS",
           "env_aliases": [],
@@ -1838,8 +1885,8 @@
             ],
             "type": "string"
           },
-          "default": null,
-          "default_value": null,
+          "default": "token",
+          "default_value": "token",
           "docs": "How callers are identified.",
           "env": "TANKOVAULT_INTERNAL__IDENTITY",
           "env_aliases": [],
@@ -1930,8 +1977,8 @@
             },
             "type": "object"
           },
-          "default": null,
-          "default_value": null,
+          "default": "{  }",
+          "default_value": {},
           "docs": "Which services may call this one, keyed by caller name.",
           "env": "TANKOVAULT_INTERNAL__PEERS",
           "env_aliases": [],
@@ -2026,8 +2073,8 @@
           "constraint": {
             "type": "string"
           },
-          "default": null,
-          "default_value": null,
+          "default": "0.0.0.0:9091",
+          "default_value": "0.0.0.0:9091",
           "docs": "Address the credential-free `/health` and `/ready` probes bind to, in **plaintext**, on\ntheir own listener (default `0.0.0.0:9091`). Read under `mtls` only.\n\nAn orchestrator probe presents no client certificate, so on the mTLS port its plain `GET`\ngets a TLS alert and the replica is restarted as unhealthy. Set it to `null`, which drops\nthe listener, only where the prober can present a certificate.",
           "env": "TANKOVAULT_INTERNAL__TLS__PROBE_LISTEN",
           "env_aliases": [],
@@ -2099,9 +2146,9 @@
     "terrace_contract": 1
   },
   "source": {
-    "digest": "sha256:b3402f9754ef792ad4a72b4edb9ea85ed6f508efb3e4914d02f81fb746463c93",
-    "fetched": "2026-11-06T18:38:43Z",
+    "digest": "sha256:12958a9cfcbba857e7e830a546997b59bc3b0ee3152df9ea22dcd708303d4cba",
+    "fetched": "2026-11-11T08:29:50Z",
     "image": "docker.io/timschoenle/tankovault-render",
-    "sha256": "89630556d652af6df03659b5e8d95714098c086306ce32bb3105e0c2a7616633"
+    "sha256": "2d673872d7c8712d9578a473ae2176bf38c022ade248c7252325749f6e443eef"
   }
 }

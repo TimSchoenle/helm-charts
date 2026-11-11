@@ -1,6 +1,6 @@
 # discord-alertmanager
 
-![Version: 0.4.21](https://img.shields.io/badge/Version-0.4.21-informational?style=flat-square) ![AppVersion: v0.9.4](https://img.shields.io/badge/AppVersion-v0.9.4-informational?style=flat-square)
+![Version: 0.4.22](https://img.shields.io/badge/Version-0.4.22-informational?style=flat-square) ![AppVersion: v0.9.4](https://img.shields.io/badge/AppVersion-v0.9.4-informational?style=flat-square)
 
 This chart deploys discord-alertmanager, a Discord operator surface for Prometheus Alertmanager. It receives the version-4 webhook envelope, renders each alert as a live status card in a Discord channel, and lets an operator acknowledge, ignore, silence or investigate it without leaving the client — with file-backed configuration that reloads in place instead of restarting pods, SQLite or PostgreSQL storage, optional Prometheus metrics and alerting rules, and an optional AlertmanagerConfig that registers the receiver with the Prometheus Operator instead of leaving it to be wired by hand.
 
@@ -408,9 +408,9 @@ also why a pod that cannot reach Alertmanager never becomes ready — check the 
 | affinity | object | `{}` | Explicit affinity rules. Wins over `podAntiAffinity`. |
 | alertmanager | object | `{"basicPassword":"","basicUsername":null,"bearerToken":"","caBundle":null,"connectTimeoutSecs":2,"endpoints":[],"retry":{"initialBackoffMs":200,"maxBackoffSecs":10,"maxElapsedSecs":45},"timeoutSecs":10}` | Where Alertmanager is, how to authenticate to it, and how hard to retry. At least one endpoint is required: the client is built during startup and refuses an empty peer list, so a release without one exits rather than running without silences. |
 | alertmanager.basicPassword | string | `""` | Password for basic authentication. Supply it through the secrets directory or `_FILE` (`alertmanager.basic_password`). Delivered as the secrets-directory file `alertmanager__basic_password`. |
-| alertmanager.basicUsername | string | `nil` | Username for basic authentication. Ignored when `bearer_token` is set (`alertmanager.basic_username`). |
+| alertmanager.basicUsername | string | `null` (unset): the key is left out and the image decides; its contract publishes no default. | Username for basic authentication. Ignored when `bearer_token` is set (`alertmanager.basic_username`). |
 | alertmanager.bearerToken | string | `""` | Bearer token sent to Alertmanager. Supply it through the secrets directory or `_FILE` (`alertmanager.bearer_token`). Delivered as the secrets-directory file `alertmanager__bearer_token`. |
-| alertmanager.caBundle | string | `nil` | PEM bundle of certificate authorities to trust in addition to the system roots (`alertmanager.ca_bundle`). |
+| alertmanager.caBundle | string | `null` (unset): the key is left out and the image decides; its contract publishes no default. | PEM bundle of certificate authorities to trust in addition to the system roots (`alertmanager.ca_bundle`). |
 | alertmanager.connectTimeoutSecs | int | `2` | Seconds to wait for a connection before trying the next endpoint (`alertmanager.connect_timeout_secs`). |
 | alertmanager.endpoints | list | `[]` | Base URLs of the Alertmanager peers, tried in order (`alertmanager.endpoints`). |
 | alertmanager.retry | object | `{"initialBackoffMs":200,"maxBackoffSecs":10,"maxElapsedSecs":45}` | Bounded backoff for a request that failed. Giving up is the point of the bound — an unbounded retry is how a client finishes off the Alertmanager it is waiting for. |
@@ -464,7 +464,7 @@ also why a pod that cannot reach Alertmanager never becomes ready — check the 
 | discord.capabilities.silence | list | `[]` | Create, extend and expire Alertmanager silences, which affects every receiver (`discord.capabilities.silence`). |
 | discord.capabilities.view | list | `["@everyone"]` | Read alerts, silences and routes. Grants no mutation of any kind (`discord.capabilities.view`). |
 | discord.captureReplyText | bool | `false` | Capture the text of thread replies, which needs the privileged `MESSAGE_CONTENT` intent (`discord.capture_reply_text`). |
-| discord.devGuildId | string | `nil` | Guild to register slash commands into. Registration is global when unset (`discord.dev_guild_id`). |
+| discord.devGuildId | string | `null` (unset): the key is left out and the image decides; its contract publishes no default. | Guild to register slash commands into. Registration is global when unset (`discord.dev_guild_id`). |
 | discord.token | string | `""` | Bot token. Supply it through `DAM_DISCORD__TOKEN_FILE` or the secrets directory (`discord.token`). Delivered as the secrets-directory file `discord__token`. |
 | engine | object | `{"deadmanWindowSecs":1800,"dedupeIgnoreLabels":[],"dispatchers":4,"escalationIntervalSecs":15,"outboxBatchSize":16,"outboxLeaseSecs":30,"persistEvents":true,"pruneIntervalSecs":3600,"reconcileIntervalSecs":60,"regroupWindowSecs":1800,"retention":{"auditDays":365,"eventsDays":30,"resolvedDays":30},"silenceSyncIntervalSecs":30,"storm":{"forumThreshold":20,"threshold":50,"windowSecs":60}}` | Pipeline cadences, retention horizons and storm thresholds. |
 | engine.deadmanWindowSecs | int | `1800` | Seconds of webhook silence that, combined with an unreachable Alertmanager, trips the deadman (`engine.deadman_window_secs`). |
@@ -543,8 +543,8 @@ also why a pod that cannot reach Alertmanager never becomes ready — check the 
 | links | object | `{"allowedHosts":[],"buttons":[],"grafanaBase":null,"prometheusBase":null,"windowLeadSecs":900,"windowTrailSecs":300}` | Templates for the link buttons on a card, and the host allowlist they are checked against. |
 | links.allowedHosts | list | `[]` | Hosts a rendered button may point at (`links.allowed_hosts`). |
 | links.buttons | list | `[]` | The buttons themselves, rendered in order (`links.buttons`). |
-| links.grafanaBase | string | `nil` | Grafana base URL, available to templates as `links.grafana_base` (`links.grafana_base`). |
-| links.prometheusBase | string | `nil` | Prometheus base URL, available to templates as `links.prometheus_base` (`links.prometheus_base`). |
+| links.grafanaBase | string | `null` (unset): the key is left out and the image decides; its contract publishes no default. | Grafana base URL, available to templates as `links.grafana_base` (`links.grafana_base`). |
+| links.prometheusBase | string | `null` (unset): the key is left out and the image decides; its contract publishes no default. | Prometheus base URL, available to templates as `links.prometheus_base` (`links.prometheus_base`). |
 | links.windowLeadSecs | int | `900` | Seconds of graph shown before the alert started (`links.window_lead_secs`). |
 | links.windowTrailSecs | int | `300` | Seconds of graph shown after the alert ended, or after now while it is firing (`links.window_trail_secs`). |
 | livenessProbe | object | `{"enabled":true,"failureThreshold":3,"httpGet":{"path":"/healthz","port":"http"},"initialDelaySeconds":10,"periodSeconds":10,"timeoutSeconds":5}` | Liveness probe, whose failure restarts the container. `successThreshold` is dropped from the rendered probe, because the API server accepts nothing but 1 there. |
@@ -632,7 +632,7 @@ also why a pod that cannot reach Alertmanager never becomes ready — check the 
 | networkPolicy.ingress.monitoring.ports | list | `[]` | Restrict the rule to specific ports. Empty means all ports. |
 | nodeSelector | object | `{}` | Node selector for pod assignment. |
 | observability | object | `{"adminChannelId":null,"metricsEnabled":true}` | What the bot exposes about itself, and who hears when it goes quiet. The log format and filter are not here — both are read from the environment before the configuration exists, and supplying either through a file is an error rather than a silent no-op. |
-| observability.adminChannelId | string | `nil` | Channel the deadman and route-health notices post to (`observability.admin_channel_id`). |
+| observability.adminChannelId | string | `null` (unset): the key is left out and the image decides; its contract publishes no default. | Channel the deadman and route-health notices post to (`observability.admin_channel_id`). |
 | observability.metricsEnabled | bool | `true` | Serve Prometheus metrics at `/metrics` on the ingest listener (`observability.metrics_enabled`). |
 | persistence | object | `{"data":{"accessMode":"ReadWriteOnce","annotations":{},"enabled":true,"existingClaim":"","mountPath":"/data","size":"1Gi","storageClassName":""}}` | Where the SQLite database file lives.  Only read while `storage.backend` is `sqlite`. A PostgreSQL deployment keeps its state in the database and needs no volume at all, so the claim is not rendered for one — an empty 1Gi PVC left behind by a backend switch is a bill nobody chose to pay.  The container runs with a read-only root filesystem, so there is nowhere else the file could go: the image's own default `discord-alertmanager.db` is relative to the `/app` working directory and would fail to open. `storage.sqlite.path` is therefore defaulted to a path under `mountPath` rather than to the image's default, and the render is refused if the two disagree. |
 | persistence.data | object | `{"accessMode":"ReadWriteOnce","annotations":{},"enabled":true,"existingClaim":"","mountPath":"/data","size":"1Gi","storageClassName":""}` | The volume the SQLite database lives on. |
@@ -726,10 +726,10 @@ also why a pod that cannot reach Alertmanager never becomes ready — check the 
 | telemetry.sentry.environment | string | `"production"` | Deployment this process belongs to, which every event is tagged with (`telemetry.sentry.environment`). |
 | telemetry.sentry.eventLevel | string | `"error"` | Level at or above which a log record is sent as an event of its own (`telemetry.sentry.event_level`). |
 | telemetry.sentry.maxBreadcrumbs | int | `100` | How many breadcrumbs are kept behind an event (`telemetry.sentry.max_breadcrumbs`). |
-| telemetry.sentry.release | string | `nil` | Release every event is attributed to. Defaults to the bot's own version (`telemetry.sentry.release`). |
+| telemetry.sentry.release | string | `null` (unset): the key is left out and the image decides; its contract publishes no default. | Release every event is attributed to. Defaults to the bot's own version (`telemetry.sentry.release`). |
 | telemetry.sentry.sampleRate | float | `1` | Fraction of events that are sent, from `0.0` to `1.0` (`telemetry.sentry.sample_rate`). |
 | telemetry.sentry.sendDefaultPii | bool | `false` | Send the IP addresses, headers and user identifiers Sentry calls default PII (`telemetry.sentry.send_default_pii`). |
-| telemetry.sentry.serverName | string | `nil` | Host name reported with each event. Defaults to the machine's own (`telemetry.sentry.server_name`). |
+| telemetry.sentry.serverName | string | `null` (unset): the key is left out and the image decides; its contract publishes no default. | Host name reported with each event. Defaults to the machine's own (`telemetry.sentry.server_name`). |
 | telemetry.sentry.shutdownTimeoutSecs | int | `2` | Seconds to spend delivering whatever is still queued during shutdown (`telemetry.sentry.shutdown_timeout_secs`). |
 | telemetry.sentry.spanLevel | string | `"info"` | Level at or above which a span joins the trace (`telemetry.sentry.span_level`). |
 | telemetry.sentry.tracesSampleRate | float | `0` | Fraction of traces that are sent, from `0.0` to `1.0`. Tracing is off at `0.0` (`telemetry.sentry.traces_sample_rate`). |

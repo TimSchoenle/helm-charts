@@ -1,6 +1,6 @@
 # portfolio
 
-![Version: 6.0.15](https://img.shields.io/badge/Version-6.0.15-informational?style=flat-square) ![AppVersion: v3.2.2](https://img.shields.io/badge/AppVersion-v3.2.2-informational?style=flat-square)
+![Version: 6.0.16](https://img.shields.io/badge/Version-6.0.16-informational?style=flat-square) ![AppVersion: v3.2.2](https://img.shields.io/badge/AppVersion-v3.2.2-informational?style=flat-square)
 
 This chart deploys Portfolio, a Dioxus fullstack site that an Axum server renders and a WASM client hydrates in the browser.
 
@@ -572,7 +572,7 @@ policy pointing at the wrong Gateway looks correct and blocks everything.
 | isr.ttlSecs | int | `0` | Revalidation interval in seconds (`isr.ttl_secs`). `0` means a permanent cache, which is right for this site: every page renders from compile-time data, so the only thing that changes the output is a redeploy — and that starts from an empty cache. Set a positive value only when a *persistent* cache volume is shared across deploys. |
 | kubeVersionOverride | string | `""` | Kubernetes version to target when branching on API availability. Lets `helm template` render for a specific cluster version without a live connection. |
 | legal | object | `{"defaultLocale":null,"documents":{}}` | The `legal` settings. |
-| legal.defaultLocale | string | `nil` | Locale served when neither the request nor its `Accept-Language` header matches a published one, for example `en`. Without it, the first published locale in alphabetical order is served (`legal.default_locale`). |
+| legal.defaultLocale | string | `null` (unset): the key is left out and the image decides; its contract publishes no default. | Locale served when neither the request nor its `Accept-Language` header matches a published one, for example `en`. Without it, the first published locale in alphabetical order is served (`legal.default_locale`). |
 | legal.documents | object | `{}` | The published documents, keyed by the slug their URL uses. A slug is lowercase letters, digits, `_` and `-`, at most 64 characters, and starts with a letter or a digit (`legal.documents`). |
 | livenessProbe | object | `{"enabled":true,"failureThreshold":3,"httpGet":{"path":"/api/health","port":"http"},"initialDelaySeconds":1,"periodSeconds":10,"timeoutSeconds":5}` | Liveness probe. Restarts the container when it stops responding. |
 | livenessProbe.enabled | bool | `true` | Enable the liveness probe. |

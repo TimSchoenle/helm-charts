@@ -326,10 +326,10 @@ policy pointing at the wrong Gateway looks correct and blocks everything.
 | feed | object | `{"checkIntervalSecs":180}` | The RSS poll loop. Only the interval is configurable; which feed the bot watches is not a configuration key. |
 | feed.checkIntervalSecs | int | `180` | Seconds between two RSS feed checks (`feed.check_interval_secs`). |
 | fullnameOverride | string | `""` | Override the full generated resource name. |
-| image | object | `{"pullPolicy":"","registry":"","repository":"timmi6790/netcup-offer-bot","tag":"v3.3.7@sha256:b3e0bf5a8ea984877a254f0f9d35600814eade11a6a5046ff2556e5bff16129a"}` | Container image the pod runs, composed as `registry/repository:tag`. |
+| image | object | `{"pullPolicy":"","registry":"","repository":"timschoenle/netcup-offer-bot","tag":"v3.3.7@sha256:b3e0bf5a8ea984877a254f0f9d35600814eade11a6a5046ff2556e5bff16129a"}` | Container image the pod runs, composed as `registry/repository:tag`. |
 | image.pullPolicy | string | `""` | The image pull policy. Empty resolves automatically from the tag/digest. |
 | image.registry | string | `""` | Registry host. Empty means Docker Hub. |
-| image.repository | string | `"timmi6790/netcup-offer-bot"` | The container image repository. |
+| image.repository | string | `"timschoenle/netcup-offer-bot"` | The container image repository. |
 | image.tag | string | `"v3.3.7@sha256:b3e0bf5a8ea984877a254f0f9d35600814eade11a6a5046ff2556e5bff16129a"` | The container image tag. Defaults to the chart's `appVersion` when empty. |
 | imagePullSecrets | list | `[]` | Optional image pull secrets for private registries |
 | kubeVersionOverride | string | `""` | Kubernetes version to target when branching on API availability. Lets `helm template` render for a specific cluster version without a live connection. |

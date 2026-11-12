@@ -538,10 +538,10 @@ policy pointing at the wrong Gateway looks correct and blocks everything.
 | gateway.tls.enabled | bool | `false` | Add an HTTPS listener. |
 | gateway.tls.mode | string | `"Terminate"` | TLS mode. |
 | gateway.tls.options | object | `{}` | Implementation-specific TLS options. |
-| image | object | `{"pullPolicy":"","registry":"","repository":"timmi6790/cloudflare-access-webhook-redirect","tag":"v2.3.7@sha256:97c272ab69aae541b5a2f43bda2a5fc6a8628f81dfd2578af5bfdfd20c68dc40"}` | Container image the pod runs, composed as `registry/repository:tag`. |
+| image | object | `{"pullPolicy":"","registry":"","repository":"timschoenle/cloudflare-access-webhook-redirect","tag":"v2.3.7@sha256:97c272ab69aae541b5a2f43bda2a5fc6a8628f81dfd2578af5bfdfd20c68dc40"}` | Container image the pod runs, composed as `registry/repository:tag`. |
 | image.pullPolicy | string | `""` | Image pull policy. Empty resolves automatically from the tag/digest. |
 | image.registry | string | `""` | Registry host. Empty means Docker Hub. |
-| image.repository | string | `"timmi6790/cloudflare-access-webhook-redirect"` | Container image repository (e.g. docker.io/user/image) |
+| image.repository | string | `"timschoenle/cloudflare-access-webhook-redirect"` | Container image repository (e.g. docker.io/user/image) |
 | image.tag | string | `"v2.3.7@sha256:97c272ab69aae541b5a2f43bda2a5fc6a8628f81dfd2578af5bfdfd20c68dc40"` | The container image tag, pinned by digest (`vX.Y.Z@sha256:...`). The digest pins the pull, while the tag stays on as the readable version marker. Defaults to the chart's `appVersion` when empty. |
 | imagePullSecrets | list | `[]` | Optional image pull secrets for private registries |
 | ingress | object | `{"annotations":{},"enabled":false,"hosts":[],"ingressClassName":"nginx","tls":[]}` | The Ingress in front of the Service. An independent switch from `gateway`, so a cluster migrating from an Ingress controller to a Gateway implementation can run both. |

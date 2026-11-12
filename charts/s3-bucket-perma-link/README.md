@@ -535,10 +535,10 @@ policy pointing at the wrong Gateway looks correct and blocks everything.
 | gateway.tls.enabled | bool | `false` | Add an HTTPS listener. |
 | gateway.tls.mode | string | `"Terminate"` | TLS mode. |
 | gateway.tls.options | object | `{}` | Implementation-specific TLS options. |
-| image | object | `{"pullPolicy":"","registry":"","repository":"timmi6790/s3-bucket-perma-link","tag":"v2.2.8@sha256:b7247c73de4937aabe2da6dc4b4efe9f6f4fe3a21ba62eed862f4ab9c686ad6b"}` | Container image the pod runs, composed as `registry/repository:tag`. |
+| image | object | `{"pullPolicy":"","registry":"","repository":"timschoenle/s3-bucket-perma-link","tag":"v2.2.8@sha256:b7247c73de4937aabe2da6dc4b4efe9f6f4fe3a21ba62eed862f4ab9c686ad6b"}` | Container image the pod runs, composed as `registry/repository:tag`. |
 | image.pullPolicy | string | `""` | The image pull policy. Empty resolves automatically from the tag/digest. |
 | image.registry | string | `""` | Registry host. Empty means Docker Hub. |
-| image.repository | string | `"timmi6790/s3-bucket-perma-link"` | The container image repository. |
+| image.repository | string | `"timschoenle/s3-bucket-perma-link"` | The container image repository. |
 | image.tag | string | `"v2.2.8@sha256:b7247c73de4937aabe2da6dc4b4efe9f6f4fe3a21ba62eed862f4ab9c686ad6b"` | The container image tag, pinned by digest (`vX.Y.Z@sha256:...`). The digest pins the pull, while the tag stays on as the readable version marker. Defaults to the chart's `appVersion` when empty. |
 | imagePullSecrets | list | `[]` | Optional image pull secrets for private registries. |
 | ingress | object | `{"annotations":{},"enabled":false,"hosts":[],"ingressClassName":"nginx","tls":[]}` | The Ingress in front of the Service. Off by default; `gateway` is the Gateway API alternative and the two are independent switches. |

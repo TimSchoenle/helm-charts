@@ -132,10 +132,22 @@ jobs:
       # The action installs the release `cli` in `terrace.yaml` pins, with oras and cosign, and
       # commits nothing itself: no token is passed, so the patch below carries its result. The
       # read-only job token it lists terrace-contract releases with is all it needs.
+      #
+      # Narrowed to the charts the pull request touched, as Configuration Contracts in ci.yaml is.
+      # Unscoped, one chart whose pinned image cannot be pulled or verified failed this step on
+      # every open pull request: #845 renamed three first-party repositories without repinning
+      # their digests, which exist only under the old namespace, and every pull request after it
+      # went red on charts it never touched. Nothing is lost by narrowing: a vendored contract is
+      # bound to the digest its chart pins, and that digest only moves in a change to the chart.
+      # `--since` widens back to every chart when the change reaches outside one application
+      # chart's own directory (the CLI pin, `terrace.yaml`, a workflow, a library chart) or the
+      # merge base cannot be read, so the whole tree is still synced whenever it could be affected.
       - name: Sync configuration contracts
         id: sync
         continue-on-error: true
         uses: TimSchoenle/actions/actions/terrace/helm-sync@0701d3b35ad7e10e3159471c82f4743b67fdc01f # tag=actions-terrace-helm-sync-v1.1.3
+        with:
+          since: ${{ github.event.pull_request.base.sha }}
 
       # The generated round-trip suites, `charts/*/tests/contract_roundtrip_*_test.yaml`, rewritten
       # from the contracts the sync above just refreshed. `terrace-contract sync` writes the

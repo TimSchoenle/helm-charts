@@ -44,8 +44,14 @@ jobs:
           permission-contents: write # To merge the base branch into the head branch
           permission-pull-requests: write # To list the PRs and request the update
 
+      # Only the oldest auto-merging pull request that is behind is updated. Under the strict
+      # up-to-date rule only one pull request can merge next, and updating every behind one re-ran
+      # CI on all of them per merge (quadratic in the queue length) and dismissed their approvals.
+      # Its merge pushes to main and starts the next sweep, which moves on to the next pull request.
       - name: Update Labelled PRs
-        uses: TimSchoenle/actions/actions/maintenance/auto-rebase@7c1147cf1e275c068a8484fa9a2dcb38a8b1f92f # tag=actions-maintenance-auto-rebase-v3.0.4
+        uses: TimSchoenle/actions/actions/maintenance/auto-rebase@e75e9ab1e1e9fa573051a901347e39ba23a45710 # tag=actions-maintenance-auto-rebase-v4.0.0
         with:
           token: ${{ steps.token.outputs.token }}
           label: 'auto-rebase'
+          only_auto_merge: 'true'
+          limit: '1'

@@ -1,6 +1,6 @@
 # netcup-offer-bot
 
-![Version: 6.2.18](https://img.shields.io/badge/Version-6.2.18-informational?style=flat-square) ![AppVersion: v3.3.9](https://img.shields.io/badge/AppVersion-v3.3.9-informational?style=flat-square)
+![Version: 6.2.19](https://img.shields.io/badge/Version-6.2.19-informational?style=flat-square) ![AppVersion: v3.3.9](https://img.shields.io/badge/AppVersion-v3.3.9-informational?style=flat-square)
 
 This chart deploys the Netcup Offer Bot, which monitors https://www.netcup-sonderangebote.de/ RSS feed and sends notifications to Discord webhooks when new offers are available.
 

@@ -101,6 +101,21 @@ tests:
       - notExists:
           path: data.PAPERLESS_PROXY_SSL_HEADER
 
+  # Since paperless-ngx 3.5 a `PAPERLESS_URL` without `PAPERLESS_ALLOWED_HOSTS` narrows Django to
+  # that hostname and `localhost`, so the kubelet's probes (Host: the pod IP) got 400 and an install
+  # behind an Ingress never became Ready.
+  - it: keeps every host allowed when a URL is derived and no hosts are listed
+    set:
+      ingress.enabled: true
+      ingress.host: paperless.example.com
+    asserts:
+      - equal:
+          path: data.PAPERLESS_URL
+          value: http://paperless.example.com
+      - equal:
+          path: data.PAPERLESS_ALLOWED_HOSTS
+          value: "*"
+
   - it: joins list settings the way the application parses them
     set:
       paperless.allowedHosts:

@@ -18,8 +18,10 @@ docs: schema config-readme chart-readmes
 
 # Generate every chart's `values.schema.json` from the `@schema` blocks in its values.yaml.
 #
-# Needs the dependency tree extracted, not just built: the generator resolves the library chart's
-# definitions from `charts/<chart>/charts/common/`. Run `just deps` first.
+# Needs the dependency tree built: the generator resolves the library chart's definitions from the
+# archive under `charts/<chart>/charts/`. Run `just deps` first. The archive must be the only copy:
+# helm-schema 0.24 reads into dependency archives and refuses a dependency it finds twice, so the
+# archives are no longer unpacked next to themselves.
 #
 # Four invocations. The first two regenerate the `@schema` blocks that are themselves derived —
 # the alert preset lists, which enumerate names out of `rules/*.yml` and `rules/tunables.yaml`,
@@ -27,7 +29,7 @@ docs: schema config-readme chart-readmes
 # *before* helm-schema, since they edit helm-schema's input.
 #
 # The rest are helm-schema, because one pass cannot cover every chart. Walking `charts/` finds
-# `charts/common` and the extracted copy of it under every consumer, and the generator keys its
+# `charts/common` and the vendored copy of it under every consumer, and the generator keys its
 # results by chart *name* — so the vendored copies shadow the library itself and its own
 # `values.schema.json` is never written. That is silent: the stale file stays checked in and the
 # run exits 0. One further pass per library points straight at it, with `--no-dependencies`

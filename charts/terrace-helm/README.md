@@ -1,6 +1,6 @@
 # terrace-helm
 
-![Version: 1.0.0](https://img.shields.io/badge/Version-1.0.0-informational?style=flat-square) ![Type: library](https://img.shields.io/badge/Type-library-informational?style=flat-square)
+![Version: 1.0.1](https://img.shields.io/badge/Version-1.0.1-informational?style=flat-square) ![Type: library](https://img.shields.io/badge/Type-library-informational?style=flat-square)
 
 Helm partials for services configured through a terrace configuration contract
 
@@ -16,7 +16,7 @@ chart built on these partials is one they can hold to that contract.
 # Chart.yaml
 dependencies:
   - name: terrace-helm
-    version: 1.0.0
+    version: 1.0.1
     repository: https://timschoenle.github.io/helm-charts
 ```
 

@@ -32,8 +32,15 @@ data:
   {{- with $url }}
   PAPERLESS_URL: {{ . | quote }}
   {{- end }}
+  {{- /*
+    Always set, `*` when the list is empty: since 3.5 a `PAPERLESS_URL` without it narrows Django
+    to that hostname plus `localhost`, which answers the kubelet's probes (addressed to the pod IP)
+    with 400 and leaves the pod never Ready.
+  */}}
   {{- with $paperless.allowedHosts }}
   PAPERLESS_ALLOWED_HOSTS: {{ include "common.tplvalues.render" (dict "value" . "context" $) | fromYamlArray | join "," | quote }}
+  {{- else }}
+  PAPERLESS_ALLOWED_HOSTS: "*"
   {{- end }}
   {{- with $paperless.csrfTrustedOrigins }}
   PAPERLESS_CSRF_TRUSTED_ORIGINS: {{ include "common.tplvalues.render" (dict "value" . "context" $) | fromYamlArray | join "," | quote }}

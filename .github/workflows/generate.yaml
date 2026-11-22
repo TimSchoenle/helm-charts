@@ -46,7 +46,7 @@ jobs:
       failed_generators: ${{ steps.failures.outputs.failed }}
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
         with:
           egress-policy: audit
 
@@ -145,7 +145,7 @@ jobs:
       - name: Sync configuration contracts
         id: sync
         continue-on-error: true
-        uses: TimSchoenle/actions/actions/terrace/helm-sync@0b3967d3d992d12aa88da1f8facf412b162d5ab2 # tag=actions-terrace-helm-sync-v1.1.4
+        uses: TimSchoenle/actions/actions/terrace/helm-sync@ded012bb09f11e42381c9b1b7c3ff0dbc09156bf # tag=actions-terrace-helm-sync-v1.1.6
         with:
           since: ${{ github.event.pull_request.base.sha }}
 
@@ -226,7 +226,7 @@ jobs:
         # Never from a failed index: an empty one would render a README without its chart table.
         if: steps.chart-index.outcome == 'success'
         continue-on-error: true
-        uses: TimSchoenle/actions/actions/common/readme-variables@0b3967d3d992d12aa88da1f8facf412b162d5ab2 # tag=actions-common-readme-variables-v2.1.6
+        uses: TimSchoenle/actions/actions/common/readme-variables@54a4dc05fd351a9bf9e9638fa3ebbc572b5f2d7f # tag=actions-common-readme-variables-v2.1.7
         with:
           manifest: charts/common/Chart.yaml
           branch: ${{ github.event.repository.default_branch }}
@@ -238,7 +238,7 @@ jobs:
         id: readme
         if: steps.variables.outcome == 'success'
         continue-on-error: true
-        uses: TimSchoenle/actions/actions/common/render-template@0b3967d3d992d12aa88da1f8facf412b162d5ab2 # tag=actions-common-render-template-v3.0.6
+        uses: TimSchoenle/actions/actions/common/render-template@54a4dc05fd351a9bf9e9638fa3ebbc572b5f2d7f # tag=actions-common-render-template-v3.0.7
         with:
           template: .github/templates/README.md.hbs
           output: README.md
@@ -254,7 +254,7 @@ jobs:
       - name: Create Patch
         id: patch
         if: ${{ !cancelled() && steps.sync.outcome != 'skipped' }}
-        uses: TimSchoenle/actions/actions/common/create-patch@0b3967d3d992d12aa88da1f8facf412b162d5ab2 # tag=actions-common-create-patch-v2.1.1
+        uses: TimSchoenle/actions/actions/common/create-patch@54a4dc05fd351a9bf9e9638fa3ebbc572b5f2d7f # tag=actions-common-create-patch-v2.1.2
         with:
           artifact_name: chart-docs
           paths: |
@@ -312,7 +312,7 @@ jobs:
     permissions: {}
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
         with:
           egress-policy: block
           allowed-endpoints: >
@@ -345,7 +345,7 @@ jobs:
       contents: read # to check out the commit the merged patch is made from
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
         with:
           egress-policy: block
           allowed-endpoints: >
@@ -355,6 +355,6 @@ jobs:
             *.blob.core.windows.net:443
 
       - name: Generated Files Verdict
-        uses: TimSchoenle/actions/actions/common/generated-files-verdict@0b3967d3d992d12aa88da1f8facf412b162d5ab2 # tag=actions-common-generated-files-verdict-v1.2.6
+        uses: TimSchoenle/actions/actions/common/generated-files-verdict@ded012bb09f11e42381c9b1b7c3ff0dbc09156bf # tag=actions-common-generated-files-verdict-v1.2.8
         with:
           needs: ${{ toJSON(needs) }}

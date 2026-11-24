@@ -9,7 +9,7 @@
 # Chart:       tankovault
 # Declaration: charts/tankovault/config-contract.yaml (document `frontend`)
 # Contract:    charts/tankovault/contracts/frontend.json
-# Coverage:    41 of 44 contract keys carry a probe, 27 through the chart's own value
+# Coverage:    42 of 45 contract keys carry a probe, 27 through the chart's own value
 #
 # Regenerate with `just contract-tests`. `just check-contract-tests` fails a pull request whose
 # committed copy has drifted from the contract it was generated against.
@@ -540,6 +540,31 @@ tests:
       - matchRegex:
           path: data["config.toml"]
           pattern: '(?m)^\[frontend\]$\n(?:[^\[\n][^\n]*\n|\n)*^connect_timeout_secs = 4242$'
+
+  - it: delivers frontend.hsts_max_age_secs into config.toml
+    documentSelector:
+      path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="frontend")].data["config.toml"]'
+    set:
+      anilist.clientId: probe-anilist-client-id
+      anilist.clientSecret: probe-anilist-client-secret
+      anilist.redirectUri: 'https://render-prerequisite.invalid/account/anilist-callback'
+      auth.jwtSecret: probe-jwt-secret-0123456789abcdef0123
+      branding.wordmark.lead: Render
+      email.host: smtp.render-prerequisite.invalid
+      existingSecret: tankovault-contract-probe
+      internal.identity: token
+      internal.tokens.api: probe-internal-token-api-0123456789ab
+      internal.tokens.worker: probe-internal-token-worker-01234567
+      nats.enabled: true
+      postgresql.auth.password: probe-postgresql-password
+      postgresql.enabled: true
+      services.render.enabled: true
+      trawl.enabled: true
+      services.frontend.config.frontend.hsts_max_age_secs: 4242
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: '(?m)^\[frontend\]$\n(?:[^\[\n][^\n]*\n|\n)*^hsts_max_age_secs = 4242$'
 
   - it: delivers frontend.max_body_bytes into config.toml from frontend.maxBodyBytes
     documentSelector:

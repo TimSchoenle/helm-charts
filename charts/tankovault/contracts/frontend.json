@@ -3,7 +3,7 @@
     "app": {
       "name": "tankovault-frontend",
       "source": "https://github.com/TimSchoenle/TankoVault",
-      "version": "v11.2.2"
+      "version": "v11.3.0"
     },
     "external": {
       "env": [
@@ -140,6 +140,12 @@
             "connect_timeout_secs": {
               "default": 10,
               "description": "Connection-establishment timeout for the upstream, not a whole-request timeout, since\nan SSE stream stays open indefinitely.",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "hsts_max_age_secs": {
+              "default": 63072000,
+              "description": "`max-age` of the `Strict-Transport-Security` header on every response, in seconds; `0`\nsends none. Browsers ignore it over plain HTTP, so local development is unaffected.\n\nOn by default because this origin serves the page holding the access token: a first\nvisit over HTTP, or an SSL strip, would otherwise serve a tampered shell. No\n`includeSubDomains`, which would bind sibling hosts this service knows nothing about.",
               "minimum": 0,
               "type": "integer"
             },
@@ -325,7 +331,7 @@
     "producer": {
       "loader": "figment",
       "name": "terrace-config",
-      "version": "0.18.1"
+      "version": "0.18.2"
     },
     "schema": {
       "dialect": {
@@ -1025,6 +1031,34 @@
         {
           "aliases": [],
           "constraint": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "default": "63072000",
+          "default_value": 63072000,
+          "docs": "`max-age` of the `Strict-Transport-Security` header on every response, in seconds; `0`\nsends none. Browsers ignore it over plain HTTP, so local development is unaffected.\n\nOn by default because this origin serves the page holding the access token: a first\nvisit over HTTP, or an SSL strip, would otherwise serve a tampered shell. No\n`includeSubDomains`, which would bind sibling hosts this service knows nothing about.",
+          "env": "TANKOVAULT_FRONTEND__HSTS_MAX_AGE_SECS",
+          "env_aliases": [],
+          "env_file": "TANKOVAULT_FRONTEND__HSTS_MAX_AGE_SECS_FILE",
+          "env_file_aliases": [],
+          "note": null,
+          "path": "frontend.hsts_max_age_secs",
+          "required": false,
+          "reserved": false,
+          "secret": false,
+          "secrets_file": "frontend__hsts_max_age_secs",
+          "secrets_file_aliases": [],
+          "text_constraint": {
+            "pattern": "^\\s*\\+?[0-9]+\\s*$",
+            "type": "string"
+          },
+          "text_form": "integer",
+          "ty": "u64",
+          "values": []
+        },
+        {
+          "aliases": [],
+          "constraint": {
             "type": "boolean"
           },
           "default": "false",
@@ -1484,9 +1518,9 @@
     "terrace_contract": 1
   },
   "source": {
-    "digest": "sha256:a81dd2e7c2ff6c56472fc2ce4935312cdc0c0c043c49c1aac4d19b24b42f24c5",
-    "fetched": "2026-11-19T18:34:22Z",
+    "digest": "sha256:abe349c3722914321f572990d4d522bd3af6b960d4545e1b1273b9f73f4c14ad",
+    "fetched": "2026-11-24T13:37:42Z",
     "image": "docker.io/timschoenle/tankovault-frontend",
-    "sha256": "01e88bf1823c171631fcb6be17c01bcd52325fc36fc8ff278db2e3bf79216a54"
+    "sha256": "e88c8a20637f94345fad1de8ea5e04d28d52e81def86b4b157f42c18122447f4"
   }
 }

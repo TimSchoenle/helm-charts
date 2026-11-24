@@ -142,9 +142,11 @@ tests:
               - port: 8191
                 protocol: TCP
 
-  - it: opens TRAWL's session cache in both directions and nowhere else
+  - it: lets TRAWL reach its own session cache and not the shared Valkey
     # The two halves are derived from one predicate, so a rule that exists on only one side is
     # the failure this asserts against — the pod would start, solve, and silently never cache.
+    # The shared Valkey holds the API's rate-limit buckets and the control plane's leader lock,
+    # which a compromised browser tier must not reach (TimSchoenle/TankoVault#701).
     template: networkpolicy.yaml
     asserts:
       - contains:
@@ -155,19 +157,48 @@ tests:
                   matchLabels:
                     app.kubernetes.io/name: tankovault
                     app.kubernetes.io/instance: RELEASE-NAME
-                    app.kubernetes.io/component: valkey
+                    app.kubernetes.io/component: trawl-valkey
             ports:
               - port: 6379
                 protocol: TCP
+      - notExists:
+          path: spec.egress[?(@.to[0].podSelector.matchLabels["app.kubernetes.io/component"] == "valkey")]
     documentSelector:
       path: metadata.name
       value: RELEASE-NAME-tankovault-trawl
 
-  - it: lets the bundled Valkey accept TRAWL as well as the services
+  - it: admits TRAWL at its own Valkey and nothing else
+    template: networkpolicy.yaml
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-trawl-valkey
+    asserts:
+      - equal:
+          path: spec.ingress
+          value:
+            - from:
+                - podSelector:
+                    matchLabels:
+                      app.kubernetes.io/name: tankovault
+                      app.kubernetes.io/instance: RELEASE-NAME
+                      app.kubernetes.io/component: trawl
+              ports:
+                - port: 6379
+                  protocol: TCP
+
+  - it: keeps TRAWL out of the shared Valkey
     template: networkpolicy.yaml
     documentSelector:
       path: metadata.name
       value: RELEASE-NAME-tankovault-valkey
+    asserts:
+      - notExists:
+          path: spec.ingress[?(@.from[0].podSelector.matchLabels["app.kubernetes.io/component"] == "trawl")]
+
+  - it: still covers an explicit URL naming the shared Valkey, in both directions
+    template: networkpolicy.yaml
+    set:
+      trawl.redis.url: redis://RELEASE-NAME-tankovault-valkey:6379
     asserts:
       - contains:
           path: spec.ingress
@@ -181,6 +212,24 @@ tests:
             ports:
               - port: 6379
                 protocol: TCP
+        documentSelector:
+          path: metadata.name
+          value: RELEASE-NAME-tankovault-valkey
+      - contains:
+          path: spec.egress
+          content:
+            to:
+              - podSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: tankovault
+                    app.kubernetes.io/instance: RELEASE-NAME
+                    app.kubernetes.io/component: valkey
+            ports:
+              - port: 6379
+                protocol: TCP
+        documentSelector:
+          path: metadata.name
+          value: RELEASE-NAME-tankovault-trawl
 
   - it: does not grant TRAWL in-cluster Redis access when it is pointed elsewhere
     # `trawl.redis.url` naming a Redis outside the release must not silently open the bundled

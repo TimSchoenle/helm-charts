@@ -321,8 +321,7 @@ tests:
     template: job-seed.yaml
     set:
       bootstrap.migrate.ordering: argoSyncWave
-      bootstrap.seedAdmin.enabled: true
-      bootstrap.seedAdmin.password: seed-password
+      bootstrap.seedProviders.enabled: true
     documentIndex: 0
     asserts:
       - equal:
@@ -396,11 +395,12 @@ tests:
       - isNull:
           path: metadata.annotations["argocd.argoproj.io/sync-wave"]
 
-  - it: seeds only on install, after the schema exists
+  - it: seeds only on install, after the schema exists, when there is no api to race
     template: job-seed.yaml
     set:
       bootstrap.seedAdmin.enabled: true
       bootstrap.seedAdmin.password: seed-password
+      services.api.enabled: false
     documentIndex: 0
     asserts:
       - equal:
@@ -467,6 +467,7 @@ tests:
     set:
       bootstrap.seedAdmin.enabled: true
       bootstrap.seedAdmin.password: seed-password
+      services.api.enabled: false
     documentIndex: 0
     asserts:
       - contains:
@@ -474,3 +475,81 @@ tests:
           content:
             key: auth__password_pepper
             path: auth__password_pepper
+
+  - it: seeds the administrator inside the api pod, after the schema and before the listener
+    # The API opens registration the moment it listens, so a seed after it races every stranger
+    # who can reach the sign-up form (TimSchoenle/TankoVault#720). An initContainer is the one
+    # ordering that holds under Helm hooks, Argo CD waves and the bundled PostgreSQL alike.
+    template: deployment.yaml
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-api
+    set:
+      postgresql.enabled: true
+      postgresql.auth.password: test-password
+      externalDatabase.url: ""
+      bootstrap.seedAdmin.enabled: true
+      bootstrap.seedAdmin.password: seed-password
+    asserts:
+      - lengthEqual:
+          path: spec.template.spec.initContainers
+          count: 2
+      - equal:
+          path: spec.template.spec.initContainers[0].name
+          value: migrate
+      - equal:
+          path: spec.template.spec.initContainers[1].name
+          value: seed-admin
+      - equal:
+          path: spec.template.spec.initContainers[1].args
+          value: [seed-admin]
+      - contains:
+          path: spec.template.spec.initContainers[1].volumeMounts
+          content:
+            name: seed-admin-config
+            mountPath: /etc/tankovault/config
+            readOnly: true
+      - equal:
+          path: spec.template.spec.volumes[?(@.name=="seed-admin-config")].configMap.name
+          value: RELEASE-NAME-tankovault-bootstrap-config
+      - contains:
+          path: spec.template.spec.volumes[?(@.name=="seed-admin-secrets")].projected.sources[0].secret.items
+          content:
+            key: seed_admin_password
+            path: seed_admin_password
+
+  - it: keeps the seed password out of the api container's own projection
+    template: deployment.yaml
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-api
+    set:
+      bootstrap.seedAdmin.enabled: true
+      bootstrap.seedAdmin.password: seed-password
+    asserts:
+      - notContains:
+          path: spec.template.spec.volumes[?(@.name=="secrets")].projected.sources[0].secret.items
+          content:
+            key: seed_admin_password
+            path: seed_admin_password
+
+  - it: renders no seed-admin Job while the api pod seeds
+    template: job-seed.yaml
+    set:
+      bootstrap.seedAdmin.enabled: true
+      bootstrap.seedAdmin.password: seed-password
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: seeds in no other service's pod
+    template: deployment.yaml
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-worker
+    set:
+      bootstrap.seedAdmin.enabled: true
+      bootstrap.seedAdmin.password: seed-password
+    asserts:
+      - notExists:
+          path: spec.template.spec.initContainers[?(@.name=="seed-admin")]

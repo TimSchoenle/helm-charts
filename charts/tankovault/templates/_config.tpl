@@ -72,19 +72,29 @@ tankovault_scope=~".*"
 {{/*
 Where the bundled TRAWL keeps its per-domain solved-cookie jar.
 
-Defaults to the Redis the services already use, because replaying a solved session instead of
-re-solving it is the difference between a sub-second fetch and a cold browser launch. Sharing
-one instance is safe by construction — TankoVault namespaces every key under `tankovault:`,
-TRAWL writes `session:<domain>` — and it is the shape upstream's compose stack ships.
+An explicit `trawl.redis.url`, else a Valkey of its own (`trawl-valkey.yaml`) — never, by
+default, the one the services use: that holds the API's rate-limit buckets and the control
+plane's leader lock, which a compromised browser tier must not be able to reach
+(TimSchoenle/TankoVault#701). Replaying a solved session instead of re-solving it is the
+difference between a sub-second fetch and a cold browser launch, which is why there is one at all.
 
-Empty is a supported state: TRAWL then solves from a cold browser every time. It is also the
-only possible one when `externalRedis.existingSecret` carries the URL, since the chart never
-reads a Secret's contents.
+Empty is a supported state: TRAWL then solves from a cold browser every time.
 */}}
 {{- define "tankovault.trawlRedisUrl" -}}
 {{- if .Values.trawl.redis.enabled -}}
-{{- default (include "tankovault.redisUrl" .) .Values.trawl.redis.url -}}
+{{- if .Values.trawl.redis.url -}}
+{{- .Values.trawl.redis.url -}}
+{{- else if .Values.trawl.enabled -}}
+{{- printf "redis://%s:6379" (include "common.fullname.suffixed" (dict "ctx" . "suffix" "trawl-valkey")) -}}
 {{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Whether the bundled TRAWL gets the Valkey of its own that `tankovault.trawlRedisUrl` points at.
+*/}}
+{{- define "tankovault.trawlValkeyEnabled" -}}
+{{- if and .Values.trawl.enabled .Values.trawl.redis.enabled (not .Values.trawl.redis.url) -}}true{{- end -}}
 {{- end -}}
 
 {{/*
@@ -175,6 +185,9 @@ frontend:
   api_upstream: {{ include "tankovault.url" (dict "ctx" $ctx "service" "api") | quote }}
   {{- if not (kindIs "invalid" $ctx.Values.frontend.connectTimeoutSecs) }}
   connect_timeout_secs: {{ $ctx.Values.frontend.connectTimeoutSecs }}
+  {{- end }}
+  {{- if not (kindIs "invalid" $ctx.Values.frontend.hstsMaxAgeSecs) }}
+  hsts_max_age_secs: {{ $ctx.Values.frontend.hstsMaxAgeSecs }}
   {{- end }}
   {{- if not (kindIs "invalid" $ctx.Values.frontend.maxBodyBytes) }}
   max_body_bytes: {{ $ctx.Values.frontend.maxBodyBytes }}

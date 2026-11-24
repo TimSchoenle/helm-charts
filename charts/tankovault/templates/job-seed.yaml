@@ -4,8 +4,11 @@ installation exactly as it is — but they are still `post-install` only, becaus
 reason to run them again on every upgrade.
 
 `seed-admin` creates the only account privilege is ever minted for: registration confers none.
+It is a Job only when the `api` is off; otherwise it runs inside the `api` pod, ahead of the
+listener — see `tankovault.seedsAdminInPod`.
 */ -}}
-{{- if .Values.bootstrap.seedAdmin.enabled }}
+{{- $seedAdminJob := and .Values.bootstrap.seedAdmin.enabled (not (include "tankovault.seedsAdminInPod" .)) }}
+{{- if $seedAdminJob }}
 {{ include "tankovault.bootstrapJob" (dict
      "ctx" .
      "command" "seed-admin"
@@ -14,7 +17,9 @@ reason to run them again on every upgrade.
      "weight" "5") }}
 {{- end }}
 {{- if .Values.bootstrap.seedProviders.enabled }}
+{{- if $seedAdminJob }}
 ---
+{{- end }}
 {{ include "tankovault.bootstrapJob" (dict
      "ctx" .
      "command" "seed-providers"

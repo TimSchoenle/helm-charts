@@ -42,11 +42,13 @@ tests:
         template: job-migrate.yaml
 
   - it: labels the seed Jobs the same way, so one policy covers all three
+    # `seed-admin` is a Job only without the api; with it, it runs in the api pod.
     template: job-seed.yaml
     set:
       bootstrap.seedAdmin.enabled: true
       bootstrap.seedAdmin.password: test-admin-password
       bootstrap.seedProviders.enabled: true
+      services.api.enabled: false
     asserts:
       - equal:
           path: spec.template.metadata.labels["app.kubernetes.io/component"]
@@ -88,8 +90,7 @@ tests:
       postgresql.enabled: true
       postgresql.auth.password: test-password
       externalDatabase.url: ""
-      bootstrap.seedAdmin.enabled: true
-      bootstrap.seedAdmin.password: test-admin-password
+      bootstrap.seedProviders.enabled: true
     documentSelector:
       path: metadata.name
       value: RELEASE-NAME-tankovault-bootstrap
@@ -197,11 +198,12 @@ tests:
     # safe because Helm runs every hook in an event to completion before deleting any of them.
     template: networkpolicy.yaml
     asserts:
-      # Ten service and datastore policies, plus the plain bootstrap policy and this copy of it.
-      # Stated as a total because `hasDocuments` counts the template, not the selection; the two
-      # tests below hold the same total against configurations that render one object fewer.
+      # Eleven service and datastore policies (TRAWL's own Valkey among them), plus the plain
+      # bootstrap policy and this copy of it. Stated as a total because `hasDocuments` counts the
+      # template, not the selection; the two tests below hold the same total against
+      # configurations that render one object fewer.
       - hasDocuments:
-          count: 12
+          count: 13
       - equal:
           path: metadata.annotations["helm.sh/hook"]
           value: pre-install,pre-upgrade
@@ -252,7 +254,7 @@ tests:
     asserts:
       # One fewer than the test above, in the same configuration but for the ordering.
       - hasDocuments:
-          count: 11
+          count: 12
       - isNull:
           path: metadata.annotations["helm.sh/hook"]
         documentSelector:
@@ -260,21 +262,21 @@ tests:
           value: RELEASE-NAME-tankovault-bootstrap
 
   - it: still covers the seed steps when the migration runs as an initContainer
-    # No migration Job, so no hook copy — but `seed-admin` and `seed-providers` are Jobs either
-    # way. They are `post-install`, which runs after the release's manifests, so the plain policy
-    # is in place by the time they start.
+    # No migration Job, so no hook copy — but `seed-providers` is a Job either way. It is
+    # `post-install`, which runs after the release's manifests, so the plain policy is in place by
+    # the time it starts.
     template: networkpolicy.yaml
     set:
       postgresql.enabled: true
       postgresql.auth.password: test-password
       externalDatabase.url: ""
-      bootstrap.seedAdmin.enabled: true
-      bootstrap.seedAdmin.password: test-admin-password
+      bootstrap.seedProviders.enabled: true
     asserts:
-      # The ten service and datastore policies, the bundled PostgreSQL's, and one bootstrap
-      # policy with no hook copy beside it — there is no migration Job to sequence against.
+      # The eleven service and datastore policies (TRAWL's own Valkey among them), the bundled
+      # PostgreSQL's, and one bootstrap policy with no hook copy beside it — there is no
+      # migration Job to sequence against.
       - hasDocuments:
-          count: 12
+          count: 13
       - equal:
           path: spec.podSelector.matchLabels["app.kubernetes.io/component"]
           value: bootstrap
@@ -295,7 +297,7 @@ tests:
       # Exactly the test above minus its seed step, so the one object that disappears is the
       # bootstrap policy it named.
       - hasDocuments:
-          count: 11
+          count: 12
       - equal:
           path: spec.podSelector.matchLabels["app.kubernetes.io/component"]
           value: postgresql

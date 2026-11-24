@@ -93,9 +93,15 @@ If it was the first account in the database it also holds `system.superuser`, wh
 permission check including ones added by later releases. Only the installer mints it, the
 permission editor cannot hand it out, and the database refuses a second one — so seeding another
 administrator later creates an ordinary one, and a permission edit that omits the grant leaves it
-alone rather than revoking it. Which of the two happened is in the seed Job's log:
+alone rather than revoking it. Which of the two happened is in the seed step's log:
+{{ if include "tankovault.seedsAdminInPod" . }}
+  kubectl --namespace {{ include "common.namespace" . }} logs deployment/{{ include "tankovault.fullname" (dict "ctx" . "service" "api") }} -c seed-admin
 
+It runs ahead of the api on every api pod start and is a no-op once the account exists. Turn
+`bootstrap.seedAdmin.enabled` off now that it does: see that value for why.
+{{- else }}
   kubectl --namespace {{ include "common.namespace" . }} logs job/{{ include "common.fullname.suffixed" (dict "ctx" . "suffix" "seed-admin") }}
+{{- end }}
 
 Expect the first sign-in to ask for a second factor before it reaches the console. Every account
 holding an administrative permission must enrol one, and this account holds them all. That is the

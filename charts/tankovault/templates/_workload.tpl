@@ -109,6 +109,17 @@ rather have config changes look like an ordinary image bump.
 {{- define "tankovault.podAnnotations" -}}
 {{- $ctx := .ctx -}}
 {{- $annotations := $ctx.Values.podAnnotations | default dict -}}
+{{- /*
+  Whether the service connects to the bundled NATS as a user of its own. The broker connection is
+  built once at start, so a reloaded `nats__url` would not reach it: turning the users on or off
+  has to roll the services that hold a connection. Hashes the user names, never a password, so it
+  is stable across renders; absent while the users are off, so releases that never turn them on
+  see no change.
+*/ -}}
+{{- if and (include "tankovault.natsAuthEnabled" .root) (include "tankovault.spec" .service | fromYaml).needsNats -}}
+{{- $annotations = merge (deepCopy $annotations) (dict
+      "checksum/nats-auth" (include "tankovault.natsUsers" .root | sha256sum)) -}}
+{{- end -}}
 {{- if .root.Values.configReload.rolloutOnChange -}}
 {{- $annotations = merge (deepCopy $annotations) (dict
       "checksum/config" (include "tankovault.configToml" (dict "ctx" .root "service" .service) | sha256sum)
@@ -146,6 +157,10 @@ the schema also keeps the ordering guarantee intact.
 {{- $migrates := and (eq (include "tankovault.migrateMode" $root) "initContainer") $spec.needsDatabase -}}
 {{- if $migrates -}}
 {{- $volumes = concat $volumes (include "tankovault.migrateVolumes" $root | fromYamlArray) -}}
+{{- end -}}
+{{- $seedsAdmin := and (eq $service "api") (include "tankovault.seedsAdminInPod" $root) -}}
+{{- if $seedsAdmin -}}
+{{- $volumes = concat $volumes (include "tankovault.seedAdminVolumes" $root | fromYamlArray) -}}
 {{- end -}}
 {{- if eq $service "render" -}}
 {{- $volumes = concat $volumes (include "tankovault.renderVolumes" $root | fromYamlArray) -}}
@@ -210,13 +225,24 @@ spec:
         `just check-config` can only require the switch.
       */}}
       enableServiceLinks: false
-      {{- if $migrates }}
+      {{- if or $migrates $seedsAdmin }}
       initContainers:
+        {{- if $migrates }}
         {{- include "tankovault.bootstrapContainer" (dict
               "ctx" $root
               "command" "migrate"
               "name" "migrate"
               "secretVolume" "migrate-secrets") | nindent 8 }}
+        {{- end }}
+        {{- /* After `migrate`, before the API listens: see `tankovault.seedsAdminInPod`. */}}
+        {{- if $seedsAdmin }}
+        {{- include "tankovault.bootstrapContainer" (dict
+              "ctx" $root
+              "command" "seed-admin"
+              "name" "seed-admin"
+              "secretVolume" "seed-admin-secrets"
+              "configVolume" "seed-admin-config") | nindent 8 }}
+        {{- end }}
       {{- end }}
       containers:
         {{- include "common.container" (dict

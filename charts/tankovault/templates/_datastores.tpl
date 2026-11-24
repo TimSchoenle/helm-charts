@@ -84,6 +84,86 @@ their `name` is already per-service.
 {{- end -}}
 
 {{/*
+A bundled Valkey: its Service and Deployment.
+
+A Deployment, not a StatefulSet, and no PVC: every instance this chart runs holds a cache or
+derived state only. Persistence is turned off in the server too, so the container never needs a
+writable path.
+
+Args: ctx (root), component (also the name suffix), image, resources, placement (the
+`podAntiAffinity`/`affinity`/`nodeSelector`/`tolerations`/`topologySpreadConstraints`/
+`priorityClassName` passed to `tankovault.datastore.values`; optional), extraArgs (appended to
+the server flags; optional).
+*/}}
+{{- define "tankovault.valkey" -}}
+{{- $root := .ctx -}}
+{{- $component := .component -}}
+{{- $placement := .placement | default dict -}}
+{{- $probe := dict "enabled" true "exec" (dict "command" (list "valkey-cli" "ping")) -}}
+{{- $values := include "tankovault.datastore.values" (dict
+      "ctx" $root
+      "component" $component
+      "image" .image
+      "resources" .resources
+      "runAsUser" 1000 "runAsGroup" 1000 "fsGroup" 1000
+      "livenessProbe" (merge (dict "periodSeconds" 30 "timeoutSeconds" 5 "failureThreshold" 5) (deepCopy $probe))
+      "readinessProbe" (merge (dict "periodSeconds" 10 "timeoutSeconds" 3 "failureThreshold" 3) (deepCopy $probe))
+      "podAntiAffinity" $placement.podAntiAffinity
+      "affinity" $placement.affinity
+      "nodeSelector" $placement.nodeSelector
+      "tolerations" $placement.tolerations
+      "topologySpreadConstraints" $placement.topologySpreadConstraints
+      "priorityClassName" $placement.priorityClassName
+    ) | fromYaml -}}
+{{- $ctx := dict "Values" $values "Chart" $root.Chart "Release" $root.Release "Capabilities" $root.Capabilities "Template" $root.Template "Files" $root.Files -}}
+apiVersion: v1
+kind: Service
+metadata:
+  {{- include "tankovault.datastore.metadata" (dict "ctx" $root "component" $component) | nindent 2 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: valkey
+      port: 6379
+      targetPort: valkey
+      protocol: TCP
+  selector:
+    {{- include "tankovault.datastore.selectorLabels" (dict "ctx" $root "component" $component) | nindent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  {{- include "tankovault.datastore.metadata" (dict "ctx" $root "component" $component) | nindent 2 }}
+spec:
+  replicas: 1
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      {{- include "tankovault.datastore.selectorLabels" (dict "ctx" $root "component" $component) | nindent 6 }}
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        {{- include "common.podLabels" $ctx | nindent 8 }}
+        app.kubernetes.io/component: {{ $component }}
+    spec:
+      {{- include "common.podSpec.common" $ctx | nindent 6 }}
+      containers:
+        {{- include "common.container" (dict
+              "ctx" $ctx
+              "name" "valkey"
+              "command" (list "valkey-server")
+              "args" (concat (list "--save" "" "--appendonly" "no" "--protected-mode" "no") (.extraArgs | default list))
+              "ports" (list (dict "name" "valkey" "containerPort" 6379 "protocol" "TCP"))
+            ) | nindent 8 }}
+      {{- with (include "common.volumes" (dict "ctx" $ctx)) }}
+      volumes:
+        {{- . | nindent 8 }}
+      {{- end }}
+{{- end -}}
+
+{{/*
 The PodDisruptionBudget for a bundled datastore that opts into one.
 
 The selector is the component-scoped one, for the same reason the workload's is: every bundled

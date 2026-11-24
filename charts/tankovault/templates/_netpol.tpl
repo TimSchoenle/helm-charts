@@ -139,13 +139,21 @@ Usage:
 
 {{- /*
 The bundled TRAWL is the one datastore that is also a *client* of another one: it keeps its
-solved-cookie jar in Redis. The rule is derived by comparing the URL it resolved against the
-bundled Valkey's, so an explicit `trawl.redis.url` that happens to name the same instance is
-covered too, and one pointing anywhere else is not silently granted in-cluster access.
+solved-cookie jar in Redis. By default that is a Valkey of its own, which admits TRAWL and
+nothing else. Otherwise the rule is derived by comparing the URL it resolved against the shared
+Valkey's, so an explicit `trawl.redis.url` that names that instance is covered, and one pointing
+anywhere else is not silently granted in-cluster access.
 */ -}}
+{{- $trawlValkey := include "tankovault.trawlValkeyEnabled" $ctx -}}
 {{- $trawlUsesValkey := and $ctx.Values.trawl.enabled $ctx.Values.valkey.enabled
       (include "tankovault.trawlRedisUrl" $ctx)
       (eq (include "tankovault.trawlRedisUrl" $ctx) (include "tankovault.redisUrl" $ctx)) -}}
+{{- $trawlRedisEgress := list -}}
+{{- if $trawlValkey -}}
+{{- $trawlRedisEgress = list (dict "component" "trawl-valkey" "port" 6379) -}}
+{{- else if $trawlUsesValkey -}}
+{{- $trawlRedisEgress = list (dict "component" "valkey" "port" 6379) -}}
+{{- end -}}
 
 {{- /*
 The exporter is the one component that scrapes a datastore rather than using it, so it appears on
@@ -230,7 +238,8 @@ outside this release and gets no in-cluster grant, exactly as `trawl.redis.url` 
       (dict "component" "valkey" "enabled" $ctx.Values.valkey.enabled "port" 6379 "consumers" $redisConsumers "bootstrap" false "internet" false "componentConsumers" (ternary (list "trawl") list $trawlUsesValkey))
       (dict "component" "nats" "enabled" $ctx.Values.nats.enabled "port" 4222 "consumers" $natsConsumers "bootstrap" false "internet" false "extraIngress" (ternary (list (dict "component" "nats-exporter" "port" 8222)) list $exporterUsesBundledNats))
       (dict "component" "nats-exporter" "enabled" $natsExporterEnabled "port" 7777 "consumers" list "bootstrap" false "internet" false "scraped" true "componentEgress" (ternary (list (dict "component" "nats" "port" 8222)) list $exporterUsesBundledNats))
-      (dict "component" "trawl" "enabled" $ctx.Values.trawl.enabled "port" 8191 "consumers" (list "challengeSolver") "bootstrap" false "internet" true "componentEgress" (ternary (list (dict "component" "valkey" "port" 6379)) list $trawlUsesValkey)) -}}
+      (dict "component" "trawl-valkey" "enabled" (not (empty $trawlValkey)) "port" 6379 "consumers" list "bootstrap" false "internet" false "componentConsumers" (list "trawl"))
+      (dict "component" "trawl" "enabled" $ctx.Values.trawl.enabled "port" 8191 "consumers" (list "challengeSolver") "bootstrap" false "internet" true "componentEgress" $trawlRedisEgress) -}}
 {{- if $ds.enabled -}}
 {{- $ingress := list -}}
 {{- $egress := list -}}
@@ -304,7 +313,9 @@ wrote starts reaching these pods the moment any policy selects them at all. Emit
 is the whole of the fix for them.
 */ -}}
 {{- $migrateJob := eq (include "tankovault.migrateMode" $ctx) "job" -}}
-{{- if or $migrateJob $ctx.Values.bootstrap.seedAdmin.enabled $ctx.Values.bootstrap.seedProviders.enabled -}}
+{{- /* `seed-admin` is a Job only without the api; otherwise it runs in the api pod, under the api's policy. */ -}}
+{{- $seedAdminJob := and $ctx.Values.bootstrap.seedAdmin.enabled (not (include "tankovault.seedsAdminInPod" $ctx)) -}}
+{{- if or $migrateJob $seedAdminJob $ctx.Values.bootstrap.seedProviders.enabled -}}
 {{- $bootstrapEgress := list (dict "dns" true) -}}
 {{- if $ctx.Values.postgresql.enabled -}}
 {{- $bootstrapEgress = append $bootstrapEgress (merge (dict "port" 5432) (include "tankovault.netpol.plan.componentPeer" (dict "ctx" $ctx "component" "postgresql") | fromYaml)) -}}

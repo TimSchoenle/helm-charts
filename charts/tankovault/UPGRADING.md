@@ -7,6 +7,10 @@ Some of them require a manual step that nothing will remind you about:
 
 | Version | Applies to | Step |
 |---|---|---|
+| [6.5.0](#650) | releases using `existingSecret` with the bundled NATS | add the per-service `nats__password__*` and `nats__url__*` keys, or set `nats.auth.enabled=false` |
+| [6.5.0](#650) | releases with the bundled NATS and `externalNats.perServiceSecret` | drop `externalNats.perServiceSecret`, or set `nats.auth.enabled=false` |
+| [6.5.0](#650) | releases with `bootstrap.seedAdmin.enabled=true` | set it to `false` once the administrator exists |
+| [6.5.0](#650) | releases rendered by Argo CD with the bundled NATS and no `existingSecret` | set `nats.auth.passwords.*` |
 | [6.3.0](#630) | releases using `existingSecret` with the bundled NATS or `externalNats.url` | add `nats__url` to it |
 | [6.2.0](#620) | releases with `trawl.replicaCount` above 1 that rely on surge capacity during a rollout | set `trawl.strategy` back to a surging one, or accept one replica fewer while it rolls |
 | [6.2.0](#620) | releases that hand-write `trawl.affinity` to spread TRAWL | optionally replace it with `trawl.podAntiAffinity: hard` |
@@ -25,6 +29,60 @@ Some of them require a manual step that nothing will remind you about:
 
 The values contract is enforced by `values.schema.json`, so a key a new major removed or
 renamed fails the render with the offending path named, rather than being silently ignored.
+
+## 6.5.0
+
+**TankoVault v11.3.0's deploy hardening: per-service NATS users, a Valkey of TRAWL's own, and the
+administrator seeded before the API opens registration.** It also binds the new
+`frontend.hsts_max_age_secs` as `frontend.hstsMaxAgeSecs`, which is unset by default: the frontend
+now sends `Strict-Transport-Security: max-age=63072000` on every response. Set it to `0` if the
+Ingress or Gateway in front already adds the header.
+
+**Per-service NATS users** (`nats.auth.enabled`, on by default). The bundled NATS now runs from a
+config file that gives `api`, `control-plane`, `worker` and `notifier` a user each, limited to the
+subjects upstream's `deploy/nats/nats.conf` allows them. The chart generates the four passwords
+into its Secret, remembers them across upgrades, and hands each service only its own user's URL.
+The upgrade restarts the NATS pod and rolls those four services once. A release that lets the
+chart render its Secret needs nothing beyond `helm upgrade`.
+
+A release on **`existingSecret`** with the bundled NATS gets no chart-rendered Secret, so add the
+keys to yours before upgrading: `nats__password__api`, `nats__password__control_plane`,
+`nats__password__worker`, `nats__password__notifier` (each starting with a letter and otherwise
+alphanumeric: the server reads a number-like or boolean-like value as a non-string and refuses to
+start), and for each the URL `nats__url__<same suffix>` =
+`nats://<user>:<password>@<fullname>-nats:4222` (the bundled NATS Service), where `<user>` is
+`api`, `control-plane`, `worker` or `notifier`. The broker refuses to start without
+its passwords, and the services refuse to boot naming `nats.url` without their URL. The old
+`nats__url` key is no longer read with the bundled NATS. To keep the open broker instead, set
+`nats.auth.enabled=false`.
+
+On **Argo CD**, or any renderer without `lookup`, a chart-rendered Secret gets fresh passwords on
+every render, which the running broker and the services would disagree about. Set
+`nats.auth.passwords.*` or use `existingSecret` there.
+
+`helm rollback` to 6.4.x keeps working: the Secret still carries the credential-less `nats__url`
+the older version reads.
+
+`externalNats.perServiceSecret` next to the bundled NATS is now refused: the chart generates those
+users, so the Secret's URLs would name credentials the broker does not have.
+
+**TRAWL gets a Valkey of its own.** Its cookie jar used to live in the shared Valkey, which holds
+the API's rate-limit buckets and the control plane's leader lock; a compromise of TRAWL's browser
+could reach both. With `trawl.redis.url` unset the chart now deploys
+`<fullname>-trawl-valkey` (`trawl.redis.resources`, `trawl.redis.maxMemory`), admitted
+only from TRAWL, and the shared Valkey stops admitting TRAWL. The previously cached sessions are
+not carried over, so the first solve per domain after the upgrade starts from a cold browser.
+
+**`seed-admin` runs in the api pod.** It used to be a `post-install` Job, which ran after the API
+was already serving registration: a stranger who registered the configured email or username
+first left the install with no administrator. It is now an initContainer of the `api` pod, after
+`migrate`, so the API never listens before the administrator exists. The step is create-only and
+runs on every api pod start, as upstream's compose stack runs it on every `up`. That has one
+consequence: an administrator whose email *and* username are both changed, or who is deleted, is
+created afresh with the seeded password on the next api pod start; and if a stranger registers
+the administrator's old email or username after a change, `seed-admin` fails and new api pods stall
+in Init. **Set `bootstrap.seedAdmin.enabled=false` once the install has its administrator.** With
+`services.api.enabled=false` it stays a Job.
 
 ## 6.3.0
 

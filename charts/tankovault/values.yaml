@@ -688,8 +688,13 @@ channels:
 # `email__username`, `email__password`, `channels__discord_webhook_url`,
 # `channels__webhook_url`, `database__url`, `redis__url`, `nats__url`. Only the keys a given
 # service reads are projected into it. `nats__url` is the broker URL the chart would otherwise
-# derive from `nats` or `externalNats.url`, and is not needed under
-# `externalNats.perServiceSecret`. Under `internal.identity=token` add `internal__tokens__api` and
+# derive from `externalNats.url`, and is not needed under `externalNats.perServiceSecret`. With
+# the bundled NATS and `nats.auth.enabled` (the default) it is replaced by one user per service:
+# `nats__password__<user>` for the broker and `nats__url__<user>`
+# (`nats://<user>:<password>@<fullname>-nats:4222`, the bundled NATS Service) for the service, for
+# each of `api`, `control_plane`, `worker` and `notifier` (the user names themselves are `api`,
+# `control-plane`, `worker`, `notifier`); each password must start with a letter and be
+# alphanumeric (see `nats.auth.passwords`). Under `internal.identity=token` add `internal__tokens__api` and
 # `internal__tokens__worker`: those two are keyed by caller rather than by configuration path,
 # because one token is read as `internal.caller.token` by the caller and as
 # `internal.peers.<caller>.token` by each of its callees, and the projection maps the key onto
@@ -2748,8 +2753,14 @@ bootstrap:
     # @schema
     # type: boolean
     # @schema
-    # -- Create the first administrator on install. Create-only: re-running changes nothing.
-    # This is the only account privilege is ever minted for, since registration confers none.
+    # -- Create the first administrator. Create-only: re-running changes nothing. This is the
+    # only account privilege is ever minted for, since registration confers none. Runs as an
+    # initContainer of the `api` pod, so the API never opens registration before the
+    # administrator exists (a `post-install` Job when `services.api.enabled=false`). It runs on
+    # every api pod start, so turn this off once the install has its administrator: otherwise
+    # an administrator whose email and username are both changed, or who is deleted, is
+    # recreated, and one whose old email or username a stranger then registers makes
+    # `seed-admin` fail and every new api pod stall in Init.
     enabled: false
 
     # @schema
@@ -3094,6 +3105,58 @@ nats:
   enabled: false
 
   # @schema
+  # additionalProperties: false
+  # @schema
+  # -- Authentication on the bundled NATS.
+  auth:
+    # @schema
+    # type: boolean
+    # @schema
+    # -- Give each service that speaks to the broker (`api`, `control-plane`, `worker`,
+    # `notifier`) a NATS user of its own, allowed only the subjects its code uses, as upstream's
+    # `deploy/nats/nats.conf` does. Passwords are generated into the chart's Secret and remembered
+    # across upgrades (see `existingSecret` for the keys). Off leaves the broker open to any pod
+    # the network policy lets reach it.
+    enabled: true
+
+    # @schema
+    # additionalProperties: false
+    # @schema
+    # -- Fixed passwords for the four users, instead of generated ones. A renderer that cannot
+    # `lookup` the existing Secret (Argo CD) generates fresh passwords on every render, so set
+    # these, or use `existingSecret`, there. Each must start with a letter and be alphanumeric:
+    # it is spliced into a URL unescaped, and the server reads a value that looks like a number
+    # or a boolean as one and refuses to start.
+    passwords:
+      # @schema
+      # type: string
+      # pattern: ^([A-Za-z][A-Za-z0-9]*)?$
+      # @schema
+      # -- Password of the `api` user. Empty generates one.
+      api: ""
+
+      # @schema
+      # type: string
+      # pattern: ^([A-Za-z][A-Za-z0-9]*)?$
+      # @schema
+      # -- Password of the `control-plane` user. Empty generates one.
+      controlPlane: ""
+
+      # @schema
+      # type: string
+      # pattern: ^([A-Za-z][A-Za-z0-9]*)?$
+      # @schema
+      # -- Password of the `worker` user. Empty generates one.
+      worker: ""
+
+      # @schema
+      # type: string
+      # pattern: ^([A-Za-z][A-Za-z0-9]*)?$
+      # @schema
+      # -- Password of the `notifier` user. Empty generates one.
+      notifier: ""
+
+  # @schema
   # additionalProperties: true
   # @schema
   # -- Repository and tag for the bundled NATS.
@@ -3203,7 +3266,8 @@ externalNats:
   # type: string
   # @schema
   # -- Name of an existing Secret holding one NATS URL per service, keyed by service slug (`api`,
-  # `control-plane`, `worker`, `notifier`). Each pod projects its own key as `nats__url`, which
+  # `control-plane`, `worker`, `notifier`), for an external broker; the bundled NATS generates
+  # its own (`nats.auth`). Each pod projects its own key as `nats__url`, which
   # replaces the derived URL entirely. This is how per-service NATS **accounts** are delivered —
   # the thing that stops `notifier` publishing scan tasks — since the credential belongs in the
   # URL and so cannot live in the ConfigMap. Note that the accounts themselves are NATS server
@@ -3403,7 +3467,7 @@ trawl:
   # @schema
   # additionalProperties: true
   # @schema
-  # -- TRAWL's own solved-session cache, which defaults to the Redis the services already use.
+  # -- TRAWL's own solved-session cache, which defaults to a Valkey deployed for TRAWL alone.
   redis:
     # @schema
     # type: boolean
@@ -3415,10 +3479,53 @@ trawl:
     # @schema
     # type: string
     # @schema
-    # -- Connection URL. Defaults to the same Redis the services use (`valkey` or
-    # `externalRedis.url`). Sharing one instance is safe: TankoVault namespaces its keys under
-    # `tankovault:` and TRAWL uses `session:<domain>`.
+    # -- Connection URL. Empty deploys a Valkey for TRAWL alone (`<fullname>-trawl-valkey`),
+    # reachable by nothing else. Not the one the services use: that holds the API's rate-limit
+    # buckets and the control plane's leader lock, which a compromised browser tier must not
+    # reach. Pointing this at the shared instance is possible but gives that protection up.
     url: ""
+
+    # @schema
+    # type: string
+    # pattern: ^[0-9]+(b|kb|mb|gb)?$
+    # @schema
+    # -- `maxmemory` of TRAWL's own Valkey. It evicts the least recently used session once full
+    # (`allkeys-lru`), so keep it below the memory limit with room for the server itself.
+    maxMemory: 96mb
+
+    # @schema
+    # $ref: https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.ResourceRequirements
+    # @schema
+    # -- Resource requests and limits for TRAWL's own Valkey. Sized like upstream's compose
+    # stack (128 MiB); it holds one cookie jar per solved domain.
+    resources:
+      # @schema
+      # additionalProperties: true
+      # @schema
+      # -- Resource limits.
+      limits:
+        # @schema
+        # type: string
+        # @schema
+        # -- Maximum allowed memory usage.
+        memory: 128Mi
+
+      # @schema
+      # additionalProperties: true
+      # @schema
+      # -- Resource requests.
+      requests:
+        # @schema
+        # type: string
+        # @schema
+        # -- Minimum CPU requested.
+        cpu: 25m
+
+        # @schema
+        # type: string
+        # @schema
+        # -- Minimum guaranteed memory allocation.
+        memory: 64Mi
 
   # @schema
   # type: array
@@ -5624,6 +5731,17 @@ frontend:
   connectTimeoutSecs: null
 
   # @schema
+  # # @config projection frontend.hsts_max_age_secs optional
+  # type: [integer, 'null']
+  # minimum: 0
+  # @schema
+  # -- `max-age` of the `Strict-Transport-Security` header the frontend sends on every response,
+  # in seconds; `0` sends none. No `includeSubDomains`. Set `0` when the Ingress or Gateway in
+  # front already adds the header, so it is not sent twice (`frontend.hsts_max_age_secs`).
+  # @default -- `null` (unset): the key is left out and the image default applies, `63072000`.
+  hstsMaxAgeSecs: null
+
+  # @schema
   # # @config projection frontend.max_body_bytes optional
   # type: [integer, 'null']
   # minimum: 0
@@ -6083,8 +6201,11 @@ render:
   # # @config projection render.no_sandbox optional
   # type: [boolean, 'null']
   # @schema
-  # -- Pass `--no-sandbox` (required to run Chromium as root inside the runtime container)
-  # (`render.no_sandbox`).
+  # -- Pass `--no-sandbox`. The binary defaults to sandboxed since v11.3.0; the published image
+  # opts back in through `TANKOVAULT_RENDER__NO_SANDBOX=true`, because the user namespaces
+  # Chromium's sandbox needs are denied under the `RuntimeDefault` seccomp profile this chart
+  # sets. Containment is the unprivileged user, dropped capabilities, read-only root filesystem
+  # and network policy instead (`render.no_sandbox`).
   # @default -- `null` (unset): the key is left out and the image default applies, `false`.
   noSandbox: null
 

@@ -9,7 +9,7 @@
 # Chart:       tankovault
 # Declaration: charts/tankovault/config-contract.yaml (document `frontend`)
 # Contract:    charts/tankovault/contracts/frontend.json
-# Coverage:    42 of 45 contract keys carry a probe, 27 through the chart's own value
+# Coverage:    42 of 45 contract keys carry a probe, 28 through the chart's own value
 #
 # Regenerate with `just contract-tests`. `just check-contract-tests` fails a pull request whose
 # committed copy has drifted from the contract it was generated against.
@@ -541,7 +541,7 @@ tests:
           path: data["config.toml"]
           pattern: '(?m)^\[frontend\]$\n(?:[^\[\n][^\n]*\n|\n)*^connect_timeout_secs = 4242$'
 
-  - it: delivers frontend.hsts_max_age_secs into config.toml
+  - it: delivers frontend.hsts_max_age_secs into config.toml from frontend.hstsMaxAgeSecs
     documentSelector:
       path: '$[?(@.metadata.labels["app.kubernetes.io/component"]=="frontend")].data["config.toml"]'
     set:
@@ -560,7 +560,7 @@ tests:
       postgresql.enabled: true
       services.render.enabled: true
       trawl.enabled: true
-      services.frontend.config.frontend.hsts_max_age_secs: 4242
+      frontend.hstsMaxAgeSecs: 4242
     asserts:
       - matchRegex:
           path: data["config.toml"]

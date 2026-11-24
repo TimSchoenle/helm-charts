@@ -2722,6 +2722,17 @@
             "null"
           ]
         },
+        "hstsMaxAgeSecs": {
+          "default": "null",
+          "description": "`max-age` of the `Strict-Transport-Security` header the frontend sends on every response,\nin seconds; `0` sends none. No `includeSubDomains`. Set `0` when the Ingress or Gateway in\nfront already adds the header, so it is not sent twice (`frontend.hsts_max_age_secs`).",
+          "minimum": 0,
+          "required": [],
+          "title": "hstsMaxAgeSecs",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
         "maxBodyBytes": {
           "default": "null",
           "description": "Largest request body accepted on this hop (`frontend.max_body_bytes`).",
@@ -5545,6 +5556,61 @@
       "additionalProperties": true,
       "description": "Bundled NATS JetStream, the task queue and event bus the control plane, worker and\nnotifier are built on: a single instance with a file store on a PVC. Embedded rather than\ntaken from the NATS authors' chart because that chart ships no `values.schema.json`, so\n`helm schema` derives a closed one from its own values.yaml and makes the `container.merge`\nand `podTemplate.merge` patches unsettable — and those patches are the only way to give its\npods the security context and resource requests this repository's policy scan requires.\nEvaluation-tier like the other bundled datastores: no clustering, so no replication and no\nfailover. Use `externalNats` for anything real.",
       "properties": {
+        "auth": {
+          "additionalProperties": false,
+          "description": "Authentication on the bundled NATS.",
+          "properties": {
+            "enabled": {
+              "default": true,
+              "description": "Give each service that speaks to the broker (`api`, `control-plane`, `worker`,\n`notifier`) a NATS user of its own, allowed only the subjects its code uses, as upstream's\n`deploy/nats/nats.conf` does. Passwords are generated into the chart's Secret and remembered\nacross upgrades (see `existingSecret` for the keys). Off leaves the broker open to any pod\nthe network policy lets reach it.",
+              "required": [],
+              "title": "enabled",
+              "type": "boolean"
+            },
+            "passwords": {
+              "additionalProperties": false,
+              "description": "Fixed passwords for the four users, instead of generated ones. A renderer that cannot\n`lookup` the existing Secret (Argo CD) generates fresh passwords on every render, so set\nthese, or use `existingSecret`, there. Each must start with a letter and be alphanumeric:\nit is spliced into a URL unescaped, and the server reads a value that looks like a number\nor a boolean as one and refuses to start.",
+              "properties": {
+                "api": {
+                  "default": "",
+                  "description": "Password of the `api` user. Empty generates one.",
+                  "pattern": "^([A-Za-z][A-Za-z0-9]*)?$",
+                  "required": [],
+                  "title": "api",
+                  "type": "string"
+                },
+                "controlPlane": {
+                  "default": "",
+                  "description": "Password of the `control-plane` user. Empty generates one.",
+                  "pattern": "^([A-Za-z][A-Za-z0-9]*)?$",
+                  "required": [],
+                  "title": "controlPlane",
+                  "type": "string"
+                },
+                "notifier": {
+                  "default": "",
+                  "description": "Password of the `notifier` user. Empty generates one.",
+                  "pattern": "^([A-Za-z][A-Za-z0-9]*)?$",
+                  "required": [],
+                  "title": "notifier",
+                  "type": "string"
+                },
+                "worker": {
+                  "default": "",
+                  "description": "Password of the `worker` user. Empty generates one.",
+                  "pattern": "^([A-Za-z][A-Za-z0-9]*)?$",
+                  "required": [],
+                  "title": "worker",
+                  "type": "string"
+                }
+              },
+              "required": [],
+              "title": "passwords"
+            }
+          },
+          "required": [],
+          "title": "auth"
+        },
         "enabled": {
           "default": false,
           "description": "Deploy the bundled NATS.",
@@ -6188,7 +6254,7 @@
         },
         "noSandbox": {
           "default": "null",
-          "description": "Pass `--no-sandbox` (required to run Chromium as root inside the runtime container)\n(`render.no_sandbox`).",
+          "description": "Pass `--no-sandbox`. The binary defaults to sandboxed since v11.3.0; the published image\nopts back in through `TANKOVAULT_RENDER__NO_SANDBOX=true`, because the user namespaces\nChromium's sandbox needs are denied under the `RuntimeDefault` seccomp profile this chart\nsets. Containment is the unprivileged user, dropped capabilities, read-only root filesystem\nand network policy instead (`render.no_sandbox`).",
           "required": [],
           "title": "noSandbox",
           "type": [
@@ -8718,7 +8784,7 @@
         },
         "redis": {
           "additionalProperties": true,
-          "description": "TRAWL's own solved-session cache, which defaults to the Redis the services already use.",
+          "description": "TRAWL's own solved-session cache, which defaults to a Valkey deployed for TRAWL alone.",
           "properties": {
             "enabled": {
               "default": true,
@@ -8727,9 +8793,22 @@
               "title": "enabled",
               "type": "boolean"
             },
+            "maxMemory": {
+              "default": "96mb",
+              "description": "`maxmemory` of TRAWL's own Valkey. It evicts the least recently used session once full\n(`allkeys-lru`), so keep it below the memory limit with room for the server itself.",
+              "pattern": "^[0-9]+(b|kb|mb|gb)?$",
+              "required": [],
+              "title": "maxMemory",
+              "type": "string"
+            },
+            "resources": {
+              "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.ResourceRequirements",
+              "description": "Resource requests and limits for TRAWL's own Valkey. Sized like upstream's compose\nstack (128 MiB); it holds one cookie jar per solved domain.",
+              "required": []
+            },
             "url": {
               "default": "",
-              "description": "Connection URL. Defaults to the same Redis the services use (`valkey` or\n`externalRedis.url`). Sharing one instance is safe: TankoVault namespaces its keys under\n`tankovault:` and TRAWL uses `session:\u003cdomain\u003e`.",
+              "description": "Connection URL. Empty deploys a Valkey for TRAWL alone (`\u003cfullname\u003e-trawl-valkey`),\nreachable by nothing else. Not the one the services use: that holds the API's rate-limit\nbuckets and the control plane's leader lock, which a compromised browser tier must not\nreach. Pointing this at the shared instance is possible but gives that protection up.",
               "required": [],
               "title": "url",
               "type": "string"

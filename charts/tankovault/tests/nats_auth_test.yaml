@@ -1,0 +1,205 @@
+suite: test per-service users on the bundled NATS
+# Upstream v11.3.0 gives each service that speaks to the broker a NATS user of its own, allowed only
+# its own subjects (TimSchoenle/TankoVault#723). Without them any pod that reaches port 4222 can
+# queue scan tasks, forge chapter events or push notifications to any user. These pin the four
+# halves that must agree: the users the broker knows, the passwords it reads, the URL each service
+# is given, and that no service is given another's.
+templates:
+  - nats.yaml
+  - secret.yaml
+  - deployment.yaml
+  - serviceaccount.yaml
+values:
+  - ../ci/default.yaml
+set:
+  nats.enabled: true
+  externalNats.url: ""
+tests:
+  - it: runs the broker from a config file that defines the four users
+    template: nats.yaml
+    asserts:
+      - matchRegex:
+          path: data["nats.conf"]
+          pattern: 'user: api\n\s+password: \$TANKOVAULT_NATS_PASSWORD_API\n'
+        documentSelector:
+          path: kind
+          value: ConfigMap
+      - matchRegex:
+          path: data["nats.conf"]
+          pattern: 'user: control-plane\n\s+password: \$TANKOVAULT_NATS_PASSWORD_CONTROL_PLANE\n'
+        documentSelector:
+          path: kind
+          value: ConfigMap
+      - matchRegex:
+          path: data["nats.conf"]
+          pattern: 'user: worker\n\s+password: \$TANKOVAULT_NATS_PASSWORD_WORKER\n'
+        documentSelector:
+          path: kind
+          value: ConfigMap
+      - matchRegex:
+          path: data["nats.conf"]
+          pattern: 'user: notifier\n\s+password: \$TANKOVAULT_NATS_PASSWORD_NOTIFIER\n'
+        documentSelector:
+          path: kind
+          value: ConfigMap
+      # The listener and store the flag form used, so turning auth on moves no port and no data.
+      - matchRegex:
+          path: data["nats.conf"]
+          pattern: '(?s)^port: 4222\nhttp: 8222\njetstream \{\n  store_dir: "/data"\n\}'
+        documentSelector:
+          path: kind
+          value: ConfigMap
+      - equal:
+          path: spec.template.spec.containers[0].args
+          value: ["-c", "/etc/nats/nats.conf"]
+        documentSelector:
+          path: kind
+          value: StatefulSet
+
+  - it: reads each password from the chart's Secret, never from the ConfigMap
+    template: nats.yaml
+    documentSelector:
+      path: kind
+      value: StatefulSet
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: TANKOVAULT_NATS_PASSWORD_NOTIFIER
+            valueFrom:
+              secretKeyRef:
+                name: RELEASE-NAME-tankovault
+                key: nats__password__notifier
+      - lengthEqual:
+          path: spec.template.spec.containers[0].env
+          count: 4
+      - exists:
+          path: spec.template.metadata.annotations["checksum/config"]
+
+  - it: stores each user's password and the URL built from it, and no shared URL
+    template: secret.yaml
+    asserts:
+      - exists:
+          path: stringData.nats__password__control_plane
+      - matchRegex:
+          path: stringData.nats__url__control_plane
+          pattern: '^nats://control-plane:[A-Za-z0-9]{48}@RELEASE-NAME-tankovault-nats:4222$'
+      - matchRegex:
+          path: stringData.nats__url__api
+          pattern: '^nats://api:[A-Za-z][A-Za-z0-9]{47}@RELEASE-NAME-tankovault-nats:4222$'
+      # Kept credential-less for `helm rollback` to a version that reads it; no pod projects it.
+      - equal:
+          path: stringData.nats__url
+          value: nats://RELEASE-NAME-tankovault-nats:4222
+
+  - it: builds each URL from that user's own password
+    # The server checks the password key, the service presents the URL: the two must carry the
+    # same value. Fixed through the override so the assertion can name it.
+    template: secret.yaml
+    set:
+      nats.auth.passwords.worker: Wpassword0123
+    asserts:
+      - equal:
+          path: stringData.nats__password__worker
+          value: Wpassword0123
+      - equal:
+          path: stringData.nats__url__worker
+          value: nats://worker:Wpassword0123@RELEASE-NAME-tankovault-nats:4222
+
+  - it: remembers a generated password across upgrades
+    template: secret.yaml
+    kubernetesProvider:
+      scheme:
+        "v1/Secret":
+          gvr:
+            version: "v1"
+            resource: "secrets"
+          namespaced: true
+      objects:
+        - apiVersion: v1
+          kind: Secret
+          metadata:
+            name: RELEASE-NAME-tankovault
+            namespace: NAMESPACE
+          data:
+            nats__password__notifier: TnJlbWVtYmVyZWQx
+    asserts:
+      - equal:
+          path: stringData.nats__password__notifier
+          value: Nremembered1
+      - equal:
+          path: stringData.nats__url__notifier
+          value: nats://notifier:Nremembered1@RELEASE-NAME-tankovault-nats:4222
+
+  - it: refuses a password the broker would not read as a string
+    template: secret.yaml
+    set:
+      nats.auth.passwords.api: "123456"
+    asserts:
+      - failedTemplate: {}
+
+  - it: hands each service its own user's URL at the path the image reads
+    template: deployment.yaml
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-worker
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes[?(@.name=="secrets")].projected.sources[0].secret.items
+          content:
+            key: nats__url__worker
+            path: nats__url
+      - notContains:
+          path: spec.template.spec.volumes[?(@.name=="secrets")].projected.sources[0].secret.items
+          content:
+            key: nats__url__notifier
+            path: nats__url
+
+  - it: rolls the services that hold a broker connection when the users are turned on
+    template: deployment.yaml
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-notifier
+    asserts:
+      - exists:
+          path: spec.template.metadata.annotations["checksum/nats-auth"]
+
+  - it: leaves services that never speak to NATS alone
+    template: deployment.yaml
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-tankovault-frontend
+    asserts:
+      - notExists:
+          path: spec.template.metadata.annotations["checksum/nats-auth"]
+
+  - it: keeps the open broker and the shared URL when the users are off
+    set:
+      nats.auth.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 2
+        template: nats.yaml
+      - equal:
+          path: spec.template.spec.containers[0].args
+          value: ["-js", "-sd", "/data", "-m", "8222"]
+        template: nats.yaml
+        documentSelector:
+          path: kind
+          value: StatefulSet
+      - equal:
+          path: stringData.nats__url
+          value: nats://RELEASE-NAME-tankovault-nats:4222
+        template: secret.yaml
+      - notExists:
+          path: stringData.nats__password__api
+        template: secret.yaml
+
+  - it: refuses a per-service Secret next to the generated users
+    # `tankovault.validateValues` runs from serviceaccount.yaml, like every other refusal.
+    template: serviceaccount.yaml
+    set:
+      externalNats.perServiceSecret: my-nats-urls
+    asserts:
+      - failedTemplate:
+          errorPattern: "externalNats.perServiceSecret cannot be combined with the bundled NATS's per-service users"

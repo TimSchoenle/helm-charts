@@ -1,0 +1,18 @@
+{{- if include "tankovault.trawlValkeyEnabled" . }}
+{{- $redis := .Values.trawl.redis }}
+{{- /*
+  TRAWL's solved-cookie jar, and nothing else's (TimSchoenle/TankoVault#701). Not the shared
+  Valkey: that one holds the API's rate-limit buckets and the control plane's leader lock, and
+  TRAWL drives a browser on pages someone else chose, so a compromise there could wipe login
+  throttling or seize the lock. The network policy admits TRAWL alone.
+
+  Bounded and LRU-evicting: it is a cache, so the oldest session is the right thing to lose, and
+  a full instance evicting is better than one the kubelet OOM-kills and restarts empty.
+*/ -}}
+{{ include "tankovault.valkey" (dict
+      "ctx" .
+      "component" "trawl-valkey"
+      "image" .Values.valkey.image
+      "resources" $redis.resources
+      "extraArgs" (list "--maxmemory" $redis.maxMemory "--maxmemory-policy" "allkeys-lru")) }}
+{{- end }}

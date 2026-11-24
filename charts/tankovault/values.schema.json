@@ -371,7 +371,7 @@
             },
             "enabled": {
               "default": false,
-              "description": "Create the first administrator on install. Create-only: re-running changes nothing.\nThis is the only account privilege is ever minted for, since registration confers none.",
+              "description": "Create the first administrator. Create-only: re-running changes nothing. This is the\nonly account privilege is ever minted for, since registration confers none. Runs as an\ninitContainer of the `api` pod, so the API never opens registration before the\nadministrator exists (a `post-install` Job when `services.api.enabled=false`). It runs on\nevery api pod start, so turn this off once the install has its administrator: otherwise\nan administrator whose email and username are both changed, or who is deleted, is\nrecreated, and one whose old email or username a stranger then registers makes\n`seed-admin` fail and every new api pod stall in Init.",
               "required": [],
               "title": "enabled",
               "type": "boolean"
@@ -2588,7 +2588,7 @@
     },
     "existingSecret": {
       "default": "",
-      "description": "Name of an existing Secret holding the credentials, instead of having the chart render one\nfrom the values above. When set it takes precedence and no credential value is written into\nthe Helm release. Its keys are the configuration paths with `__` for nesting and no dots —\n`auth__jwt_secret`, `auth__password_pepper`, `auth__mfa_encryption_key`,\n`anilist__client_id`, `anilist__client_secret`, `anilist__token_encryption_key`,\n`email__username`, `email__password`, `channels__discord_webhook_url`,\n`channels__webhook_url`, `database__url`, `redis__url`, `nats__url`. Only the keys a given\nservice reads are projected into it. `nats__url` is the broker URL the chart would otherwise\nderive from `nats` or `externalNats.url`, and is not needed under\n`externalNats.perServiceSecret`. Under `internal.identity=token` add `internal__tokens__api` and\n`internal__tokens__worker`: those two are keyed by caller rather than by configuration path,\nbecause one token is read as `internal.caller.token` by the caller and as\n`internal.peers.\u003ccaller\u003e.token` by each of its callees, and the projection maps the key onto\nwhichever path the reading pod needs. Under `mtls` no internal credential is needed at all.",
+      "description": "Name of an existing Secret holding the credentials, instead of having the chart render one\nfrom the values above. When set it takes precedence and no credential value is written into\nthe Helm release. Its keys are the configuration paths with `__` for nesting and no dots —\n`auth__jwt_secret`, `auth__password_pepper`, `auth__mfa_encryption_key`,\n`anilist__client_id`, `anilist__client_secret`, `anilist__token_encryption_key`,\n`email__username`, `email__password`, `channels__discord_webhook_url`,\n`channels__webhook_url`, `database__url`, `redis__url`, `nats__url`. Only the keys a given\nservice reads are projected into it. `nats__url` is the broker URL the chart would otherwise\nderive from `externalNats.url`, and is not needed under `externalNats.perServiceSecret`. With\nthe bundled NATS and `nats.auth.enabled` (the default) it is replaced by one user per service:\n`nats__password__\u003cuser\u003e` for the broker and `nats__url__\u003cuser\u003e`\n(`nats://\u003cuser\u003e:\u003cpassword\u003e@\u003cfullname\u003e-nats:4222`, the bundled NATS Service) for the service, for\neach of `api`, `control_plane`, `worker` and `notifier` (the user names themselves are `api`,\n`control-plane`, `worker`, `notifier`); each password must start with a letter and be\nalphanumeric (see `nats.auth.passwords`). Under `internal.identity=token` add `internal__tokens__api` and\n`internal__tokens__worker`: those two are keyed by caller rather than by configuration path,\nbecause one token is read as `internal.caller.token` by the caller and as\n`internal.peers.\u003ccaller\u003e.token` by each of its callees, and the projection maps the key onto\nwhichever path the reading pod needs. Under `mtls` no internal credential is needed at all.",
       "required": [],
       "title": "existingSecret",
       "type": "string"
@@ -2628,7 +2628,7 @@
       "properties": {
         "perServiceSecret": {
           "default": "",
-          "description": "Name of an existing Secret holding one NATS URL per service, keyed by service slug (`api`,\n`control-plane`, `worker`, `notifier`). Each pod projects its own key as `nats__url`, which\nreplaces the derived URL entirely. This is how per-service NATS **accounts** are delivered —\nthe thing that stops `notifier` publishing scan tasks — since the credential belongs in the\nURL and so cannot live in the ConfigMap. Note that the accounts themselves are NATS server\nconfiguration: the services present what you give them here, and cannot assert what a broker\ndoes not enforce.",
+          "description": "Name of an existing Secret holding one NATS URL per service, keyed by service slug (`api`,\n`control-plane`, `worker`, `notifier`), for an external broker; the bundled NATS generates\nits own (`nats.auth`). Each pod projects its own key as `nats__url`, which\nreplaces the derived URL entirely. This is how per-service NATS **accounts** are delivered —\nthe thing that stops `notifier` publishing scan tasks — since the credential belongs in the\nURL and so cannot live in the ConfigMap. Note that the accounts themselves are NATS server\nconfiguration: the services present what you give them here, and cannot assert what a broker\ndoes not enforce.",
           "required": [],
           "title": "perServiceSecret",
           "type": "string"
@@ -8803,7 +8803,6 @@
             },
             "resources": {
               "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.ResourceRequirements",
-              "description": "Resource requests and limits for TRAWL's own Valkey. Sized like upstream's compose\nstack (128 MiB); it holds one cookie jar per solved domain.",
               "required": []
             },
             "url": {

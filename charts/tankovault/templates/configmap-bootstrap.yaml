@@ -1,4 +1,4 @@
-{{- if ne (include "tankovault.migrateMode" .) "disabled" }}
+{{- if or (ne (include "tankovault.migrateMode" .) "disabled") .Values.bootstrap.seedAdmin.enabled }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -14,7 +14,9 @@ metadata:
     {{- /*
       A hook resource, so it exists before the pre-install migration Job that mounts it. The
       delete policy deliberately omits `hook-succeeded`: the same ConfigMap is mounted by the
-      migration initContainer on every service pod, which outlives the hook.
+      `seed-admin` initContainer on the `api` pod, which outlives the hook. The same as the
+      Secret's: `before-hook-creation` deletes and recreates it at each upgrade, so an api pod
+      created in that instant waits in ContainerCreating until the kubelet retries the mount.
     */}}
     "helm.sh/hook": pre-install,pre-upgrade
     "helm.sh/hook-weight": "-10"

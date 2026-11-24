@@ -124,8 +124,13 @@ the service itself mounts: `secrets` there carries every credential that service
 the migration reads `database__url`. Defaults to `secrets`, the name a bootstrap Job's own pod
 gives it.
 
+`configVolume` is the same choice for the configuration: `config` in a service pod is the
+service's own `config.toml`, which is all `migrate` needs, while `seed-admin` reads the
+administrator's username and email from the bootstrap ConfigMap and so mounts that instead.
+
 Args: ctx (root), command (bootstrap subcommand), name (container name),
-      secretVolume (optional, the pod volume holding this command's credentials).
+      secretVolume (optional, the pod volume holding this command's credentials),
+      configVolume (optional, the pod volume holding its `config.toml`; defaults to `config`).
 */}}
 {{- define "tankovault.bootstrapContainer" -}}
 {{- $root := .ctx -}}
@@ -139,16 +144,18 @@ Args: ctx (root), command (bootstrap subcommand), name (container name),
       "volumeMounts" (include "tankovault.bootstrapVolumeMounts" (dict
             "ctx" $root
             "secretVolume" (.secretVolume | default "secrets")
+            "configVolume" (.configVolume | default "config")
           ) | fromYamlArray)
     ) -}}
 {{- end -}}
 
 {{/*
-Args: ctx (root), secretVolume (the pod volume this command's credentials are projected into).
+Args: ctx (root), secretVolume (the pod volume this command's credentials are projected into),
+configVolume (optional, the pod volume holding its `config.toml`; defaults to `config`).
 */}}
 {{- define "tankovault.bootstrapVolumeMounts" -}}
 {{- $ctx := .ctx -}}
-- name: config
+- name: {{ .configVolume | default "config" }}
   mountPath: {{ $ctx.Values.configReload.configDir | quote }}
   readOnly: true
 - name: {{ .secretVolume }}
@@ -193,6 +200,52 @@ Args: ctx (root).
             "ctx" $ctx
             "keys" (include "tankovault.migrateSecretKeys" $ctx | fromYamlArray)
           ) | nindent 6 }}
+{{- end -}}
+
+{{/*
+The extra volumes the `api` pod carries for the `seed-admin` initContainer: the bootstrap
+ConfigMap, for the administrator's username and email, and the keys `bootstrap` reads, projected
+separately so the `api` container itself never holds `seed_admin_password`. See
+`tankovault.seedsAdminInPod` for why the step lives there.
+
+Args: ctx (root).
+*/}}
+{{- define "tankovault.seedAdminVolumes" -}}
+{{- $ctx := . -}}
+- name: seed-admin-config
+  configMap:
+    name: {{ include "common.fullname" $ctx }}-bootstrap-config
+- name: seed-admin-secrets
+  projected:
+    defaultMode: 0400
+    sources:
+      {{- include "tankovault.secretSources" (dict
+            "ctx" $ctx
+            "keys" (include "tankovault.bootstrapSecretKeys" $ctx | fromYamlArray)
+          ) | nindent 6 }}
+{{- end -}}
+
+{{/*
+Whether `seed-admin` runs as an initContainer of the `api` pod rather than as a Job.
+
+The API opens registration the moment it listens, so an administrator seeded after it — the
+`post-install` Job this used to be — races every stranger who can reach the sign-up form: one who
+registers the configured email or username first leaves the install with no administrator
+(TimSchoenle/TankoVault#720; `seed-admin` now fails loudly when that happens). An initContainer
+is the one ordering that holds under every way this chart runs: a Helm hook cannot reach the
+bundled PostgreSQL before it exists, and an Argo CD wave cannot hold back a Deployment's pods
+behind a Job. It also runs after the `migrate` initContainer, so the schema is there.
+
+The step is create-only, so it is a no-op on every start after the first — which is upstream's
+own shape: its compose stack runs `seed` on every `up`, ahead of the API. The consequence is the
+same too: an administrator account that has both its email and username changed, or is
+deleted, is created afresh on the next API pod start. Turn `bootstrap.seedAdmin.enabled` off once
+the install has its administrator if that is not wanted.
+
+Without the `api` there is no registration to race, so the Job remains for that case.
+*/}}
+{{- define "tankovault.seedsAdminInPod" -}}
+{{- if and .Values.bootstrap.seedAdmin.enabled .Values.services.api.enabled -}}true{{- end -}}
 {{- end -}}
 
 {{/*

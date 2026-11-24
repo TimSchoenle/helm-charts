@@ -430,17 +430,22 @@ documents:
   # The migration Job rather than a Deployment. It reads the same configuration the long-running
   # services do — the database URL it migrates against is the one the API will use — so leaving it
   # out would exempt the one workload whose failure is hardest to see: a Job that exits non-zero
-  # once, at install time, on a key nothing else validated. Three Jobs read it, the migration step
-  # and the two seed steps. They are one consumer entry rather than three, because the only label
-  # distinguishing them is the component they share, and the migration Job's name carries a content
-  # hash.
+  # once, at install time, on a key nothing else validated. The migration and `seed-providers` Jobs
+  # read it as one consumer entry rather than two, because the only label distinguishing them is the
+  # component they share, and the migration Job's name carries a content hash.
+  #
+  # `seed-admin` reads it from inside the `api` pod, as an initContainer that has to finish before
+  # the API opens registration (see `tankovault.seedsAdminInPod`). It is a Job only with the api
+  # switched off, which no `ci/` values file renders, so only the initContainer is held here.
   - name: bootstrap
     source: { selector: { app.kubernetes.io/component: bootstrap } }
     images:
       - values: bootstrap.image
     consumers:
       - workload: { kind: Job, selector: { app.kubernetes.io/component: bootstrap } }
-        containers: [migrate, seed-admin, seed-providers]
+        containers: [migrate, seed-providers]
+      - workload: { kind: Deployment, selector: { app.kubernetes.io/component: api } }
+        containers: [seed-admin]
     exempt:
       - values: "*"
         gates: [closed]

@@ -296,7 +296,7 @@
               "type": "string"
             },
             "tag": {
-              "default": "v11.2.2@sha256:9dab71ec52ff6b9c4e500dd3bd84a3b5a50e851bb6ca36ebb399a5fca0b98b79",
+              "default": "v11.3.0@sha256:35ff9a07454beada0b7aa737328b1fa1fe08f0821e7fb0f0c7582e80f0604bca",
               "description": "Image tag, pinned by digest.",
               "required": [],
               "title": "tag",
@@ -371,7 +371,7 @@
             },
             "enabled": {
               "default": false,
-              "description": "Create the first administrator on install. Create-only: re-running changes nothing.\nThis is the only account privilege is ever minted for, since registration confers none.",
+              "description": "Create the first administrator. Create-only: re-running changes nothing. This is the\nonly account privilege is ever minted for, since registration confers none. Runs as an\ninitContainer of the `api` pod, so the API never opens registration before the\nadministrator exists (a `post-install` Job when `services.api.enabled=false`). It runs on\nevery api pod start, so turn this off once the install has its administrator: otherwise\nan administrator whose email and username are both changed, or who is deleted, is\nrecreated, and one whose old email or username a stranger then registers makes\n`seed-admin` fail and every new api pod stall in Init.",
               "required": [],
               "title": "enabled",
               "type": "boolean"
@@ -2588,7 +2588,7 @@
     },
     "existingSecret": {
       "default": "",
-      "description": "Name of an existing Secret holding the credentials, instead of having the chart render one\nfrom the values above. When set it takes precedence and no credential value is written into\nthe Helm release. Its keys are the configuration paths with `__` for nesting and no dots —\n`auth__jwt_secret`, `auth__password_pepper`, `auth__mfa_encryption_key`,\n`anilist__client_id`, `anilist__client_secret`, `anilist__token_encryption_key`,\n`email__username`, `email__password`, `channels__discord_webhook_url`,\n`channels__webhook_url`, `database__url`, `redis__url`, `nats__url`. Only the keys a given\nservice reads are projected into it. `nats__url` is the broker URL the chart would otherwise\nderive from `nats` or `externalNats.url`, and is not needed under\n`externalNats.perServiceSecret`. Under `internal.identity=token` add `internal__tokens__api` and\n`internal__tokens__worker`: those two are keyed by caller rather than by configuration path,\nbecause one token is read as `internal.caller.token` by the caller and as\n`internal.peers.\u003ccaller\u003e.token` by each of its callees, and the projection maps the key onto\nwhichever path the reading pod needs. Under `mtls` no internal credential is needed at all.",
+      "description": "Name of an existing Secret holding the credentials, instead of having the chart render one\nfrom the values above. When set it takes precedence and no credential value is written into\nthe Helm release. Its keys are the configuration paths with `__` for nesting and no dots —\n`auth__jwt_secret`, `auth__password_pepper`, `auth__mfa_encryption_key`,\n`anilist__client_id`, `anilist__client_secret`, `anilist__token_encryption_key`,\n`email__username`, `email__password`, `channels__discord_webhook_url`,\n`channels__webhook_url`, `database__url`, `redis__url`, `nats__url`. Only the keys a given\nservice reads are projected into it. `nats__url` is the broker URL the chart would otherwise\nderive from `externalNats.url`, and is not needed under `externalNats.perServiceSecret`. With\nthe bundled NATS and `nats.auth.enabled` (the default) it is replaced by one user per service:\n`nats__password__\u003cuser\u003e` for the broker and `nats__url__\u003cuser\u003e`\n(`nats://\u003cuser\u003e:\u003cpassword\u003e@\u003cfullname\u003e-nats:4222`, the bundled NATS Service) for the service, for\neach of `api`, `control_plane`, `worker` and `notifier` (the user names themselves are `api`,\n`control-plane`, `worker`, `notifier`); each password must start with a letter and be\nalphanumeric (see `nats.auth.passwords`). Under `internal.identity=token` add `internal__tokens__api` and\n`internal__tokens__worker`: those two are keyed by caller rather than by configuration path,\nbecause one token is read as `internal.caller.token` by the caller and as\n`internal.peers.\u003ccaller\u003e.token` by each of its callees, and the projection maps the key onto\nwhichever path the reading pod needs. Under `mtls` no internal credential is needed at all.",
       "required": [],
       "title": "existingSecret",
       "type": "string"
@@ -2628,7 +2628,7 @@
       "properties": {
         "perServiceSecret": {
           "default": "",
-          "description": "Name of an existing Secret holding one NATS URL per service, keyed by service slug (`api`,\n`control-plane`, `worker`, `notifier`). Each pod projects its own key as `nats__url`, which\nreplaces the derived URL entirely. This is how per-service NATS **accounts** are delivered —\nthe thing that stops `notifier` publishing scan tasks — since the credential belongs in the\nURL and so cannot live in the ConfigMap. Note that the accounts themselves are NATS server\nconfiguration: the services present what you give them here, and cannot assert what a broker\ndoes not enforce.",
+          "description": "Name of an existing Secret holding one NATS URL per service, keyed by service slug (`api`,\n`control-plane`, `worker`, `notifier`), for an external broker; the bundled NATS generates\nits own (`nats.auth`). Each pod projects its own key as `nats__url`, which\nreplaces the derived URL entirely. This is how per-service NATS **accounts** are delivered —\nthe thing that stops `notifier` publishing scan tasks — since the credential belongs in the\nURL and so cannot live in the ConfigMap. Note that the accounts themselves are NATS server\nconfiguration: the services present what you give them here, and cannot assert what a broker\ndoes not enforce.",
           "required": [],
           "title": "perServiceSecret",
           "type": "string"
@@ -2717,6 +2717,17 @@
           "minimum": 0,
           "required": [],
           "title": "connectTimeoutSecs",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "hstsMaxAgeSecs": {
+          "default": "null",
+          "description": "`max-age` of the `Strict-Transport-Security` header the frontend sends on every response,\nin seconds; `0` sends none. No `includeSubDomains`. Set `0` when the Ingress or Gateway in\nfront already adds the header, so it is not sent twice (`frontend.hsts_max_age_secs`).",
+          "minimum": 0,
+          "required": [],
+          "title": "hstsMaxAgeSecs",
           "type": [
             "integer",
             "null"
@@ -5545,6 +5556,61 @@
       "additionalProperties": true,
       "description": "Bundled NATS JetStream, the task queue and event bus the control plane, worker and\nnotifier are built on: a single instance with a file store on a PVC. Embedded rather than\ntaken from the NATS authors' chart because that chart ships no `values.schema.json`, so\n`helm schema` derives a closed one from its own values.yaml and makes the `container.merge`\nand `podTemplate.merge` patches unsettable — and those patches are the only way to give its\npods the security context and resource requests this repository's policy scan requires.\nEvaluation-tier like the other bundled datastores: no clustering, so no replication and no\nfailover. Use `externalNats` for anything real.",
       "properties": {
+        "auth": {
+          "additionalProperties": false,
+          "description": "Authentication on the bundled NATS.",
+          "properties": {
+            "enabled": {
+              "default": true,
+              "description": "Give each service that speaks to the broker (`api`, `control-plane`, `worker`,\n`notifier`) a NATS user of its own, allowed only the subjects its code uses, as upstream's\n`deploy/nats/nats.conf` does. Passwords are generated into the chart's Secret and remembered\nacross upgrades (see `existingSecret` for the keys). Off leaves the broker open to any pod\nthe network policy lets reach it.",
+              "required": [],
+              "title": "enabled",
+              "type": "boolean"
+            },
+            "passwords": {
+              "additionalProperties": false,
+              "description": "Fixed passwords for the four users, instead of generated ones. A renderer that cannot\n`lookup` the existing Secret (Argo CD) generates fresh passwords on every render, so set\nthese, or use `existingSecret`, there. Each must start with a letter and be alphanumeric:\nit is spliced into a URL unescaped, and the server reads a value that looks like a number\nor a boolean as one and refuses to start.",
+              "properties": {
+                "api": {
+                  "default": "",
+                  "description": "Password of the `api` user. Empty generates one.",
+                  "pattern": "^([A-Za-z][A-Za-z0-9]*)?$",
+                  "required": [],
+                  "title": "api",
+                  "type": "string"
+                },
+                "controlPlane": {
+                  "default": "",
+                  "description": "Password of the `control-plane` user. Empty generates one.",
+                  "pattern": "^([A-Za-z][A-Za-z0-9]*)?$",
+                  "required": [],
+                  "title": "controlPlane",
+                  "type": "string"
+                },
+                "notifier": {
+                  "default": "",
+                  "description": "Password of the `notifier` user. Empty generates one.",
+                  "pattern": "^([A-Za-z][A-Za-z0-9]*)?$",
+                  "required": [],
+                  "title": "notifier",
+                  "type": "string"
+                },
+                "worker": {
+                  "default": "",
+                  "description": "Password of the `worker` user. Empty generates one.",
+                  "pattern": "^([A-Za-z][A-Za-z0-9]*)?$",
+                  "required": [],
+                  "title": "worker",
+                  "type": "string"
+                }
+              },
+              "required": [],
+              "title": "passwords"
+            }
+          },
+          "required": [],
+          "title": "auth"
+        },
         "enabled": {
           "default": false,
           "description": "Deploy the bundled NATS.",
@@ -6188,7 +6254,7 @@
         },
         "noSandbox": {
           "default": "null",
-          "description": "Pass `--no-sandbox` (required to run Chromium as root inside the runtime container)\n(`render.no_sandbox`).",
+          "description": "Pass `--no-sandbox`. The binary defaults to sandboxed since v11.3.0; the published image\nopts back in through `TANKOVAULT_RENDER__NO_SANDBOX=true`, because the user namespaces\nChromium's sandbox needs are denied under the `RuntimeDefault` seccomp profile this chart\nsets. Containment is the unprivileged user, dropped capabilities, read-only root filesystem\nand network policy instead (`render.no_sandbox`).",
           "required": [],
           "title": "noSandbox",
           "type": [
@@ -6708,7 +6774,7 @@
                   "type": "string"
                 },
                 "tag": {
-                  "default": "v11.2.2@sha256:f4f8c1986df731187aa9f3dad1f7f9e4aeccfbeefc6552e286169702f948c3e8",
+                  "default": "v11.3.0@sha256:5e6e3a4b154544f9d5bba77b193a4c1fccccca925fad2155b14abd9fc5e37b20",
                   "description": "Image tag, pinned by digest.",
                   "required": [],
                   "title": "tag",
@@ -6933,7 +6999,7 @@
                   "type": "string"
                 },
                 "tag": {
-                  "default": "v11.2.2@sha256:39679c58796c27087de1b40b894017c1fee1f95aade8e77d8d4898c6b150a610",
+                  "default": "v11.3.0@sha256:da4c3cb1e901442036317eddc8312c3c203b97a39fb8f1562dec048f1d0b6c77",
                   "description": "Image tag, pinned by digest.",
                   "required": [],
                   "title": "tag",
@@ -7107,7 +7173,7 @@
                   "type": "string"
                 },
                 "tag": {
-                  "default": "v11.2.2@sha256:ee646d9871686feef0dcb2fb9696ccdf0df310fdf8e885e6996ec2e924d91693",
+                  "default": "v11.3.0@sha256:e9b2b5e7f39e37d71623e4da64ffe8f8d88e8aa3d09eb0733b08284a5f22d2bb",
                   "description": "Image tag, pinned by digest.",
                   "required": [],
                   "title": "tag",
@@ -7332,7 +7398,7 @@
                   "type": "string"
                 },
                 "tag": {
-                  "default": "v11.2.2@sha256:a81dd2e7c2ff6c56472fc2ce4935312cdc0c0c043c49c1aac4d19b24b42f24c5",
+                  "default": "v11.3.0@sha256:abe349c3722914321f572990d4d522bd3af6b960d4545e1b1273b9f73f4c14ad",
                   "description": "Image tag, pinned by digest.",
                   "required": [],
                   "title": "tag",
@@ -7506,7 +7572,7 @@
                   "type": "string"
                 },
                 "tag": {
-                  "default": "v11.2.2@sha256:4e45fb895397397c62c73bd9d3768d82fc808686304ee891597d1f84359b5519",
+                  "default": "v11.3.0@sha256:a88ad7530ea3d4da9f026123c9a548ee5d3662b82536e59420f3f047cf2543c2",
                   "description": "Image tag, pinned by digest.",
                   "required": [],
                   "title": "tag",
@@ -7738,7 +7804,7 @@
                   "type": "string"
                 },
                 "tag": {
-                  "default": "v11.2.2@sha256:5b12c88a69620729fabad9812d24e67bef6c7476d2506b785ef2e38c0753446e",
+                  "default": "v11.3.0@sha256:8ebdeaad43508e8f8be158e2e8d654c2b004e096e8c674e8944c021d899b00cd",
                   "description": "Image tag, pinned by digest.",
                   "required": [],
                   "title": "tag",
@@ -7919,7 +7985,7 @@
                   "type": "string"
                 },
                 "tag": {
-                  "default": "v11.2.2@sha256:e66089078b7b4de7f637e8947bcdc16a20adcff9557a8e2c0839b1d469481559",
+                  "default": "v11.3.0@sha256:d136f7e5851fd05ac495c6e61071a35fc41d9ca7f2cbac54cb9acc76eec77087",
                   "description": "Image tag, pinned by digest.",
                   "required": [],
                   "title": "tag",
@@ -8144,7 +8210,7 @@
                   "type": "string"
                 },
                 "tag": {
-                  "default": "v11.2.2@sha256:c084b5a98b90d46f6fc2934fa9fe5d3e325d98c74388c7b78b17454c59fea0d1",
+                  "default": "v11.3.0@sha256:f44118fdd706a49342496429e91cbc62c7a390f71b41e127490653bd4c812f4a",
                   "description": "Image tag, pinned by digest.",
                   "required": [],
                   "title": "tag",
@@ -8718,7 +8784,7 @@
         },
         "redis": {
           "additionalProperties": true,
-          "description": "TRAWL's own solved-session cache, which defaults to the Redis the services already use.",
+          "description": "TRAWL's own solved-session cache, which defaults to a Valkey deployed for TRAWL alone.",
           "properties": {
             "enabled": {
               "default": true,
@@ -8727,9 +8793,21 @@
               "title": "enabled",
               "type": "boolean"
             },
+            "maxMemory": {
+              "default": "96mb",
+              "description": "`maxmemory` of TRAWL's own Valkey. It evicts the least recently used session once full\n(`allkeys-lru`), so keep it below the memory limit with room for the server itself.",
+              "pattern": "^[0-9]+(b|kb|mb|gb)?$",
+              "required": [],
+              "title": "maxMemory",
+              "type": "string"
+            },
+            "resources": {
+              "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/v1.34.0/_definitions.json#/definitions/io.k8s.api.core.v1.ResourceRequirements",
+              "required": []
+            },
             "url": {
               "default": "",
-              "description": "Connection URL. Defaults to the same Redis the services use (`valkey` or\n`externalRedis.url`). Sharing one instance is safe: TankoVault namespaces its keys under\n`tankovault:` and TRAWL uses `session:\u003cdomain\u003e`.",
+              "description": "Connection URL. Empty deploys a Valkey for TRAWL alone (`\u003cfullname\u003e-trawl-valkey`),\nreachable by nothing else. Not the one the services use: that holds the API's rate-limit\nbuckets and the control plane's leader lock, which a compromised browser tier must not\nreach. Pointing this at the shared instance is possible but gives that protection up.",
               "required": [],
               "title": "url",
               "type": "string"

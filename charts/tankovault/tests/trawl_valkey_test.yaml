@@ -1,0 +1,70 @@
+suite: TRAWL's own session cache
+# TRAWL drives a browser on pages someone else chose. Its cookie jar used to share the Valkey
+# that holds the API's rate-limit buckets and the control plane's leader lock, so a compromise
+# there could wipe login throttling or seize the lock (TimSchoenle/TankoVault#701).
+templates:
+  - trawl.yaml
+  - trawl-valkey.yaml
+values:
+  - ../ci/bundled-datastores-values.yaml
+tests:
+  - it: points TRAWL at a Valkey of its own by default
+    template: trawl.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: REDIS_URL
+            value: redis://RELEASE-NAME-tankovault-trawl-valkey:6379
+
+  - it: deploys that Valkey bounded and evicting, as a cache should be
+    template: trawl-valkey.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].args
+          value: ["--save", "", "--appendonly", "no", "--protected-mode", "no", "--maxmemory", "96mb", "--maxmemory-policy", "allkeys-lru"]
+      - equal:
+          path: spec.template.metadata.labels["app.kubernetes.io/component"]
+          value: trawl-valkey
+      - equal:
+          path: spec.template.spec.containers[0].resources.limits.memory
+          value: 128Mi
+
+  - it: deploys none when TRAWL is given a URL
+    template: trawl-valkey.yaml
+    set:
+      trawl.redis.url: redis://sessions.example.com:6379
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: deploys none when TRAWL is told to run without a cache
+    set:
+      trawl.redis.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0
+        template: trawl-valkey.yaml
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          any: true
+          content:
+            name: REDIS_URL
+        template: trawl.yaml
+        documentSelector:
+          path: kind
+          value: Deployment
+
+  - it: deploys none without TRAWL
+    template: trawl-valkey.yaml
+    set:
+      trawl.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0

@@ -19,12 +19,44 @@
       "readinessProbe" (merge (dict "periodSeconds" 10 "timeoutSeconds" 3 "failureThreshold" 3) (deepCopy $probe))
     ) | fromYaml }}
 {{- $ctx := dict "Values" $values "Chart" $.Chart "Release" $.Release "Capabilities" $.Capabilities "Template" $.Template "Files" $.Files }}
+{{- $auth := include "tankovault.natsAuthEnabled" . }}
 {{- $mounts := list (dict "name" "data" "mountPath" "/data") }}
 {{- $volumes := list }}
+{{- $args := list "-js" "-sd" "/data" "-m" "8222" }}
+{{- $env := list }}
+{{- if $auth }}
+{{- /*
+  Per-service users (see `_nats.tpl`): the server runs from a config file instead of flags, and
+  reads each user's password from the chart's Secret through the environment. Not `optional`:
+  a broker that starts with an empty password would accept that user with none.
+*/}}
+{{- $args = list "-c" "/etc/nats/nats.conf" }}
+{{- $mounts = append $mounts (dict "name" "config" "mountPath" "/etc/nats" "readOnly" true) }}
+{{- $volumes = append $volumes (dict "name" "config" "configMap" (dict "name" (printf "%s-config" $name))) }}
+{{- range $service, $user := include "tankovault.natsUsers" . | fromYaml }}
+{{- $env = append $env (dict
+      "name" (include "tankovault.natsPasswordEnv" $user)
+      "valueFrom" (dict "secretKeyRef" (dict "name" (include "tankovault.secretName" $) "key" (include "tankovault.natsPasswordKey" $user)))) }}
+{{- end }}
+{{- end }}
 {{- if not $nats.persistence.enabled }}
 {{- $volumes = append $volumes (dict "name" "data" "emptyDir" dict) }}
 {{- else if $nats.persistence.existingClaim }}
 {{- $volumes = append $volumes (dict "name" "data" "persistentVolumeClaim" (dict "claimName" $nats.persistence.existingClaim)) }}
+{{- end }}
+{{- if $auth }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}-config
+  namespace: {{ include "common.namespace" . }}
+  labels:
+    {{- include "common.labels" . | nindent 4 }}
+    app.kubernetes.io/component: nats
+data:
+  nats.conf: |
+    {{- include "tankovault.natsConf" . | nindent 4 }}
+---
 {{- end }}
 apiVersion: v1
 kind: Service
@@ -59,13 +91,19 @@ spec:
       labels:
         {{- include "common.podLabels" $ctx | nindent 8 }}
         app.kubernetes.io/component: nats
+      {{- if $auth }}
+      annotations:
+        {{- /* The server reads its config once at start, so a change to it has to roll the pod. */}}
+        checksum/config: {{ include "tankovault.natsConf" . | sha256sum }}
+      {{- end }}
     spec:
       {{- include "common.podSpec.common" $ctx | nindent 6 }}
       containers:
         {{- include "common.container" (dict
               "ctx" $ctx
               "name" "nats"
-              "args" (list "-js" "-sd" "/data" "-m" "8222")
+              "args" $args
+              "env" $env
               "ports" (list
                 (dict "name" "client" "containerPort" 4222 "protocol" "TCP")
                 (dict "name" "monitor" "containerPort" 8222 "protocol" "TCP"))

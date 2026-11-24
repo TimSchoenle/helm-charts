@@ -211,7 +211,35 @@ differently.
 {{- else if and $ctx.Values.externalDatabase.url (not $ctx.Values.externalDatabase.existingSecret) -}}
 {{- $_ := set $data "database__url" $ctx.Values.externalDatabase.url -}}
 {{- end -}}
-{{- if not $ctx.Values.externalNats.perServiceSecret -}}
+{{- if include "tankovault.natsAuthEnabled" $ctx -}}
+{{- /*
+  One password per NATS user, and that user's connection URL built from the same value in the
+  same pass — the server reads the first, the service the second, and two lookups could disagree
+  on a first install, where the fallback is a fresh `randAlphaNum` each time it is reached.
+
+  Generated as a letter followed by alphanumerics. Alphanumeric because it is spliced into the URL
+  unescaped; a leading letter because the server re-parses an environment variable's value as a
+  config token, and one that reads as a number (`123456`) or a boolean is not a string password —
+  the server refuses to start on it. `nats.auth.passwords` overrides each one, which is what a
+  renderer without `lookup` (Argo CD) needs to keep them stable.
+*/ -}}
+{{- $host := include "common.fullname.suffixed" (dict "ctx" $ctx "suffix" "nats") -}}
+{{- range $service, $user := include "tankovault.natsUsers" $ctx | fromYaml -}}
+{{- $passwordKey := include "tankovault.natsPasswordKey" $user -}}
+{{- $password := index $ctx.Values.nats.auth.passwords $service -}}
+{{- if not $password -}}
+{{- $password = include "tankovault.rememberedSecret" (dict "ctx" $ctx "key" $passwordKey "fallback" (printf "%s%s" (randAlpha 1) (randAlphaNum 47))) -}}
+{{- end -}}
+{{- $_ := set $data $passwordKey $password -}}
+{{- $_ := set $data (include "tankovault.natsUrlKey" $user) (printf "nats://%s:%s@%s:4222" $user $password $host) -}}
+{{- end -}}
+{{- /*
+  The credential-less URL too, though no pod of this chart version projects it: the Secret is a
+  hook and `helm rollback` does not re-apply it, so a rollback to a version that reads `nats__url`
+  would otherwise find the key gone while its open broker would have accepted it.
+*/ -}}
+{{- $_ := set $data "nats__url" (include "tankovault.natsUrl" $ctx) -}}
+{{- else if not $ctx.Values.externalNats.perServiceSecret -}}
 {{- with include "tankovault.natsUrl" $ctx }}{{- $_ := set $data "nats__url" . }}{{- end -}}
 {{- end -}}
 {{- toYaml $data -}}
@@ -316,8 +344,12 @@ The broker URL is a credential to the image (`nats.url` is a secret key: a URL c
 password), so it is projected from the Secret rather than written into `config.toml`. Appended
 here for the Sentry DSN's reason: it follows `needsNats`, not a static key list. Left out under
 `externalNats.perServiceSecret`, which projects each service's own URL onto the same path below.
+
+Under the bundled NATS's per-service users each service projects its own user's URL instead,
+mapped onto the same `nats__url` path, so no pod ever holds another service's broker password.
 */ -}}
-{{- if and $spec.needsNats (not $ctx.Values.externalNats.perServiceSecret) -}}
+{{- $natsAuth := and $spec.needsNats (include "tankovault.natsAuthEnabled" $ctx) -}}
+{{- if and $spec.needsNats (not $natsAuth) (not $ctx.Values.externalNats.perServiceSecret) -}}
 {{- $keys = append $keys "nats__url" -}}
 {{- end -}}
 {{- $dbExternal := and (has "database__url" $keys) $ctx.Values.externalDatabase.existingSecret -}}
@@ -329,6 +361,9 @@ here for the Sentry DSN's reason: it follows `needsNats`, not a static key list.
 {{- else -}}
 {{- $items = append $items (dict "key" $k "path" $k) -}}
 {{- end -}}
+{{- end -}}
+{{- if $natsAuth -}}
+{{- $items = append $items (dict "key" (include "tankovault.natsUrlKey" $spec.slug) "path" "nats__url") -}}
 {{- end -}}
 {{- if $service -}}
 {{- with include "tankovault.internalSecretItems" (dict "ctx" $ctx "service" $service) | fromYamlArray -}}
